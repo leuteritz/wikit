@@ -66,6 +66,37 @@ CREATE VIRTUAL TABLE IF NOT EXISTS articles_fts USING fts5(
   title, summary, content, tags,
   tokenize = 'unicode61 remove_diacritics 2'
 );
+
+-- Java-Code-Analyse. CREATE ... IF NOT EXISTS ist idempotent -> wirkt als Migration.
+CREATE TABLE IF NOT EXISTS java_files (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  article_id  INTEGER REFERENCES articles(id) ON DELETE SET NULL,
+  filename    TEXT NOT NULL,
+  package     TEXT,
+  class_name  TEXT NOT NULL,
+  class_type  TEXT CHECK(class_type IN ('class','interface','enum','annotation')),
+  raw_source  TEXT NOT NULL,
+  created_at  TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS java_methods (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  file_id     INTEGER NOT NULL REFERENCES java_files(id) ON DELETE CASCADE,
+  method_name TEXT NOT NULL,
+  return_type TEXT,
+  parameters  TEXT,       -- JSON-Array als TEXT
+  javadoc     TEXT,
+  ai_summary  TEXT,
+  created_at  TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_java_methods_file ON java_methods(file_id);
+
+CREATE TABLE IF NOT EXISTS java_dependencies (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  from_file_id  INTEGER NOT NULL REFERENCES java_files(id) ON DELETE CASCADE,
+  to_class_name TEXT NOT NULL   -- importierter Fully Qualified Name
+);
+CREATE INDEX IF NOT EXISTS idx_java_deps_from ON java_dependencies(from_file_id);
 `
 
 export function initDb() {
@@ -164,4 +195,75 @@ export function relationsForArticle(articleId) {
 
 function safeJson(str, fallback) {
   try { return JSON.parse(str) } catch { return fallback }
+}
+
+// --- Java-Analyse-Helfer -----------------------------------------------------
+
+// Wandelt eine java_files-Zeile ins API-Format (mit Methoden + Dependencies).
+export function serializeJavaFile(row, { withSource = false } = {}) {
+  if (!row) return null
+  const methods = db.prepare(
+    'SELECT id, method_name, return_type, parameters, javadoc, ai_summary FROM java_methods WHERE file_id = ? ORDER BY id'
+  ).all(row.id).map(m => ({
+    ...m,
+    parameters: safeJson(m.parameters, []),
+  }))
+  const dependencies = db.prepare(
+    'SELECT to_class_name FROM java_dependencies WHERE from_file_id = ? ORDER BY to_class_name'
+  ).all(row.id).map(d => d.to_class_name)
+  const articleSlug = row.article_id
+    ? (db.prepare('SELECT slug FROM articles WHERE id = ?').get(row.article_id)?.slug ?? null)
+    : null
+  const out = {
+    id: row.id,
+    article_id: row.article_id,
+    article_slug: articleSlug,
+    filename: row.filename,
+    package: row.package,
+    class_name: row.class_name,
+    class_type: row.class_type,
+    created_at: row.created_at,
+    methods,
+    dependencies,
+  }
+  if (withSource) out.raw_source = row.raw_source
+  return out
+}
+
+// Globaler Abhaengigkeitsgraph: Knoten = alle java_files, Kanten nur zwischen
+// analysierten Klassen (Import-FQN matcht package.class_name exakt, sonst class_name).
+export function graphForJavaFiles() {
+  const files = db.prepare(
+    'SELECT id, package, class_name, class_type FROM java_files'
+  ).all()
+
+  // Lookup-Maps fuer die Kanten-Aufloesung aufbauen.
+  const byFqn = new Map()
+  const byClass = new Map() // class_name -> [ids]
+  for (const f of files) {
+    const fqn = f.package ? `${f.package}.${f.class_name}` : f.class_name
+    byFqn.set(fqn, f.id)
+    if (!byClass.has(f.class_name)) byClass.set(f.class_name, [])
+    byClass.get(f.class_name).push(f.id)
+  }
+
+  const deps = db.prepare('SELECT from_file_id, to_class_name FROM java_dependencies').all()
+  const edges = []
+  const seen = new Set()
+  for (const d of deps) {
+    let targetId = byFqn.get(d.to_class_name)
+    if (targetId == null) {
+      // FQN nicht gefunden -> auf einfachen Klassennamen zurueckfallen (eindeutig).
+      const simple = d.to_class_name.split('.').pop()
+      const matches = byClass.get(simple)
+      if (matches && matches.length === 1) targetId = matches[0]
+    }
+    if (targetId == null || targetId === d.from_file_id) continue // extern oder Self-Edge
+    const key = `${d.from_file_id}->${targetId}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    edges.push({ id: edges.length + 1, source_id: d.from_file_id, target_id: targetId })
+  }
+
+  return { nodes: files, edges }
 }

@@ -65,6 +65,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
           <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="6" r="2" /><circle cx="19" cy="6" r="2" /><circle cx="12" cy="18" r="2" /><path d="M6.7 7.4 11 16M17.3 7.4 13 16" /></svg>
         </RouterLink>
 
+        <RouterLink
+          to="/java"
+          class="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          title="Java Analyzer"
+        >
+          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m8 16-4-4 4-4M16 8l4 4-4 4M14 4l-4 16" /></svg>
+        </RouterLink>
+
         <ThemeToggle />
       </div>
     </header>

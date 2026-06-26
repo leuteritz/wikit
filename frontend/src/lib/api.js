@@ -31,4 +31,12 @@ export const api = {
   getGraph: () => http('GET', '/relations'),
   createRelation: (data) => http('POST', '/relations', data),
   deleteRelation: (id) => http('DELETE', `/relations/${id}`),
+
+  analyzeJava: (data) => http('POST', '/java/analyze', data),
+  listJavaFiles: () => http('GET', '/java/files'),
+  getJavaFile: (id) => http('GET', `/java/files/${id}`),
+  getJavaGraph: () => http('GET', '/java/graph'),
+  deleteJavaFile: (id) => http('DELETE', `/java/files/${id}`),
+  summarizeJavaMethod: (id) => http('POST', `/java/methods/${id}/summarize`),
+  linkJavaArticle: (id, data) => http('PUT', `/java/files/${id}`, data),
 }

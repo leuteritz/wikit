@@ -11,6 +11,7 @@ import categoriesRouter from './routes/categories.js'
 import tagsRouter from './routes/tags.js'
 import searchRouter from './routes/search.js'
 import relationsRouter from './routes/relations.js'
+import javaRouter from './routes/java.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = process.env.PORT || 3000
@@ -27,6 +28,7 @@ app.use('/api/categories', categoriesRouter)
 app.use('/api/tags', tagsRouter)
 app.use('/api/search', searchRouter)
 app.use('/api/relations', relationsRouter)
+app.use('/api/java', javaRouter)
 app.get('/api/health', (req, res) => res.json({ ok: true }))
 
 // Zentraler Fehler-Handler -> saubere JSON-Antwort statt HTML-Stacktrace.
