@@ -1,0 +1,20 @@
+[Unit]
+Description=Wikit (self-hosted personal wiki)
+After=network.target
+
+[Service]
+Type=simple
+# Adjust User and path to your installation:
+User=pi
+WorkingDirectory=/home/pi/wikit
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOST=0.0.0.0
+# Optional: separate DB path for easy backup
+# Environment=WIKI_DB=/home/pi/wikit/backend/data/wiki.db
+
+[Install]
+WantedBy=multi-user.target

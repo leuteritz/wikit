@@ -1,0 +1,25 @@
+{
+  "name": "wikit",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + Express + SQLite), light enough for a Raspberry Pi",
+  "license": "MIT",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n API,WEB -c blue,green \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "node --watch backend/server.js",
+    "dev:web": "npm --workspace frontend run dev",
+    "build": "npm --workspace frontend run build",
+    "start": "node backend/server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

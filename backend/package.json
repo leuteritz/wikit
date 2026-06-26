@@ -1,0 +1,15 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "server.js",
+  "dependencies": {
+    "@shikijs/markdown-it": "^1.27.2",
+    "better-sqlite3": "^11.8.1",
+    "express": "^4.21.2",
+    "markdown-it": "^14.1.0",
+    "markdown-it-anchor": "^9.2.0",
+    "sanitize-html": "^2.14.0"
+  }
+}

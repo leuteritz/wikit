@@ -1,0 +1,96 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* Klassenbasierter Dark-Mode (statt prefers-color-scheme) -> per Toggle steuerbar. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light dark;
+}
+
+html, body, #app {
+  height: 100%;
+}
+body {
+  @apply bg-slate-50 text-slate-800 antialiased;
+}
+.dark body {
+  @apply bg-slate-950 text-slate-200;
+}
+
+/* --- Shiki: zwei Themes ueber CSS-Variablen (defaultColor: false) ---------- */
+.shiki,
+.shiki span {
+  color: var(--shiki-light);
+  background-color: var(--shiki-light-bg);
+}
+html.dark .shiki,
+html.dark .shiki span {
+  color: var(--shiki-dark) !important;
+  background-color: var(--shiki-dark-bg) !important;
+}
+.shiki {
+  @apply rounded-xl p-4 text-sm leading-relaxed overflow-x-auto border border-slate-200;
+}
+html.dark .shiki {
+  @apply border-slate-800;
+}
+
+/* --- Prose-Feinschliff fuer gerenderte Artikel ---------------------------- */
+.article-body :where(h2, h3) {
+  scroll-margin-top: 5rem;
+}
+.article-body :where(pre) {
+  background: transparent !important;
+  padding: 0 !important;
+}
+/* Anker-Permalinks (markdown-it-anchor) dezent, erst beim Hover sichtbar */
+.article-body .header-anchor {
+  @apply text-slate-300 no-underline opacity-0 transition-opacity pr-2;
+}
+.article-body :where(h1, h2, h3):hover .header-anchor {
+  @apply opacity-100;
+}
+.article-body :where(code):not(.shiki code) {
+  @apply rounded bg-slate-100 px-1.5 py-0.5 text-[0.85em] font-medium text-pink-600;
+}
+.dark .article-body :where(code):not(.shiki code) {
+  @apply bg-slate-800 text-pink-300;
+}
+.article-body table {
+  @apply block w-full overflow-x-auto;
+}
+
+/* Suchtreffer-Hervorhebung (FTS-Snippets) */
+mark {
+  @apply rounded bg-amber-200 px-0.5 text-slate-900;
+}
+.dark mark {
+  @apply bg-amber-500/40 text-amber-100;
+}
+
+/* Copy-Button an Code-Bloecken */
+.code-wrap {
+  @apply relative;
+}
+.code-copy {
+  @apply absolute right-2 top-2 rounded-md border border-slate-300/60 bg-white/70 px-2 py-1
+         text-xs font-medium text-slate-600 opacity-0 backdrop-blur transition;
+}
+.dark .code-copy {
+  @apply border-slate-600/60 bg-slate-800/70 text-slate-300;
+}
+.code-wrap:hover .code-copy {
+  @apply opacity-100;
+}
+
+/* Dezente Scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: theme(colors.slate.300) transparent;
+}
+.dark * {
+  scrollbar-color: theme(colors.slate.700) transparent;
+}
+
+/* Vue Flow Basisstyles werden in den Komponenten importiert. */
