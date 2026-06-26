@@ -1,6 +1,9 @@
 [Unit]
 Description=Wikit (self-hosted personal wiki)
 After=network.target
+# If Ollama runs on this same host for the Java Analyzer's AI summaries, start after it:
+# After=network.target ollama.service
+# Wants=ollama.service
 
 [Service]
 Type=simple
@@ -15,6 +18,10 @@ Environment=PORT=3000
 Environment=HOST=0.0.0.0
 # Optional: separate DB path for easy backup
 # Environment=WIKI_DB=/home/pi/wikit/backend/data/wiki.db
+# Optional: Java Analyzer AI summaries via Ollama (local model, no API key).
+# Environment=OLLAMA_MODEL=phi3:mini
+# Point at Ollama on another LAN machine instead of localhost:
+# Environment=OLLAMA_URL=http://192.168.1.50:11434/api/generate
 
 [Install]
 WantedBy=multi-user.target
