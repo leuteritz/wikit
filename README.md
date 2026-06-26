@@ -81,7 +81,7 @@ to the demo. To reset everything, delete `backend/data/wiki.db*` and restart.
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install -y nodejs build-essential python3   # build tools for native better-sqlite3 (ARM64)
 
-git clone <your-fork> wikit && cd wikit
+git clone https://github.com/leuteritz/wikit wikit && cd wikit
 npm install
 npm run build
 npm start          # reachable at http://raspberrypi.local:3000
