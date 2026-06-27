@@ -11,13 +11,18 @@ import JavaCodeEditor from '../components/java/JavaCodeEditor.vue'
 import JavaDependencyGraph from '../components/java/JavaDependencyGraph.vue'
 import JavaClassDetail from '../components/java/JavaClassDetail.vue'
 
-const { files, fetchFiles, analyzeCode, analyzing, error, userContext, lastFileId } = useJavaAnalyzer()
-const { enqueueClass, enqueueMethods, queueClass, progressFor, ensurePolling } = useJavaQueue()
+const { files, fetchFiles, analyzeCode, analyzing, error, userContext, lastFileId, deleteFile } =
+  useJavaAnalyzer()
+const { enqueueClass, enqueueMethods, queueClass, cancelJob, progressFor, ensurePolling } =
+  useJavaQueue()
 
 const source = ref('')
 const filename = ref('')
 const selectedFileId = ref(null)
 const queueNotice = ref('')
+// Hover-Loeschen: gemerkte Klasse fuer den Bestaetigungs-Dialog + laufender Loesch-Vorgang.
+const pendingDelete = ref(null)
+const deleting = ref(false)
 
 let releasePolling = null
 onMounted(async () => {
@@ -83,6 +88,33 @@ async function analyze() {
 
 function selectFile(id) {
   selectedFileId.value = id
+}
+
+// --- Klasse loeschen (Hover-Button -> Bestaetigung) ---
+function askDelete(file) {
+  pendingDelete.value = file
+}
+function cancelDelete() {
+  if (deleting.value) return
+  pendingDelete.value = null
+}
+async function confirmDelete() {
+  const file = pendingDelete.value
+  if (!file) return
+  deleting.value = true
+  try {
+    // Etwaige laufende Queue-Jobs dieser Klasse abbrechen, sonst laufen sie ins Leere.
+    await Promise.allSettled([cancelJob(file.id, 'class'), cancelJob(file.id, 'methods')])
+    // deleteFile (useJavaAnalyzer) ruft DELETE /java/files/:id + fetchFiles -> der Graph (computed
+    // ueber die files-Prop) entfernt Knoten und Kanten der Klasse reaktiv.
+    await deleteFile(file.id)
+    if (selectedFileId.value === file.id) selectedFileId.value = null
+    pendingDelete.value = null
+  } catch (e) {
+    queueNotice.value = e.message
+  } finally {
+    deleting.value = false
+  }
 }
 async function onDetailClose(payload) {
   if (payload?.deleted) await fetchFiles()
@@ -207,10 +239,10 @@ async function onDetailClose(payload) {
             Klassen ({{ sortedFiles.length }})
           </h2>
           <ul class="min-h-0 flex-1 overflow-y-auto p-2">
-            <li v-for="f in sortedFiles" :key="f.id">
+            <li v-for="f in sortedFiles" :key="f.id" class="group relative">
               <button
                 type="button"
-                class="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition"
+                class="flex w-full items-center gap-2 rounded-lg py-2 pl-2.5 pr-9 text-left transition"
                 :class="selectedFileId === f.id ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-slate-50 dark:hover:bg-slate-800'"
                 @click="selectFile(f.id)"
               >
@@ -222,13 +254,24 @@ async function onDetailClose(payload) {
                 </div>
                 <span
                   v-if="progressFor(f.id)"
-                  class="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
+                  class="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold transition group-hover:opacity-0"
                   :class="progressFor(f.id).status === 'running'
                     ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]'
                     : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'"
                 >
                   {{ progressFor(f.id).done }}/{{ progressFor(f.id).total }}
                 </span>
+              </button>
+              <!-- Hover-Loeschen: liegt ueber dem rechten Rand des Eintrags (kein verschachtelter Button) -->
+              <button
+                type="button"
+                class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-rose-500 opacity-0 transition hover:bg-rose-50 focus:opacity-100 group-hover:opacity-100 dark:hover:bg-rose-500/10"
+                style="color: var(--color-error, #ef4444)"
+                title="Klasse löschen"
+                :aria-label="`Klasse ${f.class_name} löschen`"
+                @click.stop="askDelete(f)"
+              >
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" /></svg>
               </button>
             </li>
             <li v-if="!sortedFiles.length" class="px-3 py-6 text-center text-xs text-slate-400">
@@ -259,5 +302,48 @@ async function onDetailClose(payload) {
         </div>
       </div>
     </div>
+
+    <!-- Bestaetigungs-Dialog: Klasse loeschen -->
+    <Teleport to="body">
+      <div
+        v-if="pendingDelete"
+        class="fixed inset-0 z-50 grid place-items-center bg-slate-900/40 p-4 backdrop-blur-sm"
+        @click.self="cancelDelete"
+      >
+        <div class="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+          <div class="mb-3 flex items-center gap-3">
+            <span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" /></svg>
+            </span>
+            <div class="min-w-0">
+              <h3 class="truncate font-semibold text-slate-900 dark:text-white">Klasse löschen?</h3>
+              <p class="truncate font-mono text-xs text-slate-400">{{ pendingDelete.class_name }}</p>
+            </div>
+          </div>
+          <p class="mb-4 text-sm text-slate-600 dark:text-slate-300">
+            Alle Verknüpfungen im Graph werden entfernt. Ein eventuell verknüpfter Wiki-Artikel bleibt erhalten.
+          </p>
+          <div class="flex justify-end gap-2">
+            <button
+              type="button"
+              class="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+              :disabled="deleting"
+              @click="cancelDelete"
+            >
+              Abbrechen
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-700 disabled:opacity-60"
+              :disabled="deleting"
+              @click="confirmDelete"
+            >
+              <svg v-if="deleting" class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
+              {{ deleting ? 'Lösche…' : 'Löschen' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>

@@ -48,6 +48,9 @@ export const api = {
   queueJavaMethods: (id, data) => http('POST', `/java/files/${id}/queue-methods`, data),
   listJavaQueues: () => http('GET', '/java/queues'),
   getJavaQueue: (id) => http('GET', `/java/queues/${id}`),
+  // Queue-Jobs abbrechen: einzeln (fileId + kind) oder alle auf einmal.
+  cancelJavaQueue: (fileId, kind) => http('DELETE', `/java/queues/${fileId}/${kind}`),
+  cancelAllJavaQueues: () => http('DELETE', '/java/queues'),
 
   // KI-Analyse-Queue: erst start (POST), dann den SSE-Stream oeffnen (EventSource ist kein
   // fetch, daher bleibt nur die URL-Konstruktion hier in api.js zentralisiert).

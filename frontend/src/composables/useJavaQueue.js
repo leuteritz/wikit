@@ -135,6 +135,24 @@ async function enqueueMethods(fileId, { userContext = '' } = {}) {
   await refresh()
 }
 
+// Einzelnen Job abbrechen. Optimistisch sofort lokal entfernen (kein Warten auf das 3-s-Polling),
+// damit die Liste/Badge unmittelbar reagiert; das naechste Polling bestaetigt den Server-Zustand.
+async function cancelJob(fileId, kind) {
+  await api.cancelJavaQueue(fileId, kind)
+  allJobs.value = allJobs.value.filter((j) => !(j.fileId === fileId && j.kind === kind))
+  // byFile auf die verbleibenden Jobs dieser Datei neu ableiten (oder Key entfernen).
+  const rest = allJobs.value.filter((j) => j.fileId === fileId)
+  if (rest.length) Object.assign(byFile, indexByFile(rest))
+  else delete byFile[fileId]
+}
+
+// Gesamte Queue abbrechen + leeren (aktive + abgeschlossene). Sofort lokal leeren.
+async function cancelAllJobs() {
+  await api.cancelAllJavaQueues()
+  allJobs.value = []
+  for (const k of Object.keys(byFile)) delete byFile[k]
+}
+
 export function useJavaQueue() {
   return {
     allJobs,
@@ -142,6 +160,8 @@ export function useJavaQueue() {
     enqueueClass,
     enqueueMethods,
     queueClass,
+    cancelJob,
+    cancelAllJobs,
     progressFor,
     ensurePolling,
     refresh,

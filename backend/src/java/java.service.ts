@@ -194,9 +194,15 @@ export class JavaService {
     return this.serializer.serializeJavaFile(row, { withSource: true });
   }
 
-  // Datei + Methoden + Dependencies loeschen (CASCADE). Verknuepfter Artikel bleibt bestehen.
+  // Datei + Methoden + Dependencies loeschen (CASCADE ueber FK). Verknuepfter Artikel bleibt
+  // bestehen (FK ist andersherum: article -> SET NULL). Der java_fts-Eintrag (rowid = id) wird
+  // nicht per Trigger gepflegt -> hier explizit entfernen, sonst bleibt er verwaist.
   async deleteFile(idParam: string): Promise<void> {
-    await this.ds.getRepository(JavaFile).delete({ id: Number(idParam) });
+    const id = Number(idParam);
+    await this.ds.transaction(async (manager) => {
+      await manager.query('DELETE FROM java_fts WHERE rowid = ?', [id]);
+      await manager.getRepository(JavaFile).delete({ id });
+    });
   }
 
   // Optional: erstellten Wiki-Artikel mit der Java-Datei verknuepfen (macht sie via FTS auffindbar).

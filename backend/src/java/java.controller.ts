@@ -40,6 +40,21 @@ export class JavaController {
     return job;
   }
 
+  // Gesamte Queue leeren (aktive Jobs abbrechen + History entfernen). Muss vor der
+  // parametrisierten DELETE-Route stehen.
+  @Delete('queues')
+  @HttpCode(204)
+  cancelAllQueues() {
+    this.queue.cancelAll();
+  }
+
+  // Einzelnen Job (Klassen- oder Methoden-Queue einer Datei) abbrechen/entfernen.
+  @Delete('queues/:fileId/:kind')
+  @HttpCode(204)
+  cancelQueue(@Param('fileId') fileId: string, @Param('kind') kind: string) {
+    this.queue.cancel(Number(fileId), kind === 'class' ? 'class' : 'methods');
+  }
+
   // Klassen-Zusammenfassung in die Queue einreihen (laeuft im Hintergrund weiter).
   @Post('files/:id/queue-class')
   @HttpCode(202)

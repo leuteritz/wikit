@@ -5,7 +5,7 @@
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useJavaQueue } from '../composables/useJavaQueue.js'
 
-const { allJobs, ensurePolling } = useJavaQueue()
+const { allJobs, ensurePolling, cancelJob, cancelAllJobs } = useJavaQueue()
 
 let releasePolling = null
 onMounted(() => {
@@ -26,6 +26,7 @@ const STATUS = {
   done: { label: 'Fertig', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
   'done-with-errors': { label: 'Fertig (mit Fehlern)', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
   failed: { label: 'Fehlgeschlagen', cls: 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300' },
+  cancelled: { label: 'Abgebrochen', cls: 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400' },
 }
 function statusInfo(s) {
   return STATUS[s] || { label: s, cls: 'bg-slate-100 text-slate-600' }
@@ -39,6 +40,23 @@ function fmtTime(s) {
   const d = new Date(s)
   return isNaN(d) ? '' : d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
+
+// Cancel-Handler: Fehler still schlucken (z. B. wenn der Job serverseitig schon weg ist) –
+// das optimistische Entfernen im Composable hat die UI ohnehin bereits aktualisiert.
+async function onCancel(j) {
+  try {
+    await cancelJob(j.fileId, j.kind)
+  } catch {
+    /* ignorieren */
+  }
+}
+async function onCancelAll() {
+  try {
+    await cancelAllJobs()
+  } catch {
+    /* ignorieren */
+  }
+}
 </script>
 
 <template>
@@ -50,13 +68,25 @@ function fmtTime(s) {
           Klassen- &amp; Methoden-Zusammenfassungen laufen im Hintergrund – aktualisiert alle 3&nbsp;Sekunden.
         </p>
       </div>
-      <RouterLink
-        to="/java"
-        class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-      >
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6" /></svg>
-        Zum Analyzer
-      </RouterLink>
+      <div class="flex items-center gap-2">
+        <button
+          v-if="allJobs.length"
+          type="button"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-50 dark:border-rose-500/30 dark:text-rose-400 dark:hover:bg-rose-500/10"
+          title="Alle Jobs abbrechen und die Liste leeren"
+          @click="onCancelAll"
+        >
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" /></svg>
+          Alle abbrechen
+        </button>
+        <RouterLink
+          to="/java"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+        >
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6" /></svg>
+          Zum Analyzer
+        </RouterLink>
+      </div>
     </div>
 
     <!-- Aktive Queues -->
@@ -80,6 +110,15 @@ function fmtTime(s) {
             </span>
             <h3 class="min-w-0 flex-1 truncate font-semibold text-slate-800 dark:text-slate-100">{{ j.className }}</h3>
             <span class="rounded-md px-2 py-0.5 text-[11px] font-semibold" :class="statusInfo(j.status).cls">{{ statusInfo(j.status).label }}</span>
+            <button
+              type="button"
+              class="shrink-0 rounded-md p-1 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
+              title="Job abbrechen"
+              aria-label="Job abbrechen"
+              @click="onCancel(j)"
+            >
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12" /></svg>
+            </button>
           </div>
           <p v-if="j.package" class="mb-2 truncate font-mono text-[11px] text-slate-400">{{ j.package }}</p>
 
@@ -122,6 +161,15 @@ function fmtTime(s) {
           <span class="shrink-0 tabular-nums text-xs text-slate-400">{{ j.done }}/{{ j.total }}<template v-if="j.failed"> · {{ j.failed }} Fehler</template></span>
           <span v-if="j.finishedAt" class="shrink-0 text-[11px] text-slate-400">{{ fmtTime(j.finishedAt) }}</span>
           <span class="shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold" :class="statusInfo(j.status).cls">{{ statusInfo(j.status).label }}</span>
+          <button
+            type="button"
+            class="shrink-0 rounded-md p-1 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
+            title="Aus der Liste entfernen"
+            aria-label="Aus der Liste entfernen"
+            @click="onCancel(j)"
+          >
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
         </article>
       </div>
     </section>

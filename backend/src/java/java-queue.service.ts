@@ -16,7 +16,7 @@ import { JavaMethod } from '../entities/java-method.entity';
 // (Ollama + Markdown) ausserhalb, DANN eine ds.transaction() mit awaited DB-Writes + FTS-Pflege.
 
 type JobKind = 'class' | 'methods';
-type JobStatus = 'queued' | 'running' | 'done' | 'done-with-errors' | 'failed';
+type JobStatus = 'queued' | 'running' | 'done' | 'done-with-errors' | 'failed' | 'cancelled';
 
 interface QueueJob {
   fileId: number;
@@ -42,6 +42,10 @@ export class JavaQueueService {
   private jobs = new Map<string, QueueJob>();
   private worker: Array<() => Promise<void>> = [];
   private processing = false;
+  // Cancel-Plumbing: laufende Ollama-Calls werden ueber den AbortController abgebrochen,
+  // bereits eingereihte (noch nicht gestartete) Jobs ueber das cancelled-Set uebersprungen.
+  private inflight = new Map<string, AbortController>();
+  private cancelled = new Set<string>();
 
   constructor(
     @InjectDataSource() private readonly ds: DataSource,
@@ -147,6 +151,28 @@ export class JavaQueueService {
     return this.snapshot(job);
   }
 
+  // --- Cancel ---------------------------------------------------------------
+
+  // Einzelnen Job abbrechen: laufenden Ollama-fetch abbrechen (falls aktiv) und den Job aus der
+  // Map entfernen -> verschwindet sofort aus list()/get(). Noch nicht gestartete Worker-Closures
+  // sehen beim Start das cancelled-Flag und ueberspringen sich selbst.
+  cancel(fileId: number, kind: JobKind): void {
+    const key = this.key(fileId, kind);
+    this.cancelled.add(key);
+    this.inflight.get(key)?.abort();
+    this.jobs.delete(key);
+  }
+
+  // Gesamte Queue leeren: alle laufenden Calls abbrechen, ausstehende Closures verwerfen und
+  // saemtliche Jobs (aktiv + abgeschlossen) entfernen -> die Statusseite ist danach leer.
+  cancelAll(): void {
+    for (const ctrl of this.inflight.values()) ctrl.abort();
+    for (const key of this.jobs.keys()) this.cancelled.add(key);
+    this.worker = [];
+    this.jobs.clear();
+    this.inflight.clear();
+  }
+
   // --- Worker-Steuerung -----------------------------------------------------
 
   private async process(): Promise<void> {
@@ -169,6 +195,11 @@ export class JavaQueueService {
   // --- Job-Implementierungen (Tx-Muster wie JavaService) ---------------------
 
   private async runClassJob(job: QueueJob, userContext?: string): Promise<void> {
+    const key = this.key(job.fileId, 'class');
+    if (this.cancelled.has(key)) return; // vor Start abgebrochen
+    const controller = new AbortController();
+    this.inflight.set(key, controller);
+
     job.status = 'running';
     job.startedAt = new Date().toISOString();
     try {
@@ -186,15 +217,19 @@ export class JavaQueueService {
         .find({ where: { file_id: file.id }, select: { method_name: true } });
 
       // 1) async + teuer ausserhalb der Transaktion
-      const summary = await this.ollama.generateClassSummary({
-        classInfo: {
-          class_name: file.class_name,
-          class_type: file.class_type,
-          package: file.pkg,
-          methods: methods.map((m) => ({ method_name: m.method_name })),
+      const summary = await this.ollama.generateClassSummary(
+        {
+          classInfo: {
+            class_name: file.class_name,
+            class_type: file.class_type,
+            package: file.pkg,
+            methods: methods.map((m) => ({ method_name: m.method_name })),
+          },
+          context: userContext,
         },
-        context: userContext,
-      });
+        controller.signal,
+      );
+      if (controller.signal.aborted) return; // abgebrochen -> nichts persistieren
       if (!summary) job.ollamaUnavailable = true;
       const finalDescription = summary || file.description || '';
       const { html } = await this.markdown.renderMarkdown(finalDescription);
@@ -220,6 +255,7 @@ export class JavaQueueService {
       job.status = 'failed';
       job.error = e?.message || 'Fehler bei der Klassen-Generierung';
     } finally {
+      this.inflight.delete(key);
       job.finishedAt = new Date().toISOString();
     }
   }
@@ -229,40 +265,61 @@ export class JavaQueueService {
     methods: JavaMethod[],
     userContext?: string,
   ): Promise<void> {
+    const key = this.key(job.fileId, 'methods');
+    if (this.cancelled.has(key)) return; // vor Start abgebrochen
+    const controller = new AbortController();
+    this.inflight.set(key, controller);
+
     job.status = 'running';
     job.startedAt = new Date().toISOString();
 
-    const file = await this.ds.getRepository(JavaFile).findOne({ where: { id: job.fileId } });
-    const className = file?.class_name || job.className;
+    try {
+      const file = await this.ds.getRepository(JavaFile).findOne({ where: { id: job.fileId } });
+      const className = file?.class_name || job.className;
 
-    for (const m of methods) {
-      job.current = { id: m.id, name: m.method_name };
-      try {
-        // 1) async + teuer ausserhalb der Transaktion
-        const summary = await this.ollama.generateMethodDescription({
-          className,
-          method: { ...m, parameters: this.safeJson(m.parameters, []) },
-          context: userContext,
-        });
-        if (!summary) job.ollamaUnavailable = true;
-        const finalSummary = summary || m.ai_summary || m.javadoc || '';
-        // Markdown wird im Serializer fuers Frontend gerendert; hier nur DB-Wert sichern.
+      for (const m of methods) {
+        if (controller.signal.aborted) break; // zwischen Methoden abbrechen
+        job.current = { id: m.id, name: m.method_name };
+        try {
+          // 1) async + teuer ausserhalb der Transaktion
+          const summary = await this.ollama.generateMethodDescription(
+            {
+              className,
+              method: { ...m, parameters: this.safeJson(m.parameters, []) },
+              context: userContext,
+            },
+            controller.signal,
+          );
+          if (controller.signal.aborted) break; // abgebrochen -> nicht persistieren
+          if (!summary) job.ollamaUnavailable = true;
+          const finalSummary = summary || m.ai_summary || m.javadoc || '';
+          // Markdown wird im Serializer fuers Frontend gerendert; hier nur DB-Wert sichern.
 
-        // 2) DB-Write + FTS in der Transaktion (awaited)
-        await this.ds.transaction(async (manager) => {
-          await manager.getRepository(JavaMethod).update({ id: m.id }, { ai_summary: finalSummary });
-          await this.fts.indexJavaFile(manager, job.fileId);
-          if (file?.article_id) await this.fts.indexArticle(manager, file.article_id);
-        });
-        job.done++;
-      } catch {
-        // Netzwerk-/DB-Fehler einer Methode -> als fehlgeschlagen markieren, Queue laeuft weiter.
-        job.failed++;
+          // 2) DB-Write + FTS in der Transaktion (awaited)
+          await this.ds.transaction(async (manager) => {
+            await manager
+              .getRepository(JavaMethod)
+              .update({ id: m.id }, { ai_summary: finalSummary });
+            await this.fts.indexJavaFile(manager, job.fileId);
+            if (file?.article_id) await this.fts.indexArticle(manager, file.article_id);
+          });
+          job.done++;
+        } catch {
+          // Netzwerk-/DB-Fehler einer Methode -> als fehlgeschlagen markieren, Queue laeuft weiter.
+          job.failed++;
+        }
       }
-    }
 
-    job.current = null;
-    job.status = job.failed ? 'done-with-errors' : 'done';
-    job.finishedAt = new Date().toISOString();
+      job.current = null;
+      // Bei Abbruch waehrend des Laufs den Job zwar fertigstellen, aber als abgebrochen markieren.
+      job.status = controller.signal.aborted
+        ? 'cancelled'
+        : job.failed
+          ? 'done-with-errors'
+          : 'done';
+      job.finishedAt = new Date().toISOString();
+    } finally {
+      this.inflight.delete(key);
+    }
   }
 }
