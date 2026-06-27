@@ -50,6 +50,7 @@ export function useJavaAnalyzer() {
       await fetchFiles()
     },
     summarizeMethod: (id, data) => api.summarizeJavaMethod(id, data),
+    summarizeClass: (id, data) => api.summarizeJavaClass(id, data),
     linkArticle: (id, articleId) => api.linkJavaArticle(id, { article_id: articleId }),
   }
 }

@@ -140,6 +140,51 @@ export class JavaService {
     };
   }
 
+  // On-demand KI-Beschreibung fuer die GANZE Klasse (async, ausserhalb der Transaktion).
+  // Reuse der vorhandenen Spalten description/description_html/generated_at -> kein Schema-Aenderung.
+  // Das Setzen von description flippt den Graph-Knoten auf analyzed: true (Serializer).
+  async summarizeClass(idParam: string, body?: any): Promise<any> {
+    const id = Number(idParam);
+    const file = await this.ds.getRepository(JavaFile).findOne({ where: { id } });
+    if (!file) throw new NotFoundException('Datei nicht gefunden');
+
+    const methods = await this.ds
+      .getRepository(JavaMethod)
+      .find({ where: { file_id: id }, select: { method_name: true } });
+
+    const summary = await this.ollama.generateClassSummary({
+      classInfo: {
+        class_name: file.class_name,
+        class_type: file.class_type,
+        package: file.pkg,
+        methods: methods.map((m) => ({ method_name: m.method_name })),
+      },
+      context: body?.userContext,
+    });
+
+    // Fallback: ist Ollama nicht erreichbar, bleibt die bisherige Beschreibung erhalten.
+    const ollamaUnavailable = !summary;
+    const finalDescription = summary || file.description || '';
+
+    // Markdown -> HTML vor der Transaktion rendern (async/teuer ausserhalb der Tx).
+    const { html: descriptionHtml } = await this.markdown.renderMarkdown(finalDescription);
+    const generatedAt = new Date().toISOString();
+
+    await this.ds.transaction(async (manager) => {
+      await manager
+        .getRepository(JavaFile)
+        .update({ id }, { description: finalDescription, description_html: descriptionHtml, generated_at: generatedAt });
+      await this.fts.indexJavaFile(manager, id);
+    });
+
+    const updated = await this.ds.getRepository(JavaFile).findOne({ where: { id } });
+    return {
+      file: await this.serializer.serializeJavaFile(updated, { withSource: true }),
+      description_html: descriptionHtml,
+      ollama_unavailable: ollamaUnavailable,
+    };
+  }
+
   // Java-Datei zu einem Artikel (article_id) holen -> Live-Panel auf dem Wiki-Artikel.
   // Liefert null (Controller -> 404), wenn der Artikel keine verknuepfte Klasse hat.
   async getFileByArticle(articleIdParam: string): Promise<any> {

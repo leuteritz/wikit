@@ -100,15 +100,15 @@ function fmtDate(s) {
 </script>
 
 <template>
-  <section class="mb-8 overflow-hidden rounded-2xl border border-indigo-200 bg-indigo-50/40 dark:border-indigo-500/25 dark:bg-indigo-500/5">
+  <section class="mb-8 overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-accent-soft)]">
     <!-- Kopf -->
-    <header class="flex flex-wrap items-center gap-3 border-b border-indigo-200/70 px-4 py-3 dark:border-indigo-500/20">
-      <span class="grid h-9 w-9 place-items-center rounded-lg bg-indigo-600 text-white shadow-sm">
+    <header class="flex flex-wrap items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
+      <span class="grid h-9 w-9 place-items-center rounded-lg bg-[var(--color-accent)] text-[var(--color-accent-contrast)] shadow-sm">
         <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" /></svg>
       </span>
       <div class="min-w-0 flex-1">
-        <h2 class="text-sm font-bold uppercase tracking-wide text-indigo-900 dark:text-indigo-200">KI-Code-Analyse</h2>
-        <p class="text-xs text-indigo-700/70 dark:text-indigo-300/70">
+        <h2 class="text-sm font-bold uppercase tracking-wide text-[var(--color-accent)]">KI-Code-Analyse</h2>
+        <p class="text-xs text-[var(--color-text-muted)]">
           {{ methods.length }} Methode(n)
           <span v-if="generatedAt"> · zuletzt {{ fmtDate(generatedAt) }}</span>
           <span v-else> · noch nicht analysiert</span>
@@ -116,7 +116,7 @@ function fmtDate(s) {
       </div>
       <button
         type="button"
-        class="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:opacity-60"
+        class="inline-flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
         :disabled="analysis.running.value"
         @click="startAnalysis"
       >
@@ -130,7 +130,7 @@ function fmtDate(s) {
       <!-- Kontext-Feld (einklappbar) -->
       <button
         type="button"
-        class="mb-3 inline-flex items-center gap-1.5 text-xs font-medium text-indigo-700 hover:text-indigo-900 dark:text-indigo-300 dark:hover:text-indigo-100"
+        class="mb-3 inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-accent)] transition hover:opacity-80"
         @click="showContext = !showContext"
       >
         <svg class="h-3.5 w-3.5 transition-transform" :class="showContext ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6" /></svg>
@@ -141,26 +141,26 @@ function fmtDate(s) {
         v-model="userContext"
         spellcheck="false"
         placeholder="z. B. Windchill-Hintergrund, Modulzweck… – fließt in jeden KI-Prompt ein."
-        class="mb-4 h-20 w-full resize-y rounded-xl border border-indigo-200 bg-white p-3 text-sm text-slate-700 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 dark:border-indigo-500/30 dark:bg-slate-900 dark:text-slate-200 dark:focus:ring-indigo-500/20"
+        class="mb-4 h-20 w-full resize-y rounded-xl border border-[var(--color-border)] bg-white p-3 text-sm text-slate-700 outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)] dark:bg-slate-900 dark:text-slate-200"
       />
 
       <!-- Fortschritt -->
       <div v-if="analysis.running.value" class="mb-4">
         <div class="mb-1.5 flex items-center justify-between text-xs">
-          <span class="flex items-center gap-1.5 font-medium text-indigo-700 dark:text-indigo-300">
+          <span class="flex items-center gap-1.5 font-medium text-[var(--color-accent)]">
             <svg class="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
             {{ runningLabel }}
           </span>
           <span class="tabular-nums text-slate-500 dark:text-slate-400">{{ completed }}/{{ steps }}</span>
         </div>
-        <div class="h-2 w-full overflow-hidden rounded-full bg-indigo-100 dark:bg-indigo-500/15">
-          <div class="h-full rounded-full bg-indigo-600 transition-all duration-300" :style="{ width: percent + '%' }" />
+        <div class="h-2 w-full overflow-hidden rounded-full bg-[var(--color-accent-soft)]">
+          <div class="h-full rounded-full bg-[var(--color-accent)] transition-all duration-300" :style="{ width: percent + '%' }" />
         </div>
         <!-- Schritt-Pills -->
         <div class="mt-2 flex flex-wrap items-center gap-1">
           <span
             class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
-            :class="classState === 'done' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : classState === 'running' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-200' : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'"
+            :class="classState === 'done' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : classState === 'running' ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'"
           >
             <span v-if="classState === 'done'">✓</span><span v-else-if="classState === 'running'">⟳</span>
             Klasse
@@ -169,7 +169,7 @@ function fmtDate(s) {
             v-for="(m, i) in methods"
             :key="m.id"
             class="inline-flex h-5 min-w-[20px] items-center justify-center rounded-md px-1 text-[10px] font-medium"
-            :class="methodState(i, m) === 'done' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : methodState(i, m) === 'running' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-200' : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'"
+            :class="methodState(i, m) === 'done' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : methodState(i, m) === 'running' ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'"
             :title="m.method_name"
           >{{ i + 1 }}</span>
         </div>
@@ -179,7 +179,7 @@ function fmtDate(s) {
       <p v-if="notice" class="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">{{ notice }}</p>
 
       <!-- Leerzustand -->
-      <p v-if="!hasContent && !analysis.running.value" class="rounded-lg border border-dashed border-indigo-200 px-4 py-6 text-center text-sm text-slate-500 dark:border-indigo-500/30 dark:text-slate-400">
+      <p v-if="!hasContent && !analysis.running.value" class="rounded-lg border border-dashed border-[var(--color-border)] px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-400">
         Starte die KI-Analyse, um Klassen- und Methodenbeschreibungen zu generieren – sie erscheinen hier nacheinander.
       </p>
 
@@ -205,10 +205,10 @@ function fmtDate(s) {
               :title="`„${m.method_name}“ einzeln neu generieren`"
               @click="reRun(m)"
             >
-              <span class="truncate font-mono text-sm font-semibold text-indigo-700 group-hover:underline disabled:no-underline dark:text-indigo-300">{{ m.method_name }}</span>
-              <svg v-if="methodState(i, m) !== 'running'" class="h-3.5 w-3.5 shrink-0 text-slate-300 transition group-hover:text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5M21 3v6h-6" /></svg>
+              <span class="truncate font-mono text-sm font-semibold text-[var(--color-accent)] group-hover:underline disabled:no-underline">{{ m.method_name }}</span>
+              <svg v-if="methodState(i, m) !== 'running'" class="h-3.5 w-3.5 shrink-0 text-slate-300 transition group-hover:text-[var(--color-accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5M21 3v6h-6" /></svg>
             </button>
-            <svg v-if="methodState(i, m) === 'running'" class="h-4 w-4 shrink-0 animate-spin text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
+            <svg v-if="methodState(i, m) === 'running'" class="h-4 w-4 shrink-0 animate-spin text-[var(--color-accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
             <span v-else-if="methodState(i, m) === 'done'" class="shrink-0 text-emerald-500" title="analysiert">✓</span>
           </div>
 

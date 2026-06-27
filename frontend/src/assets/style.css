@@ -4,8 +4,44 @@
 /* Klassenbasierter Dark-Mode (statt prefers-color-scheme) -> per Toggle steuerbar. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* --- Design-Tokens (klassenbasierter Dark-Mode) ---------------------------- *
+ * Primaer-Akzent: Dusty Denim (#6c91c2) im Light, Periwinkle (#c3c9e9) im Dark.
+ * KEIN Lila/Violett. Neutrale Graustufen bleiben slate (neutral, kein Lila).
+ * Komponenten referenzieren diese Tokens via Tailwind-Arbitrary-Values,
+ * z. B. bg-[var(--color-accent)] / text-[var(--color-accent)].                */
 :root {
   color-scheme: light dark;
+
+  --color-accent: #6c91c2;          /* Dusty Denim */
+  --color-accent-hover: oklch(0.58 0.078 254);
+  --color-accent-soft: #eef2f8;     /* dezenter Akzent-Hintergrund (Badges/aktiv) */
+  --color-accent-contrast: #ffffff; /* Text auf vollflaechigem Akzent-Button */
+
+  --color-surface: #f5f6f8;
+  --color-surface-2: #ffffff;
+  --color-border: #aaabbc;          /* Pale Slate */
+  --color-text: #2c2f35;
+  --color-text-muted: #8b8982;      /* Grey Olive */
+
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-danger: #f43f5e;
+}
+html.dark {
+  --color-accent: #c3c9e9;          /* Periwinkle */
+  --color-accent-hover: oklch(0.88 0.04 280);
+  --color-accent-soft: rgba(195, 201, 233, 0.14);
+  --color-accent-contrast: #232a33;
+
+  --color-surface: #373f47;         /* Charcoal Blue */
+  --color-surface-2: #424b54;
+  --color-border: rgba(170, 171, 188, 0.25);
+  --color-text: #c3c9e9;
+  --color-text-muted: #9a988f;
+
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-danger: #fb7185;
 }
 
 html, body, #app {

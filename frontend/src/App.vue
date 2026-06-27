@@ -46,7 +46,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
 
         <RouterLink to="/" class="flex items-center gap-2 font-semibold text-slate-900 dark:text-white">
           <span class="text-xl">📚</span>
-          <span class="text-indigo-600 dark:text-indigo-400">{{ WIKI_TITLE }}</span>
+          <span class="text-[var(--color-accent)]">{{ WIKI_TITLE }}</span>
         </RouterLink>
 
         <button

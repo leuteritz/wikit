@@ -39,6 +39,13 @@ export class JavaController {
     return this.svc.summarize(id, body);
   }
 
+  // Klassen-Summary: schreibt description/description_html. Ollama-down -> 200 + Flag.
+  @Post('files/:id/summarize-class')
+  @HttpCode(200)
+  summarizeClass(@Param('id') id: string, @Body() body: any) {
+    return this.svc.summarizeClass(id, body);
+  }
+
   @Delete('files/:id')
   @HttpCode(204)
   deleteFile(@Param('id') id: string) {

@@ -136,7 +136,7 @@ async function createArticle() {
               v-model="source"
               spellcheck="false"
               placeholder="// Java-Code hier einfügen…"
-              class="h-56 w-full resize-y rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-sm text-slate-800 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:ring-indigo-500/20"
+              class="h-56 w-full resize-y rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-sm text-slate-800 outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
             />
 
             <!-- Projekt-Kontext -->
@@ -149,7 +149,7 @@ async function createArticle() {
                 v-model="userContext"
                 spellcheck="false"
                 placeholder="z. B. Windchill-Hintergrund, Modulzweck, Konventionen… – fließt in jeden KI-Prompt ein und bleibt für die Session erhalten."
-                class="h-20 w-full resize-y rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:ring-indigo-500/20"
+                class="h-20 w-full resize-y rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700 outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
               />
             </label>
 
@@ -181,7 +181,7 @@ async function createArticle() {
             >Abbrechen</button>
             <button
               type="button"
-              class="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:opacity-60"
+              class="inline-flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
               :disabled="analyzing || !source.trim()"
               @click="analyze"
             >

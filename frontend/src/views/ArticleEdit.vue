@@ -126,7 +126,7 @@ async function removeRelation(id) {
         <button type="button" class="rounded-lg px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" @click="router.back()">Abbrechen</button>
         <button
           type="button"
-          class="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
+          class="rounded-lg bg-[var(--color-accent)] px-4 py-1.5 text-sm font-semibold text-[var(--color-accent-contrast)] transition hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
           :disabled="saving"
           @click="save"
         >{{ saving ? 'Speichert…' : 'Speichern' }}</button>
@@ -142,7 +142,7 @@ async function removeRelation(id) {
         <option value="">— Kategorie —</option>
         <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.icon }} {{ c.name }}</option>
       </select>
-      <button type="button" class="input cursor-pointer text-left text-slate-500 hover:text-indigo-600" @click="createCategory">+ Neue Kategorie</button>
+      <button type="button" class="input cursor-pointer text-left text-slate-500 hover:text-[var(--color-accent)]" @click="createCategory">+ Neue Kategorie</button>
       <input v-model="form.summary" placeholder="Kurzbeschreibung" class="input md:col-span-2" />
       <input v-model="form.tagsInput" placeholder="Tags (Komma-getrennt)" class="input md:col-span-2" />
     </div>
@@ -157,7 +157,7 @@ async function removeRelation(id) {
       <summary class="cursor-pointer text-sm font-semibold text-slate-700 dark:text-slate-200">Zusammenhänge ({{ relations.outgoing.length }})</summary>
       <div class="mt-3 space-y-2">
         <div v-for="rel in relations.outgoing" :key="rel.id" class="flex items-center gap-2 text-sm">
-          <span class="rounded bg-indigo-50 px-2 py-0.5 text-xs text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300">{{ rel.relation_type }}</span>
+          <span class="rounded bg-[var(--color-accent-soft)] px-2 py-0.5 text-xs text-[var(--color-accent)]">{{ rel.relation_type }}</span>
           <span class="flex-1 text-slate-700 dark:text-slate-300">{{ rel.title }}</span>
           <button type="button" class="text-rose-500 hover:text-rose-600" @click="removeRelation(rel.id)">✕</button>
         </div>
@@ -182,6 +182,6 @@ async function removeRelation(id) {
 <style scoped>
 @reference "../assets/style.css";
 .input {
-  @apply rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-indigo-500/20;
+  @apply rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100;
 }
 </style>

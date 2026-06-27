@@ -70,7 +70,7 @@ function onKeydown(e) {
             <button
               type="button"
               class="flex w-full items-center gap-3 px-4 py-2.5 text-left transition"
-              :class="i === active ? 'bg-indigo-50 dark:bg-indigo-500/15' : 'hover:bg-slate-50 dark:hover:bg-slate-800'"
+              :class="i === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-slate-50 dark:hover:bg-slate-800'"
               @mouseenter="active = i"
               @click="go(a)"
             >

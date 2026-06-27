@@ -39,6 +39,7 @@ export const api = {
   getJavaGraph: () => http('GET', '/java/graph'),
   deleteJavaFile: (id) => http('DELETE', `/java/files/${id}`),
   summarizeJavaMethod: (id, data) => http('POST', `/java/methods/${id}/summarize`, data),
+  summarizeJavaClass: (id, data) => http('POST', `/java/files/${id}/summarize-class`, data),
   linkJavaArticle: (id, data) => http('PUT', `/java/files/${id}`, data),
 
   // KI-Analyse-Queue: erst start (POST), dann den SSE-Stream oeffnen (EventSource ist kein

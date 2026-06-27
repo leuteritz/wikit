@@ -45,7 +45,7 @@ function jump(id) {
           :class="[
             item.level === 3 ? 'pl-6' : 'pl-3',
             activeId === item.id
-              ? 'border-indigo-500 font-medium text-indigo-600 dark:text-indigo-400'
+              ? 'border-[var(--color-accent)] font-medium text-[var(--color-accent)]'
               : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200',
           ]"
           @click="jump(item.id)"

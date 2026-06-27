@@ -42,7 +42,7 @@ const isActive = (slug) => route.params.slug === slug
     <div class="grid grid-cols-2 gap-2 px-3 py-3">
       <RouterLink
         to="/new"
-        class="flex w-full items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500"
+        class="flex w-full items-center justify-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 py-2 text-sm font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)]"
         @click="$emit('navigate')"
       >
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" /></svg>
@@ -81,7 +81,7 @@ const isActive = (slug) => route.params.slug === slug
               :to="`/article/${a.slug}`"
               class="block truncate rounded-md px-3 py-1.5 text-sm transition"
               :class="isActive(a.slug)
-                ? 'bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300'
+                ? 'bg-[var(--color-accent-soft)] font-medium text-[var(--color-accent)]'
                 : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'"
               @click="$emit('navigate')"
             >

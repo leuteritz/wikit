@@ -83,7 +83,7 @@ watch(() => props.article?.id, () => nextTick(enhanceCodeBlocks))
 
     <div
       ref="bodyEl"
-      class="article-body prose prose-slate max-w-none dark:prose-invert prose-headings:scroll-mt-20 prose-a:text-indigo-600 dark:prose-a:text-indigo-400"
+      class="article-body prose prose-slate max-w-none dark:prose-invert prose-headings:scroll-mt-20 prose-a:text-[var(--color-accent)]"
       v-html="article.content_html"
     />
 
@@ -98,11 +98,11 @@ watch(() => props.article?.id, () => nextTick(enhanceCodeBlocks))
           v-for="rel in [...article.relations.outgoing, ...article.relations.incoming]"
           :key="rel.id"
           :to="`/article/${rel.slug}`"
-          class="group flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition hover:border-indigo-300 hover:shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:hover:border-indigo-500/40"
+          class="group flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition hover:border-[var(--color-accent)] hover:shadow-sm dark:border-slate-800 dark:bg-slate-900"
         >
-          <span class="rounded-md bg-indigo-50 px-2 py-1 text-[11px] font-medium text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300">{{ rel.relation_type }}</span>
-          <span class="min-w-0 flex-1 truncate text-sm font-medium text-slate-700 group-hover:text-indigo-600 dark:text-slate-200">{{ rel.title }}</span>
-          <svg class="h-4 w-4 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+          <span class="rounded-md bg-[var(--color-accent-soft)] px-2 py-1 text-[11px] font-medium text-[var(--color-accent)]">{{ rel.relation_type }}</span>
+          <span class="min-w-0 flex-1 truncate text-sm font-medium text-slate-700 group-hover:text-[var(--color-accent)] dark:text-slate-200">{{ rel.title }}</span>
+          <svg class="h-4 w-4 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-[var(--color-accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
         </RouterLink>
       </div>
     </section>
