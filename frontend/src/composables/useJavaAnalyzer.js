@@ -11,6 +11,9 @@ const state = reactive({
   // Projekt-/Windchill-Kontext: bleibt fuer die gesamte Session erhalten und wird von
   // Modal UND Artikel-Panel gemeinsam genutzt (in jeden KI-Prompt eingespeist).
   userContext: '',
+  // Zuletzt analysierte/ausgewaehlte Datei -> die Landing-Seite setzt sie, der Analyzer
+  // liest sie beim Mount aus (Vorauswahl nach Upload). Danach im Analyzer zuruecksetzen.
+  lastFileId: null,
 })
 
 async function fetchFiles() {

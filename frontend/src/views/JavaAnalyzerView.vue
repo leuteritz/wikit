@@ -11,14 +11,21 @@ import JavaCodeEditor from '../components/java/JavaCodeEditor.vue'
 import JavaDependencyGraph from '../components/java/JavaDependencyGraph.vue'
 import JavaClassDetail from '../components/java/JavaClassDetail.vue'
 
-const { files, fetchFiles, analyzeCode, analyzing, error, userContext } = useJavaAnalyzer()
+const { files, fetchFiles, analyzeCode, analyzing, error, userContext, lastFileId } = useJavaAnalyzer()
 const { enqueueClass, progressFor } = useJavaQueue()
 
 const source = ref('')
 const filename = ref('')
 const selectedFileId = ref(null)
 
-onMounted(fetchFiles)
+onMounted(async () => {
+  await fetchFiles()
+  // Vorauswahl aus der Landing-Analyse uebernehmen (danach zuruecksetzen).
+  if (lastFileId.value != null) {
+    selectedFileId.value = lastFileId.value
+    lastFileId.value = null
+  }
+})
 
 const sortedFiles = computed(() =>
   [...files.value].sort((a, b) => a.class_name.localeCompare(b.class_name)),
