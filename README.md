@@ -24,22 +24,23 @@ enough for any topic: dev notes, ops runbooks, study notes, recipes — whatever
 | Layer     | Tech |
 |-----------|------|
 | Frontend  | Vue 3 (Composition API), Vite, Vue Router, TailwindCSS v4, Fuse.js, Vue Flow, CodeMirror |
-| Backend   | Node.js, Express, better-sqlite3 (no ORM) |
+| Backend   | Node.js, NestJS (TypeScript), TypeORM (better-sqlite3 driver) |
 | Rendering | markdown-it + Shiki + sanitize-html (server-side; result cached in the DB) |
 | Java parsing | `java-parser` (pure JS, no JDK/`javac` — runs on a Pi/ARM64) |
 | AI summaries | [Ollama](https://ollama.com) — optional, local, no API key (defaults to `phi3:mini`) |
-| Database  | SQLite with a normalized schema (articles, categories, tags, relations) + FTS5 |
+| Database  | SQLite with a normalized schema (articles, categories, tags, relations) + FTS5 (full-text index kept via raw SQL — TypeORM has no FTS5 support) |
 
 ## Architecture
 
 ```text
-Browser (Vue 3 SPA)  ──/api──►  Express  ──►  SQLite (better-sqlite3 + FTS5)
+Browser (Vue 3 SPA)  ──/api──►  NestJS  ──TypeORM──►  SQLite (better-sqlite3 + FTS5)
         ▲                            │
         └──── static SPA  ◄──────────┘     (one process, one port)
 ```
 
 Markdown is rendered **once on save** (HTML + table of contents cached in the DB), so reading is
-instant and the client bundle stays small.
+instant and the client bundle stays small. The NestJS backend compiles to plain JavaScript
+(`backend/dist`) — at runtime it's still a single Node process serving the API + SPA on one port.
 
 ## Quick start
 
@@ -47,7 +48,7 @@ Requires **Node.js ≥ 20**.
 
 ```bash
 npm install        # installs backend + frontend (npm workspaces)
-npm run dev        # API on :3000 + Vite dev server on :5173 (proxied)
+npm run dev        # NestJS API on :3000 (nest start --watch) + Vite dev on :5173 (proxied)
 # open http://localhost:5173
 ```
 
@@ -56,10 +57,13 @@ On first run an SQLite database is created and seeded with a few demo articles.
 ### Production
 
 ```bash
-npm run build      # frontend -> frontend/dist
-npm start          # Express serves the API + SPA on one port
+npm run build      # backend (nest build -> backend/dist) + frontend (-> frontend/dist)
+npm start          # runs node backend/dist/main.js — serves API + SPA on one port
 # open http://localhost:3000
 ```
+
+> **Note:** the backend is TypeScript now, so `npm run build` is required before `npm start`
+> (and after pulling updates). `npm run dev` compiles on the fly and needs no separate build.
 
 ## Your data stays local
 

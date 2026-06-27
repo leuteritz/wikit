@@ -1,5 +1,6 @@
 node_modules/
 frontend/dist/
+backend/dist/
 
 # --- User data: NEVER commit personal content ---
 # The actual database (your knowledge base) stays local.

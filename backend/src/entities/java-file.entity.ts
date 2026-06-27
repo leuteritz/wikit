@@ -1,0 +1,30 @@
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+
+// Hinweis: Die Spalte heisst `package`, doch `package` ist im strict-mode (Klassenkoerper sind
+// immer strict) ein reserviertes Wort -> Property heisst `pkg`, gemappt auf Spalte 'package'.
+@Entity('java_files')
+export class JavaFile {
+  @PrimaryGeneratedColumn()
+  id: number;
+
+  @Column({ name: 'article_id', type: 'integer', nullable: true })
+  article_id: number | null;
+
+  @Column({ type: 'text' })
+  filename: string;
+
+  @Column({ name: 'package', type: 'text', nullable: true })
+  pkg: string | null;
+
+  @Column({ name: 'class_name', type: 'text' })
+  class_name: string;
+
+  @Column({ name: 'class_type', type: 'text', nullable: true })
+  class_type: string | null;
+
+  @Column({ name: 'raw_source', type: 'text' })
+  raw_source: string;
+
+  @Column({ name: 'created_at', type: 'text', nullable: true, insert: false, update: false })
+  created_at: string;
+}

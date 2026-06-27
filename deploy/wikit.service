@@ -10,6 +10,8 @@ Type=simple
 # Adjust User and path to your installation:
 User=pi
 WorkingDirectory=/home/pi/wikit
+# `npm start` runs `node backend/dist/main.js`. The TypeScript backend must be compiled first:
+# run `npm run build` (builds backend/dist + frontend/dist) before enabling/after each update.
 ExecStart=/usr/bin/npm start
 Restart=always
 RestartSec=5
