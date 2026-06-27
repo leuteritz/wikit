@@ -8,6 +8,7 @@ import { AppController } from './app.controller';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
 import { CommonModule } from './common/common.module';
 import { ALL_ENTITIES } from './entities';
+import { AnalysisModule } from './analysis/analysis.module';
 import { ArticlesModule } from './articles/articles.module';
 import { CategoriesModule } from './categories/categories.module';
 import { JavaModule } from './java/java.module';
@@ -55,6 +56,7 @@ const staticImports = fs.existsSync(FRONTEND_DIST)
     SearchModule,
     RelationsModule,
     JavaModule,
+    AnalysisModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_FILTER, useClass: AllExceptionsFilter }],

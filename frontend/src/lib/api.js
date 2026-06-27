@@ -35,8 +35,14 @@ export const api = {
   analyzeJava: (data) => http('POST', '/java/analyze', data),
   listJavaFiles: () => http('GET', '/java/files'),
   getJavaFile: (id) => http('GET', `/java/files/${id}`),
+  getJavaFileByArticle: (articleId) => http('GET', `/java/files/by-article/${articleId}`),
   getJavaGraph: () => http('GET', '/java/graph'),
   deleteJavaFile: (id) => http('DELETE', `/java/files/${id}`),
-  summarizeJavaMethod: (id) => http('POST', `/java/methods/${id}/summarize`),
+  summarizeJavaMethod: (id, data) => http('POST', `/java/methods/${id}/summarize`, data),
   linkJavaArticle: (id, data) => http('PUT', `/java/files/${id}`, data),
+
+  // KI-Analyse-Queue: erst start (POST), dann den SSE-Stream oeffnen (EventSource ist kein
+  // fetch, daher bleibt nur die URL-Konstruktion hier in api.js zentralisiert).
+  startJavaAnalysis: (articleId, data) => http('POST', `/analysis/${articleId}/start`, data),
+  analysisStreamUrl: (articleId) => `${BASE}/analysis/stream/${articleId}`,
 }

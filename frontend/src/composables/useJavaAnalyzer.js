@@ -8,6 +8,9 @@ const state = reactive({
   loading: false,
   analyzing: false,
   error: '',
+  // Projekt-/Windchill-Kontext: bleibt fuer die gesamte Session erhalten und wird von
+  // Modal UND Artikel-Panel gemeinsam genutzt (in jeden KI-Prompt eingespeist).
+  userContext: '',
 })
 
 async function fetchFiles() {
@@ -46,7 +49,7 @@ export function useJavaAnalyzer() {
       await api.deleteJavaFile(id)
       await fetchFiles()
     },
-    summarizeMethod: (id) => api.summarizeJavaMethod(id),
+    summarizeMethod: (id, data) => api.summarizeJavaMethod(id, data),
     linkArticle: (id, articleId) => api.linkJavaArticle(id, { article_id: articleId }),
   }
 }

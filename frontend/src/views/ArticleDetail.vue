@@ -5,18 +5,26 @@ import { api } from '../lib/api.js'
 import { useArticles } from '../composables/useArticles.js'
 import ArticleView from '../components/ArticleView.vue'
 import TableOfContents from '../components/TableOfContents.vue'
+import JavaAnalysisPanel from '../components/java/JavaAnalysisPanel.vue'
 
 const props = defineProps({ slug: { type: String, required: true } })
 const router = useRouter()
 const { remove } = useArticles()
 
 const article = ref(null)
+const javaFile = ref(null)
 const loading = ref(true)
 const error = ref('')
 
 onMounted(async () => {
   try {
     article.value = await api.getArticle(props.slug)
+    // Verknuepfte Java-Klasse laden (404 = keine -> still ignorieren).
+    try {
+      javaFile.value = await api.getJavaFileByArticle(article.value.id)
+    } catch {
+      javaFile.value = null
+    }
   } catch (e) {
     error.value = e.message
   } finally {
@@ -42,6 +50,7 @@ async function onDelete(a) {
 
     <div v-else-if="article" class="mx-auto flex max-w-6xl gap-10">
       <div class="min-w-0 flex-1 pb-16">
+        <JavaAnalysisPanel v-if="javaFile" :file="javaFile" :article-id="article.id" />
         <ArticleView :article="article" @delete="onDelete" />
       </div>
       <aside class="hidden w-56 shrink-0 xl:block">

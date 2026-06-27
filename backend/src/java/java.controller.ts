@@ -20,16 +20,23 @@ export class JavaController {
     return this.svc.graph();
   }
 
+  // Spezifischer als /files/:id -> MUSS davor stehen, sonst faengt :id "by-article" ab.
+  @Get('files/by-article/:articleId')
+  getFileByArticle(@Param('articleId') articleId: string) {
+    return this.svc.getFileByArticle(articleId);
+  }
+
   @Get('files/:id')
   getFile(@Param('id') id: string) {
     return this.svc.getFile(id);
   }
 
   // KI-Summary signalisiert "Ollama down" ueber ein Flag in einer 200-Antwort (kein Fehlerstatus).
+  // Body optional: { userContext } -> Projekt-Kontext fuer den Prompt.
   @Post('methods/:id/summarize')
   @HttpCode(200)
-  summarize(@Param('id') id: string) {
-    return this.svc.summarize(id);
+  summarize(@Param('id') id: string, @Body() body: any) {
+    return this.svc.summarize(id, body);
   }
 
   @Delete('files/:id')

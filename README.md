@@ -15,7 +15,7 @@ enough for any topic: dev notes, ops runbooks, study notes, recipes — whatever
 - **Categories & tags**, flexible and extensible
 - **Per-article table of contents** with scroll-spy (generated from your headings)
 - **Relationship graph**: link articles with typed relations and explore them visually (Vue Flow)
-- **Java code analysis**: paste/upload `.java`, parse it locally (no JDK), explore a dependency graph, get optional **local AI** method summaries (Ollama), and export any class as a searchable wiki article
+- **Java code analysis**: paste/upload `.java` (sidebar **"Java analysieren"**), parse it locally (no JDK), explore a dependency graph, export any class as a searchable wiki article, then run a **queued, streamed AI analysis** (Ollama) that describes the class and every method live on the article — optionally enriched with your own **project context** (e.g. Windchill)
 - **Light & dark mode**
 - **One SQLite file** as the database → backup = copy the file
 
@@ -27,7 +27,7 @@ enough for any topic: dev notes, ops runbooks, study notes, recipes — whatever
 | Backend   | Node.js, NestJS (TypeScript), TypeORM (better-sqlite3 driver) |
 | Rendering | markdown-it + Shiki + sanitize-html (server-side; result cached in the DB) |
 | Java parsing | `java-parser` (pure JS, no JDK/`javac` — runs on a Pi/ARM64) |
-| AI summaries | [Ollama](https://ollama.com) — optional, local, no API key (defaults to `phi3:mini`) |
+| AI summaries | [Ollama](https://ollama.com) — optional, local, no API key (defaults to `qwen2.5-coder:3b`) |
 | Database  | SQLite with a normalized schema (articles, categories, tags, relations) + FTS5 (full-text index kept via raw SQL — TypeORM has no FTS5 support) |
 
 ## Architecture
@@ -109,11 +109,15 @@ back to the parsed Javadoc.
 curl -fsSL https://ollama.com/install.sh | sh
 # Windows / macOS: download the installer from https://ollama.com
 
-ollama pull phi3:mini      # ~2 GB, small enough for a Pi
-ollama list                # verify it's there; the server listens on :11434
+ollama pull qwen2.5-coder:3b   # ~2 GB, code-tuned, small enough for a Pi
+ollama list                    # verify it's there; the server listens on :11434
 ```
 
-Then start Wikit and click **"KI-Zusammenfassung erzeugen"** on a method.
+Then start Wikit, open a wiki article linked to a Java class and click **"KI-Analyse starten"**:
+the class summary and each method description are generated sequentially by a server-side queue and
+streamed onto the page via Server-Sent Events (no reload). Click an individual method name to
+regenerate just that one. An optional **project context** field (e.g. Windchill background) is added
+to every prompt, and previously analyzed methods feed back in as context via a Java FTS5 index.
 
 You can run the model server three ways:
 
@@ -128,7 +132,7 @@ Configuration (all optional, set as env vars):
 | Variable | Default | Purpose |
 |---|---|---|
 | `OLLAMA_URL` | `http://localhost:11434/api/generate` | Ollama `generate` endpoint |
-| `OLLAMA_MODEL` | `phi3:mini` | model to use (e.g. `mistral:7b`) |
+| `OLLAMA_MODEL` | `qwen2.5-coder:3b` | model to use (e.g. `phi3:mini`, `mistral:7b`) |
 | `OLLAMA_TIMEOUT_MS` | `20000` | abort + fall back if the model is too slow |
 
 ## Deploy on a Raspberry Pi
@@ -146,12 +150,13 @@ npm start          # reachable at http://raspberrypi.local:3000
 
 ### Optional: AI summaries on the Pi
 
-Ollama runs on a Pi 4/5 (ARM64), but a 7B model is slow — stick to a small one like `phi3:mini`,
-and remember generation is **on demand per method**, so the rest of the app stays snappy:
+Ollama runs on a Pi 4/5 (ARM64), but a 7B model is slow — stick to a small, code-tuned one like
+`qwen2.5-coder:3b`, and remember generation is **on demand / queued**, so the rest of the app stays
+snappy:
 
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh   # installs + enables the `ollama` systemd service
-ollama pull phi3:mini
+ollama pull qwen2.5-coder:3b
 ```
 
 If the Pi feels too slow, run Ollama on a stronger machine in your LAN and point Wikit at it via
@@ -188,9 +193,12 @@ cp backend/data/wiki.db ~/backups/wiki-$(date +%F).db   # backup
 | GET / POST / DELETE | `/api/relations[/:id]` | the graph |
 | POST | `/api/java/analyze` | parse a `.java` source, store it, return file + graph |
 | GET | `/api/java/files`, `/api/java/files/:id` | analyzed files (list / detail) |
-| GET | `/api/java/graph` | global class dependency graph |
-| POST | `/api/java/methods/:id/summarize` | generate an AI summary for a method (Ollama) |
+| GET | `/api/java/graph` | global class dependency graph (with AI indicators) |
+| GET | `/api/java/files/by-article/:articleId` | java file linked to a wiki article (or 404) |
+| POST | `/api/java/methods/:id/summarize` | (re)generate an AI summary for a single method (Ollama) |
 | PUT / DELETE | `/api/java/files/:id` | link an article / delete the file |
+| POST | `/api/analysis/:articleId/start` | queue a full AI analysis (class + every method) of a linked java class |
+| GET | `/api/analysis/stream/:articleId` | Server-Sent Events: live progress of the queued analysis |
 
 ## License
 

@@ -3,11 +3,17 @@ import { computed, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useArticles } from '../composables/useArticles.js'
 
-defineEmits(['navigate'])
+const emit = defineEmits(['navigate', 'open-java'])
 
 const { articles, categories } = useArticles()
 const route = useRoute()
 const collapsed = ref({}) // slug -> bool
+
+function openJavaModal() {
+  // Modal lebt in App.vue (einzige Instanz; das Mobile-Drawer unmountet beim Navigieren).
+  emit('open-java')
+  emit('navigate')
+}
 
 // Artikel nach Kategorie gruppieren (inkl. "Ohne Kategorie").
 const groups = computed(() => {
@@ -33,15 +39,23 @@ const isActive = (slug) => route.params.slug === slug
 
 <template>
   <nav class="flex h-full flex-col">
-    <div class="px-3 py-3">
+    <div class="grid grid-cols-2 gap-2 px-3 py-3">
       <RouterLink
         to="/new"
-        class="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500"
+        class="flex w-full items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500"
         @click="$emit('navigate')"
       >
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" /></svg>
         Neuer Artikel
       </RouterLink>
+      <button
+        type="button"
+        class="flex w-full items-center justify-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 shadow-sm transition hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500/20"
+        @click="openJavaModal"
+      >
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m8 16-4-4 4-4M16 8l4 4-4 4M14 4l-4 16" /></svg>
+        Java analysieren
+      </button>
     </div>
 
     <div class="flex-1 overflow-y-auto px-2 pb-6">

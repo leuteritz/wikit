@@ -21,7 +21,7 @@ Environment=HOST=0.0.0.0
 # Optional: separate DB path for easy backup
 # Environment=WIKI_DB=/home/pi/wikit/backend/data/wiki.db
 # Optional: Java Analyzer AI summaries via Ollama (local model, no API key).
-# Environment=OLLAMA_MODEL=phi3:mini
+# Environment=OLLAMA_MODEL=qwen2.5-coder:3b
 # Point at Ollama on another LAN machine instead of localhost:
 # Environment=OLLAMA_URL=http://192.168.1.50:11434/api/generate
 

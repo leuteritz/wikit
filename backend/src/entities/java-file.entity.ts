@@ -25,6 +25,15 @@ export class JavaFile {
   @Column({ name: 'raw_source', type: 'text' })
   raw_source: string;
 
+  @Column({ type: 'text', nullable: true })
+  description: string | null; // KI-Klassenbeschreibung (Markdown)
+
+  @Column({ name: 'description_html', type: 'text', nullable: true })
+  description_html: string | null; // gerenderte Beschreibung (Cache)
+
+  @Column({ name: 'generated_at', type: 'text', nullable: true })
+  generated_at: string | null;
+
   @Column({ name: 'created_at', type: 'text', nullable: true, insert: false, update: false })
   created_at: string;
 }

@@ -23,6 +23,9 @@ export class JavaMethod {
   @Column({ name: 'ai_summary', type: 'text', nullable: true })
   ai_summary: string | null;
 
+  @Column({ type: 'text', nullable: true })
+  body: string | null; // geparster Methodenrumpf (Offset-basiert)
+
   @Column({ name: 'created_at', type: 'text', nullable: true, insert: false, update: false })
   created_at: string;
 }

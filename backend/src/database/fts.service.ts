@@ -35,6 +35,58 @@ export class FtsService {
     );
   }
 
+  // Aktualisiert den FTS-Eintrag einer analysierten Java-Datei. Buendelt Klassenname, Package,
+  // Methodensignaturen und gespeicherte KI-/Javadoc-/Body-Texte -> die Klasse wird als
+  // Wissensquelle fuer kuenftige Prompt-Anreicherung (searchJava) durchsuchbar.
+  async indexJavaFile(manager: EntityManager, fileId: number): Promise<void> {
+    const fileRows = await manager.query(
+      'SELECT id, class_name, package, description FROM java_files WHERE id = ?',
+      [fileId],
+    );
+    const f = fileRows[0];
+    await manager.query('DELETE FROM java_fts WHERE rowid = ?', [fileId]);
+    if (!f) return;
+    const methodRows = await manager.query(
+      `SELECT method_name, return_type, parameters, javadoc, ai_summary
+       FROM java_methods WHERE file_id = ? ORDER BY id`,
+      [fileId],
+    );
+    const methods = methodRows
+      .map((m: any) => `${m.return_type || 'void'} ${m.method_name}`)
+      .join(' ');
+    const descriptions = [f.description || '']
+      .concat(methodRows.map((m: any) => `${m.method_name}: ${m.ai_summary || m.javadoc || ''}`))
+      .filter(Boolean)
+      .join('\n');
+    await manager.query(
+      'INSERT INTO java_fts (rowid, class_name, package, methods, descriptions) VALUES (?,?,?,?,?)',
+      [f.id, f.class_name, f.package || '', methods, descriptions],
+    );
+  }
+
+  // Sucht in den gespeicherten Java-Analysen nach passendem Kontext (Prompt-Enrichment).
+  // Liefert kurze Klartext-Snippets der bisher beschriebenen Klassen/Methoden.
+  async searchJava(q: string, limit = 5): Promise<string[]> {
+    const match = this.buildMatch(q);
+    if (!match) return [];
+    try {
+      const rows = await this.dataSource.query(
+        `SELECT class_name,
+                snippet(java_fts, 3, '', '', ' … ', 24) AS snippet
+         FROM java_fts
+         WHERE java_fts MATCH ?
+         ORDER BY bm25(java_fts)
+         LIMIT ?`,
+        [match, limit],
+      );
+      return rows
+        .map((r: any) => `${r.class_name}: ${(r.snippet || '').trim()}`.trim())
+        .filter((s: string) => s && !s.endsWith(':'));
+    } catch {
+      return [];
+    }
+  }
+
   // Serverseitige FTS5-Volltextsuche mit Snippet-Highlights und bm25-Ranking.
   // Liefert die rohen Artikelzeilen inkl. `snippet`; der Aufrufer serialisiert.
   async search(q: string): Promise<any[]> {

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { MarkdownService } from './markdown.service';
 import { Article } from '../entities/article.entity';
 import { ArticleTag } from '../entities/article-tag.entity';
 import { Category } from '../entities/category.entity';
@@ -15,7 +16,16 @@ import { Tag } from '../entities/tag.entity';
 // (Frontend-Contract): siehe Tests in der README/Plan-Datei.
 @Injectable()
 export class SerializerService {
-  constructor(@InjectDataSource() private readonly ds: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly ds: DataSource,
+    private readonly markdown: MarkdownService,
+  ) {}
+
+  // Eine Methoden-Signatur als hervorgehobener Java-Codeblock (Shiki, server-seitig).
+  private buildSignature(m: { return_type?: string | null; method_name: string; parameters: any[] }): string {
+    const params = (m.parameters || []).map((p: any) => `${p.type} ${p.name}`.trim()).join(', ');
+    return `${m.return_type || 'void'} ${m.method_name}(${params})`;
+  }
 
   private safeJson(str: any, fallback: any): any {
     try {
@@ -102,20 +112,33 @@ export class SerializerService {
     if (!row) return null;
     const pkg = row.pkg !== undefined ? row.pkg : row.package;
 
-    const methods = (
-      await this.ds.getRepository(JavaMethod).find({
-        where: { file_id: row.id },
-        order: { id: 'ASC' },
-        select: {
-          id: true,
-          method_name: true,
-          return_type: true,
-          parameters: true,
-          javadoc: true,
-          ai_summary: true,
-        },
-      })
-    ).map((m) => ({ ...m, parameters: this.safeJson(m.parameters, []) }));
+    const methodRows = await this.ds.getRepository(JavaMethod).find({
+      where: { file_id: row.id },
+      order: { id: 'ASC' },
+      select: {
+        id: true,
+        method_name: true,
+        return_type: true,
+        parameters: true,
+        javadoc: true,
+        ai_summary: true,
+        body: true,
+      },
+    });
+    // signature_html (Shiki java) + summary_html (KI-Text als Markdown) server-seitig rendern,
+    // damit das Frontend kein Highlighter-Bundle laedt (Architekturprinzip).
+    const methods = await Promise.all(
+      methodRows.map(async (m) => {
+        const parameters = this.safeJson(m.parameters, []);
+        const { html: signatureHtml } = await this.markdown.renderMarkdown(
+          '```java\n' + this.buildSignature({ ...m, parameters }) + '\n```',
+        );
+        const { html: summaryHtml } = m.ai_summary
+          ? await this.markdown.renderMarkdown(m.ai_summary)
+          : { html: '' };
+        return { ...m, parameters, signature_html: signatureHtml, summary_html: summaryHtml };
+      }),
+    );
 
     const dependencies = (
       await this.ds.getRepository(JavaDependency).find({
@@ -141,6 +164,9 @@ export class SerializerService {
       package: pkg,
       class_name: row.class_name,
       class_type: row.class_type,
+      description: row.description ?? null,
+      description_html: row.description_html ?? null,
+      generated_at: row.generated_at ?? null,
       created_at: row.created_at,
       methods,
       dependencies,
@@ -153,8 +179,18 @@ export class SerializerService {
   // analysierten Klassen (Import-FQN matcht package.class_name exakt, sonst class_name).
   async graphForJavaFiles(): Promise<{ nodes: any[]; edges: any[] }> {
     const files = await this.ds.getRepository(JavaFile).find({
-      select: { id: true, pkg: true, class_name: true, class_type: true },
+      select: { id: true, pkg: true, class_name: true, class_type: true, description: true },
     });
+
+    // Pro Datei: wie viele Methoden haben eine KI-Beschreibung (ai_summary != javadoc)?
+    const methodStats: Array<{ file_id: number; analyzed: number }> = await this.ds.query(
+      `SELECT file_id,
+              SUM(CASE WHEN ai_summary IS NOT NULL AND TRIM(ai_summary) <> ''
+                        AND ai_summary <> COALESCE(javadoc,'') THEN 1 ELSE 0 END) AS analyzed
+       FROM java_methods GROUP BY file_id`,
+    );
+    const analyzedByFile = new Map<number, number>();
+    for (const s of methodStats) analyzedByFile.set(s.file_id, Number(s.analyzed) || 0);
 
     const byFqn = new Map<string, number>();
     const byClass = new Map<string, number[]>();
@@ -189,6 +225,9 @@ export class SerializerService {
       package: f.pkg,
       class_name: f.class_name,
       class_type: f.class_type,
+      // KI-Indikatoren fuer den Graphen.
+      analyzed: !!(f.description && f.description.trim()),
+      methods_analyzed: analyzedByFile.get(f.id) || 0,
     }));
     return { nodes, edges };
   }

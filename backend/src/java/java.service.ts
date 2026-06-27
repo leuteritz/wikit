@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { FtsService } from '../database/fts.service';
+import { MarkdownService } from '../common/markdown.service';
 import { OllamaService } from '../common/ollama.service';
 import { SerializerService } from '../common/serializer.service';
 import { parseJava } from '../common/java-parser';
@@ -17,6 +18,7 @@ export class JavaService {
     @InjectDataSource() private readonly ds: DataSource,
     private readonly serializer: SerializerService,
     private readonly ollama: OllamaService,
+    private readonly markdown: MarkdownService,
     private readonly fts: FtsService,
   ) {}
 
@@ -64,12 +66,16 @@ export class JavaService {
           parameters: JSON.stringify(m.parameters),
           javadoc: m.javadoc || '',
           ai_summary: m.javadoc || '',
+          body: m.body || '',
         });
       }
 
       for (const fqn of parsed.imports) {
         await manager.getRepository(JavaDependency).insert({ from_file_id: fileId, to_class_name: fqn });
       }
+
+      // Klasse sofort in den Java-FTS aufnehmen (Wissensquelle fuer kuenftige Prompt-Anreicherung).
+      await this.fts.indexJavaFile(manager, fileId);
     });
 
     const row = await this.ds.getRepository(JavaFile).findOne({ where: { id: fileId } });
@@ -97,8 +103,10 @@ export class JavaService {
     return this.serializer.serializeJavaFile(row, { withSource: true });
   }
 
-  // On-demand KI-Zusammenfassung fuer eine Methode (async, ausserhalb der Transaktion).
-  async summarize(idParam: string): Promise<any> {
+  // On-demand KI-Beschreibung fuer EINE Methode (async, ausserhalb der Transaktion).
+  // Body optional `{ userContext }` -> Projekt-Kontext fliesst in den Prompt ein.
+  // Nutzt den geparsten Methodenrumpf (generateMethodDescription) und pflegt den Java-FTS.
+  async summarize(idParam: string, body?: any): Promise<any> {
     const id = Number(idParam);
     const method = await this.ds.getRepository(JavaMethod).findOne({ where: { id } });
     if (!method) throw new NotFoundException('Methode nicht gefunden');
@@ -106,24 +114,39 @@ export class JavaService {
       .getRepository(JavaFile)
       .findOne({ where: { id: method.file_id }, select: { class_name: true } });
 
-    const summary = await this.ollama.generateSummary({
+    const summary = await this.ollama.generateMethodDescription({
       className: file?.class_name || '',
       method: { ...method, parameters: this.safeJson(method.parameters, []) },
+      context: body?.userContext,
     });
 
     // Fallback: ist Ollama nicht erreichbar, bleibt der Javadoc/bisherige Text erhalten.
     const ollamaUnavailable = !summary;
     const finalSummary = summary || method.ai_summary || method.javadoc || '';
 
+    // Markdown -> HTML vor der Transaktion rendern (async/teuer ausserhalb der Tx).
+    const { html: summaryHtml } = await this.markdown.renderMarkdown(finalSummary);
+
     await this.ds.transaction(async (manager) => {
       await manager.getRepository(JavaMethod).update({ id }, { ai_summary: finalSummary });
+      await this.fts.indexJavaFile(manager, method.file_id);
     });
 
     const updated = await this.ds.getRepository(JavaMethod).findOne({ where: { id } });
     return {
       method: { ...updated, parameters: this.safeJson(updated!.parameters, []) },
+      summary_html: summaryHtml,
       ollama_unavailable: ollamaUnavailable,
     };
+  }
+
+  // Java-Datei zu einem Artikel (article_id) holen -> Live-Panel auf dem Wiki-Artikel.
+  // Liefert null (Controller -> 404), wenn der Artikel keine verknuepfte Klasse hat.
+  async getFileByArticle(articleIdParam: string): Promise<any> {
+    const articleId = Number(articleIdParam);
+    const row = await this.ds.getRepository(JavaFile).findOne({ where: { article_id: articleId } });
+    if (!row) throw new NotFoundException('Keine Java-Klasse mit diesem Artikel verknuepft');
+    return this.serializer.serializeJavaFile(row, { withSource: true });
   }
 
   // Datei + Methoden + Dependencies loeschen (CASCADE). Verknuepfter Artikel bleibt bestehen.

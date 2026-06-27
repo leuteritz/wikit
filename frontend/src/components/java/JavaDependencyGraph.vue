@@ -41,24 +41,28 @@ async function load() {
     nodes.value = rawNodes.map((node, i) => {
       const angle = n > 1 ? (2 * Math.PI * i) / n - Math.PI / 2 : 0
       const color = TYPE_COLORS[node.class_type] || '#64748b'
+      // Analysierte Klassen (KI-Klassenbeschreibung vorhanden) erhalten ein ✨ + Glow.
+      const label = node.analyzed ? `✨ ${node.class_name}` : node.class_name
       return {
         id: String(node.id),
         position: n > 1
           ? { x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) }
           : { x: cx, y: cy },
-        data: { fileId: node.id },
-        label: node.class_name,
+        data: { fileId: node.id, analyzed: node.analyzed, methodsAnalyzed: node.methods_analyzed },
+        label,
         style: {
           background: color,
           color: '#fff',
-          border: 'none',
+          border: node.analyzed ? '2px solid #fbbf24' : 'none',
           borderRadius: '10px',
           padding: '8px 12px',
           fontSize: '12px',
           fontWeight: '600',
           width: '180px',
           textAlign: 'center',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+          boxShadow: node.analyzed
+            ? '0 0 0 3px rgba(251,191,36,0.35), 0 2px 8px rgba(0,0,0,0.15)'
+            : '0 2px 8px rgba(0,0,0,0.15)',
         },
       }
     })
@@ -110,6 +114,10 @@ function onNodeClick({ node }) {
       <div v-for="(color, type) in TYPE_COLORS" :key="type" class="flex items-center gap-2">
         <span class="h-3 w-3 rounded-full" :style="{ background: color }" />
         <span class="capitalize text-slate-600 dark:text-slate-300">{{ type }}</span>
+      </div>
+      <div class="mt-1 flex items-center gap-2 border-t border-slate-200 pt-1 dark:border-slate-700">
+        <span class="grid h-3 w-3 place-items-center rounded-full ring-2 ring-amber-400" />
+        <span class="text-slate-600 dark:text-slate-300">✨ KI-analysiert</span>
       </div>
     </div>
   </div>

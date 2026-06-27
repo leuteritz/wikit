@@ -9,6 +9,7 @@ export interface JavaMethodInfo {
   return_type: string;
   parameters: Array<{ type: string; name: string }>;
   javadoc: string;
+  body: string;
 }
 
 export interface JavaClassInfo {
@@ -65,6 +66,21 @@ function findFirst(node: any, name: string): any {
 function minOffset(node: any): number {
   const toks = collectTokens(node);
   return toks.length ? Math.min(...toks.map((t) => t.startOffset)) : Infinity;
+}
+
+// Methodenrumpf rekonstruieren: Spannweite der methodBody-Tokens aus dem Quelltext schneiden.
+// chevrotain-Tokens haben startOffset/endOffset (endOffset = Index des letzten Zeichens).
+// Leerer String bei abstract-/Interface-Methoden ohne Body.
+function bodyText(methodNode: any, source: string): string {
+  const bodyNode = findFirst(methodNode, 'methodBody');
+  if (!bodyNode) return '';
+  const toks = collectTokens(bodyNode);
+  if (!toks.length) return '';
+  const start = Math.min(...toks.map((t) => t.startOffset));
+  const end = Math.max(...toks.map((t) => (t.endOffset ?? t.startOffset)));
+  const slice = source.slice(start, end + 1).trim();
+  // Reines ';' (= kein Body) nicht als Rumpf zaehlen.
+  return slice === ';' ? '' : slice;
 }
 
 // Typ-Text aus den Tokens rekonstruieren (z. B. "List<String>", "int", "String[]").
@@ -164,6 +180,7 @@ function extractMethods(typeNode: any, blocks: any[], source: string): JavaMetho
       return_type: returnType,
       parameters: params,
       javadoc: javadocFor(minOffset(mNode), blocks, source),
+      body: bodyText(mNode, source),
     });
   }
   return methods;

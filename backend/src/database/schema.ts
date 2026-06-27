@@ -55,14 +55,17 @@ CREATE VIRTUAL TABLE IF NOT EXISTS articles_fts USING fts5(
 );
 
 CREATE TABLE IF NOT EXISTS java_files (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  article_id  INTEGER REFERENCES articles(id) ON DELETE SET NULL,
-  filename    TEXT NOT NULL,
-  package     TEXT,
-  class_name  TEXT NOT NULL,
-  class_type  TEXT CHECK(class_type IN ('class','interface','enum','annotation')),
-  raw_source  TEXT NOT NULL,
-  created_at  TEXT DEFAULT (datetime('now'))
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  article_id       INTEGER REFERENCES articles(id) ON DELETE SET NULL,
+  filename         TEXT NOT NULL,
+  package          TEXT,
+  class_name       TEXT NOT NULL,
+  class_type       TEXT CHECK(class_type IN ('class','interface','enum','annotation')),
+  raw_source       TEXT NOT NULL,
+  description      TEXT,           -- KI-Klassenbeschreibung (Markdown, Source of Truth)
+  description_html TEXT,           -- gerenderte Beschreibung (Cache, server-seitig)
+  generated_at     TEXT,          -- Zeitpunkt der letzten KI-Analyse
+  created_at       TEXT DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS java_methods (
@@ -73,6 +76,7 @@ CREATE TABLE IF NOT EXISTS java_methods (
   parameters  TEXT,
   javadoc     TEXT,
   ai_summary  TEXT,
+  body        TEXT,                -- geparster Methodenrumpf (Offset-basiert, KI-Kontext)
   created_at  TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_java_methods_file ON java_methods(file_id);
@@ -83,4 +87,21 @@ CREATE TABLE IF NOT EXISTS java_dependencies (
   to_class_name TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_java_deps_from ON java_dependencies(from_file_id);
+
+-- Eigener FTS5-Index fuer analysierte Java-Klassen/Methoden: macht gespeicherte
+-- KI-Beschreibungen als Prompt-Kontext (Wissensquelle) durchsuchbar. rowid = java_files.id.
+CREATE VIRTUAL TABLE IF NOT EXISTS java_fts USING fts5(
+  class_name, package, methods, descriptions,
+  tokenize = 'unicode61 remove_diacritics 2'
+);
 `;
+
+// Spaltenweise Nachruest-Migration fuer bestehende DBs: SQLite kann kein
+// `ADD COLUMN IF NOT EXISTS`, daher pro Spalte ueber PRAGMA table_info pruefen.
+// Wird nach SCHEMA in DatabaseService.onModuleInit ausgefuehrt (idempotent).
+export const COLUMN_MIGRATIONS: Array<{ table: string; column: string; ddl: string }> = [
+  { table: 'java_files', column: 'description', ddl: 'ALTER TABLE java_files ADD COLUMN description TEXT' },
+  { table: 'java_files', column: 'description_html', ddl: 'ALTER TABLE java_files ADD COLUMN description_html TEXT' },
+  { table: 'java_files', column: 'generated_at', ddl: 'ALTER TABLE java_files ADD COLUMN generated_at TEXT' },
+  { table: 'java_methods', column: 'body', ddl: 'ALTER TABLE java_methods ADD COLUMN body TEXT' },
+];

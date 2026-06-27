@@ -4,6 +4,7 @@ import { RouterLink, RouterView, useRoute } from 'vue-router'
 import AppSidebar from './components/AppSidebar.vue'
 import SearchPalette from './components/SearchPalette.vue'
 import ThemeToggle from './components/ThemeToggle.vue'
+import JavaAnalyzeModal from './components/JavaAnalyzeModal.vue'
 import { useArticles } from './composables/useArticles.js'
 import { WIKI_TITLE } from './config.js'
 
@@ -11,6 +12,7 @@ const { load } = useArticles()
 const route = useRoute()
 const searchOpen = ref(false)
 const sidebarOpen = ref(false)
+const javaModalOpen = ref(false)
 
 function onKey(e) {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
@@ -80,7 +82,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
     <div class="mx-auto flex max-w-[100rem]">
       <!-- Sidebar (Desktop) -->
       <aside class="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-72 shrink-0 border-r border-slate-200 lg:block dark:border-slate-800">
-        <AppSidebar />
+        <AppSidebar @open-java="javaModalOpen = true" />
       </aside>
 
       <!-- Sidebar (Mobile Drawer) -->
@@ -88,7 +90,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
         <div v-if="sidebarOpen" class="fixed inset-0 z-40 lg:hidden">
           <div class="absolute inset-0 bg-slate-900/40" @click="sidebarOpen = false" />
           <div class="absolute left-0 top-0 h-full w-72 border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
-            <AppSidebar @navigate="sidebarOpen = false" />
+            <AppSidebar @navigate="sidebarOpen = false" @open-java="javaModalOpen = true" />
           </div>
         </div>
       </Transition>
@@ -102,6 +104,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
     </div>
 
     <SearchPalette :open="searchOpen" @close="searchOpen = false" />
+    <JavaAnalyzeModal :open="javaModalOpen" @close="javaModalOpen = false" />
   </div>
 </template>
 
