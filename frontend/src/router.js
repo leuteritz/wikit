@@ -5,6 +5,7 @@ const routes = [
   { path: '/wiki', name: 'wiki', component: () => import('./views/WikiView.vue') },
   { path: '/graph', name: 'graph', component: () => import('./views/GraphView.vue') },
   { path: '/java', name: 'java', component: () => import('./views/JavaAnalyzerView.vue') },
+  { path: '/java/queues', name: 'java-queues', component: () => import('./views/JavaQueuesView.vue') },
   { path: '/new', name: 'new', component: () => import('./views/ArticleEdit.vue') },
   { path: '/edit/:slug', name: 'edit', component: () => import('./views/ArticleEdit.vue'), props: true },
   { path: '/article/:slug', name: 'article', component: () => import('./views/ArticleDetail.vue'), props: true },

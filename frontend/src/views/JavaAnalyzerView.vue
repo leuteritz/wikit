@@ -3,7 +3,7 @@
 //  Spalte 1: Upload (Datei/CodeMirror) + Projekt-Kontext + Liste analysierter Klassen (Queue-Badge)
 //  Spalte 2: Package-Dependency-Graph (Vue Flow)
 //  Spalte 3: vollstaendige Klassen-Doku
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { useJavaQueue } from '../composables/useJavaQueue.js'
 import { WIKI_TITLE } from '../config.js'
@@ -12,13 +12,16 @@ import JavaDependencyGraph from '../components/java/JavaDependencyGraph.vue'
 import JavaClassDetail from '../components/java/JavaClassDetail.vue'
 
 const { files, fetchFiles, analyzeCode, analyzing, error, userContext, lastFileId } = useJavaAnalyzer()
-const { enqueueClass, progressFor } = useJavaQueue()
+const { enqueueClass, enqueueMethods, queueClass, progressFor, ensurePolling } = useJavaQueue()
 
 const source = ref('')
 const filename = ref('')
 const selectedFileId = ref(null)
+const queueNotice = ref('')
 
+let releasePolling = null
 onMounted(async () => {
+  releasePolling = ensurePolling()
   await fetchFiles()
   // Vorauswahl aus der Landing-Analyse uebernehmen (danach zuruecksetzen).
   if (lastFileId.value != null) {
@@ -26,10 +29,36 @@ onMounted(async () => {
     lastFileId.value = null
   }
 })
+onUnmounted(() => releasePolling?.())
 
 const sortedFiles = computed(() =>
   [...files.value].sort((a, b) => a.class_name.localeCompare(b.class_name)),
 )
+
+// Live-Fortschritt der Queue fuer die aktuell gewaehlte Klasse (Banner unter der Kopfzeile).
+const selectedProgress = computed(() =>
+  selectedFileId.value ? progressFor(selectedFileId.value) : null,
+)
+
+async function generateClass() {
+  if (!selectedFileId.value) return
+  queueNotice.value = ''
+  try {
+    await queueClass(selectedFileId.value, { userContext: userContext.value })
+  } catch (e) {
+    queueNotice.value = e.message
+  }
+}
+
+async function generateAllMethods() {
+  if (!selectedFileId.value) return
+  queueNotice.value = ''
+  try {
+    await enqueueMethods(selectedFileId.value, { userContext: userContext.value })
+  } catch (e) {
+    queueNotice.value = e.message
+  }
+}
 
 async function onFile(e) {
   const f = e.target.files?.[0]
@@ -65,11 +94,67 @@ async function onDetailClose(payload) {
   <div class="flex h-[calc(100vh-3.5rem)] flex-col">
     <!-- Kopfzeile -->
     <div class="shrink-0 px-5 pb-3 pt-5">
-      <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-        Code-Intelligence
-      </h1>
-      <p class="text-sm text-slate-500 dark:text-slate-400">
-        Java lokal geparst · Package-Graph · KI-Dokumentation pro Klasse &amp; Methode in {{ WIKI_TITLE }}.
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+            Code-Intelligence
+          </h1>
+          <p class="text-sm text-slate-500 dark:text-slate-400">
+            Java lokal geparst · Package-Graph · KI-Dokumentation pro Klasse &amp; Methode in {{ WIKI_TITLE }}.
+          </p>
+        </div>
+
+        <!-- KI-Aktionen fuer die gewaehlte Klasse + Queues-Link -->
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 py-2 text-sm font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+            :disabled="!selectedFileId"
+            :title="selectedFileId ? '' : 'Erst eine Klasse auswählen'"
+            @click="generateClass"
+          >
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3v4M3 5h4M6 17v4M4 19h4M13 3l2.5 6.5L22 12l-6.5 2.5L13 21l-2.5-6.5L4 12l6.5-2.5z" /></svg>
+            Klasse zusammenfassen
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-accent)] px-3 py-2 text-sm font-semibold text-[var(--color-accent)] transition hover:bg-[var(--color-accent-soft)] disabled:cursor-not-allowed disabled:opacity-50"
+            :disabled="!selectedFileId"
+            :title="selectedFileId ? '' : 'Erst eine Klasse auswählen'"
+            @click="generateAllMethods"
+          >
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></svg>
+            Alle Methoden
+          </button>
+          <RouterLink
+            to="/java/queues"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0M12 7v5l3 2" /></svg>
+            Queues
+          </RouterLink>
+        </div>
+      </div>
+
+      <!-- Nicht-blockierendes Live-Banner fuer die gewaehlte Klasse -->
+      <p v-if="queueNotice" class="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-600 dark:bg-rose-500/10 dark:text-rose-400">{{ queueNotice }}</p>
+      <div
+        v-if="selectedProgress && (selectedProgress.status === 'running' || selectedProgress.status === 'queued')"
+        class="mt-3 flex items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-accent-soft)] px-3 py-2 text-sm text-[var(--color-accent)]"
+      >
+        <svg class="h-4 w-4 shrink-0 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
+        <span class="min-w-0 flex-1 truncate">
+          ⏳ Generiere Zusammenfassung
+          <template v-if="selectedProgress.current"> für <code class="font-mono">{{ selectedProgress.current.name }}()</code></template>
+          …
+        </span>
+        <span v-if="selectedProgress.total > 1" class="shrink-0 tabular-nums opacity-80">{{ selectedProgress.done }}/{{ selectedProgress.total }}</span>
+      </div>
+      <p
+        v-else-if="selectedProgress && selectedProgress.ollamaUnavailable"
+        class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
+      >
+        Ollama war nicht erreichbar – es wurde der vorhandene Javadoc-/Fallback-Text verwendet.
       </p>
     </div>
 

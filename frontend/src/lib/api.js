@@ -42,6 +42,13 @@ export const api = {
   summarizeJavaClass: (id, data) => http('POST', `/java/files/${id}/summarize-class`, data),
   linkJavaArticle: (id, data) => http('PUT', `/java/files/${id}`, data),
 
+  // Backend-gehaltene KI-Generierungs-Queue (HTTP-Polling, kein SSE). Der Zustand lebt im
+  // Server -> der Nutzer darf die Seite verlassen, die Queue laeuft weiter.
+  queueJavaClass: (id, data) => http('POST', `/java/files/${id}/queue-class`, data),
+  queueJavaMethods: (id, data) => http('POST', `/java/files/${id}/queue-methods`, data),
+  listJavaQueues: () => http('GET', '/java/queues'),
+  getJavaQueue: (id) => http('GET', `/java/queues/${id}`),
+
   // KI-Analyse-Queue: erst start (POST), dann den SSE-Stream oeffnen (EventSource ist kein
   // fetch, daher bleibt nur die URL-Konstruktion hier in api.js zentralisiert).
   startJavaAnalysis: (articleId, data) => http('POST', `/analysis/${articleId}/start`, data),

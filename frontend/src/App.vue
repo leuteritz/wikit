@@ -28,6 +28,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
 // Navigation: code-first. Analyzer zuerst, dann Wiki/Graph.
 const navLinks = [
   { to: '/java', label: 'Analyzer', icon: 'M8 16l-4-4 4-4M16 8l4 4-4 4M14 4l-4 16' },
+  { to: '/java/queues', label: 'Queues', icon: 'M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0M12 7v5l3 2' },
   { to: '/wiki', label: 'Wiki', icon: 'M4 5h11a2 2 0 0 1 2 2v12a1 1 0 0 1-1 1H6a2 2 0 0 1-2-2zM9 5v14' },
   { to: '/graph', label: 'Graph', icon: 'M5 6a2 2 0 1 0 0-.01M19 6a2 2 0 1 0 0-.01M12 18a2 2 0 1 0 0-.01M6.7 7.4 11 16M17.3 7.4 13 16' },
 ]
@@ -61,7 +62,7 @@ const navLinks = [
             :key="link.to"
             :to="link.to"
             class="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-            active-class="bg-[var(--color-accent-soft)] !text-[var(--color-accent)]"
+            exact-active-class="bg-[var(--color-accent-soft)] !text-[var(--color-accent)]"
             :title="link.label"
           >
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="link.icon" /></svg>

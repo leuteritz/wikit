@@ -1,9 +1,13 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Post, Put } from '@nestjs/common';
 import { JavaService } from './java.service';
+import { JavaQueueService } from './java-queue.service';
 
 @Controller('java')
 export class JavaController {
-  constructor(private readonly svc: JavaService) {}
+  constructor(
+    private readonly svc: JavaService,
+    private readonly queue: JavaQueueService,
+  ) {}
 
   @Post('analyze')
   analyze(@Body() body: any) {
@@ -18,6 +22,36 @@ export class JavaController {
   @Get('graph')
   graph() {
     return this.svc.graph();
+  }
+
+  // --- KI-Generierungs-Queue (Backend-Zustand, HTTP-Polling) ---------------
+
+  // Alle aktiven + abgeschlossenen Queues (fuer /java/queues).
+  @Get('queues')
+  listQueues() {
+    return this.queue.list();
+  }
+
+  // Snapshot der Queue einer Datei (fuer das Live-Banner in der Analyzer-View).
+  @Get('queues/:id')
+  getQueue(@Param('id') id: string) {
+    const job = this.queue.get(Number(id));
+    if (!job) throw new NotFoundException('Keine Queue fuer diese Datei');
+    return job;
+  }
+
+  // Klassen-Zusammenfassung in die Queue einreihen (laeuft im Hintergrund weiter).
+  @Post('files/:id/queue-class')
+  @HttpCode(202)
+  queueClass(@Param('id') id: string, @Body() body: any) {
+    return this.queue.enqueueClass(Number(id), body?.userContext);
+  }
+
+  // Alle Methoden der Datei sequentiell in die Queue einreihen.
+  @Post('files/:id/queue-methods')
+  @HttpCode(202)
+  queueMethods(@Param('id') id: string, @Body() body: any) {
+    return this.queue.enqueueMethods(Number(id), body?.userContext);
   }
 
   // Spezifischer als /files/:id -> MUSS davor stehen, sonst faengt :id "by-article" ab.

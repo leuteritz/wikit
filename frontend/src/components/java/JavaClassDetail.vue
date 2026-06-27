@@ -187,7 +187,9 @@ async function removeFile() {
             class="inline-flex items-center gap-1 rounded-md bg-[var(--color-accent-soft)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-accent)]"
           >
             <svg class="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
-            Queue läuft
+            <span v-if="queueProgress.current">{{ queueProgress.current.name }}()</span>
+            <span v-else>Queue läuft</span>
+            <span v-if="queueProgress.total > 1" class="tabular-nums opacity-70">{{ queueProgress.done }}/{{ queueProgress.total }}</span>
           </span>
         </div>
       </div>
@@ -223,6 +225,12 @@ async function removeFile() {
 
       <template v-else-if="file">
         <p v-if="notice" class="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">{{ notice }}</p>
+        <p
+          v-if="queueProgress && queueProgress.ollamaUnavailable"
+          class="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
+        >
+          Ollama war nicht erreichbar – es wird vorhandener Javadoc-/Fallback-Text verwendet.
+        </p>
 
         <!-- DOKU-TAB -->
         <template v-if="tab === 'doc'">
@@ -243,14 +251,6 @@ async function removeFile() {
             <div v-if="file.description_html" class="prose prose-sm prose-slate max-w-none dark:prose-invert" v-html="file.description_html" />
             <p v-else class="text-sm italic text-slate-500 dark:text-slate-400">Noch keine KI-Klassenbeschreibung – „Generieren" nutzt den Projekt-Kontext.</p>
           </section>
-
-          <!-- Imports -->
-          <div v-if="file.dependencies.length" class="mb-4">
-            <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Imports ({{ file.dependencies.length }})</h3>
-            <ul class="space-y-0.5">
-              <li v-for="d in file.dependencies" :key="d" class="truncate font-mono text-xs text-slate-600 dark:text-slate-300">{{ d }}</li>
-            </ul>
-          </div>
 
           <!-- Methoden -->
           <h3 class="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Methoden ({{ methodCount }})</h3>
@@ -278,11 +278,6 @@ async function removeFile() {
               <div v-show="openMethod === m.id" class="border-t border-slate-100 px-3 py-2 dark:border-slate-800">
                 <div v-if="m.summary_html" class="prose prose-sm prose-slate mb-2 max-w-none dark:prose-invert" v-html="m.summary_html" />
                 <p v-else class="mb-2 text-sm italic text-slate-400">Noch keine KI-Beschreibung.</p>
-
-                <details v-if="m.javadoc" class="mb-2">
-                  <summary class="cursor-pointer text-xs text-slate-500 dark:text-slate-400">Javadoc</summary>
-                  <pre class="mt-1 whitespace-pre-wrap rounded bg-slate-50 p-2 text-xs text-slate-600 dark:bg-slate-900 dark:text-slate-300">{{ m.javadoc }}</pre>
-                </details>
 
                 <button
                   type="button"
