@@ -49,7 +49,7 @@ function onDetailClose(payload) {
             <h1
                 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white"
             >
-                Java Test Analyzer
+                Java Test Analyzer 2 Test Rocjtog
             </h1>
             <p class="text-sm text-slate-500 dark:text-slate-400">
                 Java-Code analysieren – lokal geparst, Abhängigkeiten als Graph,
