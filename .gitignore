@@ -6,6 +6,8 @@ backend/dist/
 # The actual database (your knowledge base) stays local.
 backend/data/*.db
 backend/data/*.db-*
+# Default Docker DB directory (DATA_DIR=./data) — never commit the live wiki.db
+/data/
 # Your personal seed content. The committed demo lives in seed/articles.example/ + manifest.example.js
 backend/seed/articles/
 backend/seed/manifest.js
