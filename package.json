@@ -19,6 +19,9 @@
   "engines": {
     "node": ">=20"
   },
+  "overrides": {
+    "multer": "^2.2.0"
+  },
   "devDependencies": {
     "concurrently": "^9.1.2"
   }

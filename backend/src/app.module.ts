@@ -28,7 +28,8 @@ const staticImports = fs.existsSync(FRONTEND_DIST)
       ServeStaticModule.forRoot({
         rootPath: FRONTEND_DIST,
         // Wichtig: /api NICHT vom SPA-Fallback schlucken lassen (sonst HTML statt JSON-404).
-        exclude: ['/api/(.*)'],
+        // Express 5 / path-to-regexp v8: Wildcards muessen benannt sein ('(.*)' ist ungueltig).
+        exclude: ['/api/{*splat}'],
       }),
     ]
   : [];
