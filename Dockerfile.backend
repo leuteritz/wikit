@@ -1,0 +1,68 @@
+# syntax=docker/dockerfile:1
+###############################################################################
+# Wikit backend (NestJS API only) — multi-stage build
+#
+# Base: node:20-bookworm-slim (Debian/glibc), NOT alpine. better-sqlite3 is a
+# native module; on glibc it installs a prebuilt binary (prebuild-install) for
+# linux/amd64 and linux/arm64, so no python3/make/g++ toolchain is needed.
+# On alpine (musl) it would have to compile from source — avoided on purpose.
+#
+# This image serves ONLY the API. The SPA lives in the separate nginx image.
+# The backend's ServeStaticModule auto-disables here because frontend/dist does
+# not exist in this image (see backend/src/app.module.ts).
+#
+# ARM64 note: build natively on the Pi (self-hosted runner) or with
+# `docker build --platform linux/arm64 ...`. The native better-sqlite3 binary
+# must match the runtime architecture.
+###############################################################################
+
+# --- Stage 1: install all workspace deps + compile TypeScript -----------------
+FROM node:20-bookworm-slim AS build
+WORKDIR /app
+
+# Manifeste zuerst (Layer-Cache). npm workspaces braucht ALLE package.json.
+COPY package.json package-lock.json ./
+COPY backend/package.json ./backend/package.json
+COPY frontend/package.json ./frontend/package.json
+RUN npm ci
+
+# Backend-Quellen + Build-Config, dann kompilieren (-> backend/dist).
+COPY backend ./backend
+RUN npm --workspace backend run build
+
+# --- Stage 2: production-only node_modules (schlanke Runtime) ------------------
+FROM node:20-bookworm-slim AS prod-deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY backend/package.json ./backend/package.json
+COPY frontend/package.json ./frontend/package.json
+RUN npm ci --omit=dev
+
+# --- Stage 3: runtime ---------------------------------------------------------
+FROM node:20-bookworm-slim AS runtime
+ENV NODE_ENV=production \
+    PORT=3000 \
+    HOST=0.0.0.0 \
+    WIKI_DB=/data/wiki.db
+WORKDIR /app
+
+# Prod-Module + kompiliertes Backend + Seed (Seed muss als backend/seed NEBEN
+# backend/dist liegen — SeedService löst __dirname/../../seed auf).
+COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=build /app/backend/dist ./backend/dist
+COPY --from=build /app/backend/seed ./backend/seed
+COPY --from=build /app/backend/package.json ./backend/package.json
+
+# DB-Verzeichnis dem non-root-User geben (UID 1000 = "node").
+# Bind-Mount auf dem Host muss demselben Owner gehören:
+#   sudo chown -R 1000:1000 /opt/wikit/data
+RUN mkdir -p /data && chown -R node:node /data
+USER node
+
+EXPOSE 3000
+VOLUME ["/data"]
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=5 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+CMD ["node", "backend/dist/main.js"]

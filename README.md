@@ -4,8 +4,8 @@ A tiny, **self-hosted personal wiki**. Markdown articles, instant search, a rela
 dark mode — all backed by a single SQLite file. Light enough to run on a Raspberry Pi, generic
 enough for any topic: dev notes, ops runbooks, study notes, recipes — whatever you want.
 
-> No login, no cloud, no accounts. One process, one port, one `.db` file. Your data stays on your
-> machine.
+> No login, no cloud, no accounts. One `.db` file, your data stays on your machine. Run it bare-metal
+> (a single process on one port) or as a small Docker stack — see [deployment](#docker-deployment-recommended).
 
 ## Features
 
@@ -135,7 +135,158 @@ Configuration (all optional, set as env vars):
 | `OLLAMA_MODEL` | `qwen2.5-coder:3b` | model to use (e.g. `phi3:mini`, `mistral:7b`) |
 | `OLLAMA_TIMEOUT_MS` | `20000` | abort + fall back if the model is too slow |
 
-## Deploy on a Raspberry Pi
+## Docker deployment (recommended)
+
+The recommended way to run Wikit on a Raspberry Pi is **two containers** managed by Docker Compose:
+an **nginx** container serves the built SPA and reverse-proxies `/api`, and a **Node** container runs
+the NestJS API. The SQLite database lives on the **host** (bind-mount), so it survives image rebuilds.
+
+```mermaid
+flowchart LR
+    Browser -->|":${HTTP_PORT:-80}"| FE["frontend<br/>(nginx:alpine)<br/>SPA + /api proxy"]
+    FE -->|"/api → :3000"| BE["backend<br/>(node:20)<br/>NestJS API"]
+    BE -->|"WIKI_DB=/data/wiki.db"| VOL[("SQLite<br/>${DATA_DIR}/wiki.db<br/>(+ -wal / -shm)")]
+    BE -.->|"optional: host.docker.internal:11434"| OLL["Ollama<br/>(host / LAN, optional)"]
+```
+
+Why split? The backend image contains **no** `frontend/dist`, so its `ServeStaticModule`
+auto-disables and it serves the API only — nginx handles static files, SPA history-fallback,
+gzip and the SSE stream. Clean separation, independently rebuildable.
+
+### Prerequisites
+
+- **Docker Engine + Docker Compose v2** on the Pi (ARM64):
+  ```bash
+  curl -fsSL https://get.docker.com | sh
+  sudo usermod -aG docker $USER   # re-login afterwards
+  ```
+- **Portainer CE** (optional, web UI for containers/stacks):
+  ```bash
+  docker volume create portainer_data
+  docker run -d -p 9443:9443 --name portainer --restart=always \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v portainer_data:/data portainer/portainer-ce:latest
+  # then open https://raspberrypi.local:9443
+  ```
+
+> **better-sqlite3 is a native module.** Build the images on the **same architecture** they run on.
+> On the Pi that means building **natively on ARM64** (the CI/CD runner below does exactly this).
+> On an x86 dev machine, `docker compose build` produces x86 images for local testing; to produce
+> ARM64 images on x86 you'd need `docker buildx --platform linux/arm64` (QEMU emulation, slow) — the
+> self-hosted-runner approach avoids this entirely.
+
+### First deploy
+
+```bash
+sudo mkdir -p /opt/wikit/data
+sudo chown -R 1000:1000 /opt/wikit/data   # backend runs as non-root UID 1000 ("node")
+
+git clone https://github.com/leuteritz/wikit /opt/wikit/app && cd /opt/wikit/app
+cp .env.example .env       # set VITE_WIKI_TITLE, HTTP_PORT, DATA_DIR=/opt/wikit/data
+docker compose up -d --build
+# open http://raspberrypi.local
+```
+
+On first start the SQLite DB is created in `${DATA_DIR}` and seeded with the demo articles.
+
+### Data persistence & backup
+
+The whole knowledge base is one SQLite file (plus its WAL sidecars) under your `DATA_DIR`:
+
+```bash
+# Backup (WAL mode -> copy all three; the running DB is fine to copy with sqlite WAL):
+cp -a /opt/wikit/data /opt/wikit/backups/wiki-$(date +%F)
+# Restore: docker compose down, copy the directory back, docker compose up -d
+```
+
+Because the DB is a host bind-mount, `docker compose down` / image rebuilds **never** touch it.
+
+### Portainer
+
+Manage the stack from Portainer instead of the CLI:
+**Stacks → Add stack → Repository**, point it at this repo and `docker-compose.yml`, add the same
+environment variables (`HTTP_PORT`, `DATA_DIR`, `VITE_WIKI_TITLE`, optional `OLLAMA_*`), deploy.
+The web build-arg `VITE_WIKI_TITLE` is read from the stack environment.
+
+### Ollama from the container
+
+The compose file maps `host.docker.internal` to the host gateway, so if Ollama runs on the Pi itself:
+
+```env
+OLLAMA_URL=http://host.docker.internal:11434/api/generate
+```
+
+(Or point at a stronger LAN machine: `OLLAMA_URL=http://192.168.1.50:11434/api/generate`.) Ensure
+Ollama listens on all interfaces in that case (`OLLAMA_HOST=0.0.0.0`). No Ollama → Javadoc fallback,
+nothing breaks.
+
+## CI/CD: auto-deploy on push
+
+**Recommended: GitHub Actions self-hosted runner on the Pi.** A home network usually has **no public
+IP**, so an inbound webhook is awkward. A self-hosted runner instead **polls GitHub outbound** over
+HTTPS — no open ports — and builds **natively on ARM64**, sidestepping the better-sqlite3
+cross-compile problem. Flow: `push to master` → runner on the Pi → `docker compose up -d --build`.
+
+The workflow lives in [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml): a fast
+GitHub-hosted `build-check` gate (`npm ci && npm run build`) runs first; only if it passes does the
+self-hosted `deploy` job rebuild and restart the containers.
+
+> ⚠️ `.github/` must be **tracked by git** (it was previously git-ignored). It is now committed so the
+> workflow actually reaches GitHub.
+
+### Set up the self-hosted runner
+
+On the Pi (from the repo: **Settings → Actions → Runners → New self-hosted runner**, Linux/ARM64):
+
+```bash
+mkdir -p ~/actions-runner && cd ~/actions-runner
+curl -o runner.tar.gz -L <URL-from-GitHub-for-linux-arm64>
+tar xzf runner.tar.gz
+./config.sh --url https://github.com/leuteritz/wikit --token <TOKEN> \
+            --labels self-hosted,linux,ARM64
+sudo ./svc.sh install      # run the runner as a service (survives reboots)
+sudo ./svc.sh start
+```
+
+The runner needs Docker access (`sudo usermod -aG docker $USER`). Provide the persistent env file
+**once** (the checkout is gitignore-clean and has no `.env`):
+
+```bash
+sudo mkdir -p /opt/wikit
+sudo cp /opt/wikit/app/.env /opt/wikit/.env   # contains DATA_DIR=/opt/wikit/data
+```
+
+The deploy job copies `/opt/wikit/.env` into the checkout before running compose. Now every push to
+`master` redeploys automatically; trigger manually via **Actions → Deploy to Raspberry Pi → Run
+workflow**.
+
+### Alternative: Watchtower + ghcr.io
+
+If you prefer not to maintain a runner: build multi-arch images in a GitHub-hosted workflow
+(`docker buildx build --platform linux/arm64,linux/amd64`, ARM64 via QEMU — slower, and native
+better-sqlite3 under emulation is finicky), push them to `ghcr.io`, and run
+[Watchtower](https://containrrr.dev/watchtower/) on the Pi to poll for new images and restart the
+stack. Simpler ops, heavier/slower builds — hence the runner is the primary path here.
+
+## Migration from systemd
+
+If you previously ran Wikit via the bare-metal systemd unit, stop and disable it before switching to
+Docker (otherwise both fight over port 3000 / the DB file):
+
+```bash
+sudo systemctl stop wikit
+sudo systemctl disable wikit
+sudo rm /etc/systemd/system/wikit.service
+sudo systemctl daemon-reload
+# migrate your data: copy the old DB to the new bind-mount location
+cp -a ~/wikit/backend/data/. /opt/wikit/data/
+sudo chown -R 1000:1000 /opt/wikit/data
+```
+
+## Deploy on a Raspberry Pi (bare-metal / legacy)
+
+> The Docker path above is recommended. This bare-metal route (systemd + `npm start`) still works and
+> is kept for setups that don't want Docker.
 
 ```bash
 # Node 20 LTS (the distro package can be old)

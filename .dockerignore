@@ -1,0 +1,33 @@
+# Build-Kontext schlank halten. Quellen + Manifeste werden gebraucht,
+# Artefakte/Privates NICHT ins Image kopieren.
+
+# Dependencies / build output (werden im Image frisch erzeugt)
+node_modules
+**/node_modules
+backend/dist
+frontend/dist
+
+# Lokale DB (niemals ins Image — kommt über das Volume)
+backend/data
+
+# VCS / CI / Editor
+.git
+.github
+.gitignore
+*.log
+.DS_Store
+Thumbs.db
+
+# Env (Secrets/Host-spezifisch — wird über env_file/--env-file gereicht)
+.env
+
+# Persönliche Seed-Inhalte (gitignored) — keine privaten Notizen ins Image.
+# Das Demo-Seed (articles.example/ + manifest.example.js) bleibt enthalten.
+backend/seed/articles/
+backend/seed/manifest.js
+
+# Docker-Infra selbst wird nicht im Build-Kontext benötigt
+Dockerfile.backend
+Dockerfile.frontend
+docker-compose.yml
+.dockerignore

@@ -1,0 +1,40 @@
+# syntax=docker/dockerfile:1
+###############################################################################
+# Wikit frontend (Vue 3 SPA) — multi-stage build
+#
+# Stage 1 builds the static bundle with Vite. Stage 2 serves it with nginx and
+# reverse-proxies /api -> backend container (see deploy/nginx.conf).
+#
+# VITE_WIKI_TITLE is baked into the bundle at BUILD time (frontend/src/config.js),
+# so it is passed as a build-arg, not a runtime env var.
+###############################################################################
+
+# --- Stage 1: build the SPA ---------------------------------------------------
+FROM node:20-alpine AS build
+WORKDIR /app
+
+# Manifeste zuerst (Layer-Cache). npm workspaces braucht ALLE package.json.
+COPY package.json package-lock.json ./
+COPY backend/package.json ./backend/package.json
+COPY frontend/package.json ./frontend/package.json
+RUN npm ci
+
+# Branding zur Build-Zeit in das Bundle backen.
+ARG VITE_WIKI_TITLE=Wikit
+ENV VITE_WIKI_TITLE=$VITE_WIKI_TITLE
+
+COPY frontend ./frontend
+RUN npm --workspace frontend run build
+
+# --- Stage 2: serve via nginx -------------------------------------------------
+FROM nginx:alpine AS runtime
+# SPA-Assets + eigene Server-Config (SPA-Fallback + /api-Proxy + SSE).
+COPY --from=build /app/frontend/dist /usr/share/nginx/html
+COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=5 \
+  CMD wget -q --spider http://127.0.0.1/ || exit 1
+
+# nginx:alpine startet nginx bereits als Default-CMD (foreground).

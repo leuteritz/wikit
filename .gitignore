@@ -17,4 +17,5 @@ backend/seed/manifest.js
 Thumbs.db
 
 CLAUDE.md
-.github/
+# .github/ MUSS getrackt werden — sonst landet der Deploy-Workflow nie auf GitHub
+# und die CI/CD-Pipeline (Self-Hosted Runner) feuert nie.

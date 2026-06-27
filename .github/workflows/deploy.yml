@@ -1,0 +1,50 @@
+name: Deploy to Raspberry Pi
+
+# Heimnetz ohne öffentliche IP: der Self-Hosted Runner auf dem Pi pollt GitHub
+# (ausgehend, kein eingehender Port nötig). Der Build läuft NATIV auf ARM64,
+# was das better-sqlite3-Cross-Compile-Problem komplett umgeht.
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch: {}
+
+# Nie zwei Deploys gleichzeitig; ein neuer Push canceled einen laufenden.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 1) Schneller Gate-Job auf GitHub-Hosted Runner: bricht der Build, wird gar
+  #    nicht erst deployt. (Kein Docker, nur npm — x86, schnell.)
+  build-check:
+    name: Build smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+  # 2) Deploy auf dem Pi (Self-Hosted Runner, Labels: linux + ARM64).
+  deploy:
+    name: Build & deploy on Pi
+    needs: build-check
+    runs-on: [self-hosted, linux, ARM64]
+    steps:
+      - uses: actions/checkout@v4
+
+      # Persistente .env (mit DATA_DIR=/opt/wikit/data) liegt EINMALIG außerhalb
+      # des Checkouts auf dem Pi und wird vor compose hereinkopiert — der Checkout
+      # selbst ist gitignore-bereinigt und enthält keine .env.
+      - name: Provide environment file
+        run: cp /opt/wikit/.env .env
+
+      - name: Build & (re)start containers
+        run: docker compose up -d --build --remove-orphans
+
+      - name: Prune dangling images
+        run: docker image prune -f
