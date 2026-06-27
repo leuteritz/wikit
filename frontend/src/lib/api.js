@@ -52,5 +52,6 @@ export const api = {
   // KI-Analyse-Queue: erst start (POST), dann den SSE-Stream oeffnen (EventSource ist kein
   // fetch, daher bleibt nur die URL-Konstruktion hier in api.js zentralisiert).
   startJavaAnalysis: (articleId, data) => http('POST', `/analysis/${articleId}/start`, data),
+  cancelJavaAnalysis: (articleId) => http('POST', `/analysis/${articleId}/cancel`),
   analysisStreamUrl: (articleId) => `${BASE}/analysis/stream/${articleId}`,
 }

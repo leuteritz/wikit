@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 // Lokaler KI-Client gegen Ollama (kostenlos, kein API-Key, Raspberry-Pi-tauglich).
 // Bewusst async + mit hartem Timeout: ist Ollama nicht erreichbar, faellt der Aufrufer
@@ -24,6 +24,8 @@ interface ClassInput {
 
 @Injectable()
 export class OllamaService {
+  private readonly logger = new Logger(OllamaService.name);
+
   // Baut eine knappe Methoden-Signatur fuer den Prompt-Kontext.
   private signature(className: string, method: MethodInput): string {
     const params = (method.parameters || []).map((p) => `${p.type} ${p.name}`.trim()).join(', ');
@@ -37,9 +39,20 @@ export class OllamaService {
   }
 
   // Generischer, abgesicherter Aufruf an Ollama. Liefert '' bei Timeout/Fehler/Down.
-  private async run(prompt: string): Promise<string> {
+  // Ein optionales externes `signal` (z. B. Cancel aus der Analyse-Queue) bricht den
+  // laufenden fetch ab. Fehlerursachen werden geloggt (vorher still verschluckt), die
+  // Rueckgabe bleibt aber '' -> die Fallback-Kette beim Aufrufer aendert sich nicht.
+  private async run(prompt: string, signal?: AbortSignal): Promise<string> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, TIMEOUT_MS);
+    if (signal) {
+      if (signal.aborted) controller.abort();
+      else signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
     try {
       const res = await fetch(OLLAMA_URL, {
         method: 'POST',
@@ -47,11 +60,17 @@ export class OllamaService {
         body: JSON.stringify({ model: OLLAMA_MODEL, prompt, stream: false }),
         signal: controller.signal,
       });
-      if (!res.ok) return '';
+      if (!res.ok) {
+        this.logger.warn(`Ollama HTTP ${res.status} ${res.statusText} (${OLLAMA_URL})`);
+        return '';
+      }
       const data: any = await res.json();
       return (data.response || '').trim();
-    } catch {
-      // Ollama nicht erreichbar / Timeout / abgebrochen -> Fallback beim Aufrufer.
+    } catch (err: any) {
+      if (timedOut) this.logger.warn(`Ollama Timeout nach ${TIMEOUT_MS}ms (${OLLAMA_URL})`);
+      else if (signal?.aborted) this.logger.debug('Ollama-Aufruf abgebrochen (Cancel)');
+      else this.logger.warn(`Ollama nicht erreichbar: ${err?.message || err} (${OLLAMA_URL})`);
+      // Fallback beim Aufrufer.
       return '';
     } finally {
       clearTimeout(timer);
@@ -81,15 +100,18 @@ export class OllamaService {
 
   // Detailliertere Methodenbeschreibung: nutzt zusaetzlich den geparsten Rumpf (body) und darf
   // Markdown verwenden. Fuer die gestreamte Queue-Analyse. '' bei Nichterreichbarkeit.
-  async generateMethodDescription({
-    className,
-    method,
-    context,
-  }: {
-    className: string;
-    method: MethodInput;
-    context?: string;
-  }): Promise<string> {
+  async generateMethodDescription(
+    {
+      className,
+      method,
+      context,
+    }: {
+      className: string;
+      method: MethodInput;
+      context?: string;
+    },
+    signal?: AbortSignal,
+  ): Promise<string> {
     const sig = this.signature(className, method);
     const javadoc = method.javadoc ? `\nVorhandener Javadoc:\n${method.javadoc}` : '';
     const body = (method.body || '').trim();
@@ -100,18 +122,21 @@ export class OllamaService {
       `praegnant (2-4 Saetze): Zweck, wichtige Parameter, Rueckgabe und nennenswerte Seiteneffekte ` +
       `oder Ausnahmen. Nutze bei Bedarf kurze Markdown-Formatierung (z. B. \`code\`), aber keinen ` +
       `kompletten Code-Block. Antworte nur mit der Beschreibung.\n\nSignatur:\n${sig}${javadoc}${bodyBlock}`;
-    return this.run(prompt);
+    return this.run(prompt, signal);
   }
 
   // Kurze Klassenbeschreibung (Markdown): Zweck/Verantwortlichkeit der Klasse aus Name, Typ
   // und Methodennamen + optionalem Projekt-Kontext. '' bei Nichterreichbarkeit.
-  async generateClassSummary({
-    classInfo,
-    context,
-  }: {
-    classInfo: ClassInput;
-    context?: string;
-  }): Promise<string> {
+  async generateClassSummary(
+    {
+      classInfo,
+      context,
+    }: {
+      classInfo: ClassInput;
+      context?: string;
+    },
+    signal?: AbortSignal,
+  ): Promise<string> {
     const fqn = classInfo.package ? `${classInfo.package}.${classInfo.class_name}` : classInfo.class_name;
     const methodList = (classInfo.methods || []).map((m) => m.method_name).join(', ');
     const prompt =
@@ -121,6 +146,6 @@ export class OllamaService {
       `mit der Beschreibung (Markdown erlaubt), ohne Methoden einzeln aufzuzaehlen.\n\n` +
       `Klasse: ${fqn} (${classInfo.class_type || 'class'})\n` +
       (methodList ? `Methoden: ${methodList}` : '');
-    return this.run(prompt);
+    return this.run(prompt, signal);
   }
 }

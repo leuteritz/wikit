@@ -18,6 +18,14 @@ export class AnalysisController {
     return this.svc.start(Number(articleId), body?.userContext);
   }
 
+  // Bricht den laufenden Analyse-Lauf der articleId ab (in-flight Ollama-Call + Rest-Queue).
+  @Post(':articleId/cancel')
+  @HttpCode(202)
+  cancel(@Param('articleId') articleId: string) {
+    this.queue.cancel(Number(articleId));
+    return { cancelled: true };
+  }
+
   // Server-Sent-Events-Stream des Analyse-Fortschritts (class_done | method_done | all_done | error).
   @Sse('stream/:articleId')
   stream(@Param('articleId') articleId: string): Observable<{ data: unknown }> {

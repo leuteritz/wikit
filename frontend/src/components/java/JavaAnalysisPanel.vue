@@ -18,6 +18,7 @@ const methods = ref(props.file.methods.map((m) => ({ ...m })))
 const reRunningId = ref(null)
 const notice = ref('')
 const showContext = ref(false)
+const classAiGenerated = ref(null) // true = KI-Text, false = Fallback, null = unbekannt
 
 watch(
   () => props.file,
@@ -25,6 +26,7 @@ watch(
     descriptionHtml.value = f.description_html || ''
     generatedAt.value = f.generated_at || null
     methods.value = f.methods.map((m) => ({ ...m }))
+    classAiGenerated.value = null
   },
 )
 
@@ -57,17 +59,20 @@ const hasContent = computed(() => !!descriptionHtml.value || methods.value.some(
 
 function startAnalysis() {
   notice.value = ''
+  classAiGenerated.value = null
   analysis.start(props.articleId, {
     userContext: userContext.value,
-    onClassDone: (html) => {
+    onClassDone: (html, aiGenerated) => {
       descriptionHtml.value = html
       generatedAt.value = new Date().toISOString()
+      classAiGenerated.value = aiGenerated ?? null
     },
-    onMethodDone: (content) => {
+    onMethodDone: (content, aiGenerated) => {
       const m = methods.value.find((x) => x.id === content.id)
       if (m) {
         m.ai_summary = content.ai_summary
         m.summary_html = content.summary_html
+        m.ai_generated = aiGenerated ?? null
       }
     },
   })
@@ -96,6 +101,13 @@ function fmtDate(s) {
   if (!s) return ''
   const d = new Date(s)
   return isNaN(d) ? '' : d.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+// Dauer als mm:ss.
+function fmtDur(ms) {
+  const s = Math.max(0, Math.round((ms || 0) / 1000))
+  const m = Math.floor(s / 60)
+  return `${m}:${String(s % 60).padStart(2, '0')}`
 }
 </script>
 
@@ -150,11 +162,27 @@ function fmtDate(s) {
           <span class="flex items-center gap-1.5 font-medium text-[var(--color-accent)]">
             <svg class="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
             {{ runningLabel }}
+            <span class="tabular-nums font-normal text-[var(--color-text-muted)]">{{ fmtDur(analysis.stepElapsedMs.value) }}</span>
           </span>
           <span class="tabular-nums text-slate-500 dark:text-slate-400">{{ completed }}/{{ steps }}</span>
         </div>
         <div class="h-2 w-full overflow-hidden rounded-full bg-[var(--color-accent-soft)]">
           <div class="h-full rounded-full bg-[var(--color-accent)] transition-all duration-300" :style="{ width: percent + '%' }" />
+        </div>
+        <div class="mt-1.5 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+          <span class="tabular-nums">
+            Gesamt {{ fmtDur(analysis.totalElapsedMs.value) }}
+            <span v-if="completed < steps"> · ~noch {{ fmtDur(analysis.etaMs.value) }}</span>
+          </span>
+          <button
+            type="button"
+            class="inline-flex items-center gap-1 rounded-md border border-rose-200 px-2 py-0.5 text-[11px] font-medium text-rose-600 transition hover:bg-rose-50 disabled:opacity-50 dark:border-rose-500/30 dark:text-rose-400 dark:hover:bg-rose-500/10"
+            :disabled="analysis.cancelling.value"
+            @click="analysis.cancel(articleId)"
+          >
+            <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12" /></svg>
+            {{ analysis.cancelling.value ? 'Wird abgebrochen…' : 'Abbrechen' }}
+          </button>
         </div>
         <!-- Schritt-Pills -->
         <div class="mt-2 flex flex-wrap items-center gap-1">
@@ -175,20 +203,44 @@ function fmtDate(s) {
         </div>
       </div>
 
+      <!-- Stall-Watchdog: keine Antwort vom Server -->
+      <div v-if="analysis.stalled.value" class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+        <span class="flex-1">Keine Antwort vom Server – evtl. hängt die lokale KI. Lokale KI auf dem Pi ist langsam (ca. 30–90 s pro Schritt).</span>
+        <button
+          v-if="analysis.running.value"
+          type="button"
+          class="rounded-md border border-amber-300 px-2 py-0.5 font-medium hover:bg-amber-100 dark:border-amber-500/40 dark:hover:bg-amber-500/15"
+          :disabled="analysis.cancelling.value"
+          @click="analysis.cancel(articleId)"
+        >Abbrechen</button>
+        <button
+          type="button"
+          class="rounded-md border border-amber-300 px-2 py-0.5 font-medium hover:bg-amber-100 dark:border-amber-500/40 dark:hover:bg-amber-500/15"
+          @click="startAnalysis"
+        >Neu starten</button>
+      </div>
+
       <p v-if="analysis.error.value" class="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-600 dark:bg-rose-500/10 dark:text-rose-400">{{ analysis.error.value }}</p>
       <p v-if="notice" class="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">{{ notice }}</p>
 
       <!-- Leerzustand -->
-      <p v-if="!hasContent && !analysis.running.value" class="rounded-lg border border-dashed border-[var(--color-border)] px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-400">
-        Starte die KI-Analyse, um Klassen- und Methodenbeschreibungen zu generieren – sie erscheinen hier nacheinander.
-      </p>
+      <div v-if="!hasContent && !analysis.running.value" class="rounded-lg border border-dashed border-[var(--color-border)] px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-400">
+        <p>Starte die KI-Analyse, um Klassen- und Methodenbeschreibungen zu generieren – sie erscheinen hier nacheinander.</p>
+        <p class="mt-1.5 text-xs text-slate-400 dark:text-slate-500">Hinweis: Die lokale KI läuft auf dem Pi und ist langsam – rechne mit ca. 30–90 s pro Schritt.</p>
+      </div>
 
       <!-- Klassenbeschreibung -->
-      <div
-        v-if="descriptionHtml"
-        class="prose prose-slate mb-6 max-w-none rounded-xl bg-white px-4 py-3 dark:prose-invert dark:bg-slate-900/60"
-        v-html="descriptionHtml"
-      />
+      <div v-if="descriptionHtml" class="mb-6">
+        <div
+          class="prose prose-slate max-w-none rounded-xl bg-white px-4 py-3 dark:prose-invert dark:bg-slate-900/60"
+          v-html="descriptionHtml"
+        />
+        <span
+          v-if="classAiGenerated !== null"
+          class="mt-1.5 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
+          :class="classAiGenerated ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'"
+        >{{ classAiGenerated ? '✓ KI-Text erzeugt' : '⚠ Fallback: vorhandene Beschreibung' }}</span>
+      </div>
 
       <!-- Methoden -->
       <ul v-if="hasContent || analysis.running.value" class="space-y-3">
@@ -208,6 +260,16 @@ function fmtDate(s) {
               <span class="truncate font-mono text-sm font-semibold text-[var(--color-accent)] group-hover:underline disabled:no-underline">{{ m.method_name }}</span>
               <svg v-if="methodState(i, m) !== 'running'" class="h-3.5 w-3.5 shrink-0 text-slate-300 transition group-hover:text-[var(--color-accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5M21 3v6h-6" /></svg>
             </button>
+            <span
+              v-if="m.ai_generated === false"
+              class="shrink-0 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
+              title="Ollama lieferte keinen Text – Javadoc als Fallback angezeigt"
+            >Fallback: Javadoc</span>
+            <span
+              v-else-if="m.ai_generated === true"
+              class="shrink-0 rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+              title="KI-Text erzeugt"
+            >KI-Text</span>
             <svg v-if="methodState(i, m) === 'running'" class="h-4 w-4 shrink-0 animate-spin text-[var(--color-accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
             <span v-else-if="methodState(i, m) === 'done'" class="shrink-0 text-emerald-500" title="analysiert">✓</span>
           </div>
