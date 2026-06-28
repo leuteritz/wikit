@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, IsNull } from 'typeorm';
 import { FtsService } from '../database/fts.service';
@@ -15,6 +15,8 @@ import { JavaMethod } from '../entities/java-method.entity';
 // Muster wie ArticlesService: erst async arbeiten, DANN in einer ds.transaction() schreiben.
 @Injectable()
 export class JavaService {
+  private readonly logger = new Logger(JavaService.name);
+
   constructor(
     @InjectDataSource() private readonly ds: DataSource,
     private readonly serializer: SerializerService,
@@ -523,7 +525,8 @@ export class JavaService {
     // Nur aktive Auto-Kanten ersetzen; manuelle und Tombstone-Zeilen bleiben stehen.
     await repo.delete({ is_manual: 0, dismissed: 0 });
 
-    const toInsert = [...edges.values()]
+    const computed = [...edges.values()];
+    const toInsert = computed
       .filter((e) => !dismissedKeys.has(`${e.source} ${e.target} ${e.method ?? ''} ${e.kind}`))
       .map((e) => ({
         source_class: e.source,
@@ -535,6 +538,18 @@ export class JavaService {
         dismissed: 0,
       }));
     if (toInsert.length) await repo.insert(toInsert);
+
+    // --- Debug-Log (docker logs wikit-backend): zeigt, was berechnet/gefiltert/eingefuegt wurde ---
+    const byKind = computed.reduce<Record<string, number>>((acc, e) => {
+      acc[e.kind] = (acc[e.kind] || 0) + 1;
+      return acc;
+    }, {});
+    const suppressed = computed.length - toInsert.length;
+    this.logger.log(
+      `[java-edges] recompute: ${classNames.size} Klassen [${[...classNames].join(', ')}] | ` +
+        `berechnet ${computed.length} ${JSON.stringify(byKind)} | ` +
+        `Tombstones ${dismissedKeys.size}, davon unterdrueckt ${suppressed} | eingefuegt ${toInsert.length}`,
+    );
   }
 
   // Manueller Trigger: alle Auto-Call-Edges neu berechnen + persistieren. Sinnvoll nach

@@ -47,6 +47,7 @@ const NODE_W = 208
 const NODE_H = 66
 const REVIEW_COLOR = '#d4a017'
 const USES_COLOR = '#a07cc5' // Struktur-/Typ-Bezug (uses): violett, gestrichelt, ohne Label
+const DEBUG_EDGES = true // Debug (F12): loggt geladene Klassen + nicht gezeichnete Server-Kanten
 
 const simpleName = (fqn) => String(fqn).split('.').pop()
 const nodeFileId = (id) => Number(String(id).replace(/^c:/, ''))
@@ -84,6 +85,7 @@ const layout = computed(() => {
   // --- Kanten zwischen geladenen Klassen bestimmen ---
   const edges = []
   const callPairs = new Set()
+  const skipped = [] // Debug: Server-Kanten, die NICHT gezeichnet werden (Endpunkt nicht geladen)
 
   // 1) Persistierte Call-Edges aus dem Backend (auto + manuell). source_class = Aufrufer (A),
   //    target_class = definierende Klasse (B). Pfeilrichtung im Graph bleibt „Definition ->
@@ -92,7 +94,17 @@ const layout = computed(() => {
   for (const e of serverEdges.value || []) {
     const callerFile = known.get(e.source_class) // A
     const definerFile = known.get(e.target_class) // B
-    if (!callerFile || !definerFile || callerFile.id === definerFile.id) continue
+    if (!callerFile || !definerFile || callerFile.id === definerFile.id) {
+      if (DEBUG_EDGES)
+        skipped.push({
+          source: e.source_class,
+          target: e.target_class,
+          kind: e.kind,
+          method: e.method_name,
+          reason: !callerFile ? 'Quellklasse nicht geladen' : !definerFile ? 'Zielklasse nicht geladen' : 'Self-Edge',
+        })
+      continue
+    }
     callPairs.add(`${callerFile.id}->${definerFile.id}`)
 
     // uses-Kante = struktureller Typ-Bezug (Variablen-/Feld-/Parameter-/Rueckgabetyp, new X(),
@@ -204,6 +216,20 @@ const layout = computed(() => {
       },
     }
   })
+
+  if (DEBUG_EDGES) {
+    console.debug(
+      '[java-edges] geladene Klassen:',
+      [...known.keys()],
+      '| Server-Kanten:',
+      (serverEdges.value || []).length,
+      '| gezeichnet:',
+      edges.length,
+      '| uebersprungen:',
+      skipped.length,
+    )
+    if (skipped.length) console.debug('[java-edges] nicht gezeichnete Kanten:', skipped)
+  }
 
   return { nodes, edges }
 })

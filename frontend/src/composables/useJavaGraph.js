@@ -30,6 +30,31 @@ async function recomputeEdges() {
   try {
     const res = await api.recomputeJavaEdges()
     await fetchEdges()
+    // --- Debug (F12): zeigt, was die Neuberechnung erzeugt hat ---
+    try {
+      const all = edges.value || []
+      const byKind = all.reduce((acc, e) => {
+        const k = e.is_manual ? 'manual' : e.kind || 'call'
+        acc[k] = (acc[k] || 0) + 1
+        return acc
+      }, {})
+      console.group('[java-edges] Kanten neu berechnet')
+      console.log('Backend-Anzahl (ohne Tombstones):', res?.count)
+      console.log('Geladene Kanten gesamt:', all.length, byKind)
+      console.table(
+        all.map((e) => ({
+          source: e.source_class,
+          target: e.target_class,
+          kind: e.kind,
+          method: e.method_name,
+          conf: e.confidence,
+          manual: e.is_manual,
+        })),
+      )
+      console.groupEnd()
+    } catch {
+      /* Logging darf den Ablauf nie stoeren */
+    }
     return res
   } catch (e) {
     error.value = e.message
