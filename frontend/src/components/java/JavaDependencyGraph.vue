@@ -190,7 +190,7 @@ function resetView() {
 // keinen verifizierbaren Quellcode -> oeffnen das Panel nicht.
 const activeEdge = ref(null)
 
-function computeCallEdgeData(callerFile, definerFile, methodName) {
+function computeCallEdgeData(callerFile, definerFile, methodName, edgeMeta = {}) {
   const callSites = []
   for (const ca of callerFile.methods || []) {
     const body = ca.body || ''
@@ -215,6 +215,10 @@ function computeCallEdgeData(callerFile, definerFile, methodName) {
   const ce = (definerFile.methods || []).find((mm) => mm.method_name === methodName)
   return {
     kind: 'call',
+    // Kanten-Metadaten fuer die Footer-Aktionen (Bearbeiten/Loeschen) im Modal.
+    edgeId: edgeMeta.edgeId ?? null,
+    method: methodName,
+    isManual: !!edgeMeta.isManual,
     fromClass: callerFile.class_name,
     toClass: definerFile.class_name,
     fromFileId: callerFile.id,
@@ -227,14 +231,49 @@ function computeCallEdgeData(callerFile, definerFile, methodName) {
 
 function onEdgeClick({ edge }) {
   const d = edge?.data
-  if (!d || d.kind !== 'call' || d.isManual || !d.method) return
+  // Auto- UND manuelle Call-Kanten oeffnen das Modal (manuelle haben ggf. keine verifizierten
+  // Aufrufstellen -> der Verwendung-Abschnitt zeigt dann einen leeren Zustand).
+  if (!d || d.kind !== 'call' || !d.method) return
   const callerFile = filesById.value.get(d.fromFileId)
   const definerFile = filesById.value.get(d.toFileId)
   if (!callerFile || !definerFile) return
-  activeEdge.value = computeCallEdgeData(callerFile, definerFile, d.method)
+  activeEdge.value = computeCallEdgeData(callerFile, definerFile, d.method, {
+    edgeId: d.edgeId,
+    isManual: d.isManual,
+  })
 }
 function closeEdgePanel() {
   activeEdge.value = null
+}
+
+// --- Footer-Aktionen des Modals (wirken auf die KANTE) -----------------------
+// Bearbeiten: Modal schliessen, den vorhandenen Floating-Editor (Methodenname) zentriert oeffnen.
+function onEdgeEditFromModal() {
+  const e = activeEdge.value
+  if (!e) return
+  const data = {
+    edgeId: e.edgeId,
+    method: e.method,
+    fromClass: e.fromClass,
+    toClass: e.toClass,
+    isManual: e.isManual,
+  }
+  closeEdgePanel()
+  openEdgeEditor(data, { clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 })
+}
+
+// Loeschen: Kante entfernen (zeigt zusaetzlich den bestehenden Undo-Toast), dann Modal schliessen.
+async function onEdgeDeleteFromModal() {
+  const e = activeEdge.value
+  if (!e) return
+  await removeEdge({
+    edgeId: e.edgeId,
+    method: e.method,
+    isManual: e.isManual,
+    fromClass: e.fromClass,
+    toClass: e.toClass,
+  })
+  closeEdgePanel()
 }
 
 // --- Drag-to-Connect: manuelle Kante anlegen ---------------------------------
@@ -457,8 +496,14 @@ onUnmounted(() => {
       Ziehe von Knoten zu Knoten, um eine Kante zu verbinden
     </div>
 
-    <!-- Edge-Detail-Panel: Parent -> Target einer Methoden-Nutzungs-Kante (ESC / Close schliesst) -->
-    <JavaEdgeDetailPanel :edge="activeEdge" :visible="!!activeEdge" @close="closeEdgePanel" />
+    <!-- Edge-Detail-Modal: Definition -> Nutzung + Footer-Aktionen auf die Kante (ESC / Close schliesst) -->
+    <JavaEdgeDetailPanel
+      :edge="activeEdge"
+      :visible="!!activeEdge"
+      @close="closeEdgePanel"
+      @edit="onEdgeEditFromModal"
+      @delete="onEdgeDeleteFromModal"
+    />
 
     <!-- Floating-Editor: Methodenname fuer neue/bearbeitete Kante (direkt an der Abwurfstelle) -->
     <Teleport to="body">

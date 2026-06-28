@@ -18,13 +18,22 @@ const props = defineProps({
   edge: { type: Object, default: null },
   visible: { type: Boolean, default: false },
 })
-const emit = defineEmits(['close'])
+const emit = defineEmits(['close', 'edit', 'delete'])
 
 const router = useRouter()
 const { lastFileId, lastTargetLine } = useJavaAnalyzer()
 
+// Inline-Bestätigung für „Analyse löschen" (zweistufig im Footer).
+const confirmDelete = ref(false)
+
 function close() {
+  confirmDelete.value = false
   emit('close')
+}
+
+// Footer: zur Quell-/Aufruferklasse springen.
+function openSourceClass() {
+  navigateTo(props.edge?.fromFileId)
 }
 
 // Aufgerufene (definierte) Methoden mit (optionaler) Signatur fuer die Quell-Sektion.
@@ -118,12 +127,16 @@ function openUsage(c) {
 }
 
 function onKeydown(e) {
-  if (e.key === 'Escape') close()
+  if (e.key !== 'Escape') return
+  // ESC verwirft zuerst die Löschen-Bestätigung, erst danach schließt es das Modal.
+  if (confirmDelete.value) confirmDelete.value = false
+  else close()
 }
 watch(
   () => props.visible,
   (vis) => {
     if (vis) {
+      confirmDelete.value = false
       window.addEventListener('keydown', onKeydown)
       loadSnippets()
     } else {
@@ -136,15 +149,17 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 <template>
   <Teleport to="body">
-    <Transition name="panel">
+    <Transition name="modal">
       <div
         v-if="visible && edge"
-        class="fixed inset-0 z-50 flex items-end justify-center md:items-stretch md:justify-end"
+        class="fixed inset-0 z-50 grid place-items-center p-4"
+        role="dialog"
+        aria-modal="true"
       >
-        <div class="absolute inset-0 bg-black/30 backdrop-blur-sm" @click="close" />
+        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="close" />
 
-        <aside
-          class="sheet relative z-10 flex max-h-[85vh] w-full flex-col overflow-hidden rounded-t-2xl border-t border-[var(--color-border)] bg-[var(--color-surface-2)] shadow-2xl md:max-h-none md:h-full md:max-w-xl md:rounded-t-none md:rounded-l-2xl md:border-l md:border-t-0"
+        <div
+          class="card relative z-10 flex max-h-[85vh] w-[90vw] max-w-2xl flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)] shadow-2xl"
         >
           <!-- Kopf: Definition -> Nutzung (gleiche Richtung wie der Graph-Pfeil) -->
           <header class="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">
@@ -282,7 +297,61 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               </div>
             </section>
           </div>
-        </aside>
+
+          <!-- Footer: Aktionen auf die Kante (Klasse öffnen · Methodenname bearbeiten · löschen) -->
+          <footer class="shrink-0 border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3">
+            <!-- Inline-Bestätigung für „Analyse löschen" -->
+            <div v-if="confirmDelete" class="flex flex-wrap items-center justify-end gap-2">
+              <span class="mr-auto inline-flex items-center gap-1.5 text-sm text-[var(--color-text)]">
+                <Icon icon="lucide:alert-triangle" class="h-4 w-4 text-[var(--color-danger)]" />
+                Kante wirklich löschen?
+              </span>
+              <button
+                type="button"
+                class="rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+                @click="confirmDelete = false"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-danger)] px-3 py-1.5 text-sm font-semibold text-white transition hover:opacity-90"
+                @click="emit('delete')"
+              >
+                <Icon icon="lucide:trash-2" class="h-4 w-4" />
+                Löschen
+              </button>
+            </div>
+
+            <!-- Standard-Aktionen -->
+            <div v-else class="flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                class="mr-auto inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition hover:bg-[var(--color-surface-offset)]"
+                @click="openSourceClass"
+              >
+                <Icon icon="lucide:file-code" class="h-4 w-4 text-[var(--color-text-muted)]" />
+                Zur Klasse
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition hover:bg-[var(--color-surface-offset)]"
+                @click="emit('edit')"
+              >
+                <Icon icon="lucide:pencil" class="h-4 w-4 text-[var(--color-text-muted)]" />
+                Analyse bearbeiten
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-danger)] transition hover:bg-[var(--color-surface-offset)]"
+                @click="confirmDelete = true"
+              >
+                <Icon icon="lucide:trash-2" class="h-4 w-4" />
+                Analyse löschen
+              </button>
+            </div>
+          </footer>
+        </div>
       </div>
     </Transition>
   </Teleport>
@@ -333,27 +402,32 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   color: var(--color-text);
 }
 
-/* Slide-in: mobil als Bottom-Sheet (translateY), ab md als Side-Panel (translateX). */
-.panel-enter-active,
-.panel-leave-active {
+/* Zentriertes Einblenden: Backdrop faded, Card skaliert sanft von 0.95 auf 1. */
+.modal-enter-active,
+.modal-leave-active {
   transition: opacity 0.18s ease;
 }
-.panel-enter-active .sheet,
-.panel-leave-active .sheet {
-  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+.modal-enter-active .card,
+.modal-leave-active .card {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.18s ease;
 }
-.panel-enter-from,
-.panel-leave-to {
+.modal-enter-from,
+.modal-leave-to {
   opacity: 0;
 }
-.panel-enter-from .sheet,
-.panel-leave-to .sheet {
-  transform: translateY(100%);
+.modal-enter-from .card,
+.modal-leave-to .card {
+  transform: scale(0.95);
+  opacity: 0;
 }
-@media (min-width: 768px) {
-  .panel-enter-from .sheet,
-  .panel-leave-to .sheet {
-    transform: translateX(100%);
+@media (prefers-reduced-motion: reduce) {
+  .modal-enter-active .card,
+  .modal-leave-active .card {
+    transition: opacity 0.18s ease;
+  }
+  .modal-enter-from .card,
+  .modal-leave-to .card {
+    transform: none;
   }
 }
 
