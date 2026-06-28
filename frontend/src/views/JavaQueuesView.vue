@@ -2,14 +2,14 @@
 // Statusseite aller KI-Generierungs-Queues (Klassen- & Methoden-Queues) der Java-Analyse.
 // Der Zustand liegt im Backend; hier wird er per HTTP-Polling (3 s) ueber das gemeinsame
 // useJavaQueue-Composable gespiegelt. Kein direktes fetch(), kein WebSocket.
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useJavaQueue } from '../composables/useJavaQueue.js'
 import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { Icon } from '../lib/icons.js'
 
 const router = useRouter()
-const { allJobs, ensurePolling, cancelJob, cancelAllJobs } = useJavaQueue()
+const { allJobs, liveByKey, ensurePolling, cancelJob, cancelAllJobs } = useJavaQueue()
 const { lastFileId } = useJavaAnalyzer()
 
 // Klick auf einen Queue-Eintrag -> in den Code-Analyzer wechseln und die Klasse direkt oeffnen.
@@ -26,16 +26,44 @@ onMounted(() => {
 })
 onUnmounted(() => releasePolling?.())
 
-const active = computed(() =>
-  allJobs.value.filter((j) => j.status === 'running' || j.status === 'queued'),
-)
+// Aktive Jobs: laufender Job IMMER ganz oben, darunter die wartenden – neueste zuerst
+// (absteigend nach Einreih-Zeitpunkt). Bei einem sequentiellen Worker laeuft hoechstens einer.
+const active = computed(() => {
+  const running = allJobs.value.filter((j) => j.status === 'running')
+  const queued = allJobs.value
+    .filter((j) => j.status === 'queued')
+    .sort((a, b) => b.queuedAt.localeCompare(a.queuedAt))
+  return [...running, ...queued]
+})
 const finished = computed(() =>
   allJobs.value.filter((j) => j.status !== 'running' && j.status !== 'queued'),
 )
 
+// Job-Key + Live-Daten (SSE-Puffer, Fallback auf das Polling-Snapshot nach einem Reload).
+function jobKey(j) {
+  return j.fileId + ':' + j.kind
+}
+function liveFor(j) {
+  const k = jobKey(j)
+  return liveByKey.value[k] || { text: j.liveText || '', tokens: j.tokenCount || 0, phase: j.status }
+}
+
+// Genau ein laufender Job -> dessen Live-Text fuer Auto-Scroll beobachten.
+const runningJob = computed(() => active.value.find((j) => j.status === 'running') || null)
+const runningLive = computed(() => (runningJob.value ? liveFor(runningJob.value) : null))
+const logEl = ref(null)
+watch(
+  () => runningLive.value?.text,
+  () => {
+    nextTick(() => {
+      if (logEl.value) logEl.value.scrollTop = logEl.value.scrollHeight
+    })
+  },
+)
+
 const STATUS = {
   queued: { label: 'In Warteschlange', cls: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' },
-  running: { label: 'Läuft', cls: 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' },
+  running: { label: 'Aktiv', cls: 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' },
   done: { label: 'Fertig', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
   'done-with-errors': { label: 'Fertig (mit Fehlern)', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
   failed: { label: 'Fehlgeschlagen', cls: 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300' },
@@ -43,6 +71,16 @@ const STATUS = {
 }
 function statusInfo(s) {
   return STATUS[s] || { label: s, cls: 'bg-slate-100 text-slate-600' }
+}
+// Kompaktes Erfolgs-/Status-Icon fuer abgeschlossene Jobs.
+const FINISHED_ICON = {
+  done: { icon: 'lucide:check-circle', cls: 'text-emerald-500' },
+  'done-with-errors': { icon: 'lucide:alert-triangle', cls: 'text-amber-500' },
+  failed: { icon: 'lucide:alert-triangle', cls: 'text-rose-500' },
+  cancelled: { icon: 'lucide:x', cls: 'text-slate-400' },
+}
+function finishedIcon(s) {
+  return FINISHED_ICON[s] || { icon: 'lucide:check-circle', cls: 'text-slate-400' }
 }
 function percent(j) {
   if (!j.total) return j.status === 'done' ? 100 : 0
@@ -153,6 +191,26 @@ async function onCancelAll() {
           <div class="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
             <div class="h-full rounded-full bg-[var(--color-accent)] transition-all duration-300" :style="{ width: percent(j) + '%' }" />
           </div>
+
+          <!-- Live-Terminal: Token-by-Token-Ausgabe von Ollama (nur fuer den laufenden Job) -->
+          <div v-if="j.status === 'running'" class="mt-3">
+            <div class="mb-1.5 flex items-center justify-between gap-2">
+              <span class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                <Icon icon="lucide:terminal" class="h-3.5 w-3.5" />
+                Live-Ausgabe
+              </span>
+              <span class="flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums text-[var(--color-accent)]">
+                <Icon icon="lucide:loader-2" class="h-3 w-3 animate-spin" />
+                {{ liveFor(j).tokens }} Tokens generiert…
+              </span>
+            </div>
+            <pre ref="logEl" class="queue-log">{{ liveFor(j).text || 'Warte auf Ollama…' }}</pre>
+            <!-- Indeterminierte Fortschritts-Bar: Ollama liefert keinen numerischen Fortschritt -->
+            <div class="mt-2 h-1 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+              <div class="queue-indeterminate h-full w-2/5 rounded-full bg-[var(--color-accent)]" />
+            </div>
+          </div>
+
           <p v-if="j.ollamaUnavailable" class="mt-2 flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400">
             <Icon icon="lucide:alert-triangle" class="h-3.5 w-3.5 shrink-0" />
             Ollama nicht erreichbar – Fallback-Text wird verwendet.
@@ -175,6 +233,7 @@ async function onCancelAll() {
           :key="j.fileId + ':' + j.kind"
           class="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 dark:border-slate-800 dark:bg-slate-900"
         >
+          <Icon :icon="finishedIcon(j.status).icon" class="h-4 w-4 shrink-0" :class="finishedIcon(j.status).cls" />
           <span class="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase" :class="j.kind === 'class' ? 'bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300' : 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300'">
             {{ j.kind === 'class' ? 'Klasse' : 'Methoden' }}
           </span>
@@ -205,3 +264,32 @@ async function onCancelAll() {
     </p>
   </div>
 </template>
+
+<style scoped>
+@reference "../assets/style.css";
+
+/* Abgedunkelter Terminal-/Log-Bereich: ~7 Zeilen sichtbar, scrollbar, monospace. */
+.queue-log {
+  @apply max-h-40 overflow-y-auto whitespace-pre-wrap break-words rounded-lg p-3 font-mono text-[11px] leading-relaxed;
+  background-color: #0f172a; /* slate-900, bewusst dunkel – auch im Light-Mode ein Terminal */
+  color: #cbd5e1; /* slate-300 */
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+html.dark .queue-log {
+  background-color: #0b1220;
+  color: #d4dbe5;
+}
+
+/* Indeterminierte Progress-Bar: laeuft endlos hin und her (kein numerischer Fortschritt). */
+.queue-indeterminate {
+  animation: queue-indeterminate 1.4s ease-in-out infinite;
+}
+@keyframes queue-indeterminate {
+  0% {
+    margin-left: -40%;
+  }
+  100% {
+    margin-left: 100%;
+  }
+}
+</style>

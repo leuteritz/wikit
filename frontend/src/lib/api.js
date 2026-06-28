@@ -68,6 +68,9 @@ export const api = {
   // Queue-Jobs abbrechen: einzeln (fileId + kind) oder alle auf einmal.
   cancelJavaQueue: (fileId, kind) => http('DELETE', `/java/queues/${fileId}/${kind}`),
   cancelAllJavaQueues: () => http('DELETE', '/java/queues'),
+  // Live-Token-Strom der KI-Queue (SSE). EventSource ist kein fetch -> nur die URL hier zentral
+  // halten (gleiche dokumentierte Ausnahme wie analysisStreamUrl).
+  javaQueueStreamUrl: () => `${BASE}/java/queues/stream`,
 
   // KI-Analyse-Queue: erst start (POST), dann den SSE-Stream oeffnen (EventSource ist kein
   // fetch, daher bleibt nur die URL-Konstruktion hier in api.js zentralisiert).

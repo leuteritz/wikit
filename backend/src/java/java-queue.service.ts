@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
+import { interval, map, merge, Observable, Subject } from 'rxjs';
 import { DataSource } from 'typeorm';
 import { FtsService } from '../database/fts.service';
 import { MarkdownService } from '../common/markdown.service';
@@ -18,6 +19,21 @@ import { JavaMethod } from '../entities/java-method.entity';
 type JobKind = 'class' | 'methods';
 type JobStatus = 'queued' | 'running' | 'done' | 'done-with-errors' | 'failed' | 'cancelled';
 
+// Maximale Laenge des serverseitig gehaltenen Live-Puffers (nur die letzten Zeichen, fuer den
+// Mid-Stream-Reload-Fallback ueber das Polling-Snapshot). Der Live-Strom selbst laeuft per SSE.
+const LIVE_CAP = 4000;
+
+// Live-Ereignis fuer den globalen SSE-Stream der KI-Queue (Token-by-Token-Anzeige).
+interface QueueLiveEvent {
+  phase: 'start' | 'token' | 'done' | 'heartbeat';
+  key?: string; // `${fileId}:${kind}`
+  fileId?: number;
+  kind?: JobKind;
+  label?: string; // start: aktueller Methoden-/Klassenname
+  delta?: string; // token: neues Textfragment
+  tokenCount?: number; // token: laufender Zaehler
+}
+
 interface QueueJob {
   fileId: number;
   className: string;
@@ -34,6 +50,10 @@ interface QueueJob {
   finishedAt: string | null;
   // Zeitstempel des Einreihens -> stabile Sortierung in der Statusseite.
   queuedAt: string;
+  // Live-Puffer des aktuell generierten Texts (gekappt) + Token-Zaehler. Quelle fuer den
+  // Reload-Fallback im Frontend; der fluessige Live-Strom kommt per SSE (siehe liveStream).
+  liveText: string;
+  tokenCount: number;
 }
 
 @Injectable()
@@ -46,6 +66,9 @@ export class JavaQueueService {
   // bereits eingereihte (noch nicht gestartete) Jobs ueber das cancelled-Set uebersprungen.
   private inflight = new Map<string, AbortController>();
   private cancelled = new Set<string>();
+  // Globaler Live-Strom (alle Jobs) fuer die SSE-Token-Anzeige. Lebt fuer die Modul-Lebenszeit,
+  // wird nie completet (EventSource reconnectet ohnehin). Muster wie analysis/analysis.queue.ts.
+  private live = new Subject<QueueLiveEvent>();
 
   constructor(
     @InjectDataSource() private readonly ds: DataSource,
@@ -64,6 +87,36 @@ export class JavaQueueService {
 
   private key(fileId: number, kind: JobKind): string {
     return `${fileId}:${kind}`;
+  }
+
+  // SSE-Observable fuer den Queue-Controller: Live-Events + periodischer Heartbeat (haelt die
+  // Verbindung durch nginx/Proxies offen). NestJS @Sse() erwartet { data }.
+  getStream(): Observable<{ data: QueueLiveEvent }> {
+    const heartbeat = interval(15000).pipe(map(() => ({ phase: 'heartbeat' as const })));
+    return merge(this.live.asObservable(), heartbeat).pipe(map((data) => ({ data })));
+  }
+
+  // Live-Segment fuer einen neuen Generierungsschritt (Klasse/Methode) zuruecksetzen + Start melden.
+  private beginLive(job: QueueJob, key: string, label: string): void {
+    job.liveText = '';
+    job.tokenCount = 0;
+    this.live.next({ phase: 'start', key, fileId: job.fileId, kind: job.kind, label });
+  }
+
+  // onToken-Callback: Job-Puffer (gekappt) + Zaehler fortschreiben und Token-Delta per SSE pushen.
+  private makeOnToken(job: QueueJob, key: string): (delta: string) => void {
+    return (delta: string) => {
+      job.tokenCount++;
+      job.liveText = (job.liveText + delta).slice(-LIVE_CAP);
+      this.live.next({
+        phase: 'token',
+        key,
+        fileId: job.fileId,
+        kind: job.kind,
+        delta,
+        tokenCount: job.tokenCount,
+      });
+    };
   }
 
   private snapshot(job: QueueJob): QueueJob {
@@ -109,6 +162,8 @@ export class JavaQueueService {
       startedAt: null,
       finishedAt: null,
       queuedAt: new Date().toISOString(),
+      liveText: '',
+      tokenCount: 0,
     };
     this.jobs.set(this.key(fileId, 'class'), job);
 
@@ -141,6 +196,8 @@ export class JavaQueueService {
       startedAt: null,
       finishedAt: methods.length ? null : new Date().toISOString(),
       queuedAt: new Date().toISOString(),
+      liveText: '',
+      tokenCount: 0,
     };
     this.jobs.set(this.key(fileId, 'methods'), job);
 
@@ -236,7 +293,8 @@ export class JavaQueueService {
         .getRepository(JavaMethod)
         .find({ where: { file_id: file.id }, select: { method_name: true } });
 
-      // 1) async + teuer ausserhalb der Transaktion
+      // 1) async + teuer ausserhalb der Transaktion (gestreamt -> Live-Tokens per SSE)
+      this.beginLive(job, key, file.class_name);
       const summary = await this.ollama.generateClassSummary(
         {
           classInfo: {
@@ -248,7 +306,9 @@ export class JavaQueueService {
           context: userContext,
         },
         controller.signal,
+        this.makeOnToken(job, key),
       );
+      this.live.next({ phase: 'done', key });
       if (controller.signal.aborted) return; // abgebrochen -> nichts persistieren
       if (!summary) job.ollamaUnavailable = true;
       const finalDescription = summary || file.description || '';
@@ -301,7 +361,8 @@ export class JavaQueueService {
         if (controller.signal.aborted) break; // zwischen Methoden abbrechen
         job.current = { id: m.id, name: m.method_name };
         try {
-          // 1) async + teuer ausserhalb der Transaktion
+          // 1) async + teuer ausserhalb der Transaktion (gestreamt -> Live-Tokens per SSE)
+          this.beginLive(job, key, m.method_name);
           const summary = await this.ollama.generateMethodDescription(
             {
               className,
@@ -309,7 +370,9 @@ export class JavaQueueService {
               context: userContext,
             },
             controller.signal,
+            this.makeOnToken(job, key),
           );
+          this.live.next({ phase: 'done', key });
           if (controller.signal.aborted) break; // abgebrochen -> nicht persistieren
           if (!summary) job.ollamaUnavailable = true;
           const finalSummary = summary || m.ai_summary || m.javadoc || '';

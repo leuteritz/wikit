@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Patch, Post, Put, Query, Sse } from '@nestjs/common';
+import { Observable } from 'rxjs';
 import { JavaService } from './java.service';
 import { JavaQueueService } from './java-queue.service';
 
@@ -76,6 +77,13 @@ export class JavaController {
   @Get('queues')
   listQueues() {
     return this.queue.list();
+  }
+
+  // SSE-Live-Strom aller Queues: Token-by-Token-Output von Ollama (phase start|token|done) +
+  // Heartbeat. Statische Route -> MUSS vor queues/:id stehen, sonst captured :id "stream".
+  @Sse('queues/stream')
+  queueStream(): Observable<{ data: unknown }> {
+    return this.queue.getStream();
   }
 
   // Snapshot der Queue einer Datei (fuer das Live-Banner in der Analyzer-View).

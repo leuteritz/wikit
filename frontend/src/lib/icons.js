@@ -50,6 +50,8 @@ import code2 from '@iconify-icons/lucide/code-2'
 import arrowDown from '@iconify-icons/lucide/arrow-down'
 import target from '@iconify-icons/lucide/target'
 import link from '@iconify-icons/lucide/link'
+import terminal from '@iconify-icons/lucide/terminal'
+import checkCircle from '@iconify-icons/lucide/check-circle'
 
 // --- Phosphor (Duotone, fuer das Brand-Logo) ---
 import phBooksDuotone from '@iconify-icons/ph/books-duotone'
@@ -94,6 +96,8 @@ const ICONS = {
   'lucide:arrow-down': arrowDown,
   'lucide:target': target,
   'lucide:link': link,
+  'lucide:terminal': terminal,
+  'lucide:check-circle': checkCircle,
   'ph:books-duotone': phBooksDuotone,
 }
 

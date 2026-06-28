@@ -19,9 +19,13 @@ const allJobs = ref([])
 const byFile = reactive({})
 // Letztes Fortschritts-/Statusereignis -> JavaClassDetail laedt bei Aenderung neu.
 const lastEvent = ref(null)
+// Live-Token-Puffer je Job-Key (`${fileId}:${kind}`): { text, tokens, phase }. Gespeist vom
+// SSE-Strom (Token-by-Token). Polling bleibt Source of Truth fuer Status/Fortschritt.
+const liveByKey = ref({})
 
 let timer = null
 let viewers = 0
+let es = null // geteilte EventSource fuer den Live-Strom
 // Merkt sich den letzten Stand pro fileId, um Aenderungen (done/status) zu erkennen.
 const seen = new Map()
 
@@ -72,10 +76,55 @@ async function refresh() {
   }
 }
 
+// Geteilten SSE-Strom oeffnen (genau eine EventSource). Liefert die Token-Deltas live.
+function openLiveStream() {
+  if (es) return
+  try {
+    es = new EventSource(api.javaQueueStreamUrl())
+  } catch {
+    es = null
+    return
+  }
+  es.onmessage = (ev) => {
+    let msg
+    try {
+      msg = JSON.parse(ev.data)
+    } catch {
+      return
+    }
+    if (!msg || msg.phase === 'heartbeat' || !msg.key) return
+    const map = liveByKey.value
+    if (msg.phase === 'start') {
+      map[msg.key] = { text: '', tokens: 0, phase: 'running' }
+    } else if (msg.phase === 'token') {
+      const cur = map[msg.key] || { text: '', tokens: 0, phase: 'running' }
+      map[msg.key] = {
+        text: cur.text + (msg.delta || ''),
+        tokens: msg.tokenCount ?? cur.tokens,
+        phase: 'running',
+      }
+    } else if (msg.phase === 'done') {
+      const cur = map[msg.key]
+      if (cur) map[msg.key] = { ...cur, phase: 'done' }
+    }
+  }
+  // Bei Verbindungsabbruch reconnectet EventSource selbst; nichts weiter zu tun.
+  es.onerror = () => {}
+}
+
+function closeLiveStream() {
+  if (es) {
+    es.close()
+    es = null
+  }
+  liveByKey.value = {}
+}
+
 function startPolling() {
   if (timer) return
   void refresh()
   timer = setInterval(refresh, POLL_MS)
+  openLiveStream()
 }
 
 function stopPolling() {
@@ -83,6 +132,7 @@ function stopPolling() {
     clearInterval(timer)
     timer = null
   }
+  closeLiveStream()
 }
 
 // Komponente meldet sich als Beobachter an (onMounted) und gibt eine Release-Fn zurueck
@@ -166,6 +216,7 @@ export function useJavaQueue() {
   return {
     allJobs,
     lastEvent,
+    liveByKey,
     enqueueClass,
     enqueueMethods,
     queueClass,

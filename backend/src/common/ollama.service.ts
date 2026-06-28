@@ -38,6 +38,88 @@ export class OllamaService {
     return c ? `Projekt-Kontext (beachten, aber nicht woertlich wiederholen):\n${c}\n\n` : '';
   }
 
+  // Token-Streaming-Variante: ruft Ollama mit `stream: true` auf und liefert pro Chunk den
+  // Delta-Text an `onToken` (fuer die Live-Anzeige in der KI-Queue). Akkumuliert den Volltext
+  // und gibt ihn getrimmt zurueck. '' bei Timeout/Fehler/Down (Fallback-Kette unveraendert).
+  //
+  // Wichtig: KEIN harter Gesamt-Timeout (eine lange Generierung wuerde sonst abgeschnitten),
+  // sondern ein IDLE-Timeout, das pro empfangenem Chunk zurueckgesetzt wird. Externes `signal`
+  // (z. B. Cancel aus der Queue) bricht den Stream ebenfalls ab.
+  private async runStream(
+    prompt: string,
+    onToken: (delta: string) => void,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const controller = new AbortController();
+    let timedOut = false;
+    let idleTimer: NodeJS.Timeout | null = null;
+    const resetIdle = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, TIMEOUT_MS);
+    };
+    if (signal) {
+      if (signal.aborted) controller.abort();
+      else signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+    resetIdle();
+    try {
+      const res = await fetch(OLLAMA_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: OLLAMA_MODEL, prompt, stream: true }),
+        signal: controller.signal,
+      });
+      if (!res.ok || !res.body) {
+        this.logger.warn(`Ollama HTTP ${res.status} ${res.statusText} (${OLLAMA_URL})`);
+        return '';
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let full = '';
+      let buffer = '';
+      // Ollama streamt NDJSON: eine JSON-Zeile pro Token-Chunk ({ response, done }).
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        resetIdle();
+        buffer += decoder.decode(value, { stream: true });
+        let nl: number;
+        while ((nl = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, nl).trim();
+          buffer = buffer.slice(nl + 1);
+          if (!line) continue;
+          let chunk: any;
+          try {
+            chunk = JSON.parse(line);
+          } catch {
+            continue; // unvollstaendige/kaputte Zeile ueberspringen
+          }
+          const delta: string = chunk.response || '';
+          if (delta) {
+            full += delta;
+            try {
+              onToken(delta);
+            } catch {
+              /* Anzeige-Callback darf den Stream nie kippen */
+            }
+          }
+          if (chunk.done) break;
+        }
+      }
+      return full.trim();
+    } catch (err: any) {
+      if (timedOut) this.logger.warn(`Ollama Idle-Timeout nach ${TIMEOUT_MS}ms (${OLLAMA_URL})`);
+      else if (signal?.aborted) this.logger.debug('Ollama-Stream abgebrochen (Cancel)');
+      else this.logger.warn(`Ollama nicht erreichbar: ${err?.message || err} (${OLLAMA_URL})`);
+      return '';
+    } finally {
+      if (idleTimer) clearTimeout(idleTimer);
+    }
+  }
+
   // Generischer, abgesicherter Aufruf an Ollama. Liefert '' bei Timeout/Fehler/Down.
   // Ein optionales externes `signal` (z. B. Cancel aus der Analyse-Queue) bricht den
   // laufenden fetch ab. Fehlerursachen werden geloggt (vorher still verschluckt), die
@@ -111,6 +193,7 @@ export class OllamaService {
       context?: string;
     },
     signal?: AbortSignal,
+    onToken?: (delta: string) => void,
   ): Promise<string> {
     const sig = this.signature(className, method);
     const javadoc = method.javadoc ? `\nVorhandener Javadoc:\n${method.javadoc}` : '';
@@ -122,7 +205,7 @@ export class OllamaService {
       `praegnant (2-4 Saetze): Zweck, wichtige Parameter, Rueckgabe und nennenswerte Seiteneffekte ` +
       `oder Ausnahmen. Nutze bei Bedarf kurze Markdown-Formatierung (z. B. \`code\`), aber keinen ` +
       `kompletten Code-Block. Antworte nur mit der Beschreibung.\n\nSignatur:\n${sig}${javadoc}${bodyBlock}`;
-    return this.run(prompt, signal);
+    return onToken ? this.runStream(prompt, onToken, signal) : this.run(prompt, signal);
   }
 
   // Kurze Klassenbeschreibung (Markdown): Zweck/Verantwortlichkeit der Klasse aus Name, Typ
@@ -136,6 +219,7 @@ export class OllamaService {
       context?: string;
     },
     signal?: AbortSignal,
+    onToken?: (delta: string) => void,
   ): Promise<string> {
     const fqn = classInfo.package ? `${classInfo.package}.${classInfo.class_name}` : classInfo.class_name;
     const methodList = (classInfo.methods || []).map((m) => m.method_name).join(', ');
@@ -146,6 +230,6 @@ export class OllamaService {
       `mit der Beschreibung (Markdown erlaubt), ohne Methoden einzeln aufzuzaehlen.\n\n` +
       `Klasse: ${fqn} (${classInfo.class_type || 'class'})\n` +
       (methodList ? `Methoden: ${methodList}` : '');
-    return this.run(prompt, signal);
+    return onToken ? this.runStream(prompt, onToken, signal) : this.run(prompt, signal);
   }
 }
