@@ -1,11 +1,11 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource, EntityManager } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull } from 'typeorm';
 import { FtsService } from '../database/fts.service';
 import { MarkdownService } from '../common/markdown.service';
 import { OllamaService } from '../common/ollama.service';
 import { SerializerService } from '../common/serializer.service';
-import { parseJava, parseJavaForEdges, JavaClassGraphInfo } from '../common/java-parser';
+import { parseJava, parseJavaForEdges, splitJavaSources, JavaClassGraphInfo } from '../common/java-parser';
 import { JavaDependency } from '../entities/java-dependency.entity';
 import { JavaEdge } from '../entities/java-edge.entity';
 import { JavaFile } from '../entities/java-file.entity';
@@ -89,6 +89,129 @@ export class JavaService {
     return {
       file: await this.serializer.serializeJavaFile(row, { withSource: true }),
       graph: await this.serializer.graphForJavaFiles(),
+    };
+  }
+
+  // Mehrere Klassen aus einem Roh-Paste (oder mehreren zusammengefuegten .java-Dateien)
+  // analysieren. Ablauf wie analyze(): erst zerlegen + parsen (sync) und DB lesen, DANN in
+  // EINER Transaktion schreiben. Trennt den Text in eigenstaendige Klassen-Chunks, dedupliziert
+  // FQCNs im Paste, erkennt DB-Duplikate (class_name + package). Liegen Duplikate vor und ist
+  // `overwrite` nicht gesetzt, wird NICHTS geschrieben und needsConfirm zurueckgegeben, damit
+  // das Frontend nachfragen kann.
+  async analyzeBatch(body: any): Promise<any> {
+    const b = body || {};
+    const source = (b.source ?? '').toString();
+    const overwrite = b.overwrite === true;
+    if (!source.trim()) throw new BadRequestException('Quellcode ist erforderlich');
+
+    // 1) In eigenstaendige Klassen-Chunks zerlegen + je Chunk parsen (nur Top-Level-Typ).
+    const chunks = splitJavaSources(source);
+    const warnings: string[] = [];
+    const seen = new Set<string>(); // FQCN -> bereits im Paste vorgekommen
+    const items: Array<{ fqcn: string; pkg: string | null; cls: any; imports: string[]; chunk: string }> = [];
+
+    for (const chunk of chunks) {
+      if (!chunk.trim()) continue;
+      let parsed;
+      try {
+        parsed = parseJava(chunk);
+      } catch (e: any) {
+        throw new BadRequestException(`Parsen fehlgeschlagen: ${e.message}`);
+      }
+      const cls = parsed.primary; // genau ein Top-Level-Typ pro Chunk (Splitter)
+      const pkg = parsed.package || null;
+      const fqcn = (pkg ? pkg + '.' : '') + cls.class_name;
+      if (seen.has(fqcn)) {
+        warnings.push(`Doppelte Klasse „${fqcn}" im Paste – nur das erste Vorkommen wurde übernommen.`);
+        continue;
+      }
+      seen.add(fqcn);
+      items.push({ fqcn, pkg, cls, imports: parsed.imports, chunk });
+    }
+
+    if (!items.length) throw new BadRequestException('Keine Klasse/Interface/Enum im Quelltext gefunden');
+
+    // 2) DB-Duplikate (class_name + package) ermitteln.
+    const repo = this.ds.getRepository(JavaFile);
+    const existingByFqcn = new Map<string, JavaFile>();
+    for (const it of items) {
+      const existing = await repo.findOne({
+        where: { class_name: it.cls.class_name, pkg: it.pkg ?? IsNull() },
+      });
+      if (existing) existingByFqcn.set(it.fqcn, existing);
+    }
+
+    // 3) Konflikte ohne Bestaetigung -> nichts schreiben, Frontend fragt nach (200-Antwort).
+    const conflicts = [...existingByFqcn.keys()];
+    if (conflicts.length && !overwrite) {
+      return {
+        needsConfirm: true,
+        conflicts,
+        detected: items.map((it) => ({ class_name: it.cls.class_name, package: it.pkg })),
+        warnings,
+      };
+    }
+
+    // 4) Schreiben: je Klasse insert; bei Konflikt den alten Datensatz vorher loeschen
+    //    (java_fts-Zeile + Datei -> CASCADE raeumt Methoden/Dependencies, wie deleteFile()).
+    const savedIds: number[] = [];
+    const overwritten: string[] = [];
+    await this.ds.transaction(async (manager) => {
+      for (const it of items) {
+        const existing = existingByFqcn.get(it.fqcn);
+        if (existing) {
+          await manager.query('DELETE FROM java_fts WHERE rowid = ?', [existing.id]);
+          await manager.getRepository(JavaFile).delete({ id: existing.id });
+          overwritten.push(it.fqcn);
+        }
+
+        const res = await manager.getRepository(JavaFile).insert({
+          filename: `${it.cls.class_name}.java`,
+          pkg: it.pkg,
+          class_name: it.cls.class_name,
+          class_type: it.cls.class_type,
+          raw_source: it.chunk,
+          class_line: it.cls.class_line ?? null,
+        });
+        const fileId = res.identifiers[0].id as number;
+
+        for (const m of it.cls.methods) {
+          await manager.getRepository(JavaMethod).insert({
+            file_id: fileId,
+            method_name: m.method_name,
+            return_type: m.return_type,
+            parameters: JSON.stringify(m.parameters),
+            javadoc: m.javadoc || '',
+            ai_summary: m.javadoc || '',
+            body: m.body || '',
+            start_line: m.start_line ?? null,
+            body_start_line: m.body_start_line ?? null,
+          });
+        }
+        for (const fqn of it.imports) {
+          await manager.getRepository(JavaDependency).insert({ from_file_id: fileId, to_class_name: fqn });
+        }
+
+        await this.fts.indexJavaFile(manager, fileId);
+        savedIds.push(fileId);
+      }
+
+      // Einmalig nach allen Inserts: Call-Edges global neu berechnen.
+      await this.recomputeAutoEdges(manager);
+    });
+
+    // Reihenfolge wie savedIds beibehalten (find() sortiert nicht garantiert).
+    const savedRows = await repo.find({ where: { id: In(savedIds) } });
+    const byId = new Map(savedRows.map((r) => [r.id, r]));
+    const saved = await Promise.all(
+      savedIds.map((id) => this.serializer.serializeJavaFile(byId.get(id), { withSource: true })),
+    );
+
+    return {
+      saved,
+      graph: await this.serializer.graphForJavaFiles(),
+      warnings,
+      overwritten,
     };
   }
 

@@ -14,6 +14,13 @@ export class JavaController {
     return this.svc.analyze(body);
   }
 
+  // Mehrklassen-/Roh-Paste-Analyse: trennt mehrere Klassen, erkennt Duplikate. Body:
+  // { source, overwrite? }. Bei Konflikt ohne overwrite -> 200 { needsConfirm, conflicts, ... }.
+  @Post('analyze-batch')
+  analyzeBatch(@Body() body: any) {
+    return this.svc.analyzeBatch(body);
+  }
+
   @Get('files')
   listFiles() {
     return this.svc.listFiles();

@@ -301,6 +301,131 @@ export function parseJava(source: string): JavaParseResult {
   return { package: pkg, imports, classes, primary: classes[0] };
 }
 
+// --- splitJavaSources ---------------------------------------------------------
+
+// Zeichen ueberspringen, das innerhalb eines String-/Char-Literals liegt (ab oeffnendem
+// Quote `i`), inkl. Backslash-Escapes. Liefert den Index NACH dem schliessenden Quote.
+function skipLiteral(text: string, i: number, quote: string): number {
+  i++; // oeffnendes Quote
+  const n = text.length;
+  while (i < n) {
+    if (text[i] === '\\') {
+      i += 2;
+      continue;
+    }
+    if (text[i] === quote) return i + 1;
+    i++;
+  }
+  return n;
+}
+
+// Index der letzten `package`/`import`-Anweisung (deren Ende) -> alles davor ist der
+// gemeinsame Header (fuehrende Kommentare + package + imports) einer Compilation-Unit.
+function headerEndIndex(unit: string): number {
+  let end = 0;
+  const re = /^[ \t]*(?:package|import)\b[^;]*;/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(unit)) !== null) end = m.index + m[0].length;
+  return end;
+}
+
+// Eine Compilation-Unit (genau ein Header) in je einen Chunk pro Top-Level-Typ zerlegen.
+// Brace-zaehlend, Strings/Chars/Kommentare werden uebersprungen. Jeder Chunk = Header +
+// genau ein Top-Level-Typ (inkl. dessen geschachtelter Typen) -> einzeln parsebar.
+function splitTopLevelTypes(unit: string): string[] {
+  const header = unit.slice(0, headerEndIndex(unit));
+  const bodies: string[] = [];
+  let i = headerEndIndex(unit);
+  const n = unit.length;
+
+  while (i < n) {
+    while (i < n && /\s/.test(unit[i])) i++; // fuehrende Leerzeichen vor dem Typ
+    if (i >= n) break;
+    const declStart = i;
+    let depth = 0;
+    let opened = false;
+    let bodyEnd = n;
+    while (i < n) {
+      const c = unit[i];
+      const c2 = unit[i + 1];
+      if (c === '/' && c2 === '/') {
+        const e = unit.indexOf('\n', i);
+        i = e === -1 ? n : e;
+        continue;
+      }
+      if (c === '/' && c2 === '*') {
+        const e = unit.indexOf('*/', i + 2);
+        i = e === -1 ? n : e + 2;
+        continue;
+      }
+      if (c === '"' || c === "'") {
+        i = skipLiteral(unit, i, c);
+        continue;
+      }
+      if (c === '{') {
+        depth++;
+        opened = true;
+        i++;
+        continue;
+      }
+      if (c === '}') {
+        depth--;
+        i++;
+        if (opened && depth === 0) {
+          bodyEnd = i;
+          break;
+        }
+        continue;
+      }
+      i++;
+    }
+    bodies.push(unit.slice(declStart, bodyEnd));
+    if (!opened) break; // kein `{` mehr gefunden -> Rest war Schlussfragment
+    i = bodyEnd;
+  }
+
+  if (bodies.length <= 1) return [unit];
+  return bodies.map((b) => `${header}\n${b}\n`);
+}
+
+// Roh-Paste (einzelne oder mehrere zusammengefuegte .java-Quellen) in eigenstaendige,
+// je einzeln parsebare Klassen-Chunks zerlegen. Zwei Stufen:
+//   1) An `package`-Deklarationen in Compilation-Units schneiden (mehrere Dateien in einem
+//      Paste haben je ein eigenes `package`).
+//   2) Innerhalb jeder Unit die Top-Level-Typen brace-zaehlend trennen.
+// Bewusst regex-/scan-basiert (kein CST): der Splitter muss vor dem eigentlichen parseJava
+// laufen, das pro Chunk separat aufgerufen wird.
+export function splitJavaSources(source: string): string[] {
+  const text = String(source || '').replace(/\r\n/g, '\n');
+
+  // 1) Compilation-Units an `package`-Zeilen (Zeilenanfang, opt. Einrueckung).
+  const pkgRe = /^[ \t]*package\b[^;]*;/gm;
+  const starts: number[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = pkgRe.exec(text)) !== null) starts.push(m.index);
+
+  let units: string[];
+  if (starts.length <= 1) {
+    units = [text];
+  } else {
+    units = [];
+    for (let k = 0; k < starts.length; k++) {
+      const start = k === 0 ? 0 : starts[k]; // Text vor dem 1. package bleibt bei Unit 0
+      const end = k + 1 < starts.length ? starts[k + 1] : text.length;
+      units.push(text.slice(start, end));
+    }
+  }
+
+  const chunks: string[] = [];
+  for (const unit of units) {
+    if (!unit.trim()) continue;
+    for (const chunk of splitTopLevelTypes(unit)) {
+      if (chunk.trim()) chunks.push(chunk);
+    }
+  }
+  return chunks;
+}
+
 // --- parseJavaForEdges --------------------------------------------------------
 
 // Klassennamen eines Typ-Knotens (typeIdentifier) ermitteln.

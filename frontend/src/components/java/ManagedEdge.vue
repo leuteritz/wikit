@@ -1,9 +1,18 @@
 <script setup>
-// Custom Vue-Flow-Kante fuer die persistierten Klassen-Kanten.
-// - Label am Mittelpunkt (EdgeLabelRenderer) zeigt den aufgerufenen Methodennamen.
-// - Manuelle Kanten: gestrichelt + Link-Icon. Unsichere Auto-Kanten: "Bitte pruefen"-Badge.
-// - Hover blendet Schnell-Aktionen (Bearbeiten/Loeschen) ein -> rufen Callbacks aus edge.data
-//   auf (von JavaDependencyGraph gesetzt; Vue Flow leitet keine Custom-Emits an den Parent).
+// Custom Vue-Flow-Kante fuer ALLE Klassen-Kanten (Call + Import).
+// - Call-Kante: Label am (gestaffelten) Mittelpunkt zeigt den aufgerufenen Methodennamen,
+//   ist klickbar und hat Hover-Schnellaktionen (Bearbeiten/Loeschen). Manuelle Kanten:
+//   gestrichelt + Link-Icon. Unsichere Auto-Kanten: "Bitte pruefen"-Badge.
+// - Import-Kante (data.kind === 'import'): nur die Linie, KEIN Label, nicht klickbar.
+// Callbacks kommen aus edge.data (von JavaDependencyGraph gesetzt; Vue Flow leitet keine
+// Custom-Emits an den Parent).
+//
+// Parallele Kanten desselben Knotenpaars teilen sich Bottom-/Top-Handle und laegen sonst
+// deckungsgleich. Loesung in ZWEI Achsen, gesteuert ueber parallelIndex/parallelCount (vom
+// Parent ueber das UNGEORDNETE Knotenpaar vergeben, Call + Import gemeinsam):
+//   1) Linien: Endpunkte (und damit der Pfad) horizontal auffaechern (fanOffset).
+//   2) Labels: zusaetzlich vertikal staffeln (labelStagger) statt rotieren – rotierte Labels
+//      sind schlechter lesbar; gestapelte, leicht versetzte Labels bleiben waagerecht lesbar.
 import { computed } from 'vue'
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from '@vue-flow/core'
 import { Icon } from '../../lib/icons.js'
@@ -21,15 +30,17 @@ const props = defineProps({
   selected: { type: Boolean, default: false },
 })
 
-// Parallele Kanten desselben Knotenpaars (A ruft mehrere Methoden von B) teilen sich Bottom-/
-// Top-Handle und liegen sonst deckungsgleich. Darum die Endpunkte (und damit das Label)
-// senkrecht zur Hauptrichtung X-versetzen -> die Kanten faechern sichtbar auf.
-const SPREAD = 26 // px Abstand zwischen parallelen Kanten
-const fanOffset = computed(() => {
+const SPREAD = 26 // px horizontaler Abstand zwischen parallelen Linien
+const LABEL_STEP = 18 // px vertikaler Versatz gestapelter Labels
+
+// Symmetrisch um die Mitte verteilen: jeder Index erhaelt einen eindeutigen Offset.
+const spread = (step) => {
   const count = props.data?.parallelCount || 1
   const index = props.data?.parallelIndex || 0
-  return count > 1 ? (index - (count - 1) / 2) * SPREAD : 0
-})
+  return count > 1 ? (index - (count - 1) / 2) * step : 0
+}
+const fanOffset = computed(() => spread(SPREAD))
+const labelStagger = computed(() => spread(LABEL_STEP))
 
 const pathData = computed(() =>
   getSmoothStepPath({
@@ -43,7 +54,7 @@ const pathData = computed(() =>
 )
 const edgePath = computed(() => pathData.value[0])
 const labelX = computed(() => pathData.value[1])
-const labelY = computed(() => pathData.value[2])
+const labelY = computed(() => pathData.value[2] + labelStagger.value)
 
 const d = computed(() => props.data || {})
 </script>
@@ -51,7 +62,8 @@ const d = computed(() => props.data || {})
 <template>
   <BaseEdge :id="id" :path="edgePath" :marker-end="markerEnd" :style="d.edgeStyle" />
 
-  <EdgeLabelRenderer>
+  <!-- Import-Kanten haben kein Label (nur die Linie). -->
+  <EdgeLabelRenderer v-if="d.kind !== 'import'">
     <div
       class="me-label"
       :class="{

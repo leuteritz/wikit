@@ -12,14 +12,16 @@ import JavaCodeEditor from '../components/java/JavaCodeEditor.vue'
 import JavaDependencyGraph from '../components/java/JavaDependencyGraph.vue'
 import JavaClassDetail from '../components/java/JavaClassDetail.vue'
 import { Icon } from '../lib/icons.js'
+import { detectJavaClasses } from '../lib/javaDetect.js'
 
-const { files, fetchFiles, analyzeCode, analyzing, error, userContext, lastFileId, lastTargetLine, deleteFile } =
+const { files, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFileId, lastTargetLine, deleteFile } =
   useJavaAnalyzer()
 const { enqueueClass, enqueueMethods, queueClass, cancelJob, progressFor, ensurePolling } =
   useJavaQueue()
 
 const source = ref('')
 const filename = ref('')
+const inputMode = ref('paste') // 'paste' = Editor | 'file' = .java-Datei(en) hochladen
 const selectedFileId = ref(null)
 const activeTargetLine = ref(null) // Ziel-Quellzeile fuer das Detail-Panel (Such-Sprung)
 const queueNotice = ref('')
@@ -28,6 +30,11 @@ const showNew = ref(false)
 const collapsed = reactive({}) // packagePfad -> true (eingeklappt)
 const pendingDelete = ref(null)
 const deleting = ref(false)
+const pendingConflicts = ref(null) // FQCN-Liste vorhandener Klassen -> Ueberschreiben-Dialog
+const confirming = ref(false)
+
+// Live-Vorschau der im Editor erkannten Klassen (rein clientseitig, nicht autoritativ).
+const detectedClasses = computed(() => detectJavaClasses(source.value))
 
 // Hand-off aus Landing-Analyse / Suche / Edge-Panel uebernehmen: Datei vorwaehlen und
 // (optional) die Ziel-Quellzeile ans Detail-Panel durchreichen. Danach zuruecksetzen.
@@ -123,26 +130,62 @@ async function generateAllMethods() {
 }
 
 async function onFile(e) {
-  const f = e.target.files?.[0]
-  if (!f) return
-  filename.value = f.name
-  source.value = await f.text()
+  const list = [...(e.target.files || [])]
+  if (!list.length) return
+  filename.value = list.length === 1 ? list[0].name : `${list.length} Dateien`
+  const texts = await Promise.all(list.map((f) => f.text()))
+  // Mehrere Dateien zusammenfuegen -> das Backend trennt sie wieder (package-/Typ-Grenzen).
+  source.value = texts.join('\n\n')
   showNew.value = true
+}
+
+// Erfolgreichen Batch abschliessen: erste Klasse vorwaehlen, je Klasse KI-Queue starten,
+// Warnungen anzeigen, Panel zuruecksetzen.
+function finishBatch(res) {
+  if (res.saved?.length) {
+    selectedFileId.value = res.saved[0].id
+    for (const f of res.saved) enqueueClass(f, { userContext: userContext.value })
+  }
+  const parts = []
+  if (res.overwritten?.length) parts.push(`${res.overwritten.length} überschrieben.`)
+  if (res.warnings?.length) parts.push(...res.warnings)
+  queueNotice.value = parts.join(' ')
+  source.value = ''
+  filename.value = ''
+  showNew.value = false
 }
 
 async function analyze() {
   if (!source.value.trim()) return
+  queueNotice.value = ''
   try {
-    const result = await analyzeCode(source.value, filename.value)
-    selectedFileId.value = result.file.id
-    // KI-Queue automatisch starten: alle Methoden sequenziell beschriften.
-    enqueueClass(result.file, { userContext: userContext.value })
-    source.value = ''
-    filename.value = ''
-    showNew.value = false
+    const res = await analyzeBatch(source.value)
+    // DB-Duplikate -> erst nachfragen, dann ggf. mit overwrite erneut senden.
+    if (res.needsConfirm) {
+      pendingConflicts.value = res.conflicts
+      return
+    }
+    finishBatch(res)
   } catch {
     // Fehler steht in `error` (Composable) und wird im Template angezeigt.
   }
+}
+
+async function confirmOverwrite() {
+  confirming.value = true
+  try {
+    const res = await analyzeBatch(source.value, { overwrite: true })
+    pendingConflicts.value = null
+    finishBatch(res)
+  } catch {
+    // Fehler steht in `error` (Composable).
+  } finally {
+    confirming.value = false
+  }
+}
+function cancelOverwrite() {
+  if (confirming.value) return
+  pendingConflicts.value = null
 }
 
 function selectFile(id) {
@@ -255,16 +298,54 @@ async function onDetailClose(payload) {
           <div class="grid gap-3 lg:grid-cols-[1fr_280px]">
             <div class="min-w-0">
               <div class="mb-2 flex items-center justify-between gap-2">
-                <h2 class="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Java-Quelltext</h2>
-                <label class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)]">
-                  <Icon icon="lucide:upload" class="h-3.5 w-3.5" />
+                <!-- Eingabemodus: Code einfuegen vs. .java-Datei(en) hochladen (beide fuellen `source`). -->
+                <div class="inline-flex rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-0.5 text-xs">
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium transition"
+                    :class="inputMode === 'paste' ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] shadow-sm' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
+                    @click="inputMode = 'paste'"
+                  >
+                    <Icon icon="lucide:code-2" class="h-3.5 w-3.5" />
+                    Code einfügen
+                  </button>
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium transition"
+                    :class="inputMode === 'file' ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] shadow-sm' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
+                    @click="inputMode = 'file'"
+                  >
+                    <Icon icon="lucide:upload" class="h-3.5 w-3.5" />
+                    Datei hochladen
+                  </button>
+                </div>
+                <label
+                  v-if="inputMode === 'file'"
+                  class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)]"
+                >
+                  <Icon icon="lucide:file-code" class="h-3.5 w-3.5" />
                   <span v-if="filename" class="max-w-[10rem] truncate">{{ filename }}</span>
-                  <span v-else>.java-Datei</span>
-                  <input type="file" accept=".java" class="hidden" @change="onFile" />
+                  <span v-else>.java-Datei(en) wählen</span>
+                  <input type="file" accept=".java" multiple class="hidden" @change="onFile" />
                 </label>
               </div>
               <div class="h-44">
                 <JavaCodeEditor v-model="source" />
+              </div>
+              <!-- Live-Vorschau der erkannten Klassen (Name · Package), bevor gespeichert wird. -->
+              <div v-if="detectedClasses.length" class="mt-2 flex flex-wrap items-center gap-1.5">
+                <span class="text-[11px] font-medium text-[var(--color-text-muted)]">
+                  {{ detectedClasses.length }} Klasse(n) erkannt:
+                </span>
+                <span
+                  v-for="c in detectedClasses"
+                  :key="(c.package || '') + '.' + c.class_name"
+                  class="inline-flex items-center gap-1 rounded-md bg-[var(--color-accent-soft)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-accent)]"
+                  :title="c.package ? c.package + '.' + c.class_name : c.class_name"
+                >
+                  <Icon icon="lucide:box" class="h-3 w-3 shrink-0" />
+                  <span class="font-mono"><span v-if="c.package" class="opacity-70">{{ c.package }}·</span>{{ c.class_name }}</span>
+                </span>
               </div>
             </div>
             <div class="flex flex-col">
@@ -459,6 +540,64 @@ async function onDetailClose(payload) {
             >
               <Icon v-if="deleting" icon="lucide:loader-2" class="h-4 w-4 animate-spin" />
               {{ deleting ? 'Lösche…' : 'Löschen' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Bestaetigungs-Dialog: vorhandene Klassen ueberschreiben -->
+    <Teleport to="body">
+      <div
+        v-if="pendingConflicts"
+        class="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 backdrop-blur-sm"
+        @click.self="cancelOverwrite"
+      >
+        <div class="w-full max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-5 shadow-xl">
+          <div class="mb-3 flex items-center gap-3">
+            <span
+              class="grid h-10 w-10 shrink-0 place-items-center rounded-full text-[var(--color-warning)]"
+              style="background-color: color-mix(in srgb, var(--color-warning) 16%, transparent)"
+            >
+              <Icon icon="lucide:alert-triangle" class="h-5 w-5" />
+            </span>
+            <div class="min-w-0">
+              <h3 class="truncate font-semibold text-[var(--color-text)]">Klasse(n) überschreiben?</h3>
+              <p class="text-xs text-[var(--color-text-muted)]">
+                {{ pendingConflicts.length }} Klasse(n) sind bereits analysiert.
+              </p>
+            </div>
+          </div>
+          <ul class="mb-4 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
+            <li
+              v-for="fqcn in pendingConflicts"
+              :key="fqcn"
+              class="flex items-center gap-1.5 truncate font-mono text-xs text-[var(--color-text)]"
+            >
+              <Icon icon="lucide:box" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
+              {{ fqcn }}
+            </li>
+          </ul>
+          <p class="mb-4 text-sm text-[var(--color-text-muted)]">
+            Beim Überschreiben werden die bisherigen Datensätze (inkl. KI-Beschreibungen) ersetzt.
+          </p>
+          <div class="flex justify-end gap-2">
+            <button
+              type="button"
+              class="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] disabled:opacity-50"
+              :disabled="confirming"
+              @click="cancelOverwrite"
+            >
+              Abbrechen
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 py-2 text-sm font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
+              :disabled="confirming"
+              @click="confirmOverwrite"
+            >
+              <Icon v-if="confirming" icon="lucide:loader-2" class="h-4 w-4 animate-spin" />
+              {{ confirming ? 'Überschreibe…' : 'Überschreiben' }}
             </button>
           </div>
         </div>

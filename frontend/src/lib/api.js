@@ -33,6 +33,9 @@ export const api = {
   deleteRelation: (id) => http('DELETE', `/relations/${id}`),
 
   analyzeJava: (data) => http('POST', '/java/analyze', data),
+  // Mehrklassen-/Roh-Paste-Analyse: { source, overwrite? }. Bei Duplikaten ohne overwrite
+  // liefert das Backend { needsConfirm:true, conflicts:[...] } (200) statt zu schreiben.
+  analyzeJavaBatch: (data) => http('POST', '/java/analyze-batch', data),
   listJavaFiles: () => http('GET', '/java/files'),
   getJavaFile: (id) => http('GET', `/java/files/${id}`),
   getJavaFileByArticle: (articleId) => http('GET', `/java/files/by-article/${articleId}`),

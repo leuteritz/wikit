@@ -3,9 +3,12 @@
 // Knoten = NUR geladene Klassen (in Imports referenzierte, nicht geladene Klassen werden
 // bewusst NICHT als Knoten dargestellt). Kanten = direkte Abhaengigkeiten zwischen geladenen
 // Klassen:
-//   * Call-Edge ("Methoden-Nutzung"): durchgezogen + animiert + Akzentfarbe, Label = aufgerufene
+//   * Call-Edge ("Methoden-Nutzung"): durchgezogen + Akzentfarbe, Label = aufgerufene
 //     Methode(n), KLICKBAR -> oeffnet ein Code-Panel mit dem verwendenden Code (CodeMirror).
-//   * Import-Edge: gestrichelt + gedaempft, nicht klickbar.
+//   * Import-Edge: gestrichelt + gedaempft, ohne Label, nicht klickbar.
+// BEIDE Kantentypen rendern ueber dieselbe Custom-Kante (ManagedEdge): so greift fuer alle
+// Kanten derselbe Faecher-Versatz + die Label-Staffelung -> parallele Kanten/Labels zwischen
+// denselben Knoten (auch Call vs. Import oder A->B/B->A) ueberlappen nicht mehr.
 // Farbe je Package rotierend. Alles client-seitig aus der Dateiliste (props.files enthaelt
 // methods[].body + dependencies[]) -> kein Request, kein Backend noetig. Icons via Iconify.
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
@@ -130,36 +133,45 @@ const layout = computed(() => {
       edges.push({
         id: `imp:${f.id}-${target.id}`,
         // Einheitlicher „Definition -> Nutzung"-Fluss: importierte Klasse = Quelle,
-        // importierende Klasse = Ziel (Pfeilspitze).
+        // importierende Klasse = Ziel (Pfeilspitze). Ueber ManagedEdge gerendert -> faechert
+        // mit, hat aber kein Label und ist nicht klickbar (kind: 'import').
         source: `c:${target.id}`,
         target: `c:${f.id}`,
-        type: 'smoothstep',
-        style: { stroke: 'var(--color-text-muted)', strokeWidth: 1.5, strokeDasharray: '5 4' },
+        type: 'managed',
         markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--color-text-muted)' },
-        data: { kind: 'import' },
+        data: {
+          kind: 'import',
+          edgeStyle: { stroke: 'var(--color-text-muted)', strokeWidth: 1.5, strokeDasharray: '5 4' },
+        },
       })
     }
   }
 
-  // Parallele Call-Kanten desselben Knotenpaars indizieren -> ManagedEdge faechert sie per
-  // X-Versatz auf (sonst liegen alle Methoden-Kanten A->B deckungsgleich uebereinander).
+  // Parallele Kanten desselben (UNGEORDNETEN) Knotenpaars indizieren -> ManagedEdge faechert
+  // sie per Versatz auf und staffelt die Labels. ALLE Kanten zaehlen mit (Call + Import, beide
+  // Richtungen ueber den sortierten Key), sonst koennen Call vs. Import oder A->B/B->A
+  // deckungsgleich uebereinanderliegen.
   const pairGroups = new Map()
   for (const e of edges) {
-    if (e.type !== 'managed') continue
-    const key = `${e.source}|${e.target}`
+    const key = [e.source, e.target].slice().sort().join('|')
     if (!pairGroups.has(key)) pairGroups.set(key, [])
     pairGroups.get(key).push(e)
   }
   for (const group of pairGroups.values()) {
     group.forEach((e, i) => {
+      e.data = e.data || {}
       e.data.parallelIndex = i
       e.data.parallelCount = group.length
+      // Gegenrichtungen erhalten ein stabiles Vorzeichen (konsistente Faecher-Seite).
+      e.data.direction = e.source < e.target ? 1 : -1
     })
   }
 
   // --- dagre-Auto-Layout ---
+  // Groessere nodesep/ranksep als zuvor -> mehr Luft zwischen Knoten, damit Node-Labels (und
+  // die aufgefaecherten Kanten/Kanten-Labels) bei dicht liegenden Klassen nicht kollidieren.
   const g = new dagre.graphlib.Graph()
-  g.setGraph({ rankdir: 'TB', nodesep: 60, ranksep: 70, marginx: 24, marginy: 24 })
+  g.setGraph({ rankdir: 'TB', nodesep: 90, ranksep: 110, marginx: 24, marginy: 24 })
   g.setDefaultEdgeLabel(() => ({}))
   for (const f of files) g.setNode(`c:${f.id}`, { width: NODE_W, height: NODE_H })
   for (const e of edges) {
@@ -447,7 +459,7 @@ onUnmounted(() => {
       fit-view-on-init
       :min-zoom="0.2"
       :max-zoom="2"
-      :default-edge-options="{ type: 'smoothstep' }"
+      :default-edge-options="{ type: 'managed' }"
       @node-click="onNodeClick"
       @edge-click="onEdgeClick"
       @edge-context-menu="onEdgeContextMenu"

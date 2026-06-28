@@ -51,6 +51,23 @@ export function useJavaAnalyzer() {
         state.analyzing = false
       }
     },
+    // Mehrere Klassen aus einem Roh-Paste analysieren. Liefert das Backend needsConfirm
+    // (DB-Duplikate, kein overwrite), wird die Dateiliste NICHT aktualisiert -> der Aufrufer
+    // zeigt den Confirm-Dialog und ruft erneut mit { overwrite: true } auf.
+    async analyzeBatch(source, { overwrite = false } = {}) {
+      state.analyzing = true
+      state.error = ''
+      try {
+        const result = await api.analyzeJavaBatch({ source, overwrite })
+        if (!result.needsConfirm) await fetchFiles()
+        return result
+      } catch (e) {
+        state.error = e.message
+        throw e
+      } finally {
+        state.analyzing = false
+      }
+    },
     async deleteFile(id) {
       await api.deleteJavaFile(id)
       await fetchFiles()
