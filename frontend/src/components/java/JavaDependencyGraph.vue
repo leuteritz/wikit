@@ -54,8 +54,10 @@ const layout = computed(() => {
   const callPairs = new Set()
 
   // 1) Methoden-Nutzungs-Kanten: fremder Methodenname taucht im Body einer Methode auf.
-  //    Pro gerichtetem Paar A->B die konkreten Call-Sites sammeln (welche Methode von A ruft
-  //    welche Methode von B), damit Label + Code-Panel echte Daten zeigen.
+  //    fx = aufrufende Klasse (Anwender), fy = definierende Klasse (Quelle der Methode).
+  //    Pro gerichtetem Paar fx->fy die konkreten Call-Sites sammeln – inkl. EXAKTER Aufrufzeile
+  //    (aus body_start_line + Newlines bis zur Fundstelle), damit das Edge-Panel die Stelle
+  //    zeilengenau hervorheben kann.
   for (const fx of files) {
     const callerMethods = fx.methods || []
     for (const fy of files) {
@@ -65,9 +67,26 @@ const layout = computed(() => {
       for (const ca of callerMethods) {
         const body = ca.body || ''
         if (!body) continue
+        // Basis-Zeile fuer absolute Aufrufzeilen: bevorzugt der Body-`{` (exakt), sonst die
+        // Deklarationszeile (Bestandsdaten), sonst rein relativ.
+        const base = ca.body_start_line ?? ca.start_line ?? null
+        const lineExact = ca.body_start_line != null
         for (const ce of calleeMethods) {
-          if (ce.method_name && body.includes(`${ce.method_name}(`)) {
-            callSites.push({ callerMethod: ca.method_name, calleeMethod: ce.method_name, callerBody: body })
+          if (!ce.method_name) continue
+          const safe = ce.method_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          const re = new RegExp(`\\b${safe}\\s*\\(`, 'g')
+          let m
+          while ((m = re.exec(body)) !== null) {
+            const relLine = (body.slice(0, m.index).match(/\n/g) || []).length
+            const line = base != null ? base + relLine : relLine + 1
+            callSites.push({
+              callerMethod: ca.method_name,
+              calleeMethod: ce.method_name,
+              callerBody: body,
+              bodyStartLine: base,
+              line,
+              lineExact,
+            })
           }
         }
       }
@@ -84,8 +103,11 @@ const layout = computed(() => {
       const label = callees.length === 1 ? `${callees[0]}()` : `${callees[0]}() +${callees.length - 1}`
       edges.push({
         id: `call:${fx.id}-${fy.id}`,
-        source: `c:${fx.id}`,
-        target: `c:${fy.id}`,
+        // Pfeilrichtung „Definition -> Nutzung": Quelle = definierende Klasse (fy),
+        // Ziel (Pfeilspitze) = aufrufende Klasse (fx). Die data-Felder bleiben fachlich
+        // (fromClass/fromFileId = Aufrufer, toClass/toFileId = Definition).
+        source: `c:${fy.id}`,
+        target: `c:${fx.id}`,
         label,
         animated: true,
         type: 'smoothstep',
@@ -118,8 +140,10 @@ const layout = computed(() => {
       callPairs.add(`${f.id}->${target.id}`)
       edges.push({
         id: `imp:${f.id}-${target.id}`,
-        source: `c:${f.id}`,
-        target: `c:${target.id}`,
+        // Einheitlicher „Definition -> Nutzung"-Fluss: importierte Klasse = Quelle,
+        // importierende Klasse = Ziel (Pfeilspitze).
+        source: `c:${target.id}`,
+        target: `c:${f.id}`,
         type: 'smoothstep',
         style: { stroke: 'var(--color-text-muted)', strokeWidth: 1.5, strokeDasharray: '5 4' },
         markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--color-text-muted)' },
@@ -243,11 +267,11 @@ function closeEdgePanel() {
     <div v-if="files.length" class="absolute right-3 top-3 flex flex-col gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]/90 px-3 py-2 text-xs shadow-sm backdrop-blur">
       <div class="flex items-center gap-2">
         <span class="h-0.5 w-4 rounded" style="background: var(--color-accent)" />
-        <span class="text-[var(--color-text-muted)]">ruft auf · klickbar</span>
+        <span class="text-[var(--color-text-muted)]">definiert → genutzt · klickbar</span>
       </div>
       <div class="flex items-center gap-2">
         <span class="h-0.5 w-4 rounded" style="background: var(--color-text-muted); border-top: 1px dashed" />
-        <span class="text-[var(--color-text-muted)]">importiert</span>
+        <span class="text-[var(--color-text-muted)]">importiert von</span>
       </div>
       <div class="flex items-center gap-2">
         <Icon icon="lucide:sparkles" class="h-3.5 w-3.5 text-[var(--color-accent)]" />

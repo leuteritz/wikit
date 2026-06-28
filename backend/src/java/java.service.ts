@@ -69,6 +69,7 @@ export class JavaService {
           ai_summary: m.javadoc || '',
           body: m.body || '',
           start_line: m.start_line ?? null,
+          body_start_line: m.body_start_line ?? null,
         });
       }
 

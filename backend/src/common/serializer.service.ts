@@ -124,6 +124,8 @@ export class SerializerService {
         javadoc: true,
         ai_summary: true,
         body: true,
+        start_line: true,
+        body_start_line: true,
       },
     });
     // signature_html (Shiki java) + summary_html (KI-Text als Markdown) server-seitig rendern,

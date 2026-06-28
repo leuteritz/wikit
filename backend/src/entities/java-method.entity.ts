@@ -29,6 +29,9 @@ export class JavaMethod {
   @Column({ name: 'start_line', type: 'integer', nullable: true })
   start_line: number | null; // 1-basierte Quellzeile der Methodendeklaration
 
+  @Column({ name: 'body_start_line', type: 'integer', nullable: true })
+  body_start_line: number | null; // 1-basierte Quellzeile des Body-`{` (Basis fuer exakte Aufrufzeilen)
+
   @Column({ name: 'created_at', type: 'text', nullable: true, insert: false, update: false })
   created_at: string;
 }

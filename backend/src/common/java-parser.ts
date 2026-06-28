@@ -11,6 +11,7 @@ export interface JavaMethodInfo {
   javadoc: string;
   body: string;
   start_line: number; // 1-basierte Quellzeile der Methodendeklaration (fuer Sprung/Highlight)
+  body_start_line: number; // 1-basierte Quellzeile des Body-`{` (Basis fuer exakte Aufrufzeilen)
 }
 
 export interface JavaClassInfo {
@@ -194,6 +195,9 @@ function extractMethods(typeNode: any, blocks: any[], source: string): JavaMetho
       body: bodyText(mNode, source),
       // Zeile des Methoden-Identifiers (praeziser als der Knotenanfang mit Annotationen/Modifiern).
       start_line: minLine(declarator),
+      // Zeile des Body-`{` (= Beginn von bodyText, da der Slice am `{`-Token startet) -> Basis,
+      // um aus dem Body-Text die exakte Quellzeile einer Aufrufstelle zu berechnen.
+      body_start_line: minLine(findFirst(mNode, 'methodBody')),
     });
   }
   return methods;
