@@ -25,6 +25,9 @@ export class JavaEdge {
   @Column({ name: 'confidence', type: 'real', default: 1.0 })
   confidence: number; // < 1 -> "Bitte pruefen"
 
+  @Column({ name: 'kind', type: 'text', default: 'call' })
+  kind: string; // 'call' = Methoden-Aufruf (mit Label), 'uses' = struktureller Typ-Bezug
+
   @Column({ name: 'created_at', type: 'text', nullable: true, insert: false, update: false })
   created_at: string;
 }

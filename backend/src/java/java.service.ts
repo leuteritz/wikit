@@ -441,16 +441,35 @@ export class JavaService {
       }
     }
 
-    const edges = new Map<string, { source: string; target: string; method: string; confidence: number }>();
-    const put = (A: string, B: string, m: string, c: number) => {
+    const edges = new Map<
+      string,
+      { source: string; target: string; method: string | null; confidence: number; kind: string }
+    >();
+    const put = (A: string, B: string, m: string | null, c: number, kind: string) => {
       if (!A || !B || A === B) return;
-      const key = `${A} ${B} ${m}`;
+      const key = `${A} ${B} ${m ?? ''} ${kind}`;
       const prev = edges.get(key);
-      if (!prev || c > prev.confidence) edges.set(key, { source: A, target: B, method: m, confidence: c });
+      if (!prev || c > prev.confidence) edges.set(key, { source: A, target: B, method: m, confidence: c, kind });
+    };
+
+    // Klassenpaare mit bereits erkannter Methoden-Kante -> kein zusaetzliches `uses` dafuer.
+    const pairHasCall = new Set<string>();
+    // Strukturell referenzierte Zielklassen je Quellklasse (Kandidaten fuer `uses`-Kanten).
+    const usesTargets = new Map<string, Set<string>>();
+    const addUses = (A: string, B: string) => {
+      if (!B || A === B || !classNames.has(B)) return;
+      let s = usesTargets.get(A);
+      if (!s) {
+        s = new Set();
+        usesTargets.set(A, s);
+      }
+      s.add(B);
     };
 
     for (const info of parsed) {
       const A = info.class_name;
+      // Typ-Bezuege (Feld-/Variablen-/Parameter-/Rueckgabetyp, new X()) als `uses`-Kandidaten.
+      for (const t of info.referencedTypes) addUses(A, t);
       for (const caller of info.callers) {
         for (const inv of caller.invocations) {
           const m = inv.method;
@@ -464,8 +483,11 @@ export class JavaService {
               if (t && classNames.has(t)) B = t;
             }
           }
+          // Aufgeloester Empfaenger ist immer ein Typ-Bezug (auch ohne Methoden-Treffer).
+          if (B) addUses(A, B);
           if (B && B !== A && definesMethod.get(B)?.has(m)) {
-            put(A, B, m, 1.0);
+            put(A, B, m, 1.0, 'call');
+            pairHasCall.add(`${A} ${B}`);
             continue;
           }
           // LOW-Fallback: unqualifizierter Aufruf, Methode in genau einer anderen Klasse.
@@ -473,10 +495,21 @@ export class JavaService {
             const defs = methodToClasses.get(m);
             if (defs) {
               const others = [...defs].filter((c) => c !== A);
-              if (others.length === 1) put(A, others[0], m, 0.5);
+              if (others.length === 1) {
+                put(A, others[0], m, 0.5, 'call');
+                pairHasCall.add(`${A} ${others[0]}`);
+              }
             }
           }
         }
+      }
+    }
+
+    // Struktur-Kanten (`uses`) nur, wo das Paar noch keine Methoden-Kante hat.
+    for (const [A, targets] of usesTargets) {
+      for (const B of targets) {
+        if (pairHasCall.has(`${A} ${B}`)) continue;
+        put(A, B, null, 1.0, 'uses');
       }
     }
 
@@ -484,19 +517,20 @@ export class JavaService {
     // Verworfene Auto-Kanten (Tombstones) merken -> NICHT neu erzeugen.
     const dismissedRows = await repo.find({ where: { is_manual: 0, dismissed: 1 } });
     const dismissedKeys = new Set(
-      dismissedRows.map((e) => `${e.source_class} ${e.target_class} ${e.method_name}`),
+      dismissedRows.map((e) => `${e.source_class} ${e.target_class} ${e.method_name ?? ''} ${e.kind}`),
     );
 
     // Nur aktive Auto-Kanten ersetzen; manuelle und Tombstone-Zeilen bleiben stehen.
     await repo.delete({ is_manual: 0, dismissed: 0 });
 
     const toInsert = [...edges.values()]
-      .filter((e) => !dismissedKeys.has(`${e.source} ${e.target} ${e.method}`))
+      .filter((e) => !dismissedKeys.has(`${e.source} ${e.target} ${e.method ?? ''} ${e.kind}`))
       .map((e) => ({
         source_class: e.source,
         target_class: e.target,
         method_name: e.method,
         confidence: e.confidence,
+        kind: e.kind,
         is_manual: 0,
         dismissed: 0,
       }));
@@ -522,6 +556,7 @@ export class JavaService {
       method_name: e.method_name,
       is_manual: !!e.is_manual,
       confidence: e.confidence,
+      kind: e.kind,
     };
   }
 

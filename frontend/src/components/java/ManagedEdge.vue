@@ -62,8 +62,8 @@ const d = computed(() => props.data || {})
 <template>
   <BaseEdge :id="id" :path="edgePath" :marker-end="markerEnd" :style="d.edgeStyle" />
 
-  <!-- Import-Kanten haben kein Label (nur die Linie). -->
-  <EdgeLabelRenderer v-if="d.kind !== 'import'">
+  <!-- Import- und uses-Kanten haben kein Label (nur die Linie). -->
+  <EdgeLabelRenderer v-if="d.kind !== 'import' && d.kind !== 'uses'">
     <div
       class="me-label"
       :class="{

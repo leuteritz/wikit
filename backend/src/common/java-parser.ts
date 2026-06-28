@@ -49,6 +49,10 @@ export interface JavaClassGraphInfo {
   definedMethods: Set<string>;
   fields: Record<string, string>;
   callers: JavaCallerMethod[];
+  // Einfache Typnamen, die diese Klasse strukturell referenziert: Feld-/Parameter-/
+  // lokale Variablen-/Rueckgabetypen + `new X()`. Basis fuer `uses`-Kanten (Typ-Bezug
+  // ohne Methoden-Treffer), gegen die geladenen Klassennamen gefiltert in der Neuberechnung.
+  referencedTypes: Set<string>;
 }
 
 // Object-Methoden sind nie ein Kanten-Trigger: gemeinsames Ueberschreiben von
@@ -518,6 +522,20 @@ function resolveNewType(toks: any[], closeIdx: number): string | null {
   return null;
 }
 
+// Einfache Typnamen aller `new Type(...)`-Instanziierungen unterhalb eines Knotens.
+// Der Typname sind die DIREKTEN Identifier-Kinder von `classOrInterfaceTypeToInstantiate`
+// (Typargumente liegen separat unter `typeArgumentsOrDiamond` und bleiben aussen vor);
+// der letzte Identifier ist der einfache Name (z. B. `pkg.Foo` -> `Foo`).
+function collectNewTypes(node: any): string[] {
+  const out: string[] = [];
+  for (const nc of findAll(node, 'unqualifiedClassInstanceCreationExpression')) {
+    const t = findFirst(nc, 'classOrInterfaceTypeToInstantiate');
+    const ids: any[] = t?.children?.Identifier || [];
+    if (ids.length) out.push(ids[ids.length - 1].image);
+  }
+  return out;
+}
+
 // Methoden-Aufrufe eines Methodenrumpfs extrahieren. Kein methodInvocation-Knoten in
 // java-parser -> Token-Stream-Pass: der Methodenname ist immer der Identifier direkt
 // links vom '(' eines methodInvocationSuffix.
@@ -598,19 +616,32 @@ export function parseJavaForEdges(source: string): JavaClassGraphInfo[] {
       ...findAll(node, 'interfaceMethodDeclaration'),
     ];
     const callers: JavaCallerMethod[] = [];
+    const referencedTypes = new Set<string>();
     for (const mNode of methodNodes) {
       const declarator = findFirst(mNode, 'methodDeclarator');
       const nameTok = declarator
         ? collectTokens(declarator).find((t) => t.tokenType?.name === 'Identifier')
         : null;
+      const scope = methodScope(mNode, fields);
       callers.push({
         name: nameTok?.image || '',
-        scope: methodScope(mNode, fields),
+        scope,
         invocations: extractInvocations(mNode),
       });
+      // Scope deckt Felder (gespreizt) + Parameter + lokale Variablen ab.
+      for (const t of Object.values(scope)) referencedTypes.add(t);
+      // Rueckgabetyp der Methode.
+      const ret = simpleName(typeText(findFirst(mNode, 'result')));
+      if (ret && ret !== 'void') referencedTypes.add(ret);
+      // Instanziierte Typen (`new X()`) im Methodenrumpf.
+      for (const t of collectNewTypes(mNode)) referencedTypes.add(t);
     }
+    // Felder auch dann erfassen, wenn die Klasse keine Methoden hat.
+    for (const t of Object.values(fields)) referencedTypes.add(t);
+    // Instanziierungen ausserhalb von Methodenruempfen (Feld-Initialisierer etc.).
+    for (const t of collectNewTypes(node)) referencedTypes.add(t);
 
-    infos.push({ class_name, definedMethods: definedMethodNames(node), fields, callers });
+    infos.push({ class_name, definedMethods: definedMethodNames(node), fields, callers, referencedTypes });
   }
   return infos;
 }

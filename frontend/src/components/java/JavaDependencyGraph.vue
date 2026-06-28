@@ -5,6 +5,9 @@
 // Klassen:
 //   * Call-Edge ("Methoden-Nutzung"): durchgezogen + Akzentfarbe, Label = aufgerufene
 //     Methode(n), KLICKBAR -> oeffnet ein Code-Panel mit dem verwendenden Code (CodeMirror).
+//   * Uses-Edge (Struktur-/Typ-Bezug): Variablen-/Feld-/Parameter-/Rueckgabetyp, new X() oder
+//     statischer Aufruf ohne Methoden-Treffer -> violett gestrichelt, ohne Label, nicht klickbar.
+//     Fallback je Klassenpaar (nur wenn keine Call-Edge existiert).
 //   * Import-Edge: gestrichelt + gedaempft, ohne Label, nicht klickbar.
 // BEIDE Kantentypen rendern ueber dieselbe Custom-Kante (ManagedEdge): so greift fuer alle
 // Kanten derselbe Faecher-Versatz + die Label-Staffelung -> parallele Kanten/Labels zwischen
@@ -43,6 +46,7 @@ const PKG_COLORS = ['#4281a4', '#48a9a6', '#d4b483']
 const NODE_W = 208
 const NODE_H = 66
 const REVIEW_COLOR = '#d4a017'
+const USES_COLOR = '#a07cc5' // Struktur-/Typ-Bezug (uses): violett, gestrichelt, ohne Label
 
 const simpleName = (fqn) => String(fqn).split('.').pop()
 const nodeFileId = (id) => Number(String(id).replace(/^c:/, ''))
@@ -91,8 +95,11 @@ const layout = computed(() => {
     if (!callerFile || !definerFile || callerFile.id === definerFile.id) continue
     callPairs.add(`${callerFile.id}->${definerFile.id}`)
 
-    const needsReview = !e.is_manual && e.confidence < 1
-    const stroke = needsReview ? REVIEW_COLOR : 'var(--color-accent)'
+    // uses-Kante = struktureller Typ-Bezug (Variablen-/Feld-/Parameter-/Rueckgabetyp, new X(),
+    // statischer Aufruf ohne Methoden-Treffer): eigener Stil, kein Label, nicht klickbar.
+    const isUses = e.kind === 'uses'
+    const needsReview = !isUses && !e.is_manual && e.confidence < 1
+    const stroke = isUses ? USES_COLOR : needsReview ? REVIEW_COLOR : 'var(--color-accent)'
     edges.push({
       id: `edge:${e.id}`,
       source: `c:${definerFile.id}`,
@@ -100,7 +107,7 @@ const layout = computed(() => {
       type: 'managed',
       markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
       data: {
-        kind: 'call',
+        kind: isUses ? 'uses' : 'call',
         edgeId: e.id,
         method: e.method_name,
         isManual: !!e.is_manual,
@@ -112,13 +119,13 @@ const layout = computed(() => {
         toFileId: definerFile.id,
         edgeStyle: {
           stroke,
-          strokeWidth: 2,
-          strokeDasharray: e.is_manual ? '6 4' : undefined,
-          cursor: 'pointer',
+          strokeWidth: isUses ? 1.5 : 2,
+          strokeDasharray: isUses ? '4 3' : e.is_manual ? '6 4' : undefined,
+          cursor: isUses ? 'default' : 'pointer',
         },
-        onEdit: openEdgeEditor,
-        onDelete: removeEdge,
-        onOpen: openEdgePanel,
+        onEdit: isUses ? undefined : openEdgeEditor,
+        onDelete: isUses ? undefined : removeEdge,
+        onOpen: isUses ? undefined : openEdgePanel,
       },
     })
   }
@@ -537,6 +544,10 @@ watch(
       <div class="flex items-center gap-2">
         <span class="h-0.5 w-4 rounded" style="background: var(--color-text-muted); border-top: 1px dashed" />
         <span class="text-[var(--color-text-muted)]">importiert von</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="h-0.5 w-4 rounded" style="background: #a07cc5; border-top: 1px dashed" />
+        <span class="text-[var(--color-text-muted)]">nutzt Typ (Variable/new)</span>
       </div>
       <div class="flex items-center gap-2">
         <Icon icon="lucide:sparkles" class="h-3.5 w-3.5 text-[var(--color-accent)]" />
