@@ -8,7 +8,7 @@
 //   * Import-Edge: gestrichelt + gedaempft, nicht klickbar.
 // Farbe je Package rotierend. Alles client-seitig aus der Dateiliste (props.files enthaelt
 // methods[].body + dependencies[]) -> kein Request, kein Backend noetig. Icons via Iconify.
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref } from 'vue'
 import { VueFlow, MarkerType, Handle, Position, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import dagre from '@dagrejs/dagre'
@@ -16,7 +16,7 @@ import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 import { useTheme } from '../../composables/useTheme.js'
 import { Icon } from '../../lib/icons.js'
-import JavaCodeEditor from './JavaCodeEditor.vue'
+import JavaEdgeDetailPanel from './JavaEdgeDetailPanel.vue'
 
 const props = defineProps({
   files: { type: Array, default: () => [] },
@@ -33,6 +33,12 @@ const NODE_W = 208
 const NODE_H = 66
 
 const simpleName = (fqn) => String(fqn).split('.').pop()
+
+// Methodensignatur fuers Edge-Panel: `return_type name(type name, …)` (parameters sind geparst).
+const buildSignature = (m) => {
+  const params = (m.parameters || []).map((p) => `${p.type} ${p.name}`.trim()).join(', ')
+  return `${m.return_type || 'void'} ${m.method_name}(${params})`
+}
 
 const layout = computed(() => {
   const files = props.files || []
@@ -69,6 +75,12 @@ const layout = computed(() => {
 
       callPairs.add(`${fx.id}->${fy.id}`)
       const callees = [...new Set(callSites.map((c) => c.calleeMethod))]
+      // Ziel-Methodensignatur (falls auffindbar) fuers Edge-Panel mitgeben – rein client-seitig
+      // aus fy.methods (return_type + geparste parameters).
+      const calleeSignatures = callees.map((name) => {
+        const m = calleeMethods.find((mm) => mm.method_name === name)
+        return { name, signature: m ? buildSignature(m) : '' }
+      })
       const label = callees.length === 1 ? `${callees[0]}()` : `${callees[0]}() +${callees.length - 1}`
       edges.push({
         id: `call:${fx.id}-${fy.id}`,
@@ -83,7 +95,7 @@ const layout = computed(() => {
         labelBgPadding: [4, 2],
         labelBgBorderRadius: 4,
         markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--color-accent)' },
-        data: { kind: 'call', fromClass: fx.class_name, toClass: fy.class_name, callSites, callees },
+        data: { kind: 'call', fromClass: fx.class_name, toClass: fy.class_name, callSites, callees, calleeSignatures },
       })
     }
   }
@@ -151,7 +163,7 @@ function resetView() {
   setViewport({ x: 0, y: 0, zoom: 1 })
 }
 
-// --- Code-Panel fuer angeklickte Call-Edges ---
+// --- Edge-Detail-Panel fuer angeklickte Call-Edges (eigene Komponente, ESC dort) ---
 const activeEdge = ref(null)
 function onEdgeClick({ edge }) {
   // Nur Methoden-Nutzungs-Kanten haben Call-Sites; Import-Kanten ignorieren.
@@ -160,24 +172,6 @@ function onEdgeClick({ edge }) {
 function closeEdgePanel() {
   activeEdge.value = null
 }
-// Pro aufrufende Methode gruppieren -> jeder Methodenrumpf nur einmal anzeigen.
-const edgeGroups = computed(() => {
-  if (!activeEdge.value) return []
-  const map = new Map()
-  for (const cs of activeEdge.value.callSites) {
-    if (!map.has(cs.callerMethod)) {
-      map.set(cs.callerMethod, { callerMethod: cs.callerMethod, callerBody: cs.callerBody, callees: new Set() })
-    }
-    map.get(cs.callerMethod).callees.add(cs.calleeMethod)
-  }
-  return [...map.values()].map((g) => ({ ...g, callees: [...g.callees] }))
-})
-
-function onKeydown(e) {
-  if (e.key === 'Escape' && activeEdge.value) closeEdgePanel()
-}
-onMounted(() => window.addEventListener('keydown', onKeydown))
-onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
@@ -252,56 +246,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
       </div>
     </div>
 
-    <!-- Code-Panel: verwendender Code einer Methoden-Nutzungs-Kante (ESC / Close schliesst) -->
-    <Teleport to="body">
-      <Transition name="edge-drawer">
-        <div v-if="activeEdge" class="fixed inset-0 z-50 flex justify-end">
-          <div class="absolute inset-0 bg-black/30 backdrop-blur-sm" @click="closeEdgePanel" />
-          <aside class="relative z-10 flex h-full w-full max-w-xl flex-col border-l border-[var(--color-border)] bg-[var(--color-surface-2)] shadow-2xl">
-            <header class="flex items-start gap-3 border-b border-[var(--color-border)] px-4 py-3">
-              <span class="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
-                <Icon icon="lucide:code-2" class="h-4 w-4" />
-              </span>
-              <div class="min-w-0 flex-1">
-                <h2 class="flex flex-wrap items-center gap-1.5 text-sm font-bold text-[var(--color-text)]">
-                  <span class="truncate">{{ activeEdge.fromClass }}</span>
-                  <Icon icon="lucide:arrow-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
-                  <span class="truncate">{{ activeEdge.toClass }}</span>
-                </h2>
-                <p class="mt-0.5 text-xs text-[var(--color-text-muted)]">
-                  Verwendet: <code class="font-mono text-[var(--color-accent)]">{{ activeEdge.callees.map((c) => c + '()').join(', ') }}</code>
-                </p>
-              </div>
-              <button
-                type="button"
-                class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
-                title="Schließen (ESC)"
-                @click="closeEdgePanel"
-              >
-                <Icon icon="lucide:x" class="h-5 w-5" />
-              </button>
-            </header>
-
-            <div class="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-              <section v-for="grp in edgeGroups" :key="grp.callerMethod">
-                <div class="mb-1.5 flex flex-wrap items-center gap-1.5 text-xs">
-                  <code class="rounded-md bg-[var(--color-surface-offset)] px-1.5 py-0.5 font-mono font-semibold text-[var(--color-text)]">{{ activeEdge.fromClass }}.{{ grp.callerMethod }}()</code>
-                  <Icon icon="lucide:arrow-right" class="h-3 w-3 text-[var(--color-text-muted)]" />
-                  <code
-                    v-for="c in grp.callees"
-                    :key="c"
-                    class="rounded-md bg-[var(--color-accent-soft)] px-1.5 py-0.5 font-mono text-[var(--color-accent)]"
-                  >{{ c }}()</code>
-                </div>
-                <div class="h-72">
-                  <JavaCodeEditor :model-value="grp.callerBody" readonly />
-                </div>
-              </section>
-            </div>
-          </aside>
-        </div>
-      </Transition>
-    </Teleport>
+    <!-- Edge-Detail-Panel: Parent -> Target einer Methoden-Nutzungs-Kante (ESC / Close schliesst) -->
+    <JavaEdgeDetailPanel :edge="activeEdge" :visible="!!activeEdge" @close="closeEdgePanel" />
   </div>
 </template>
 
@@ -393,23 +339,5 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .vf-tool:hover {
   background: var(--color-surface-offset);
   color: var(--color-text);
-}
-
-/* Drawer-Transition (von rechts einschiebend). */
-.edge-drawer-enter-active,
-.edge-drawer-leave-active {
-  transition: opacity 0.2s ease;
-}
-.edge-drawer-enter-active aside,
-.edge-drawer-leave-active aside {
-  transition: transform 0.2s ease;
-}
-.edge-drawer-enter-from,
-.edge-drawer-leave-to {
-  opacity: 0;
-}
-.edge-drawer-enter-from aside,
-.edge-drawer-leave-to aside {
-  transform: translateX(100%);
 }
 </style>

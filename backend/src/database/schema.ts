@@ -89,12 +89,21 @@ CREATE TABLE IF NOT EXISTS java_dependencies (
 CREATE INDEX IF NOT EXISTS idx_java_deps_from ON java_dependencies(from_file_id);
 
 -- Eigener FTS5-Index fuer analysierte Java-Klassen/Methoden: macht gespeicherte
--- KI-Beschreibungen als Prompt-Kontext (Wissensquelle) durchsuchbar. rowid = java_files.id.
+-- KI-Beschreibungen als Prompt-Kontext (Wissensquelle) UND den Rohquelltext (globale
+-- Code-Suche: Klassen-/Methoden-/Variablennamen) durchsuchbar. rowid = java_files.id.
+-- Spaltenreihenfolge ist stabil (snippet()/bm25() referenzieren per Index): source = Index 4.
 CREATE VIRTUAL TABLE IF NOT EXISTS java_fts USING fts5(
-  class_name, package, methods, descriptions,
+  class_name, package, methods, descriptions, source,
   tokenize = 'unicode61 remove_diacritics 2'
 );
 `;
+
+// CREATE-Statement der java_fts-Tabelle, separat exportiert fuer die Rebuild-Migration
+// (FTS5 kann keine Spalte per ALTER ergaenzen -> bei fehlender `source`-Spalte DROP+CREATE+Reindex).
+export const JAVA_FTS_DDL = `CREATE VIRTUAL TABLE IF NOT EXISTS java_fts USING fts5(
+  class_name, package, methods, descriptions, source,
+  tokenize = 'unicode61 remove_diacritics 2'
+)`;
 
 // Spaltenweise Nachruest-Migration fuer bestehende DBs: SQLite kann kein
 // `ADD COLUMN IF NOT EXISTS`, daher pro Spalte ueber PRAGMA table_info pruefen.

@@ -40,7 +40,7 @@ export class FtsService {
   // Wissensquelle fuer kuenftige Prompt-Anreicherung (searchJava) durchsuchbar.
   async indexJavaFile(manager: EntityManager, fileId: number): Promise<void> {
     const fileRows = await manager.query(
-      'SELECT id, class_name, package, description FROM java_files WHERE id = ?',
+      'SELECT id, class_name, package, description, raw_source FROM java_files WHERE id = ?',
       [fileId],
     );
     const f = fileRows[0];
@@ -58,9 +58,10 @@ export class FtsService {
       .concat(methodRows.map((m: any) => `${m.method_name}: ${m.ai_summary || m.javadoc || ''}`))
       .filter(Boolean)
       .join('\n');
+    // `source` = Rohquelltext -> globale Code-Suche nach Variablen-/Methodennamen u. beliebigen Termen.
     await manager.query(
-      'INSERT INTO java_fts (rowid, class_name, package, methods, descriptions) VALUES (?,?,?,?,?)',
-      [f.id, f.class_name, f.package || '', methods, descriptions],
+      'INSERT INTO java_fts (rowid, class_name, package, methods, descriptions, source) VALUES (?,?,?,?,?,?)',
+      [f.id, f.class_name, f.package || '', methods, descriptions, f.raw_source || ''],
     );
   }
 
@@ -83,6 +84,29 @@ export class FtsService {
         .map((r: any) => `${r.class_name}: ${(r.snippet || '').trim()}`.trim())
         .filter((s: string) => s && !s.endsWith(':'));
     } catch {
+      return [];
+    }
+  }
+
+  // Globale Code-Suche: durchsucht den java_fts-Index (inkl. Rohquelltext) und liefert die
+  // Treffer-Java-Dateien mit Snippet-Highlight aus dem Quelltext (Spaltenindex 4 = `source`).
+  async searchJavaFiles(q: string, limit = 30): Promise<any[]> {
+    const match = this.buildMatch(q);
+    if (!match) return [];
+    try {
+      return await this.dataSource.query(
+        `SELECT f.id, f.filename, f.class_name, f.package,
+                snippet(java_fts, 4, '<mark>', '</mark>', ' … ', 12) AS snippet,
+                bm25(java_fts) AS rank
+         FROM java_fts
+         JOIN java_files f ON f.id = java_fts.rowid
+         WHERE java_fts MATCH ?
+         ORDER BY rank
+         LIMIT ?`,
+        [match, limit],
+      );
+    } catch {
+      // Ungueltige FTS-Syntax -> leer.
       return [];
     }
   }

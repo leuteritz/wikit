@@ -15,12 +15,29 @@ export class SearchController {
   async search(@Query('q') q?: string): Promise<any[]> {
     const query = (q || '').toString().trim();
     if (!query) return [];
-    const rows = await this.fts.search(query);
-    return Promise.all(
-      rows.map(async (r) => ({
+
+    const [articleRows, javaRows] = await Promise.all([
+      this.fts.search(query),
+      this.fts.searchJavaFiles(query),
+    ]);
+
+    // Artikel (mit serialisierter Shape) zuerst, danach Code-Treffer. Beide Quellen tragen ein
+    // `type`-Feld, damit das Frontend gruppieren kann ('article' vs. 'java_file').
+    const articles = await Promise.all(
+      articleRows.map(async (r) => ({
         ...(await this.serializer.serializeArticle(r, { withContent: false })),
+        type: 'article',
         snippet: r.snippet,
       })),
     );
+    const javaFiles = javaRows.map((r) => ({
+      id: r.id,
+      name: r.class_name || r.filename,
+      package: r.package || '',
+      type: 'java_file',
+      snippet: r.snippet,
+    }));
+
+    return [...articles, ...javaFiles];
   }
 }
