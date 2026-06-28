@@ -7,6 +7,7 @@
 import { ref, reactive, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { useJavaQueue } from '../composables/useJavaQueue.js'
+import { useJavaGraph } from '../composables/useJavaGraph.js'
 import { buildPackageTree, countClasses, filterClasses, LANGUAGES } from '../composables/useCodeAnalysis.js'
 import JavaCodeEditor from '../components/java/JavaCodeEditor.vue'
 import JavaDependencyGraph from '../components/java/JavaDependencyGraph.vue'
@@ -16,8 +17,8 @@ import { detectJavaClasses } from '../lib/javaDetect.js'
 
 const { files, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFileId, lastTargetLine, deleteFile } =
   useJavaAnalyzer()
-const { enqueueClass, enqueueMethods, queueClass, enqueueAllUnanalyzed, cancelJob, progressFor, ensurePolling } =
-  useJavaQueue()
+const { enqueueClass, enqueueAllUnanalyzed, cancelJob, progressFor, ensurePolling } = useJavaQueue()
+const { recomputeEdges, recomputing } = useJavaGraph()
 
 const source = ref('')
 const filename = ref('')
@@ -110,11 +111,13 @@ const selectedProgress = computed(() =>
   selectedFileId.value ? progressFor(selectedFileId.value) : null,
 )
 
-async function generateClass() {
-  if (!selectedFileId.value) return
+// Alle Auto-Call-Edges serverseitig neu berechnen + persistieren. Der Graph rendert aus dem
+// geteilten useJavaGraph()-edges-Ref und aktualisiert sich nach recomputeEdges() automatisch.
+async function onRecomputeEdges() {
   queueNotice.value = ''
   try {
-    await queueClass(selectedFileId.value, { userContext: userContext.value })
+    const res = await recomputeEdges()
+    queueNotice.value = `${res?.count ?? 0} Kante(n) neu berechnet.`
   } catch (e) {
     queueNotice.value = e.message
   }
@@ -137,16 +140,6 @@ async function analyzeAll() {
     queueNotice.value = e.message
   } finally {
     analyzingAll.value = false
-  }
-}
-
-async function generateAllMethods() {
-  if (!selectedFileId.value) return
-  queueNotice.value = ''
-  try {
-    await enqueueMethods(selectedFileId.value, { userContext: userContext.value })
-  } catch (e) {
-    queueNotice.value = e.message
   }
 }
 
@@ -266,38 +259,38 @@ async function onDetailClose(payload) {
               {{ packageCount }} Package(s)
             </span>
           </div>
+
+          <!-- Globale Aktionen: alle Klassen/Methoden analysieren + Kanten neu berechnen -->
+          <div v-if="files.length" class="mt-2.5 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 py-2 text-sm font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="analyzingAll"
+              title="Alle noch nicht analysierten Klassen und Methoden in die KI-Queue einreihen"
+              @click="analyzeAll"
+            >
+              <Icon
+                :icon="analyzingAll ? 'lucide:loader-2' : 'lucide:sparkles'"
+                class="h-4 w-4"
+                :class="analyzingAll ? 'animate-spin' : ''"
+              />
+              {{ analyzingAll ? 'Reihe ein…' : 'Alle analysieren' }}
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-accent)] px-3 py-2 text-sm font-semibold text-[var(--color-accent)] transition hover:bg-[var(--color-accent-soft)] disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="recomputing"
+              title="Alle Klassen-Beziehungen (Kanten) neu berechnen – hilft nach Massen-Imports"
+              @click="onRecomputeEdges"
+            >
+              <Icon icon="lucide:refresh-cw" class="h-4 w-4" :class="recomputing ? 'animate-spin' : ''" />
+              Kanten neu simulieren
+            </button>
+          </div>
         </div>
 
-        <!-- Aktionen + Upload-Pill -->
+        <!-- Rechts: nur noch die Upload-/Analyse-Pill -->
         <div class="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 py-2 text-sm font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)] disabled:cursor-not-allowed disabled:opacity-50"
-            :disabled="!selectedFileId"
-            :title="selectedFileId ? '' : 'Erst eine Klasse auswählen'"
-            @click="generateClass"
-          >
-            <Icon icon="lucide:sparkles" class="h-4 w-4" />
-            Klasse zusammenfassen
-          </button>
-          <button
-            type="button"
-            class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-accent)] px-3 py-2 text-sm font-semibold text-[var(--color-accent)] transition hover:bg-[var(--color-accent-soft)] disabled:cursor-not-allowed disabled:opacity-50"
-            :disabled="!selectedFileId"
-            :title="selectedFileId ? '' : 'Erst eine Klasse auswählen'"
-            @click="generateAllMethods"
-          >
-            <Icon icon="lucide:list" class="h-4 w-4" />
-            Alle Methoden
-          </button>
-          <RouterLink
-            to="/code/queues"
-            class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)]"
-          >
-            <Icon icon="lucide:list-checks" class="h-4 w-4" />
-            Queues
-          </RouterLink>
-          <!-- Upload-/Analyse-Pill -->
           <button
             type="button"
             class="inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)]"
@@ -440,23 +433,6 @@ async function onDetailClose(payload) {
               <Icon icon="lucide:x" class="h-3.5 w-3.5" />
             </button>
           </div>
-
-          <!-- Bulk-Aktion: alle noch nicht analysierten Klassen + Methoden einreihen -->
-          <button
-            v-if="files.length"
-            type="button"
-            class="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--color-accent)]/40 bg-[var(--color-accent-soft)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-accent)] transition hover:bg-[var(--color-accent)] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-            :disabled="analyzingAll"
-            title="Alle noch nicht analysierten Klassen und Methoden in die KI-Queue einreihen"
-            @click="analyzeAll"
-          >
-            <Icon
-              :icon="analyzingAll ? 'lucide:loader-2' : 'lucide:sparkles'"
-              class="h-3.5 w-3.5"
-              :class="analyzingAll ? 'animate-spin' : ''"
-            />
-            {{ analyzingAll ? 'Reihe ein…' : 'Alle analysieren' }}
-          </button>
         </div>
 
         <ul class="min-h-0 flex-1 overflow-y-auto p-1.5">
