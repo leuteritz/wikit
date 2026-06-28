@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { api } from '../lib/api.js'
 import { useArticles } from '../composables/useArticles.js'
 import MarkdownEditor from '../components/MarkdownEditor.vue'
+import { Icon } from '../lib/icons.js'
 
 const props = defineProps({ slug: { type: String, default: '' } })
 const router = useRouter()
@@ -159,7 +160,7 @@ async function removeRelation(id) {
         <div v-for="rel in relations.outgoing" :key="rel.id" class="flex items-center gap-2 text-sm">
           <span class="rounded bg-[var(--color-accent-soft)] px-2 py-0.5 text-xs text-[var(--color-accent)]">{{ rel.relation_type }}</span>
           <span class="flex-1 text-slate-700 dark:text-slate-300">{{ rel.title }}</span>
-          <button type="button" class="text-rose-500 hover:text-rose-600" @click="removeRelation(rel.id)">✕</button>
+          <button type="button" class="grid h-6 w-6 place-items-center rounded text-rose-500 hover:text-rose-600" title="Entfernen" @click="removeRelation(rel.id)"><Icon icon="lucide:x" class="h-4 w-4" /></button>
         </div>
 
         <div class="flex flex-wrap items-center gap-2 pt-2">

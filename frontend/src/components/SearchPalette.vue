@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useArticles } from '../composables/useArticles.js'
 import { useSearch } from '../composables/useSearch.js'
 import CategoryBadge from './CategoryBadge.vue'
+import { Icon } from '../lib/icons.js'
 
 const props = defineProps({ open: { type: Boolean, default: false } })
 const emit = defineEmits(['close'])
@@ -53,7 +54,7 @@ function onKeydown(e) {
     >
       <div class="w-full max-w-xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
         <div class="flex items-center gap-3 border-b border-slate-100 px-4 dark:border-slate-800">
-          <svg class="h-5 w-5 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+          <Icon icon="lucide:search" class="h-5 w-5 shrink-0 text-slate-400" />
           <input
             ref="inputEl"
             v-model="query"

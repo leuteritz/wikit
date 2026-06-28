@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { useArticles } from '../composables/useArticles.js'
+import { Icon } from '../lib/icons.js'
 
 const props = defineProps({ open: { type: Boolean, default: false } })
 const emit = defineEmits(['close'])
@@ -103,7 +104,7 @@ async function createArticle() {
         <!-- Header -->
         <header class="flex items-center gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
           <span class="grid h-9 w-9 place-items-center rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">
-            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m8 16-4-4 4-4M16 8l4 4-4 4M14 4l-4 16" /></svg>
+            <Icon icon="lucide:braces" class="h-5 w-5" />
           </span>
           <div class="min-w-0 flex-1">
             <h2 class="text-lg font-bold text-slate-900 dark:text-white">Java analysieren</h2>
@@ -115,7 +116,7 @@ async function createArticle() {
             title="Schließen"
             @click="close"
           >
-            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12" /></svg>
+            <Icon icon="lucide:x" class="h-5 w-5" />
           </button>
         </header>
 
@@ -125,7 +126,7 @@ async function createArticle() {
           <template v-if="!result">
             <div class="mb-3 flex items-center gap-3">
               <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M5 11l7-7 7 7M5 20h14" /></svg>
+                <Icon icon="lucide:upload" class="h-4 w-4" />
                 .java-Datei wählen
                 <input type="file" accept=".java" class="hidden" @change="onFile" />
               </label>
@@ -142,7 +143,7 @@ async function createArticle() {
             <!-- Projekt-Kontext -->
             <label class="mt-4 block">
               <span class="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 8h.01M11 12h1v4h1" /></svg>
+                <Icon icon="lucide:info" class="h-3.5 w-3.5" />
                 Projekt-Kontext (optional)
               </span>
               <textarea
@@ -159,8 +160,9 @@ async function createArticle() {
           <!-- Ergebnis -->
           <template v-else>
             <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-500/30 dark:bg-emerald-500/10">
-              <p class="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
-                ✓ {{ result.class_name }} analysiert
+              <p class="flex items-center gap-1.5 text-sm font-semibold text-emerald-800 dark:text-emerald-300">
+                <Icon icon="lucide:check" class="h-4 w-4 shrink-0" />
+                {{ result.class_name }} analysiert
               </p>
               <p class="mt-1 text-xs text-emerald-700/80 dark:text-emerald-300/70">
                 {{ result.methods.length }} Methode(n){{ result.package ? ` · ${result.package}` : '' }}.
@@ -185,7 +187,7 @@ async function createArticle() {
               :disabled="analyzing || !source.trim()"
               @click="analyze"
             >
-              <svg v-if="analyzing" class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
+              <Icon v-if="analyzing" icon="lucide:loader-2" class="h-4 w-4 animate-spin" />
               {{ analyzing ? 'Analysiere…' : 'Analysieren' }}
             </button>
           </template>
@@ -201,7 +203,7 @@ async function createArticle() {
               :disabled="busy"
               @click="createArticle"
             >
-              <svg v-if="busy" class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
+              <Icon v-if="busy" icon="lucide:loader-2" class="h-4 w-4 animate-spin" />
               {{ busy ? 'Erstelle…' : 'Wiki-Artikel erstellen' }}
             </button>
           </template>

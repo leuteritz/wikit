@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useArticles } from '../composables/useArticles.js'
+import { Icon } from '../lib/icons.js'
 
 const emit = defineEmits(['navigate', 'open-java'])
 
@@ -26,7 +27,7 @@ const groups = computed(() => {
   }
   const result = [...byCat.values()].filter((g) => g.items.length)
   if (uncategorized.length) {
-    result.push({ category: { id: 0, name: 'Ohne Kategorie', icon: '🗂️', slug: '_none' }, items: uncategorized })
+    result.push({ category: { id: 0, name: 'Ohne Kategorie', icon: null, slug: '_none' }, items: uncategorized })
   }
   return result
 })
@@ -45,7 +46,7 @@ const isActive = (slug) => route.params.slug === slug
         class="flex w-full items-center justify-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 py-2 text-sm font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)]"
         @click="$emit('navigate')"
       >
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" /></svg>
+        <Icon icon="lucide:plus" class="h-4 w-4" />
         Neuer Artikel
       </RouterLink>
       <button
@@ -53,7 +54,7 @@ const isActive = (slug) => route.params.slug === slug
         class="flex w-full items-center justify-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 shadow-sm transition hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500/20"
         @click="openJavaModal"
       >
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m8 16-4-4 4-4M16 8l4 4-4 4M14 4l-4 16" /></svg>
+        <Icon icon="lucide:braces" class="h-4 w-4" />
         Code analysieren
       </button>
     </div>
@@ -65,14 +66,15 @@ const isActive = (slug) => route.params.slug === slug
           class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 transition hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
           @click="toggle(group.category.slug)"
         >
-          <span>{{ group.category.icon }}</span>
+          <Icon v-if="!group.category.icon" icon="lucide:folder" class="h-4 w-4" />
+          <span v-else>{{ group.category.icon }}</span>
           <span class="flex-1">{{ group.category.name }}</span>
           <span class="text-[10px] text-slate-400">{{ group.items.length }}</span>
-          <svg
+          <Icon
+            icon="lucide:chevron-down"
             class="h-3.5 w-3.5 transition-transform"
             :class="collapsed[group.category.slug] ? '-rotate-90' : ''"
-            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-          ><path d="m6 9 6 6 6-6" /></svg>
+          />
         </button>
 
         <ul v-show="!collapsed[group.category.slug]" class="mb-2 mt-0.5 space-y-0.5">

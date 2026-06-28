@@ -4,6 +4,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useArticles } from '../composables/useArticles.js'
+import { Icon } from '../lib/icons.js'
 
 const { articles, categories, loading, load } = useArticles()
 const filter = ref('')
@@ -32,7 +33,7 @@ const groups = computed(() => {
   }
   const result = [...byCat.values()].filter((g) => g.items.length)
   if (uncategorized.length) {
-    result.push({ category: { id: 0, name: 'Ohne Kategorie', icon: '🗂️' }, items: uncategorized })
+    result.push({ category: { id: 0, name: 'Ohne Kategorie', icon: null }, items: uncategorized })
   }
   return result
 })
@@ -50,14 +51,14 @@ const groups = computed(() => {
         to="/new"
         class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-[var(--color-accent-contrast)] transition hover:bg-[var(--color-accent-hover)]"
       >
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" /></svg>
+        <Icon icon="lucide:plus" class="h-4 w-4" />
         Neuer Artikel
       </RouterLink>
     </div>
 
     <!-- Filter -->
     <div class="mb-6 flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 dark:border-slate-700 dark:bg-slate-900">
-      <svg class="h-4 w-4 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+      <Icon icon="lucide:search" class="h-4 w-4 shrink-0 text-slate-400" />
       <input
         v-model="filter"
         type="text"
@@ -72,7 +73,8 @@ const groups = computed(() => {
     <div v-else class="space-y-8">
       <section v-for="group in groups" :key="group.category.id">
         <h2 class="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-          <span>{{ group.category.icon }}</span>
+          <Icon v-if="!group.category.icon" icon="lucide:folder" class="h-4 w-4" />
+          <span v-else>{{ group.category.icon }}</span>
           <span>{{ group.category.name }}</span>
           <span class="text-[10px] text-slate-400">{{ group.items.length }}</span>
         </h2>

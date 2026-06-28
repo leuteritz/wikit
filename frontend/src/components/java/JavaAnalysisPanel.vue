@@ -2,6 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import { useJavaAnalysis } from '../../composables/useJavaAnalysis.js'
 import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
+import { Icon } from '../../lib/icons.js'
 
 const props = defineProps({
   file: { type: Object, required: true },
@@ -116,7 +117,7 @@ function fmtDur(ms) {
     <!-- Kopf -->
     <header class="flex flex-wrap items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
       <span class="grid h-9 w-9 place-items-center rounded-lg bg-[var(--color-accent)] text-[var(--color-accent-contrast)] shadow-sm">
-        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" /></svg>
+        <Icon icon="lucide:sparkles" class="h-5 w-5" />
       </span>
       <div class="min-w-0 flex-1">
         <h2 class="text-sm font-bold uppercase tracking-wide text-[var(--color-accent)]">KI-Code-Analyse</h2>
@@ -132,8 +133,8 @@ function fmtDur(ms) {
         :disabled="analysis.running.value"
         @click="startAnalysis"
       >
-        <svg v-if="analysis.running.value" class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
-        <svg v-else class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 3 14 9-14 9V3z" /></svg>
+        <Icon v-if="analysis.running.value" icon="lucide:loader-2" class="h-4 w-4 animate-spin" />
+        <Icon v-else icon="lucide:play" class="h-4 w-4" />
         {{ analysis.running.value ? 'Analysiere…' : (hasContent ? 'Erneut analysieren' : 'KI-Analyse starten') }}
       </button>
     </header>
@@ -145,7 +146,7 @@ function fmtDur(ms) {
         class="mb-3 inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-accent)] transition hover:opacity-80"
         @click="showContext = !showContext"
       >
-        <svg class="h-3.5 w-3.5 transition-transform" :class="showContext ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6" /></svg>
+        <Icon icon="lucide:chevron-right" class="h-3.5 w-3.5 transition-transform" :class="showContext ? 'rotate-90' : ''" />
         Projekt-Kontext (optional){{ userContext ? ' · aktiv' : '' }}
       </button>
       <textarea
@@ -160,7 +161,7 @@ function fmtDur(ms) {
       <div v-if="analysis.running.value" class="mb-4">
         <div class="mb-1.5 flex items-center justify-between text-xs">
           <span class="flex items-center gap-1.5 font-medium text-[var(--color-accent)]">
-            <svg class="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
+            <Icon icon="lucide:loader-2" class="h-3.5 w-3.5 animate-spin" />
             {{ runningLabel }}
             <span class="tabular-nums font-normal text-[var(--color-text-muted)]">{{ fmtDur(analysis.stepElapsedMs.value) }}</span>
           </span>
@@ -180,7 +181,7 @@ function fmtDur(ms) {
             :disabled="analysis.cancelling.value"
             @click="analysis.cancel(articleId)"
           >
-            <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12" /></svg>
+            <Icon icon="lucide:x" class="h-3 w-3" />
             {{ analysis.cancelling.value ? 'Wird abgebrochen…' : 'Abbrechen' }}
           </button>
         </div>
@@ -190,7 +191,7 @@ function fmtDur(ms) {
             class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
             :class="classState === 'done' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : classState === 'running' ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'"
           >
-            <span v-if="classState === 'done'">✓</span><span v-else-if="classState === 'running'">⟳</span>
+            <Icon v-if="classState === 'done'" icon="lucide:check" class="h-3 w-3" /><Icon v-else-if="classState === 'running'" icon="lucide:loader-2" class="h-3 w-3 animate-spin" />
             Klasse
           </span>
           <span
@@ -239,7 +240,7 @@ function fmtDur(ms) {
           v-if="classAiGenerated !== null"
           class="mt-1.5 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
           :class="classAiGenerated ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'"
-        >{{ classAiGenerated ? '✓ KI-Text erzeugt' : '⚠ Fallback: vorhandene Beschreibung' }}</span>
+        ><Icon :icon="classAiGenerated ? 'lucide:check' : 'lucide:alert-triangle'" class="h-3 w-3" />{{ classAiGenerated ? 'KI-Text erzeugt' : 'Fallback: vorhandene Beschreibung' }}</span>
       </div>
 
       <!-- Methoden -->
@@ -258,7 +259,7 @@ function fmtDur(ms) {
               @click="reRun(m)"
             >
               <span class="truncate font-mono text-sm font-semibold text-[var(--color-accent)] group-hover:underline disabled:no-underline">{{ m.method_name }}</span>
-              <svg v-if="methodState(i, m) !== 'running'" class="h-3.5 w-3.5 shrink-0 text-slate-300 transition group-hover:text-[var(--color-accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5M21 3v6h-6" /></svg>
+              <Icon v-if="methodState(i, m) !== 'running'" icon="lucide:refresh-cw" class="h-3.5 w-3.5 shrink-0 text-slate-300 transition group-hover:text-[var(--color-accent)]" />
             </button>
             <span
               v-if="m.ai_generated === false"
@@ -270,8 +271,8 @@ function fmtDur(ms) {
               class="shrink-0 rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
               title="KI-Text erzeugt"
             >KI-Text</span>
-            <svg v-if="methodState(i, m) === 'running'" class="h-4 w-4 shrink-0 animate-spin text-[var(--color-accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
-            <span v-else-if="methodState(i, m) === 'done'" class="shrink-0 text-emerald-500" title="analysiert">✓</span>
+            <Icon v-if="methodState(i, m) === 'running'" icon="lucide:loader-2" class="h-4 w-4 shrink-0 animate-spin text-[var(--color-accent)]" />
+            <Icon v-else-if="methodState(i, m) === 'done'" icon="lucide:check" class="h-4 w-4 shrink-0 text-emerald-500" title="analysiert" />
           </div>
 
           <!-- Signatur (Shiki java, server-gerendert) -->

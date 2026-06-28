@@ -11,6 +11,7 @@ import { buildPackageTree, countClasses, filterClasses, LANGUAGES } from '../com
 import JavaCodeEditor from '../components/java/JavaCodeEditor.vue'
 import JavaDependencyGraph from '../components/java/JavaDependencyGraph.vue'
 import JavaClassDetail from '../components/java/JavaClassDetail.vue'
+import { Icon } from '../lib/icons.js'
 
 const { files, fetchFiles, analyzeCode, analyzing, error, userContext, lastFileId, deleteFile } =
   useJavaAnalyzer()
@@ -198,7 +199,7 @@ async function onDetailClose(payload) {
             :title="selectedFileId ? '' : 'Erst eine Klasse auswählen'"
             @click="generateClass"
           >
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3v4M3 5h4M6 17v4M4 19h4M13 3l2.5 6.5L22 12l-6.5 2.5L13 21l-2.5-6.5L4 12l6.5-2.5z" /></svg>
+            <Icon icon="lucide:sparkles" class="h-4 w-4" />
             Klasse zusammenfassen
           </button>
           <button
@@ -208,14 +209,14 @@ async function onDetailClose(payload) {
             :title="selectedFileId ? '' : 'Erst eine Klasse auswählen'"
             @click="generateAllMethods"
           >
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></svg>
+            <Icon icon="lucide:list" class="h-4 w-4" />
             Alle Methoden
           </button>
           <RouterLink
             to="/code/queues"
             class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)]"
           >
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0M12 7v5l3 2" /></svg>
+            <Icon icon="lucide:list-checks" class="h-4 w-4" />
             Queues
           </RouterLink>
           <!-- Upload-/Analyse-Pill -->
@@ -226,7 +227,7 @@ async function onDetailClose(payload) {
             @click="showNew = !showNew"
           >
             <span>Code analysieren</span>
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M5 11l7-7 7 7M5 20h14" /></svg>
+            <Icon icon="lucide:upload" class="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -242,7 +243,7 @@ async function onDetailClose(payload) {
               <div class="mb-2 flex items-center justify-between gap-2">
                 <h2 class="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Java-Quelltext</h2>
                 <label class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)]">
-                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M5 11l7-7 7 7M5 20h14" /></svg>
+                  <Icon icon="lucide:upload" class="h-3.5 w-3.5" />
                   <span v-if="filename" class="max-w-[10rem] truncate">{{ filename }}</span>
                   <span v-else>.java-Datei</span>
                   <input type="file" accept=".java" class="hidden" @change="onFile" />
@@ -270,7 +271,7 @@ async function onDetailClose(payload) {
                 :disabled="analyzing || !source.trim()"
                 @click="analyze"
               >
-                <svg v-if="analyzing" class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
+                <Icon v-if="analyzing" icon="lucide:loader-2" class="h-4 w-4 animate-spin" />
                 {{ analyzing ? 'Analysiere…' : 'Analysieren' }}
               </button>
             </div>
@@ -284,7 +285,7 @@ async function onDetailClose(payload) {
         v-if="selectedProgress && (selectedProgress.status === 'running' || selectedProgress.status === 'queued')"
         class="mt-3 flex items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-accent-soft)] px-3 py-2 text-sm text-[var(--color-accent)]"
       >
-        <svg class="h-4 w-4 shrink-0 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
+        <Icon icon="lucide:loader-2" class="h-4 w-4 shrink-0 animate-spin" />
         <span class="min-w-0 flex-1 truncate">
           Generiere Zusammenfassung
           <template v-if="selectedProgress.current"> für <code class="font-mono">{{ selectedProgress.current.name }}()</code></template>
@@ -307,7 +308,7 @@ async function onDetailClose(payload) {
       <section class="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)]">
         <div class="shrink-0 border-b border-[var(--color-border)] p-2">
           <div class="relative">
-            <svg class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+            <Icon icon="lucide:search" class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]" />
             <input
               v-model="search"
               type="text"
@@ -320,7 +321,7 @@ async function onDetailClose(payload) {
               class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
               @click="search = ''"
             >
-              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12" /></svg>
+              <Icon icon="lucide:x" class="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
@@ -335,7 +336,7 @@ async function onDetailClose(payload) {
               :style="{ paddingLeft: row.depth * 12 + 6 + 'px' }"
               @click="toggleFolder(row.fullPath)"
             >
-              <svg class="h-3 w-3 shrink-0 transition-transform" :class="row.open ? '' : '-rotate-90'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6" /></svg>
+              <Icon icon="lucide:chevron-down" class="h-3 w-3 shrink-0 transition-transform" :class="row.open ? '' : '-rotate-90'" />
               <span class="min-w-0 flex-1 truncate font-mono normal-case tracking-normal">{{ row.label }}</span>
               <span class="shrink-0 text-[10px] tabular-nums opacity-70">{{ row.count }}</span>
             </button>
@@ -349,9 +350,9 @@ async function onDetailClose(payload) {
                 :class="selectedFileId === row.file.id ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-surface-offset)]'"
                 @click="selectFile(row.file.id)"
               >
-                <svg class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 16l-4-4 4-4M16 8l4 4-4 4" /></svg>
+                <Icon icon="lucide:braces" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
                 <span class="min-w-0 flex-1 truncate text-sm">
-                  <span v-if="row.file.description" title="KI-analysiert">✨ </span><template v-for="(p, i) in hl(row.file.class_name)" :key="i"><mark v-if="p.m" class="rounded-sm bg-transparent px-0 font-semibold text-[var(--color-accent)]">{{ p.t }}</mark><template v-else>{{ p.t }}</template></template>
+                  <Icon v-if="row.file.description" icon="lucide:sparkles" class="mr-0.5 inline-block h-3.5 w-3.5 align-text-bottom text-[var(--color-accent)]" title="KI-analysiert" /><template v-for="(p, i) in hl(row.file.class_name)" :key="i"><mark v-if="p.m" class="rounded-sm bg-transparent px-0 font-semibold text-[var(--color-accent)]">{{ p.t }}</mark><template v-else>{{ p.t }}</template></template>
                 </span>
                 <span
                   v-if="progressFor(row.file.id)"
@@ -371,7 +372,7 @@ async function onDetailClose(payload) {
                 :aria-label="`Klasse ${row.file.class_name} löschen`"
                 @click.stop="askDelete(row.file)"
               >
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" /></svg>
+                <Icon icon="lucide:trash-2" class="h-4 w-4" />
               </button>
             </div>
           </li>
@@ -416,7 +417,7 @@ async function onDetailClose(payload) {
               class="grid h-10 w-10 shrink-0 place-items-center rounded-full text-[var(--color-danger)]"
               style="background-color: color-mix(in srgb, var(--color-danger) 16%, transparent)"
             >
-              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" /></svg>
+              <Icon icon="lucide:trash-2" class="h-5 w-5" />
             </span>
             <div class="min-w-0">
               <h3 class="truncate font-semibold text-[var(--color-text)]">Klasse löschen?</h3>
@@ -441,7 +442,7 @@ async function onDetailClose(payload) {
               :disabled="deleting"
               @click="confirmDelete"
             >
-              <svg v-if="deleting" class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
+              <Icon v-if="deleting" icon="lucide:loader-2" class="h-4 w-4 animate-spin" />
               {{ deleting ? 'Lösche…' : 'Löschen' }}
             </button>
           </div>

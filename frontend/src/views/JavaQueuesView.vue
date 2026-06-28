@@ -3,9 +3,22 @@
 // Der Zustand liegt im Backend; hier wird er per HTTP-Polling (3 s) ueber das gemeinsame
 // useJavaQueue-Composable gespiegelt. Kein direktes fetch(), kein WebSocket.
 import { computed, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useJavaQueue } from '../composables/useJavaQueue.js'
+import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
+import { Icon } from '../lib/icons.js'
 
+const router = useRouter()
 const { allJobs, ensurePolling, cancelJob, cancelAllJobs } = useJavaQueue()
+const { lastFileId } = useJavaAnalyzer()
+
+// Klick auf einen Queue-Eintrag -> in den Code-Analyzer wechseln und die Klasse direkt oeffnen.
+// Wiederverwendung des bestehenden lastFileId-Hand-offs: CodeView selektiert sie beim Mount.
+function openClass(j) {
+  if (j.fileId == null) return
+  lastFileId.value = j.fileId
+  router.push('/code')
+}
 
 let releasePolling = null
 onMounted(() => {
@@ -76,14 +89,14 @@ async function onCancelAll() {
           title="Alle Jobs abbrechen und die Liste leeren"
           @click="onCancelAll"
         >
-          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" /></svg>
+          <Icon icon="lucide:trash-2" class="h-4 w-4" />
           Alle abbrechen
         </button>
         <RouterLink
           to="/code"
           class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
         >
-          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6" /></svg>
+          <Icon icon="lucide:chevron-left" class="h-4 w-4" />
           Zum Analyzer
         </RouterLink>
       </div>
@@ -108,23 +121,28 @@ async function onCancelAll() {
             <span class="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase" :class="j.kind === 'class' ? 'bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300' : 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300'">
               {{ j.kind === 'class' ? 'Klasse' : 'Methoden' }}
             </span>
-            <h3 class="min-w-0 flex-1 truncate font-semibold text-slate-800 dark:text-slate-100">{{ j.className }}</h3>
+            <button
+              type="button"
+              class="min-w-0 flex-1 truncate text-left font-semibold text-slate-800 transition hover:text-[var(--color-accent)] dark:text-slate-100"
+              :title="`${j.className} im Analyzer öffnen`"
+              @click="openClass(j)"
+            >{{ j.className }}</button>
             <span class="rounded-md px-2 py-0.5 text-[11px] font-semibold" :class="statusInfo(j.status).cls">{{ statusInfo(j.status).label }}</span>
             <button
               type="button"
               class="shrink-0 rounded-md p-1 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
               title="Job abbrechen"
               aria-label="Job abbrechen"
-              @click="onCancel(j)"
+              @click.stop="onCancel(j)"
             >
-              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12" /></svg>
+              <Icon icon="lucide:x" class="h-4 w-4" />
             </button>
           </div>
           <p v-if="j.package" class="mb-2 truncate font-mono text-[11px] text-slate-400">{{ j.package }}</p>
 
           <div class="mb-1.5 flex items-center justify-between text-xs">
             <span class="flex min-w-0 items-center gap-1.5 text-[var(--color-accent)]">
-              <svg v-if="j.status === 'running'" class="h-3.5 w-3.5 shrink-0 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
+              <Icon v-if="j.status === 'running'" icon="lucide:loader-2" class="h-3.5 w-3.5 shrink-0 animate-spin" />
               <span class="truncate">
                 <template v-if="j.current">{{ j.current.name }}()</template>
                 <template v-else>vorbereiten…</template>
@@ -135,7 +153,10 @@ async function onCancelAll() {
           <div class="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
             <div class="h-full rounded-full bg-[var(--color-accent)] transition-all duration-300" :style="{ width: percent(j) + '%' }" />
           </div>
-          <p v-if="j.ollamaUnavailable" class="mt-2 text-[11px] text-amber-600 dark:text-amber-400">⚠ Ollama nicht erreichbar – Fallback-Text wird verwendet.</p>
+          <p v-if="j.ollamaUnavailable" class="mt-2 flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400">
+            <Icon icon="lucide:alert-triangle" class="h-3.5 w-3.5 shrink-0" />
+            Ollama nicht erreichbar – Fallback-Text wird verwendet.
+          </p>
         </article>
       </div>
       <p v-else class="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-400 dark:border-slate-800">
@@ -157,7 +178,12 @@ async function onCancelAll() {
           <span class="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase" :class="j.kind === 'class' ? 'bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300' : 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300'">
             {{ j.kind === 'class' ? 'Klasse' : 'Methoden' }}
           </span>
-          <span class="min-w-0 flex-1 truncate font-medium text-slate-700 dark:text-slate-200">{{ j.className }}</span>
+          <button
+            type="button"
+            class="min-w-0 flex-1 truncate text-left font-medium text-slate-700 transition hover:text-[var(--color-accent)] dark:text-slate-200"
+            :title="`${j.className} im Analyzer öffnen`"
+            @click="openClass(j)"
+          >{{ j.className }}</button>
           <span class="shrink-0 tabular-nums text-xs text-slate-400">{{ j.done }}/{{ j.total }}<template v-if="j.failed"> · {{ j.failed }} Fehler</template></span>
           <span v-if="j.finishedAt" class="shrink-0 text-[11px] text-slate-400">{{ fmtTime(j.finishedAt) }}</span>
           <span class="shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold" :class="statusInfo(j.status).cls">{{ statusInfo(j.status).label }}</span>
@@ -166,9 +192,9 @@ async function onCancelAll() {
             class="shrink-0 rounded-md p-1 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
             title="Aus der Liste entfernen"
             aria-label="Aus der Liste entfernen"
-            @click="onCancel(j)"
+            @click.stop="onCancel(j)"
           >
-            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12" /></svg>
+            <Icon icon="lucide:x" class="h-3.5 w-3.5" />
           </button>
         </article>
       </div>

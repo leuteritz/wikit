@@ -4,7 +4,8 @@ import { RouterLink, RouterView, useRoute } from 'vue-router'
 import SearchPalette from './components/SearchPalette.vue'
 import ThemeToggle from './components/ThemeToggle.vue'
 import { useArticles } from './composables/useArticles.js'
-import { WIKI_TITLE } from './config.js'
+import { WIKI_TITLE, WIKI_ICON } from './config.js'
+import { Icon } from './lib/icons.js'
 
 const { load } = useArticles()
 const route = useRoute()
@@ -25,38 +26,41 @@ onMounted(() => {
 })
 onUnmounted(() => window.removeEventListener('keydown', onKey))
 
-// Navigation: code-first. Analyzer zuerst, dann Wiki/Graph.
+// Navigation: code-first. Analyzer zuerst, dann Wiki/Graph. Icons ausschliesslich via Iconify.
 const navLinks = [
-  { to: '/code', label: 'Code', icon: 'M8 16l-4-4 4-4M16 8l4 4-4 4M14 4l-4 16' },
-  { to: '/code/queues', label: 'Queues', icon: 'M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0M12 7v5l3 2' },
-  { to: '/wiki', label: 'Wiki', icon: 'M4 5h11a2 2 0 0 1 2 2v12a1 1 0 0 1-1 1H6a2 2 0 0 1-2-2zM9 5v14' },
-  { to: '/graph', label: 'Graph', icon: 'M5 6a2 2 0 1 0 0-.01M19 6a2 2 0 1 0 0-.01M12 18a2 2 0 1 0 0-.01M6.7 7.4 11 16M17.3 7.4 13 16' },
+  { to: '/code', label: 'Code', icon: 'lucide:braces' },
+  { to: '/code/queues', label: 'Queues', icon: 'lucide:list-checks' },
+  { to: '/wiki', label: 'Wiki', icon: 'lucide:book-open' },
+  { to: '/graph', label: 'Graph', icon: 'lucide:share-2' },
 ]
 </script>
 
 <template>
   <div class="min-h-screen">
-    <!-- Topbar -->
-    <header class="sticky top-0 z-30 border-b border-[var(--color-border)] bg-[var(--color-surface-2)]/85 backdrop-blur">
-      <div class="mx-auto flex h-14 max-w-[100rem] items-center gap-3 px-4 sm:gap-4">
-        <RouterLink to="/" class="flex shrink-0 items-center gap-2 font-semibold text-[var(--color-text)]">
-          <span class="text-xl">📚</span>
-          <span class="hidden text-[var(--color-accent)] sm:inline">{{ WIKI_TITLE }}</span>
+    <!-- Topbar: symmetrisches 3-Spalten-Grid (Brand · Suche · Nav) -> Suche echt zentriert,
+         wandert nicht mehr bei Breakpoint-Wechseln. -->
+    <header class="sticky top-0 z-30 border-b border-[var(--color-border)] bg-[var(--color-surface-2)]/80 backdrop-blur">
+      <div class="mx-auto grid h-14 max-w-[100rem] grid-cols-[1fr_auto_1fr] items-center gap-3 px-4">
+        <!-- Brand (links) -->
+        <RouterLink to="/" class="flex min-w-0 items-center gap-2 font-semibold text-[var(--color-text)]">
+          <Icon :icon="WIKI_ICON" class="shrink-0 text-2xl text-[var(--color-accent)]" />
+          <span class="hidden truncate text-[var(--color-accent)] sm:inline">{{ WIKI_TITLE }}</span>
         </RouterLink>
 
-        <!-- Sichtbare Suchleiste (oeffnet die Palette) -->
+        <!-- Suchleiste (mittig, oeffnet die Palette) -->
         <button
           type="button"
-          class="mx-auto flex w-full max-w-md items-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-muted)] transition hover:border-[var(--color-accent)]"
+          class="flex w-44 items-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-muted)] transition hover:border-[var(--color-accent)] focus:border-[var(--color-accent)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-soft)] sm:w-72 md:w-80 lg:w-96"
           @click="searchOpen = true"
         >
-          <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
-          <span class="truncate">Artikel, Tags, Kategorien durchsuchen…</span>
+          <Icon icon="lucide:search" class="h-4 w-4 shrink-0" />
+          <span class="hidden truncate sm:inline">Artikel, Tags, Kategorien durchsuchen…</span>
+          <span class="truncate sm:hidden">Suchen…</span>
           <kbd class="ml-auto hidden shrink-0 rounded border border-[var(--color-border)] px-1.5 text-[10px] sm:inline">Strg K</kbd>
         </button>
 
-        <!-- Nav -->
-        <nav class="flex shrink-0 items-center gap-1">
+        <!-- Nav (rechts) -->
+        <nav class="flex items-center justify-end gap-1">
           <RouterLink
             v-for="link in navLinks"
             :key="link.to"
@@ -65,8 +69,8 @@ const navLinks = [
             exact-active-class="bg-[var(--color-accent-soft)] !text-[var(--color-accent)]"
             :title="link.label"
           >
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="link.icon" /></svg>
-            <span class="hidden md:inline">{{ link.label }}</span>
+            <Icon :icon="link.icon" class="h-4 w-4" />
+            <span class="hidden lg:inline">{{ link.label }}</span>
           </RouterLink>
           <ThemeToggle />
         </nav>

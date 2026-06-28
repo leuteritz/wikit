@@ -2,6 +2,7 @@
 import { ref, watch, nextTick, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import CategoryBadge from './CategoryBadge.vue'
+import { Icon } from '../lib/icons.js'
 
 const props = defineProps({
   article: { type: Object, required: true },
@@ -33,7 +34,7 @@ function enhanceCodeBlocks() {
     btn.textContent = 'Kopieren'
     btn.addEventListener('click', async () => {
       await navigator.clipboard.writeText(pre.innerText)
-      btn.textContent = 'Kopiert ✓'
+      btn.textContent = 'Kopiert'
       setTimeout(() => (btn.textContent = 'Kopieren'), 1500)
     })
     wrap.appendChild(btn)
@@ -67,7 +68,7 @@ watch(() => props.article?.id, () => nextTick(enhanceCodeBlocks))
           :to="`/edit/${article.slug}`"
           class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
         >
-          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4v16h16v-7" /><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
+          <Icon icon="lucide:pencil" class="h-4 w-4" />
           Bearbeiten
         </RouterLink>
         <button
@@ -75,7 +76,7 @@ watch(() => props.article?.id, () => nextTick(enhanceCodeBlocks))
           class="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-1.5 text-sm font-medium text-rose-600 transition hover:bg-rose-50 dark:border-rose-500/30 dark:text-rose-400 dark:hover:bg-rose-500/10"
           @click="$emit('delete', article)"
         >
-          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
+          <Icon icon="lucide:trash-2" class="h-4 w-4" />
           Löschen
         </button>
       </div>
@@ -102,7 +103,7 @@ watch(() => props.article?.id, () => nextTick(enhanceCodeBlocks))
         >
           <span class="rounded-md bg-[var(--color-accent-soft)] px-2 py-1 text-[11px] font-medium text-[var(--color-accent)]">{{ rel.relation_type }}</span>
           <span class="min-w-0 flex-1 truncate text-sm font-medium text-slate-700 group-hover:text-[var(--color-accent)] dark:text-slate-200">{{ rel.title }}</span>
-          <svg class="h-4 w-4 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-[var(--color-accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+          <Icon icon="lucide:arrow-right" class="h-4 w-4 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-[var(--color-accent)]" />
         </RouterLink>
       </div>
     </section>

@@ -9,6 +9,7 @@ import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
 import { useJavaQueue } from '../../composables/useJavaQueue.js'
 import { useArticles } from '../../composables/useArticles.js'
 import JavaCodeEditor from './JavaCodeEditor.vue'
+import { Icon } from '../../lib/icons.js'
 
 const props = defineProps({
   fileId: { type: Number, required: true },
@@ -186,7 +187,7 @@ async function removeFile() {
             v-if="queueProgress && queueProgress.status === 'running'"
             class="badge-accent inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
           >
-            <svg class="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
+            <Icon icon="lucide:loader-2" class="h-3 w-3 animate-spin" />
             <span v-if="queueProgress.current">{{ queueProgress.current.name }}()</span>
             <span v-else>Queue läuft</span>
             <span v-if="queueProgress.total > 1" class="tabular-nums opacity-70">{{ queueProgress.done }}/{{ queueProgress.total }}</span>
@@ -199,7 +200,7 @@ async function removeFile() {
         title="Schließen"
         @click="emit('close')"
       >
-        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12" /></svg>
+        <Icon icon="lucide:x" class="h-5 w-5" />
       </button>
     </header>
 
@@ -244,7 +245,7 @@ async function removeFile() {
                 :disabled="classBusy"
                 @click="generateClassSummary"
               >
-                <svg v-if="classBusy" class="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
+                <Icon v-if="classBusy" icon="lucide:loader-2" class="h-3.5 w-3.5 animate-spin" />
                 {{ classBusy ? 'Generiere…' : (file.description_html ? 'Neu generieren' : 'Generate Class Summary') }}
               </button>
             </div>
@@ -272,7 +273,7 @@ async function removeFile() {
                 >
                   {{ { done: 'generiert', running: '…', pending: 'wartet', idle: 'offen' }[methodStatus(m)] }}
                 </span>
-                <svg class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)] transition-transform" :class="openMethod === m.id ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" /></svg>
+                <Icon icon="lucide:chevron-down" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)] transition-transform" :class="openMethod === m.id ? 'rotate-180' : ''" />
               </button>
 
               <div v-show="openMethod === m.id" class="border-t border-[var(--color-border)] px-3 py-2">
@@ -285,7 +286,7 @@ async function removeFile() {
                   :disabled="summarizing === m.id"
                   @click="summarize(m)"
                 >
-                  <svg v-if="summarizing === m.id" class="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
+                  <Icon v-if="summarizing === m.id" icon="lucide:loader-2" class="h-3.5 w-3.5 animate-spin" />
                   {{ summarizing === m.id ? 'Generiere…' : (m.summary_html ? 'Neu generieren' : 'Generate Summary') }}
                 </button>
               </div>
@@ -300,7 +301,7 @@ async function removeFile() {
               type="button"
               class="code-copy z-10 opacity-100"
               @click="copySource"
-            >{{ copied ? 'Kopiert ✓' : 'Kopieren' }}</button>
+            >{{ copied ? 'Kopiert' : 'Kopieren' }}</button>
             <JavaCodeEditor :model-value="file.raw_source" readonly />
           </div>
         </template>

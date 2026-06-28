@@ -2,17 +2,21 @@
 // Klassen-Abhaengigkeitsgraph (Vue Flow + dagre Auto-Layout).
 // Knoten = NUR geladene Klassen (in Imports referenzierte, nicht geladene Klassen werden
 // bewusst NICHT als Knoten dargestellt). Kanten = direkte Abhaengigkeiten zwischen geladenen
-// Klassen: Methoden-Aufrufe ("ruft auf") + interne Importe. Farbe je Package rotierend
-// (cerulean / tropical-teal / soft-fawn). Alles client-seitig aus der Dateiliste -> kein Request.
-import { computed } from 'vue'
+// Klassen:
+//   * Call-Edge ("Methoden-Nutzung"): durchgezogen + animiert + Akzentfarbe, Label = aufgerufene
+//     Methode(n), KLICKBAR -> oeffnet ein Code-Panel mit dem verwendenden Code (CodeMirror).
+//   * Import-Edge: gestrichelt + gedaempft, nicht klickbar.
+// Farbe je Package rotierend. Alles client-seitig aus der Dateiliste (props.files enthaelt
+// methods[].body + dependencies[]) -> kein Request, kein Backend noetig. Icons via Iconify.
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { VueFlow, MarkerType, Handle, Position, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
-import { MiniMap } from '@vue-flow/minimap'
 import dagre from '@dagrejs/dagre'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
-import '@vue-flow/minimap/dist/style.css'
 import { useTheme } from '../../composables/useTheme.js'
+import { Icon } from '../../lib/icons.js'
+import JavaCodeEditor from './JavaCodeEditor.vue'
 
 const props = defineProps({
   files: { type: Array, default: () => [] },
@@ -43,28 +47,44 @@ const layout = computed(() => {
   const edges = []
   const callPairs = new Set()
 
-  // 1) Methoden-Nutzungs-Kanten ("ruft auf"): fremder Methodenname taucht im Body auf.
+  // 1) Methoden-Nutzungs-Kanten: fremder Methodenname taucht im Body einer Methode auf.
+  //    Pro gerichtetem Paar A->B die konkreten Call-Sites sammeln (welche Methode von A ruft
+  //    welche Methode von B), damit Label + Code-Panel echte Daten zeigen.
   for (const fx of files) {
-    const bodies = (fx.methods || []).map((m) => m.body || '').join('\n')
-    if (!bodies) continue
+    const callerMethods = fx.methods || []
     for (const fy of files) {
       if (fy.id === fx.id) continue
-      const calls = (fy.methods || []).some((m) => m.method_name && bodies.includes(`${m.method_name}(`))
-      if (calls) {
-        callPairs.add(`${fx.id}->${fy.id}`)
-        edges.push({
-          id: `call:${fx.id}-${fy.id}`,
-          source: `c:${fx.id}`,
-          target: `c:${fy.id}`,
-          label: 'ruft auf',
-          animated: true,
-          type: 'smoothstep',
-          style: { stroke: 'var(--color-accent)', strokeWidth: 2 },
-          labelStyle: { fill: 'var(--color-accent)', fontSize: '10px', fontWeight: 600 },
-          labelBgStyle: { fill: 'var(--color-surface-2)' },
-          markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--color-accent)' },
-        })
+      const calleeMethods = fy.methods || []
+      const callSites = []
+      for (const ca of callerMethods) {
+        const body = ca.body || ''
+        if (!body) continue
+        for (const ce of calleeMethods) {
+          if (ce.method_name && body.includes(`${ce.method_name}(`)) {
+            callSites.push({ callerMethod: ca.method_name, calleeMethod: ce.method_name, callerBody: body })
+          }
+        }
       }
+      if (!callSites.length) continue
+
+      callPairs.add(`${fx.id}->${fy.id}`)
+      const callees = [...new Set(callSites.map((c) => c.calleeMethod))]
+      const label = callees.length === 1 ? `${callees[0]}()` : `${callees[0]}() +${callees.length - 1}`
+      edges.push({
+        id: `call:${fx.id}-${fy.id}`,
+        source: `c:${fx.id}`,
+        target: `c:${fy.id}`,
+        label,
+        animated: true,
+        type: 'smoothstep',
+        style: { stroke: 'var(--color-accent)', strokeWidth: 2, cursor: 'pointer' },
+        labelStyle: { fill: 'var(--color-accent)', fontSize: '10px', fontWeight: 600, cursor: 'pointer' },
+        labelBgStyle: { fill: 'var(--color-surface-2)' },
+        labelBgPadding: [4, 2],
+        labelBgBorderRadius: 4,
+        markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--color-accent)' },
+        data: { kind: 'call', fromClass: fx.class_name, toClass: fy.class_name, callSites, callees },
+      })
     }
   }
 
@@ -82,6 +102,7 @@ const layout = computed(() => {
         type: 'smoothstep',
         style: { stroke: 'var(--color-text-muted)', strokeWidth: 1.5, strokeDasharray: '5 4' },
         markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--color-text-muted)' },
+        data: { kind: 'import' },
       })
     }
   }
@@ -122,7 +143,6 @@ const nodes = computed(() => layout.value.nodes)
 const edges = computed(() => layout.value.edges)
 
 const dotColor = computed(() => (theme.value === 'dark' ? '#33485a' : '#cdc6bd'))
-const miniNodeColor = (n) => n.data?.color || '#48a9a6'
 
 function onNodeClick({ node }) {
   if (node?.data?.fileId != null) emit('select', node.data.fileId)
@@ -130,6 +150,34 @@ function onNodeClick({ node }) {
 function resetView() {
   setViewport({ x: 0, y: 0, zoom: 1 })
 }
+
+// --- Code-Panel fuer angeklickte Call-Edges ---
+const activeEdge = ref(null)
+function onEdgeClick({ edge }) {
+  // Nur Methoden-Nutzungs-Kanten haben Call-Sites; Import-Kanten ignorieren.
+  if (edge?.data?.callSites?.length) activeEdge.value = edge.data
+}
+function closeEdgePanel() {
+  activeEdge.value = null
+}
+// Pro aufrufende Methode gruppieren -> jeder Methodenrumpf nur einmal anzeigen.
+const edgeGroups = computed(() => {
+  if (!activeEdge.value) return []
+  const map = new Map()
+  for (const cs of activeEdge.value.callSites) {
+    if (!map.has(cs.callerMethod)) {
+      map.set(cs.callerMethod, { callerMethod: cs.callerMethod, callerBody: cs.callerBody, callees: new Set() })
+    }
+    map.get(cs.callerMethod).callees.add(cs.calleeMethod)
+  }
+  return [...map.values()].map((g) => ({ ...g, callees: [...g.callees] }))
+})
+
+function onKeydown(e) {
+  if (e.key === 'Escape' && activeEdge.value) closeEdgePanel()
+}
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
@@ -147,6 +195,7 @@ function resetView() {
       :max-zoom="2"
       :default-edge-options="{ type: 'smoothstep' }"
       @node-click="onNodeClick"
+      @edge-click="onEdgeClick"
     >
       <!-- Custom Node: kompaktes Card-Design, Farbe nach Package -->
       <template #node-klass="{ data }">
@@ -159,7 +208,7 @@ function resetView() {
           <span class="vf-strip" />
           <div class="vf-body">
             <div class="vf-name">
-              <span v-if="data.analyzed" title="KI-analysiert">✨ </span>{{ data.className }}
+              <Icon v-if="data.analyzed" icon="lucide:sparkles" class="vf-ai" title="KI-analysiert" />{{ data.className }}
             </div>
             <div class="vf-pkg">{{ data.pkg }}</div>
           </div>
@@ -169,22 +218,21 @@ function resetView() {
       </template>
 
       <Background :gap="22" :pattern-color="dotColor" />
-      <MiniMap pannable zoomable :node-color="miniNodeColor" />
     </VueFlow>
 
     <!-- Toolbar: Zoom / Fit / Reset -->
     <div v-if="files.length" class="absolute left-3 top-3 flex items-center gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]/90 p-1 shadow-sm backdrop-blur">
       <button type="button" class="vf-tool" title="Hineinzoomen" @click="zoomIn()">
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" /></svg>
+        <Icon icon="lucide:zoom-in" class="h-4 w-4" />
       </button>
       <button type="button" class="vf-tool" title="Herauszoomen" @click="zoomOut()">
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14" /></svg>
+        <Icon icon="lucide:zoom-out" class="h-4 w-4" />
       </button>
       <button type="button" class="vf-tool" title="Einpassen" @click="fitView()">
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
+        <Icon icon="lucide:maximize" class="h-4 w-4" />
       </button>
       <button type="button" class="vf-tool" title="Zurücksetzen" @click="resetView">
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v4h4" /></svg>
+        <Icon icon="lucide:rotate-ccw" class="h-4 w-4" />
       </button>
     </div>
 
@@ -192,17 +240,68 @@ function resetView() {
     <div v-if="files.length" class="absolute right-3 top-3 flex flex-col gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]/90 px-3 py-2 text-xs shadow-sm backdrop-blur">
       <div class="flex items-center gap-2">
         <span class="h-0.5 w-4 rounded" style="background: var(--color-accent)" />
-        <span class="text-[var(--color-text-muted)]">ruft auf</span>
+        <span class="text-[var(--color-text-muted)]">ruft auf · klickbar</span>
       </div>
       <div class="flex items-center gap-2">
         <span class="h-0.5 w-4 rounded" style="background: var(--color-text-muted); border-top: 1px dashed" />
         <span class="text-[var(--color-text-muted)]">importiert</span>
       </div>
       <div class="flex items-center gap-2">
-        <span>✨</span>
+        <Icon icon="lucide:sparkles" class="h-3.5 w-3.5 text-[var(--color-accent)]" />
         <span class="text-[var(--color-text-muted)]">KI-analysiert</span>
       </div>
     </div>
+
+    <!-- Code-Panel: verwendender Code einer Methoden-Nutzungs-Kante (ESC / Close schliesst) -->
+    <Teleport to="body">
+      <Transition name="edge-drawer">
+        <div v-if="activeEdge" class="fixed inset-0 z-50 flex justify-end">
+          <div class="absolute inset-0 bg-black/30 backdrop-blur-sm" @click="closeEdgePanel" />
+          <aside class="relative z-10 flex h-full w-full max-w-xl flex-col border-l border-[var(--color-border)] bg-[var(--color-surface-2)] shadow-2xl">
+            <header class="flex items-start gap-3 border-b border-[var(--color-border)] px-4 py-3">
+              <span class="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+                <Icon icon="lucide:code-2" class="h-4 w-4" />
+              </span>
+              <div class="min-w-0 flex-1">
+                <h2 class="flex flex-wrap items-center gap-1.5 text-sm font-bold text-[var(--color-text)]">
+                  <span class="truncate">{{ activeEdge.fromClass }}</span>
+                  <Icon icon="lucide:arrow-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
+                  <span class="truncate">{{ activeEdge.toClass }}</span>
+                </h2>
+                <p class="mt-0.5 text-xs text-[var(--color-text-muted)]">
+                  Verwendet: <code class="font-mono text-[var(--color-accent)]">{{ activeEdge.callees.map((c) => c + '()').join(', ') }}</code>
+                </p>
+              </div>
+              <button
+                type="button"
+                class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+                title="Schließen (ESC)"
+                @click="closeEdgePanel"
+              >
+                <Icon icon="lucide:x" class="h-5 w-5" />
+              </button>
+            </header>
+
+            <div class="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+              <section v-for="grp in edgeGroups" :key="grp.callerMethod">
+                <div class="mb-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+                  <code class="rounded-md bg-[var(--color-surface-offset)] px-1.5 py-0.5 font-mono font-semibold text-[var(--color-text)]">{{ activeEdge.fromClass }}.{{ grp.callerMethod }}()</code>
+                  <Icon icon="lucide:arrow-right" class="h-3 w-3 text-[var(--color-text-muted)]" />
+                  <code
+                    v-for="c in grp.callees"
+                    :key="c"
+                    class="rounded-md bg-[var(--color-accent-soft)] px-1.5 py-0.5 font-mono text-[var(--color-accent)]"
+                  >{{ c }}()</code>
+                </div>
+                <div class="h-72">
+                  <JavaCodeEditor :model-value="grp.callerBody" readonly />
+                </div>
+              </section>
+            </div>
+          </aside>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -241,12 +340,21 @@ function resetView() {
   flex: 1;
 }
 .vf-name {
+  display: flex;
+  align-items: center;
+  gap: 3px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
   font-weight: 700;
   color: var(--color-text);
+}
+.vf-ai {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  color: var(--color-accent);
 }
 .vf-pkg {
   overflow: hidden;
@@ -285,5 +393,23 @@ function resetView() {
 .vf-tool:hover {
   background: var(--color-surface-offset);
   color: var(--color-text);
+}
+
+/* Drawer-Transition (von rechts einschiebend). */
+.edge-drawer-enter-active,
+.edge-drawer-leave-active {
+  transition: opacity 0.2s ease;
+}
+.edge-drawer-enter-active aside,
+.edge-drawer-leave-active aside {
+  transition: transform 0.2s ease;
+}
+.edge-drawer-enter-from,
+.edge-drawer-leave-to {
+  opacity: 0;
+}
+.edge-drawer-enter-from aside,
+.edge-drawer-leave-to aside {
+  transform: translateX(100%);
 }
 </style>

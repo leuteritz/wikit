@@ -7,6 +7,7 @@ import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { useJavaQueue } from '../composables/useJavaQueue.js'
 import { WIKI_TITLE } from '../config.js'
 import JavaCodeEditor from '../components/java/JavaCodeEditor.vue'
+import { Icon } from '../lib/icons.js'
 
 const router = useRouter()
 const { files, fetchFiles, analyzeCode, analyzing, error, userContext, lastFileId } = useJavaAnalyzer()
@@ -82,7 +83,7 @@ function openClass(id) {
       >
         <label class="flex cursor-pointer flex-col items-center">
           <span class="grid h-16 w-16 place-items-center rounded-full bg-[var(--color-accent-soft)] text-[var(--color-accent)] transition group-hover:scale-105">
-            <svg class="h-8 w-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" /></svg>
+            <Icon icon="lucide:upload" class="h-8 w-8" />
           </span>
           <span class="mt-4 text-base font-semibold text-slate-800 dark:text-slate-100">
             <span class="text-[var(--color-accent)]">.java</span> ablegen oder auswählen
@@ -91,8 +92,9 @@ function openClass(id) {
           <input type="file" accept=".java" class="hidden" @change="onFile" />
         </label>
 
-        <p v-if="filename" class="mt-3 truncate text-sm font-medium text-slate-600 dark:text-slate-300">
-          📄 {{ filename }}
+        <p v-if="filename" class="mt-3 flex items-center justify-center gap-1.5 truncate text-sm font-medium text-slate-600 dark:text-slate-300">
+          <Icon icon="lucide:file-text" class="h-4 w-4 shrink-0" />
+          <span class="truncate">{{ filename }}</span>
         </p>
       </div>
 
@@ -102,7 +104,7 @@ function openClass(id) {
         class="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-accent)] transition hover:opacity-80"
         @click="showPaste = !showPaste"
       >
-        <svg class="h-3.5 w-3.5 transition-transform" :class="showPaste ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6" /></svg>
+        <Icon icon="lucide:chevron-right" class="h-3.5 w-3.5 transition-transform" :class="showPaste ? 'rotate-90' : ''" />
         oder Code einfügen
       </button>
       <div v-show="showPaste" class="mt-2 h-60">
@@ -115,7 +117,7 @@ function openClass(id) {
         class="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
         @click="showContext = !showContext"
       >
-        <svg class="h-3.5 w-3.5 transition-transform" :class="showContext ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6" /></svg>
+        <Icon icon="lucide:chevron-right" class="h-3.5 w-3.5 transition-transform" :class="showContext ? 'rotate-90' : ''" />
         Projekt-Kontext (optional){{ userContext ? ' · aktiv' : '' }}
       </button>
       <textarea
@@ -136,7 +138,7 @@ function openClass(id) {
         :disabled="analyzing || !source.trim()"
         @click="analyze"
       >
-        <svg v-if="analyzing" class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
+        <Icon v-if="analyzing" icon="lucide:loader-2" class="h-4 w-4 animate-spin" />
         {{ analyzing ? 'Analysiere…' : 'Analysieren' }}
       </button>
     </div>
@@ -152,7 +154,7 @@ function openClass(id) {
           class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 transition hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
           @click="openClass(f.id)"
         >
-          <span v-if="f.description">✨</span>
+          <Icon v-if="f.description" icon="lucide:sparkles" class="h-3.5 w-3.5 text-[var(--color-accent)]" />
           {{ f.class_name }}
         </button>
       </div>
@@ -160,9 +162,9 @@ function openClass(id) {
 
     <!-- Sekundaere Einstiege -->
     <div class="mt-8 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-slate-500 dark:text-slate-400">
-      <RouterLink to="/wiki" class="transition hover:text-[var(--color-accent)]">📚 Wiki durchstöbern</RouterLink>
-      <RouterLink to="/graph" class="transition hover:text-[var(--color-accent)]">🕸️ Zusammenhang-Graph</RouterLink>
-      <RouterLink to="/new" class="transition hover:text-[var(--color-accent)]">+ Neuer Artikel</RouterLink>
+      <RouterLink to="/wiki" class="inline-flex items-center gap-1.5 transition hover:text-[var(--color-accent)]"><Icon icon="lucide:book-open" class="h-4 w-4" /> Wiki durchstöbern</RouterLink>
+      <RouterLink to="/graph" class="inline-flex items-center gap-1.5 transition hover:text-[var(--color-accent)]"><Icon icon="lucide:share-2" class="h-4 w-4" /> Zusammenhang-Graph</RouterLink>
+      <RouterLink to="/new" class="inline-flex items-center gap-1.5 transition hover:text-[var(--color-accent)]"><Icon icon="lucide:plus" class="h-4 w-4" /> Neuer Artikel</RouterLink>
     </div>
   </div>
 </template>
