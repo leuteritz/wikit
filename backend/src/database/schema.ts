@@ -91,6 +91,24 @@ CREATE TABLE IF NOT EXISTS java_dependencies (
 );
 CREATE INDEX IF NOT EXISTS idx_java_deps_from ON java_dependencies(from_file_id);
 
+-- Persistente Klassen-Kanten des Code-Graphen (ersetzt die alte rein client-seitige
+-- Substring-Heuristik). source_class ruft method_name auf einer Instanz von target_class auf.
+-- is_manual=1 -> vom Nutzer per Drag-to-Connect angelegt (ueberlebt Neuanalyse).
+-- dismissed=1 -> vom Nutzer verworfene Auto-Kante (Tombstone: wird NICHT neu erzeugt).
+-- confidence < 1 -> unsicherer Auto-Treffer ("Bitte pruefen"-Badge im Frontend).
+-- SQLite kennt kein BOOLEAN -> INTEGER 0/1.
+CREATE TABLE IF NOT EXISTS java_edges (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_class TEXT NOT NULL,
+  target_class TEXT NOT NULL,
+  method_name  TEXT,
+  is_manual    INTEGER NOT NULL DEFAULT 0,
+  dismissed    INTEGER NOT NULL DEFAULT 0,
+  confidence   REAL DEFAULT 1.0,
+  created_at   TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_java_edges_source ON java_edges(source_class);
+
 -- Eigener FTS5-Index fuer analysierte Java-Klassen/Methoden: macht gespeicherte
 -- KI-Beschreibungen als Prompt-Kontext (Wissensquelle) UND den Rohquelltext (globale
 -- Code-Suche: Klassen-/Methoden-/Variablennamen) durchsuchbar. rowid = java_files.id.

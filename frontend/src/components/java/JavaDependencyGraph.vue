@@ -8,15 +8,17 @@
 //   * Import-Edge: gestrichelt + gedaempft, nicht klickbar.
 // Farbe je Package rotierend. Alles client-seitig aus der Dateiliste (props.files enthaelt
 // methods[].body + dependencies[]) -> kein Request, kein Backend noetig. Icons via Iconify.
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { VueFlow, MarkerType, Handle, Position, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import dagre from '@dagrejs/dagre'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 import { useTheme } from '../../composables/useTheme.js'
+import { useJavaGraph } from '../../composables/useJavaGraph.js'
 import { Icon } from '../../lib/icons.js'
 import JavaEdgeDetailPanel from './JavaEdgeDetailPanel.vue'
+import ManagedEdge from './ManagedEdge.vue'
 
 const props = defineProps({
   files: { type: Array, default: () => [] },
@@ -27,18 +29,41 @@ const emit = defineEmits(['select'])
 const { theme } = useTheme()
 const { fitView, zoomIn, zoomOut, setViewport } = useVueFlow()
 
+// Persistierte Call-Edges (auto + manuell) – Quelle der Wahrheit ist jetzt das Backend.
+const { edges: serverEdges, fetchEdges, createEdge, updateEdge, deleteEdge } = useJavaGraph()
+
+// Custom-Edge-Typ registrieren.
+const edgeTypes = { managed: ManagedEdge }
+
 // Genau drei Package-Farben, rotierend nach Package-Index.
 const PKG_COLORS = ['#4281a4', '#48a9a6', '#d4b483']
 const NODE_W = 208
 const NODE_H = 66
+const REVIEW_COLOR = '#d4a017'
 
 const simpleName = (fqn) => String(fqn).split('.').pop()
+const nodeFileId = (id) => Number(String(id).replace(/^c:/, ''))
 
 // Methodensignatur fuers Edge-Panel: `return_type name(type name, …)` (parameters sind geparst).
 const buildSignature = (m) => {
   const params = (m.parameters || []).map((p) => `${p.type} ${p.name}`.trim()).join(', ')
   return `${m.return_type || 'void'} ${m.method_name}(${params})`
 }
+
+// Datei-Lookups (id -> file, class_name -> file).
+const filesById = computed(() => {
+  const m = new Map()
+  for (const f of props.files || []) m.set(f.id, f)
+  return m
+})
+
+// Kanten initial laden + bei jeder Aenderung der Dateiliste neu ziehen (das Backend rechnet
+// die Auto-Kanten bei Analyse/Loeschen neu -> Graph bleibt ohne Reload konsistent).
+onMounted(fetchEdges)
+watch(
+  () => (props.files || []).map((f) => f.id).join(','),
+  () => fetchEdges(),
+)
 
 const layout = computed(() => {
   const files = props.files || []
@@ -53,82 +78,45 @@ const layout = computed(() => {
   const edges = []
   const callPairs = new Set()
 
-  // 1) Methoden-Nutzungs-Kanten: fremder Methodenname taucht im Body einer Methode auf.
-  //    fx = aufrufende Klasse (Anwender), fy = definierende Klasse (Quelle der Methode).
-  //    Pro gerichtetem Paar fx->fy die konkreten Call-Sites sammeln – inkl. EXAKTER Aufrufzeile
-  //    (aus body_start_line + Newlines bis zur Fundstelle), damit das Edge-Panel die Stelle
-  //    zeilengenau hervorheben kann.
-  for (const fx of files) {
-    const callerMethods = fx.methods || []
-    for (const fy of files) {
-      if (fy.id === fx.id) continue
-      const calleeMethods = fy.methods || []
-      const callSites = []
-      for (const ca of callerMethods) {
-        const body = ca.body || ''
-        if (!body) continue
-        // Basis-Zeile fuer absolute Aufrufzeilen: bevorzugt der Body-`{` (exakt), sonst die
-        // Deklarationszeile (Bestandsdaten), sonst rein relativ.
-        const base = ca.body_start_line ?? ca.start_line ?? null
-        const lineExact = ca.body_start_line != null
-        for (const ce of calleeMethods) {
-          if (!ce.method_name) continue
-          const safe = ce.method_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-          const re = new RegExp(`\\b${safe}\\s*\\(`, 'g')
-          let m
-          while ((m = re.exec(body)) !== null) {
-            const relLine = (body.slice(0, m.index).match(/\n/g) || []).length
-            const line = base != null ? base + relLine : relLine + 1
-            callSites.push({
-              callerMethod: ca.method_name,
-              calleeMethod: ce.method_name,
-              callerBody: body,
-              bodyStartLine: base,
-              line,
-              lineExact,
-            })
-          }
-        }
-      }
-      if (!callSites.length) continue
+  // 1) Persistierte Call-Edges aus dem Backend (auto + manuell). source_class = Aufrufer (A),
+  //    target_class = definierende Klasse (B). Pfeilrichtung im Graph bleibt „Definition ->
+  //    Nutzung": Graph-Quelle = B, Graph-Ziel (Pfeilspitze) = A. Nur Kanten rendern, deren
+  //    beide Endpunkte geladen sind.
+  for (const e of serverEdges.value || []) {
+    const callerFile = known.get(e.source_class) // A
+    const definerFile = known.get(e.target_class) // B
+    if (!callerFile || !definerFile || callerFile.id === definerFile.id) continue
+    callPairs.add(`${callerFile.id}->${definerFile.id}`)
 
-      callPairs.add(`${fx.id}->${fy.id}`)
-      const callees = [...new Set(callSites.map((c) => c.calleeMethod))]
-      // Ziel-Methodensignatur (falls auffindbar) fuers Edge-Panel mitgeben – rein client-seitig
-      // aus fy.methods (return_type + geparste parameters).
-      const calleeSignatures = callees.map((name) => {
-        const m = calleeMethods.find((mm) => mm.method_name === name)
-        return { name, signature: m ? buildSignature(m) : '' }
-      })
-      const label = callees.length === 1 ? `${callees[0]}()` : `${callees[0]}() +${callees.length - 1}`
-      edges.push({
-        id: `call:${fx.id}-${fy.id}`,
-        // Pfeilrichtung „Definition -> Nutzung": Quelle = definierende Klasse (fy),
-        // Ziel (Pfeilspitze) = aufrufende Klasse (fx). Die data-Felder bleiben fachlich
-        // (fromClass/fromFileId = Aufrufer, toClass/toFileId = Definition).
-        source: `c:${fy.id}`,
-        target: `c:${fx.id}`,
-        label,
-        animated: true,
-        type: 'smoothstep',
-        style: { stroke: 'var(--color-accent)', strokeWidth: 2, cursor: 'pointer' },
-        labelStyle: { fill: 'var(--color-accent)', fontSize: '10px', fontWeight: 600, cursor: 'pointer' },
-        labelBgStyle: { fill: 'var(--color-surface-2)' },
-        labelBgPadding: [4, 2],
-        labelBgBorderRadius: 4,
-        markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--color-accent)' },
-        data: {
-          kind: 'call',
-          fromClass: fx.class_name,
-          toClass: fy.class_name,
-          fromFileId: fx.id,
-          toFileId: fy.id,
-          callSites,
-          callees,
-          calleeSignatures,
+    const needsReview = !e.is_manual && e.confidence < 1
+    const stroke = needsReview ? REVIEW_COLOR : 'var(--color-accent)'
+    edges.push({
+      id: `edge:${e.id}`,
+      source: `c:${definerFile.id}`,
+      target: `c:${callerFile.id}`,
+      type: 'managed',
+      markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
+      data: {
+        kind: 'call',
+        edgeId: e.id,
+        method: e.method_name,
+        isManual: !!e.is_manual,
+        confidence: e.confidence,
+        needsReview,
+        fromClass: e.source_class, // Aufrufer A
+        toClass: e.target_class, // Definition B
+        fromFileId: callerFile.id,
+        toFileId: definerFile.id,
+        edgeStyle: {
+          stroke,
+          strokeWidth: 2,
+          strokeDasharray: e.is_manual ? '6 4' : undefined,
+          cursor: 'pointer',
         },
-      })
-    }
+        onEdit: openEdgeEditor,
+        onDelete: removeEdge,
+      },
+    })
   }
 
   // 2) Interne Import-Kanten (nur, wenn nicht bereits Call-Kante; nur geladene Ziele).
@@ -196,19 +184,188 @@ function resetView() {
   setViewport({ x: 0, y: 0, zoom: 1 })
 }
 
-// --- Edge-Detail-Panel fuer angeklickte Call-Edges (eigene Komponente, ESC dort) ---
+// --- Edge-Detail-Panel fuer angeklickte Auto-Call-Edges -----------------------
+// Die Call-Sites werden erst beim Klick fuer das konkrete Klassenpaar + Methode berechnet
+// (rein zur Anzeige; die Existenz der Kante kommt aus dem Backend). Manuelle Kanten haben
+// keinen verifizierbaren Quellcode -> oeffnen das Panel nicht.
 const activeEdge = ref(null)
+
+function computeCallEdgeData(callerFile, definerFile, methodName) {
+  const callSites = []
+  for (const ca of callerFile.methods || []) {
+    const body = ca.body || ''
+    if (!body) continue
+    const base = ca.body_start_line ?? ca.start_line ?? null
+    const lineExact = ca.body_start_line != null
+    const safe = String(methodName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const re = new RegExp(`\\b${safe}\\s*\\(`, 'g')
+    let m
+    while ((m = re.exec(body)) !== null) {
+      const relLine = (body.slice(0, m.index).match(/\n/g) || []).length
+      callSites.push({
+        callerMethod: ca.method_name,
+        calleeMethod: methodName,
+        callerBody: body,
+        bodyStartLine: base,
+        line: base != null ? base + relLine : relLine + 1,
+        lineExact,
+      })
+    }
+  }
+  const ce = (definerFile.methods || []).find((mm) => mm.method_name === methodName)
+  return {
+    kind: 'call',
+    fromClass: callerFile.class_name,
+    toClass: definerFile.class_name,
+    fromFileId: callerFile.id,
+    toFileId: definerFile.id,
+    callSites,
+    callees: [methodName],
+    calleeSignatures: [{ name: methodName, signature: ce ? buildSignature(ce) : '' }],
+  }
+}
+
 function onEdgeClick({ edge }) {
-  // Nur Methoden-Nutzungs-Kanten haben Call-Sites; Import-Kanten ignorieren.
-  if (edge?.data?.callSites?.length) activeEdge.value = edge.data
+  const d = edge?.data
+  if (!d || d.kind !== 'call' || d.isManual || !d.method) return
+  const callerFile = filesById.value.get(d.fromFileId)
+  const definerFile = filesById.value.get(d.toFileId)
+  if (!callerFile || !definerFile) return
+  activeEdge.value = computeCallEdgeData(callerFile, definerFile, d.method)
 }
 function closeEdgePanel() {
   activeEdge.value = null
 }
+
+// --- Drag-to-Connect: manuelle Kante anlegen ---------------------------------
+// Letzte Zeigerposition merken -> Floating-Editor erscheint direkt an der Abwurfstelle.
+const lastPointer = { x: 0, y: 0 }
+function onPointerMove(e) {
+  lastPointer.x = e.clientX
+  lastPointer.y = e.clientY
+}
+
+// Floating-Editor (Anlegen ODER Bearbeiten). null = geschlossen.
+const editor = ref(null)
+const methodInput = ref(null)
+
+function onConnect(conn) {
+  // Graph-Quelle = definierende Klasse (B), Graph-Ziel = aufrufende Klasse (A).
+  const definerFile = filesById.value.get(nodeFileId(conn.source))
+  const callerFile = filesById.value.get(nodeFileId(conn.target))
+  if (!definerFile || !callerFile || definerFile.id === callerFile.id) return
+  editor.value = {
+    mode: 'create',
+    method: '',
+    sourceClass: callerFile.class_name, // A (Aufrufer)
+    targetClass: definerFile.class_name, // B (Definition)
+    x: lastPointer.x,
+    y: lastPointer.y,
+  }
+  focusEditor()
+}
+
+function openEdgeEditor(data, event) {
+  closeContextMenu()
+  editor.value = {
+    mode: 'edit',
+    edgeId: data.edgeId,
+    method: data.method || '',
+    sourceClass: data.fromClass,
+    targetClass: data.toClass,
+    isManual: data.isManual,
+    x: event?.clientX ?? window.innerWidth / 2,
+    y: event?.clientY ?? window.innerHeight / 2,
+  }
+  focusEditor()
+}
+
+function focusEditor() {
+  requestAnimationFrame(() => methodInput.value?.focus())
+}
+
+async function saveEditor() {
+  const ed = editor.value
+  if (!ed) return
+  const method = (ed.method || '').trim()
+  try {
+    if (ed.mode === 'create') {
+      await createEdge({ source: ed.sourceClass, target: ed.targetClass, methodName: method })
+    } else {
+      await updateEdge(ed.edgeId, { methodName: method })
+    }
+    editor.value = null
+  } catch (e) {
+    ed.error = e.message
+  }
+}
+function cancelEditor() {
+  editor.value = null
+}
+
+// --- Rechtsklick-Kontextmenue auf einer Kante --------------------------------
+const contextMenu = ref(null)
+function onEdgeContextMenu({ event, edge }) {
+  event.preventDefault()
+  if (!edge?.data || edge.data.kind !== 'call') return
+  contextMenu.value = { x: event.clientX, y: event.clientY, data: edge.data }
+}
+function closeContextMenu() {
+  contextMenu.value = null
+}
+
+// --- Loeschen + Undo-Toast ---------------------------------------------------
+const toast = ref(null)
+let toastTimer = null
+
+async function removeEdge(data, event) {
+  closeContextMenu()
+  if (event?.stopPropagation) event.stopPropagation()
+  await deleteEdge(data.edgeId)
+  showUndo(data)
+}
+
+function showUndo(data) {
+  if (toastTimer) clearTimeout(toastTimer)
+  toast.value = { message: `Kante „${data.method || ''}()" entfernt`, data }
+  toastTimer = setTimeout(() => {
+    toast.value = null
+  }, 5000)
+}
+
+async function undoDelete() {
+  const t = toast.value
+  if (!t) return
+  if (toastTimer) clearTimeout(toastTimer)
+  toast.value = null
+  const d = t.data
+  // Manuell -> war hart geloescht: neu anlegen. Auto -> war Tombstone: dismissed zuruecksetzen.
+  if (d.isManual) await createEdge({ source: d.fromClass, target: d.toClass, methodName: d.method })
+  else await updateEdge(d.edgeId, { dismissed: 0 })
+}
+
+// Overlays bei Pane-Interaktion / ESC schliessen.
+function onPaneClick() {
+  closeContextMenu()
+  cancelEditor()
+}
+function onKeydown(e) {
+  if (e.key !== 'Escape') return
+  if (editor.value) cancelEditor()
+  else if (contextMenu.value) closeContextMenu()
+}
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeydown)
+  if (toastTimer) clearTimeout(toastTimer)
+})
 </script>
 
 <template>
-  <div class="relative h-full w-full overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+  <div
+    class="relative h-full w-full overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]"
+    @pointermove="onPointerMove"
+  >
     <div v-if="!files.length" class="absolute inset-0 grid place-items-center px-6 text-center text-sm text-[var(--color-text-muted)]">
       Noch keine Java-Klassen analysiert. Lade über „Code analysieren" eine <code class="mx-1">.java</code>-Datei hoch.
     </div>
@@ -217,12 +374,16 @@ function closeEdgePanel() {
       v-else
       :nodes="nodes"
       :edges="edges"
+      :edge-types="edgeTypes"
       fit-view-on-init
       :min-zoom="0.2"
       :max-zoom="2"
       :default-edge-options="{ type: 'smoothstep' }"
       @node-click="onNodeClick"
       @edge-click="onEdgeClick"
+      @edge-context-menu="onEdgeContextMenu"
+      @connect="onConnect"
+      @pane-click="onPaneClick"
     >
       <!-- Custom Node: kompaktes Card-Design, Farbe nach Package -->
       <template #node-klass="{ data }">
@@ -267,7 +428,15 @@ function closeEdgePanel() {
     <div v-if="files.length" class="absolute right-3 top-3 flex flex-col gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]/90 px-3 py-2 text-xs shadow-sm backdrop-blur">
       <div class="flex items-center gap-2">
         <span class="h-0.5 w-4 rounded" style="background: var(--color-accent)" />
-        <span class="text-[var(--color-text-muted)]">definiert → genutzt · klickbar</span>
+        <span class="text-[var(--color-text-muted)]">ruft auf · klickbar</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="h-0.5 w-4 rounded" style="background: var(--color-accent); border-top: 1px dashed; border-color: var(--color-accent)" />
+        <span class="text-[var(--color-text-muted)]">manuelle Kante</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="h-0.5 w-4 rounded" style="background: #d4a017" />
+        <span class="text-[var(--color-text-muted)]">unsicher · „Bitte prüfen"</span>
       </div>
       <div class="flex items-center gap-2">
         <span class="h-0.5 w-4 rounded" style="background: var(--color-text-muted); border-top: 1px dashed" />
@@ -279,8 +448,113 @@ function closeEdgePanel() {
       </div>
     </div>
 
+    <!-- Hinweis: Drag-to-Connect -->
+    <div
+      v-if="files.length > 1"
+      class="absolute bottom-3 left-3 flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]/90 px-2.5 py-1.5 text-[11px] text-[var(--color-text-muted)] shadow-sm backdrop-blur"
+    >
+      <Icon icon="lucide:link" class="h-3.5 w-3.5" />
+      Ziehe von Knoten zu Knoten, um eine Kante zu verbinden
+    </div>
+
     <!-- Edge-Detail-Panel: Parent -> Target einer Methoden-Nutzungs-Kante (ESC / Close schliesst) -->
     <JavaEdgeDetailPanel :edge="activeEdge" :visible="!!activeEdge" @close="closeEdgePanel" />
+
+    <!-- Floating-Editor: Methodenname fuer neue/bearbeitete Kante (direkt an der Abwurfstelle) -->
+    <Teleport to="body">
+      <div
+        v-if="editor"
+        class="edge-editor fixed z-[60] w-64 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 shadow-2xl"
+        :style="{ left: editor.x + 'px', top: editor.y + 'px' }"
+        @click.stop
+      >
+        <div class="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-[var(--color-text-muted)]">
+          <Icon :icon="editor.mode === 'create' ? 'lucide:link' : 'lucide:pencil'" class="h-3.5 w-3.5" />
+          {{ editor.mode === 'create' ? 'Kante anlegen' : 'Kante bearbeiten' }}
+        </div>
+        <div class="mb-2 flex items-center gap-1 text-xs font-medium text-[var(--color-text)]">
+          <span class="truncate font-mono">{{ editor.sourceClass }}</span>
+          <Icon icon="lucide:arrow-right" class="h-3 w-3 shrink-0 text-[var(--color-text-muted)]" />
+          <span class="truncate font-mono">{{ editor.targetClass }}</span>
+        </div>
+        <form @submit.prevent="saveEditor">
+          <input
+            ref="methodInput"
+            v-model="editor.method"
+            type="text"
+            placeholder="Methodenname (z. B. execute)"
+            class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+            @keydown.esc.prevent="cancelEditor"
+          />
+          <p v-if="editor.error" class="mt-1 text-[11px] text-[var(--color-danger)]">{{ editor.error }}</p>
+          <div class="mt-2.5 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              class="rounded-lg px-2.5 py-1 text-xs font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+              @click="cancelEditor"
+            >
+              Abbrechen
+            </button>
+            <button
+              type="submit"
+              class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 py-1 text-xs font-semibold text-white transition hover:opacity-90"
+            >
+              <Icon icon="lucide:check" class="h-3.5 w-3.5" />
+              Speichern
+            </button>
+          </div>
+        </form>
+      </div>
+    </Teleport>
+
+    <!-- Rechtsklick-Kontextmenue auf einer Kante -->
+    <Teleport to="body">
+      <div v-if="contextMenu" class="fixed inset-0 z-[55]" @click="closeContextMenu" @contextmenu.prevent="closeContextMenu">
+        <div
+          class="absolute min-w-[160px] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] py-1 shadow-2xl"
+          :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+          @click.stop
+        >
+          <button
+            type="button"
+            class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-[var(--color-text)] transition hover:bg-[var(--color-surface-offset)]"
+            @click="openEdgeEditor(contextMenu.data, { clientX: contextMenu.x, clientY: contextMenu.y })"
+          >
+            <Icon icon="lucide:pencil" class="h-4 w-4 text-[var(--color-text-muted)]" />
+            Bearbeiten
+          </button>
+          <button
+            type="button"
+            class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-[var(--color-danger)] transition hover:bg-[var(--color-surface-offset)]"
+            @click="removeEdge(contextMenu.data)"
+          >
+            <Icon icon="lucide:trash-2" class="h-4 w-4" />
+            Löschen
+          </button>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Undo-Toast nach dem Loeschen -->
+    <Teleport to="body">
+      <Transition name="toast">
+        <div
+          v-if="toast"
+          class="fixed bottom-5 left-1/2 z-[70] flex -translate-x-1/2 items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2.5 shadow-2xl"
+        >
+          <Icon icon="lucide:trash-2" class="h-4 w-4 text-[var(--color-text-muted)]" />
+          <span class="text-sm text-[var(--color-text)]">{{ toast.message }}</span>
+          <button
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-accent-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--color-accent)] transition hover:opacity-80"
+            @click="undoDelete"
+          >
+            <Icon icon="lucide:rotate-ccw" class="h-3.5 w-3.5" />
+            Rückgängig
+          </button>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -372,5 +646,16 @@ function closeEdgePanel() {
 .vf-tool:hover {
   background: var(--color-surface-offset);
   color: var(--color-text);
+}
+
+/* Undo-Toast: kurzes Einblenden von unten. */
+.toast-enter-active,
+.toast-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translate(-50%, 12px);
 }
 </style>

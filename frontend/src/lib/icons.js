@@ -49,6 +49,7 @@ import copy from '@iconify-icons/lucide/copy'
 import code2 from '@iconify-icons/lucide/code-2'
 import arrowDown from '@iconify-icons/lucide/arrow-down'
 import target from '@iconify-icons/lucide/target'
+import link from '@iconify-icons/lucide/link'
 
 // --- Phosphor (Duotone, fuer das Brand-Logo) ---
 import phBooksDuotone from '@iconify-icons/ph/books-duotone'
@@ -92,6 +93,7 @@ const ICONS = {
   'lucide:code-2': code2,
   'lucide:arrow-down': arrowDown,
   'lucide:target': target,
+  'lucide:link': link,
   'ph:books-duotone': phBooksDuotone,
 }
 

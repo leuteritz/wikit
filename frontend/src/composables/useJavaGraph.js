@@ -1,0 +1,47 @@
+// Composable fuer die persistierten Klassen-Graph-Kanten (auto + manuell).
+// Bewusst getrennt von useJavaAnalyzer: Kanten-Mutationen (Drag-to-Connect, Bearbeiten,
+// Loeschen) haben einen eigenen Lebenszyklus und sollen den ohnehin grossen Analyzer-Store
+// nicht aufblaehen. HTTP laeuft ausschliesslich ueber lib/api.js (kein fetch in Komponenten).
+import { ref } from 'vue'
+import { api } from '../lib/api.js'
+
+// Module-Singleton -> alle Konsumenten teilen sich denselben Kanten-Zustand.
+const edges = ref([])
+const loading = ref(false)
+const error = ref('')
+
+async function fetchEdges() {
+  loading.value = true
+  error.value = ''
+  try {
+    edges.value = await api.listJavaEdges()
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    loading.value = false
+  }
+}
+
+export function useJavaGraph() {
+  return {
+    edges,
+    loading,
+    error,
+    fetchEdges,
+    // Gibt die erstellte/aktualisierte Kante zurueck (z. B. fuer Undo), refetcht danach.
+    async createEdge(data) {
+      const edge = await api.createJavaEdge(data)
+      await fetchEdges()
+      return edge
+    },
+    async updateEdge(id, data) {
+      const edge = await api.updateJavaEdge(id, data)
+      await fetchEdges()
+      return edge
+    },
+    async deleteEdge(id) {
+      await api.deleteJavaEdge(id)
+      await fetchEdges()
+    },
+  }
+}

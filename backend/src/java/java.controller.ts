@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { JavaService } from './java.service';
 import { JavaQueueService } from './java-queue.service';
 
@@ -22,6 +22,30 @@ export class JavaController {
   @Get('graph')
   graph() {
     return this.svc.graph();
+  }
+
+  // --- Klassen-Graph-Kanten (auto + manuell) -------------------------------
+  // Eigener `edges`-Namensraum -> kollidiert nicht mit files/:id.
+
+  @Get('edges')
+  listEdges() {
+    return this.svc.listEdges();
+  }
+
+  @Post('edges')
+  createEdge(@Body() body: any) {
+    return this.svc.createEdge(body);
+  }
+
+  @Patch('edges/:id')
+  updateEdge(@Param('id') id: string, @Body() body: any) {
+    return this.svc.updateEdge(id, body);
+  }
+
+  @Delete('edges/:id')
+  @HttpCode(204)
+  deleteEdge(@Param('id') id: string) {
+    return this.svc.deleteEdge(id);
   }
 
   // Shiki-gehighlightetes Code-Snippet einer Methode (Graph-Edge-Panel). Statische Route ->

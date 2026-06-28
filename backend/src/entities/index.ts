@@ -7,6 +7,7 @@ export { Relation } from './relation.entity';
 export { JavaFile } from './java-file.entity';
 export { JavaMethod } from './java-method.entity';
 export { JavaDependency } from './java-dependency.entity';
+export { JavaEdge } from './java-edge.entity';
 
 import { Category } from './category.entity';
 import { Article } from './article.entity';
@@ -16,6 +17,7 @@ import { Relation } from './relation.entity';
 import { JavaFile } from './java-file.entity';
 import { JavaMethod } from './java-method.entity';
 import { JavaDependency } from './java-dependency.entity';
+import { JavaEdge } from './java-edge.entity';
 
 export const ALL_ENTITIES = [
   Category,
@@ -26,4 +28,5 @@ export const ALL_ENTITIES = [
   JavaFile,
   JavaMethod,
   JavaDependency,
+  JavaEdge,
 ];

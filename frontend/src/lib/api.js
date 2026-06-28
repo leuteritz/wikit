@@ -41,6 +41,13 @@ export const api = {
   getJavaMethodSnippet: (fileId, methodName) =>
     http('GET', `/java/method-snippet?fileId=${encodeURIComponent(fileId)}&methodName=${encodeURIComponent(methodName)}`),
   deleteJavaFile: (id) => http('DELETE', `/java/files/${id}`),
+
+  // Persistente Klassen-Graph-Kanten (auto + manuell). Quelle der Wahrheit fuers Frontend.
+  listJavaEdges: () => http('GET', '/java/edges'),
+  createJavaEdge: (data) => http('POST', '/java/edges', data),
+  updateJavaEdge: (id, data) => http('PATCH', `/java/edges/${id}`, data),
+  deleteJavaEdge: (id) => http('DELETE', `/java/edges/${id}`),
+
   summarizeJavaMethod: (id, data) => http('POST', `/java/methods/${id}/summarize`, data),
   summarizeJavaClass: (id, data) => http('POST', `/java/files/${id}/summarize-class`, data),
   linkJavaArticle: (id, data) => http('PUT', `/java/files/${id}`, data),

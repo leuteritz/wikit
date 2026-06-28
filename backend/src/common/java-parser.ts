@@ -28,6 +28,55 @@ export interface JavaParseResult {
   primary: JavaClassInfo;
 }
 
+// --- Call-Edge-Analyse (getypte Methoden-Aufrufe) ----------------------------
+// Ein erkannter Methoden-Aufruf in einem Methodenrumpf. `receiver` = einfacher
+// Empfaenger-Bezeichner (Variable/Feld/Klassenname) oder null (unqualifiziert/this).
+export interface JavaInvocation {
+  method: string;
+  receiver: string | null;
+  receiverIsNew: boolean; // true bei `new Type().m()` -> receiver ist der Typ
+  line: number;
+}
+
+export interface JavaCallerMethod {
+  name: string;
+  scope: Record<string, string>; // Bezeichner -> einfacher Typname (Felder + Parameter + lokale Vars)
+  invocations: JavaInvocation[];
+}
+
+export interface JavaClassGraphInfo {
+  class_name: string;
+  definedMethods: Set<string>;
+  fields: Record<string, string>;
+  callers: JavaCallerMethod[];
+}
+
+// Object-Methoden sind nie ein Kanten-Trigger: gemeinsames Ueberschreiben von
+// toString()/equals()/... bedeutet KEINE Abhaengigkeit zwischen zwei Klassen.
+const OBJECT_METHODS = new Set([
+  'toString',
+  'equals',
+  'hashCode',
+  'getClass',
+  'clone',
+  'finalize',
+  'notify',
+  'notifyAll',
+  'wait',
+]);
+
+// Einfacher Typname: Generics + Array-Dimensionen + Paketpfad entfernen
+// ("java.util.List<Foo>" / "Bar[]" -> "List" / "Bar").
+function simpleName(type: string): string {
+  if (!type) return '';
+  return type
+    .replace(/<[\s\S]*>/g, '')
+    .replace(/\[\s*\]/g, '')
+    .trim()
+    .split('.')
+    .pop() || '';
+}
+
 // --- generische CST-Helfer ---------------------------------------------------
 
 // Ein CST-Knoten hat .children, ein Token hat .image + .startOffset.
@@ -250,4 +299,187 @@ export function parseJava(source: string): JavaParseResult {
   }
 
   return { package: pkg, imports, classes, primary: classes[0] };
+}
+
+// --- parseJavaForEdges --------------------------------------------------------
+
+// Klassennamen eines Typ-Knotens (typeIdentifier) ermitteln.
+function classNameOf(typeNode: any): string | null {
+  const typeId = findAll(typeNode, 'typeIdentifier').sort((a, b) => minOffset(a) - minOffset(b))[0];
+  if (!typeId) return null;
+  return collectTokens(typeId).find((t) => t.tokenType?.name === 'Identifier')?.image || null;
+}
+
+// Alle in einem Typ-Knoten direkt deklarierten Methodennamen.
+function definedMethodNames(typeNode: any): Set<string> {
+  const names = new Set<string>();
+  const methodNodes = [
+    ...findAll(typeNode, 'methodDeclaration'),
+    ...findAll(typeNode, 'interfaceMethodDeclaration'),
+  ];
+  for (const mNode of methodNodes) {
+    const declarator = findFirst(mNode, 'methodDeclarator');
+    if (!declarator) continue;
+    const nameTok = collectTokens(declarator).find((t) => t.tokenType?.name === 'Identifier');
+    if (nameTok) names.add(nameTok.image);
+  }
+  return names;
+}
+
+// (Bezeichner -> einfacher Typ) aus Feld-Deklarationen des Typs.
+function collectFields(typeNode: any): Record<string, string> {
+  const fields: Record<string, string> = {};
+  for (const fd of findAll(typeNode, 'fieldDeclaration')) {
+    const type = simpleName(typeText(findFirst(fd, 'unannType')));
+    if (!type) continue;
+    for (const vdId of findAll(fd, 'variableDeclaratorId')) {
+      const id = collectTokens(vdId).find((t) => t.tokenType?.name === 'Identifier')?.image;
+      if (id) fields[id] = type;
+    }
+  }
+  return fields;
+}
+
+// Scope einer Methode: Felder + Parameter + lokale Variablen (mit Typ).
+// `var`-Locals werden uebersprungen (Typ ohne Inferenz nicht aufloesbar).
+function methodScope(mNode: any, baseFields: Record<string, string>): Record<string, string> {
+  const scope: Record<string, string> = { ...baseFields };
+
+  const declarator = findFirst(mNode, 'methodDeclarator');
+  if (declarator) {
+    for (const p of findAll(declarator, 'variableParaRegularParameter')) {
+      const type = simpleName(typeText(findFirst(p, 'unannType')));
+      const id = collectTokens(findFirst(p, 'variableDeclaratorId') || p).find(
+        (t) => t.tokenType?.name === 'Identifier',
+      )?.image;
+      if (type && id) scope[id] = type;
+    }
+  }
+
+  const bodyNode = findFirst(mNode, 'methodBody');
+  if (bodyNode) {
+    for (const lvd of findAll(bodyNode, 'localVariableDeclaration')) {
+      const type = simpleName(typeText(findFirst(lvd, 'localVariableType')));
+      if (!type || type === 'var') continue;
+      for (const vdId of findAll(lvd, 'variableDeclaratorId')) {
+        const id = collectTokens(vdId).find((t) => t.tokenType?.name === 'Identifier')?.image;
+        if (id) scope[id] = type;
+      }
+    }
+  }
+  return scope;
+}
+
+// `new Type(...).m()`: vom schliessenden ')' eines `new`-Ausdrucks zurueck zum
+// passenden '(' zaehlen und den Typnamen davor liefern (sonst null).
+function resolveNewType(toks: any[], closeIdx: number): string | null {
+  let depth = 0;
+  let i = closeIdx;
+  for (; i >= 0; i--) {
+    const img = toks[i].image;
+    if (img === ')') depth++;
+    else if (img === '(') {
+      depth--;
+      if (depth === 0) break;
+    }
+  }
+  if (i < 1) return null;
+  const typeTok = toks[i - 1]; // Token direkt vor dem '('
+  if (!typeTok || typeTok.tokenType?.name !== 'Identifier') return null;
+  // Links ueber Identifier/Dot laufen und ein vorangehendes `new` verlangen.
+  let j = i - 2;
+  while (j >= 0 && (toks[j].tokenType?.name === 'Identifier' || toks[j].image === '.')) j--;
+  if (j >= 0 && toks[j].image === 'new') return typeTok.image;
+  return null;
+}
+
+// Methoden-Aufrufe eines Methodenrumpfs extrahieren. Kein methodInvocation-Knoten in
+// java-parser -> Token-Stream-Pass: der Methodenname ist immer der Identifier direkt
+// links vom '(' eines methodInvocationSuffix.
+function extractInvocations(mNode: any): JavaInvocation[] {
+  const bodyNode = findFirst(mNode, 'methodBody');
+  if (!bodyNode) return [];
+  const toks = collectTokens(bodyNode).sort((a, b) => a.startOffset - b.startOffset);
+
+  const callOpenOffsets = new Set<number>();
+  for (const suf of findAll(bodyNode, 'methodInvocationSuffix')) {
+    const st = collectTokens(suf);
+    if (st.length) callOpenOffsets.add(Math.min(...st.map((t) => t.startOffset)));
+  }
+
+  const invocations: JavaInvocation[] = [];
+  for (let k = 0; k < toks.length; k++) {
+    const t = toks[k];
+    if (t.image !== '(' || !callOpenOffsets.has(t.startOffset)) continue;
+
+    const nameTok = toks[k - 1];
+    if (!nameTok || nameTok.tokenType?.name !== 'Identifier') continue; // super(...)/this(...) ausschliessen
+    const method = nameTok.image;
+    if (OBJECT_METHODS.has(method)) continue;
+
+    let receiver: string | null = null;
+    let receiverIsNew = false;
+
+    const dot = toks[k - 2];
+    if (dot && dot.image === '.') {
+      const r = toks[k - 3];
+      if (r && r.tokenType?.name === 'Identifier') {
+        // Nur EINFACHE Empfaenger (recv.m()), keine Ketten a.b.m() (mehrdeutig).
+        const before = toks[k - 4];
+        if (!before || before.image !== '.') receiver = r.image;
+      } else if (r && r.image === ')') {
+        const typeName = resolveNewType(toks, k - 3);
+        if (typeName) {
+          receiver = typeName;
+          receiverIsNew = true;
+        }
+      }
+      // r.image === 'this'/'super' -> Selbstaufruf, receiver bleibt null
+    }
+
+    invocations.push({ method, receiver, receiverIsNew, line: nameTok.startLine ?? 1 });
+  }
+  return invocations;
+}
+
+// Pro Top-Level-Typ Aufruf-relevante Infos liefern (definierte Methoden, Felder,
+// je Methode Scope + erkannte Aufrufe). Basis fuer die globale Kanten-Neuberechnung.
+export function parseJavaForEdges(source: string): JavaClassGraphInfo[] {
+  const cst: any = parse(source);
+
+  const candidates = [
+    ...findAll(cst, 'normalClassDeclaration'),
+    ...findAll(cst, 'enumDeclaration'),
+    // Interfaces/Annotations rufen i. d. R. nichts auf, aber ihre definierten Methoden
+    // sind als Ziel relevant -> ebenfalls aufnehmen.
+    ...findAll(cst, 'normalInterfaceDeclaration'),
+    ...findAll(cst, 'annotationTypeDeclaration'),
+  ].sort((a, b) => minOffset(a) - minOffset(b));
+
+  const infos: JavaClassGraphInfo[] = [];
+  for (const node of candidates) {
+    const class_name = classNameOf(node);
+    if (!class_name) continue;
+
+    const fields = collectFields(node);
+    const methodNodes = [
+      ...findAll(node, 'methodDeclaration'),
+      ...findAll(node, 'interfaceMethodDeclaration'),
+    ];
+    const callers: JavaCallerMethod[] = [];
+    for (const mNode of methodNodes) {
+      const declarator = findFirst(mNode, 'methodDeclarator');
+      const nameTok = declarator
+        ? collectTokens(declarator).find((t) => t.tokenType?.name === 'Identifier')
+        : null;
+      callers.push({
+        name: nameTok?.image || '',
+        scope: methodScope(mNode, fields),
+        invocations: extractInvocations(mNode),
+      });
+    }
+
+    infos.push({ class_name, definedMethods: definedMethodNames(node), fields, callers });
+  }
+  return infos;
 }

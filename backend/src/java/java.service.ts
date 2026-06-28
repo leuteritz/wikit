@@ -1,12 +1,13 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import { FtsService } from '../database/fts.service';
 import { MarkdownService } from '../common/markdown.service';
 import { OllamaService } from '../common/ollama.service';
 import { SerializerService } from '../common/serializer.service';
-import { parseJava } from '../common/java-parser';
+import { parseJava, parseJavaForEdges, JavaClassGraphInfo } from '../common/java-parser';
 import { JavaDependency } from '../entities/java-dependency.entity';
+import { JavaEdge } from '../entities/java-edge.entity';
 import { JavaFile } from '../entities/java-file.entity';
 import { JavaMethod } from '../entities/java-method.entity';
 
@@ -79,6 +80,9 @@ export class JavaService {
 
       // Klasse sofort in den Java-FTS aufnehmen (Wissensquelle fuer kuenftige Prompt-Anreicherung).
       await this.fts.indexJavaFile(manager, fileId);
+
+      // Call-Edges global neu berechnen (manuelle + verworfene Kanten bleiben erhalten).
+      await this.recomputeAutoEdges(manager);
     });
 
     const row = await this.ds.getRepository(JavaFile).findOne({ where: { id: fileId } });
@@ -250,6 +254,8 @@ export class JavaService {
     await this.ds.transaction(async (manager) => {
       await manager.query('DELETE FROM java_fts WHERE rowid = ?', [id]);
       await manager.getRepository(JavaFile).delete({ id });
+      // Auto-Kanten neu berechnen -> Kanten der geloeschten Klasse verschwinden.
+      await this.recomputeAutoEdges(manager);
     });
   }
 
@@ -267,5 +273,188 @@ export class JavaService {
 
     const updated = await this.ds.getRepository(JavaFile).findOne({ where: { id } });
     return this.serializer.serializeJavaFile(updated);
+  }
+
+  // --- Call-Edges (Klassen-Graph) ------------------------------------------
+
+  // Globale Neuberechnung der automatischen Call-Edges. Eine Kante A -> B(`m`) entsteht
+  // nur, wenn A `m` auf etwas vom Typ B aufruft UND B `m` definiert (getypte Aufloesung).
+  // HIGH (1.0): Empfaenger ueber Feld/Parameter/lokale Var/`new`/statischen Klassennamen
+  // aufgeloest. LOW (0.5): unqualifizierter Aufruf, dessen Methode in GENAU einer anderen
+  // Klasse definiert ist ("Bitte pruefen"). Manuelle (is_manual=1) und verworfene
+  // (dismissed=1) Kanten bleiben unangetastet. Laeuft INNERHALB der Aufrufer-Transaktion.
+  private async recomputeAutoEdges(manager: EntityManager): Promise<void> {
+    const files = await manager.getRepository(JavaFile).find();
+
+    const definesMethod = new Map<string, Set<string>>(); // Klasse -> definierte Methoden
+    const methodToClasses = new Map<string, Set<string>>(); // Methode -> definierende Klassen
+    const classNames = new Set<string>();
+    const parsed: JavaClassGraphInfo[] = [];
+
+    for (const f of files) {
+      let infos: JavaClassGraphInfo[] = [];
+      try {
+        infos = parseJavaForEdges(f.raw_source);
+      } catch {
+        continue; // Parse-Fehler tolerieren (z. B. unvollstaendiger Code)
+      }
+      for (const info of infos) {
+        classNames.add(info.class_name);
+        let dm = definesMethod.get(info.class_name);
+        if (!dm) {
+          dm = new Set();
+          definesMethod.set(info.class_name, dm);
+        }
+        for (const m of info.definedMethods) {
+          dm.add(m);
+          let mc = methodToClasses.get(m);
+          if (!mc) {
+            mc = new Set();
+            methodToClasses.set(m, mc);
+          }
+          mc.add(info.class_name);
+        }
+        parsed.push(info);
+      }
+    }
+
+    const edges = new Map<string, { source: string; target: string; method: string; confidence: number }>();
+    const put = (A: string, B: string, m: string, c: number) => {
+      if (!A || !B || A === B) return;
+      const key = `${A} ${B} ${m}`;
+      const prev = edges.get(key);
+      if (!prev || c > prev.confidence) edges.set(key, { source: A, target: B, method: m, confidence: c });
+    };
+
+    for (const info of parsed) {
+      const A = info.class_name;
+      for (const caller of info.callers) {
+        for (const inv of caller.invocations) {
+          const m = inv.method;
+          // Empfaengertyp B aufloesen.
+          let B: string | null = null;
+          if (inv.receiver) {
+            if (inv.receiverIsNew && classNames.has(inv.receiver)) B = inv.receiver; // new B().m()
+            else if (classNames.has(inv.receiver)) B = inv.receiver; // statisch: B.m()
+            else {
+              const t = caller.scope[inv.receiver]; // Variable/Feld/Parameter -> Typ
+              if (t && classNames.has(t)) B = t;
+            }
+          }
+          if (B && B !== A && definesMethod.get(B)?.has(m)) {
+            put(A, B, m, 1.0);
+            continue;
+          }
+          // LOW-Fallback: unqualifizierter Aufruf, Methode in genau einer anderen Klasse.
+          if (inv.receiver === null) {
+            const defs = methodToClasses.get(m);
+            if (defs) {
+              const others = [...defs].filter((c) => c !== A);
+              if (others.length === 1) put(A, others[0], m, 0.5);
+            }
+          }
+        }
+      }
+    }
+
+    const repo = manager.getRepository(JavaEdge);
+    // Verworfene Auto-Kanten (Tombstones) merken -> NICHT neu erzeugen.
+    const dismissedRows = await repo.find({ where: { is_manual: 0, dismissed: 1 } });
+    const dismissedKeys = new Set(
+      dismissedRows.map((e) => `${e.source_class} ${e.target_class} ${e.method_name}`),
+    );
+
+    // Nur aktive Auto-Kanten ersetzen; manuelle und Tombstone-Zeilen bleiben stehen.
+    await repo.delete({ is_manual: 0, dismissed: 0 });
+
+    const toInsert = [...edges.values()]
+      .filter((e) => !dismissedKeys.has(`${e.source} ${e.target} ${e.method}`))
+      .map((e) => ({
+        source_class: e.source,
+        target_class: e.target,
+        method_name: e.method,
+        confidence: e.confidence,
+        is_manual: 0,
+        dismissed: 0,
+      }));
+    if (toInsert.length) await repo.insert(toInsert);
+  }
+
+  private serializeEdge(e: JavaEdge): any {
+    return {
+      id: e.id,
+      source_class: e.source_class,
+      target_class: e.target_class,
+      method_name: e.method_name,
+      is_manual: !!e.is_manual,
+      confidence: e.confidence,
+    };
+  }
+
+  // Alle sichtbaren Kanten (auto + manuell, ohne Tombstones).
+  async listEdges(): Promise<any[]> {
+    const rows = await this.ds.getRepository(JavaEdge).find({ where: { dismissed: 0 }, order: { id: 'ASC' } });
+    return rows.map((e) => this.serializeEdge(e));
+  }
+
+  // Manuelle Kante anlegen ({ source, target, methodName }).
+  async createEdge(body: any): Promise<any> {
+    const source = (body?.source ?? body?.source_class ?? '').toString().trim();
+    const target = (body?.target ?? body?.target_class ?? '').toString().trim();
+    const methodName = (body?.methodName ?? body?.method_name ?? '').toString().trim();
+    if (!source || !target) throw new BadRequestException('Quell- und Zielklasse sind erforderlich');
+
+    const repo = this.ds.getRepository(JavaEdge);
+    const res = await repo.insert({
+      source_class: source,
+      target_class: target,
+      method_name: methodName || null,
+      is_manual: 1,
+      dismissed: 0,
+      confidence: 1.0,
+    });
+    const id = res.identifiers[0].id as number;
+    const row = await repo.findOne({ where: { id } });
+    return this.serializeEdge(row!);
+  }
+
+  // Kante bearbeiten (Methodenname und/oder Quelle/Ziel).
+  async updateEdge(idParam: string, body: any): Promise<any> {
+    const id = Number(idParam);
+    const repo = this.ds.getRepository(JavaEdge);
+    const row = await repo.findOne({ where: { id } });
+    if (!row) throw new NotFoundException('Kante nicht gefunden');
+
+    const patch: Partial<JavaEdge> = {};
+    if (body?.methodName !== undefined || body?.method_name !== undefined) {
+      patch.method_name = (body.methodName ?? body.method_name ?? '').toString().trim() || null;
+    }
+    if (body?.source !== undefined || body?.source_class !== undefined) {
+      const s = (body.source ?? body.source_class ?? '').toString().trim();
+      if (!s) throw new BadRequestException('Quellklasse darf nicht leer sein');
+      patch.source_class = s;
+    }
+    if (body?.target !== undefined || body?.target_class !== undefined) {
+      const t = (body.target ?? body.target_class ?? '').toString().trim();
+      if (!t) throw new BadRequestException('Zielklasse darf nicht leer sein');
+      patch.target_class = t;
+    }
+    // dismissed zuruecksetzen -> "Rueckgaengig" einer verworfenen Auto-Kante.
+    if (body?.dismissed !== undefined) patch.dismissed = body.dismissed ? 1 : 0;
+    if (Object.keys(patch).length) await repo.update({ id }, patch);
+
+    const updated = await repo.findOne({ where: { id } });
+    return this.serializeEdge(updated!);
+  }
+
+  // Kante loeschen. Manuell -> hart loeschen. Auto -> als Tombstone (dismissed=1) merken,
+  // damit sie bei der naechsten Neuanalyse NICHT wieder erscheint.
+  async deleteEdge(idParam: string): Promise<void> {
+    const id = Number(idParam);
+    const repo = this.ds.getRepository(JavaEdge);
+    const row = await repo.findOne({ where: { id } });
+    if (!row) throw new NotFoundException('Kante nicht gefunden');
+    if (row.is_manual) await repo.delete({ id });
+    else await repo.update({ id }, { dismissed: 1 });
   }
 }
