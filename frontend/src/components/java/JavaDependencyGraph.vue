@@ -115,6 +115,7 @@ const layout = computed(() => {
         },
         onEdit: openEdgeEditor,
         onDelete: removeEdge,
+        onOpen: openEdgePanel,
       },
     })
   }
@@ -140,9 +141,25 @@ const layout = computed(() => {
     }
   }
 
+  // Parallele Call-Kanten desselben Knotenpaars indizieren -> ManagedEdge faechert sie per
+  // X-Versatz auf (sonst liegen alle Methoden-Kanten A->B deckungsgleich uebereinander).
+  const pairGroups = new Map()
+  for (const e of edges) {
+    if (e.type !== 'managed') continue
+    const key = `${e.source}|${e.target}`
+    if (!pairGroups.has(key)) pairGroups.set(key, [])
+    pairGroups.get(key).push(e)
+  }
+  for (const group of pairGroups.values()) {
+    group.forEach((e, i) => {
+      e.data.parallelIndex = i
+      e.data.parallelCount = group.length
+    })
+  }
+
   // --- dagre-Auto-Layout ---
   const g = new dagre.graphlib.Graph()
-  g.setGraph({ rankdir: 'TB', nodesep: 40, ranksep: 70, marginx: 24, marginy: 24 })
+  g.setGraph({ rankdir: 'TB', nodesep: 60, ranksep: 70, marginx: 24, marginy: 24 })
   g.setDefaultEdgeLabel(() => ({}))
   for (const f of files) g.setNode(`c:${f.id}`, { width: NODE_W, height: NODE_H })
   for (const e of edges) {
@@ -229,18 +246,31 @@ function computeCallEdgeData(callerFile, definerFile, methodName, edgeMeta = {})
   }
 }
 
+// Gemeinsame Oeffnen-Logik fuer beide Pfade: Klick auf den SVG-Pfad (@edge-click) UND Klick auf
+// das Kanten-Label (data.onOpen in ManagedEdge). In try/catch gekapselt, damit ein Fehler im
+// Browser-Log sichtbar wird statt lautlos zu scheitern.
+function openEdgePanel(d) {
+  try {
+    // Auto- UND manuelle Call-Kanten oeffnen das Modal (manuelle haben ggf. keine verifizierten
+    // Aufrufstellen -> der Verwendung-Abschnitt zeigt dann einen leeren Zustand).
+    if (!d || d.kind !== 'call' || !d.method) return
+    const callerFile = filesById.value.get(d.fromFileId)
+    const definerFile = filesById.value.get(d.toFileId)
+    if (!callerFile || !definerFile) {
+      console.warn('[JavaGraph] Edge-Panel: Klasse(n) nicht in der Dateiliste gefunden', d)
+      return
+    }
+    activeEdge.value = computeCallEdgeData(callerFile, definerFile, d.method, {
+      edgeId: d.edgeId,
+      isManual: d.isManual,
+    })
+  } catch (e) {
+    console.warn('[JavaGraph] Edge-Panel konnte nicht geöffnet werden', d, e)
+  }
+}
+
 function onEdgeClick({ edge }) {
-  const d = edge?.data
-  // Auto- UND manuelle Call-Kanten oeffnen das Modal (manuelle haben ggf. keine verifizierten
-  // Aufrufstellen -> der Verwendung-Abschnitt zeigt dann einen leeren Zustand).
-  if (!d || d.kind !== 'call' || !d.method) return
-  const callerFile = filesById.value.get(d.fromFileId)
-  const definerFile = filesById.value.get(d.toFileId)
-  if (!callerFile || !definerFile) return
-  activeEdge.value = computeCallEdgeData(callerFile, definerFile, d.method, {
-    edgeId: d.edgeId,
-    isManual: d.isManual,
-  })
+  openEdgePanel(edge?.data)
 }
 function closeEdgePanel() {
   activeEdge.value = null

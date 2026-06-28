@@ -21,12 +21,22 @@ const props = defineProps({
   selected: { type: Boolean, default: false },
 })
 
+// Parallele Kanten desselben Knotenpaars (A ruft mehrere Methoden von B) teilen sich Bottom-/
+// Top-Handle und liegen sonst deckungsgleich. Darum die Endpunkte (und damit das Label)
+// senkrecht zur Hauptrichtung X-versetzen -> die Kanten faechern sichtbar auf.
+const SPREAD = 26 // px Abstand zwischen parallelen Kanten
+const fanOffset = computed(() => {
+  const count = props.data?.parallelCount || 1
+  const index = props.data?.parallelIndex || 0
+  return count > 1 ? (index - (count - 1) / 2) * SPREAD : 0
+})
+
 const pathData = computed(() =>
   getSmoothStepPath({
-    sourceX: props.sourceX,
+    sourceX: props.sourceX + fanOffset.value,
     sourceY: props.sourceY,
     sourcePosition: props.sourcePosition,
-    targetX: props.targetX,
+    targetX: props.targetX + fanOffset.value,
     targetY: props.targetY,
     targetPosition: props.targetPosition,
   }),
@@ -50,6 +60,8 @@ const d = computed(() => props.data || {})
         'me-label--selected': selected,
       }"
       :style="{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }"
+      title="Details anzeigen"
+      @click.stop="d.onOpen && d.onOpen(d, $event)"
     >
       <Icon v-if="d.isManual" icon="lucide:link" class="me-ic me-ic--manual" title="Manuelle Kante" />
       <span class="me-method">{{ d.method ? d.method + '()' : '—' }}</span>
