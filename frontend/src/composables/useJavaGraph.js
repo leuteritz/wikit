@@ -47,6 +47,12 @@ export function useJavaGraph() {
     error,
     fetchEdges,
     recomputeEdges,
+    // Frontend-Spiegel der Kanten sofort leeren (Komplett-Reset im Code-Tab). Die Auto-Kanten
+    // werden serverseitig bei jedem deleteFile ohnehin neu (leer) gerechnet; danach reicht es,
+    // den lokalen Ref zu nullen, damit der Graph nicht kurz alte Kanten zeigt.
+    resetEdges() {
+      edges.value = []
+    },
     // Gibt die erstellte/aktualisierte Kante zurueck (z. B. fuer Undo), refetcht danach.
     async createEdge(data) {
       const edge = await api.createJavaEdge(data)

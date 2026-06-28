@@ -15,10 +15,10 @@ import JavaClassDetail from '../components/java/JavaClassDetail.vue'
 import { Icon } from '../lib/icons.js'
 import { detectJavaClasses } from '../lib/javaDetect.js'
 
-const { files, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFileId, lastTargetLine, deleteFile } =
+const { files, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFileId, lastTargetLine, deleteFile, resetAll } =
   useJavaAnalyzer()
-const { enqueueClass, enqueueAllUnanalyzed, cancelJob, progressFor, ensurePolling } = useJavaQueue()
-const { recomputeEdges, recomputing } = useJavaGraph()
+const { enqueueClass, enqueueAllUnanalyzed, cancelJob, cancelAllJobs, progressFor, ensurePolling } = useJavaQueue()
+const { recomputeEdges, recomputing, resetEdges } = useJavaGraph()
 
 const source = ref('')
 const filename = ref('')
@@ -34,6 +34,8 @@ const deleting = ref(false)
 const pendingConflicts = ref(null) // FQCN-Liste vorhandener Klassen -> Ueberschreiben-Dialog
 const confirming = ref(false)
 const analyzingAll = ref(false) // Spinner fuer "Alle analysieren"
+const pendingReset = ref(false) // Komplett-Reset-Dialog offen?
+const resetting = ref(false) // Spinner waehrend des Komplett-Resets
 
 // Live-Vorschau der im Editor erkannten Klassen (rein clientseitig, nicht autoritativ).
 const detectedClasses = computed(() => detectJavaClasses(source.value))
@@ -235,6 +237,40 @@ async function onDetailClose(payload) {
   if (payload?.deleted) await fetchFiles()
   selectedFileId.value = null
 }
+
+// --- Komplett-Reset: alle Klassen + Kanten + Queue dauerhaft entfernen ---
+function askReset() {
+  pendingReset.value = true
+}
+function cancelReset() {
+  if (resetting.value) return
+  pendingReset.value = false
+}
+async function confirmReset() {
+  if (resetting.value) return
+  resetting.value = true
+  try {
+    await cancelAllJobs() // laufende/abgeschlossene KI-Jobs stoppen + leeren
+    await resetAll() // alle Klassen aus der DB loeschen, Dateiliste -> []
+    resetEdges() // Frontend-Kanten-Spiegel sofort leeren
+    // Lokalen View-State auf "frisch geoeffnet" zuruecksetzen.
+    selectedFileId.value = null
+    activeTargetLine.value = null
+    source.value = ''
+    filename.value = ''
+    search.value = ''
+    queueNotice.value = ''
+    pendingDelete.value = null
+    pendingConflicts.value = null
+    for (const k of Object.keys(collapsed)) delete collapsed[k]
+    showNew.value = true // Neu-Panel einladend wieder aufklappen
+    pendingReset.value = false
+  } catch (e) {
+    queueNotice.value = e.message
+  } finally {
+    resetting.value = false
+  }
+}
 </script>
 
 <template>
@@ -285,6 +321,17 @@ async function onDetailClose(payload) {
             >
               <Icon icon="lucide:refresh-cw" class="h-4 w-4" :class="recomputing ? 'animate-spin' : ''" />
               Kanten neu simulieren
+            </button>
+            <!-- Komplett-Reset: zurueckhaltender Ghost-Button, zeigt erst beim Hover Danger-Farbe -->
+            <button
+              type="button"
+              class="ml-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-danger)] disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="resetting"
+              title="Alle analysierten Klassen, Kanten und KI-Zusammenfassungen dauerhaft entfernen"
+              @click="askReset"
+            >
+              <Icon icon="lucide:rotate-ccw" class="h-4 w-4" />
+              Zurücksetzen
             </button>
           </div>
         </div>
@@ -612,6 +659,54 @@ async function onDetailClose(payload) {
             >
               <Icon v-if="confirming" icon="lucide:loader-2" class="h-4 w-4 animate-spin" />
               {{ confirming ? 'Überschreibe…' : 'Überschreiben' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Bestaetigungs-Dialog: alle Klassen zuruecksetzen (destruktiv) -->
+    <Teleport to="body">
+      <div
+        v-if="pendingReset"
+        class="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 backdrop-blur-sm"
+        @click.self="cancelReset"
+      >
+        <div class="w-full max-w-sm rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-5 shadow-xl">
+          <div class="mb-3 flex items-center gap-3">
+            <span
+              class="grid h-10 w-10 shrink-0 place-items-center rounded-full text-[var(--color-danger)]"
+              style="background-color: color-mix(in srgb, var(--color-danger) 16%, transparent)"
+            >
+              <Icon icon="lucide:alert-triangle" class="h-5 w-5" />
+            </span>
+            <div class="min-w-0">
+              <h3 class="truncate font-semibold text-[var(--color-text)]">Alles zurücksetzen?</h3>
+              <p class="text-xs text-[var(--color-text-muted)]">{{ classCount }} Klasse(n) betroffen</p>
+            </div>
+          </div>
+          <p class="mb-4 text-sm text-[var(--color-text-muted)]">
+            Alle analysierten Klassen, Kanten und KI-Zusammenfassungen werden
+            <span class="font-semibold text-[var(--color-text)]">dauerhaft gelöscht</span>.
+            Verknüpfte Wiki-Artikel bleiben erhalten.
+          </p>
+          <div class="flex justify-end gap-2">
+            <button
+              type="button"
+              class="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] disabled:opacity-50"
+              :disabled="resetting"
+              @click="cancelReset"
+            >
+              Abbrechen
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-danger)] px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 disabled:opacity-60"
+              :disabled="resetting"
+              @click="confirmReset"
+            >
+              <Icon v-if="resetting" icon="lucide:loader-2" class="h-4 w-4 animate-spin" />
+              {{ resetting ? 'Lösche…' : 'Alles löschen' }}
             </button>
           </div>
         </div>

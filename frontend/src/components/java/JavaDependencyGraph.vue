@@ -440,6 +440,21 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
   if (toastTimer) clearTimeout(toastTimer)
 })
+
+// Komplett-Reset im Code-Tab (files -> []): VueFlow selbst wird via v-else unmountet (interner
+// Node/Edge-Store verworfen), aber die geteleporteten Overlays haengen am <body> -> hier aktiv
+// schliessen, sonst bleibt z. B. ein offenes Edge-Panel oder ein Undo-Toast stehen.
+watch(
+  () => (props.files || []).length,
+  (n) => {
+    if (n) return
+    activeEdge.value = null
+    editor.value = null
+    contextMenu.value = null
+    if (toastTimer) clearTimeout(toastTimer)
+    toast.value = null
+  },
+)
 </script>
 
 <template>

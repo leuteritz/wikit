@@ -72,6 +72,18 @@ export function useJavaAnalyzer() {
       await api.deleteJavaFile(id)
       await fetchFiles()
     },
+    // Komplett-Reset: ALLE analysierten Klassen dauerhaft aus der DB loeschen (inkl. Methoden/
+    // Dependencies via CASCADE; das Backend rechnet die Auto-Kanten je Delete neu). Sequentiell,
+    // nicht parallel -> vermeidet SQLITE_BUSY/Transaktions-Contention (N ist klein). Danach einmal
+    // refetchen (-> leere Liste). `userContext` bleibt BEWUSST erhalten: Session-/Projekt-
+    // Einstellung fuer KI-Prompts, keine Klassen-Metadaten.
+    async resetAll() {
+      for (const f of state.files) await api.deleteJavaFile(f.id)
+      await fetchFiles()
+      state.lastFileId = null
+      state.lastTargetLine = null
+      state.error = ''
+    },
     summarizeMethod: (id, data) => api.summarizeJavaMethod(id, data),
     summarizeClass: (id, data) => api.summarizeJavaClass(id, data),
     linkArticle: (id, articleId) => api.linkJavaArticle(id, { article_id: articleId }),
