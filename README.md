@@ -154,6 +154,26 @@ The workflow is [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml): 
 Every push to `master` then redeploys automatically (or trigger **Actions → Deploy to Raspberry Pi
 → Run workflow**).
 
+## Versioning
+
+Wikit uses a lightweight **`MAJOR.MINOR`** scheme. The **single source of truth** is the `version`
+field in the **root [`package.json`](package.json)** — bump it there, nowhere else.
+
+The version is injected at **build time** (`vite.config.js` reads the root `package.json` and exposes
+it as the global `__APP_VERSION__` via Vite `define`). `config.js` derives `WIKI_VERSION`
+(`MAJOR.MINOR`) from it, which the header renders as the `vX.Y` badge next to the wiki name. After a
+successful deploy, the `version-tag` job in
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) automatically pushes a `vMAJOR.MINOR`
+git tag (idempotent — skipped if it already exists).
+
+**When to bump:**
+
+| Change                                                              | Bump        |
+| ------------------------------------------------------------------- | ----------- |
+| New theme, full feature redesign, breaking DB-schema change         | **MAJOR.0** |
+| New component / feature / visible UI change                         | **MINOR +1**|
+| Bugfix / refactor without visible effect                            | **MINOR +1**|
+
 ## License
 
 [MIT](LICENSE) © 2026 Adrian Leuteritz

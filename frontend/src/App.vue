@@ -4,7 +4,7 @@ import { RouterLink, RouterView, useRoute } from 'vue-router'
 import SearchPalette from './components/SearchPalette.vue'
 import ThemeToggle from './components/ThemeToggle.vue'
 import { useArticles } from './composables/useArticles.js'
-import { WIKI_TITLE, WIKI_ICON } from './config.js'
+import { WIKI_TITLE, WIKI_ICON, WIKI_VERSION } from './config.js'
 import { Icon } from './lib/icons.js'
 
 const { load } = useArticles()
@@ -45,6 +45,10 @@ const navLinks = [
         <RouterLink to="/" class="flex min-w-0 items-center gap-2 font-semibold text-[var(--color-text)]">
           <Icon :icon="WIKI_ICON" class="shrink-0 text-2xl text-[var(--color-accent)]" />
           <span class="hidden truncate text-[var(--color-accent)] sm:inline">{{ WIKI_TITLE }}</span>
+          <span
+            class="hidden shrink-0 rounded-md border border-[var(--color-border)] bg-[var(--color-accent-soft)] px-1.5 py-0.5 text-[10px] font-semibold leading-none tracking-wide text-[var(--color-accent)] tabular-nums sm:inline"
+            :title="`Version ${WIKI_VERSION}`"
+          >v{{ WIKI_VERSION }}</span>
         </RouterLink>
 
         <!-- Suchleiste (mittig, oeffnet die Palette) -->
