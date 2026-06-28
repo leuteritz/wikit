@@ -37,10 +37,10 @@ const navLinks = [
 
 <template>
   <div class="min-h-screen">
-    <!-- Topbar: symmetrisches 3-Spalten-Grid (Brand · Suche · Nav) -> Suche echt zentriert,
-         wandert nicht mehr bei Breakpoint-Wechseln. -->
+    <!-- Topbar: full-bleed 3-Spalten-Grid (Brand · Suche · Nav). Brand klebt am linken Rand,
+         Nav am rechten Rand; die mittlere auto-Spalte haelt die Suche echt viewport-zentriert. -->
     <header class="sticky top-0 z-30 border-b border-[var(--color-border)] bg-[var(--color-surface-2)]/80 backdrop-blur">
-      <div class="mx-auto grid h-14 max-w-[100rem] grid-cols-[1fr_auto_1fr] items-center gap-3 px-4">
+      <div class="grid h-14 grid-cols-[1fr_auto_1fr] items-center gap-3 px-4 sm:px-6">
         <!-- Brand (links) -->
         <RouterLink to="/" class="flex min-w-0 items-center gap-2 font-semibold text-[var(--color-text)]">
           <Icon :icon="WIKI_ICON" class="shrink-0 text-2xl text-[var(--color-accent)]" />
