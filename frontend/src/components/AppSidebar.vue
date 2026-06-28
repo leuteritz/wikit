@@ -54,7 +54,7 @@ const isActive = (slug) => route.params.slug === slug
         @click="openJavaModal"
       >
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m8 16-4-4 4-4M16 8l4 4-4 4M14 4l-4 16" /></svg>
-        Java analysieren
+        Code analysieren
       </button>
     </div>
 

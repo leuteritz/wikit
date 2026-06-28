@@ -49,7 +49,7 @@ async function analyze() {
 
 function openInAnalyzer() {
   close()
-  router.push('/java')
+  router.push('/code')
 }
 
 // Kompakter Markdown-Body fuer den Wiki-Artikel (Signaturen kommen spaeter via KI-Panel dazu).

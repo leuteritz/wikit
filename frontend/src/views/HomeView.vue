@@ -45,7 +45,7 @@ async function analyze() {
     const result = await analyzeCode(source.value, filename.value)
     enqueueClass(result.file, { userContext: userContext.value })
     lastFileId.value = result.file.id
-    router.push('/java')
+    router.push('/code')
   } catch {
     // Fehler steht in `error` (Composable) und wird unten angezeigt.
   }
@@ -53,7 +53,7 @@ async function analyze() {
 
 function openClass(id) {
   lastFileId.value = id
-  router.push('/java')
+  router.push('/code')
 }
 </script>
 

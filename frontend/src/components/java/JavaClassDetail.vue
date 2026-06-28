@@ -1,12 +1,14 @@
 <script setup>
 // Vollstaendige Doku-Ansicht einer analysierten Java-Klasse (Spalte 3 im Analyzer).
 // Header + KI-Status, Klassen-Zusammenfassung (description_html), Methoden-Accordion
-// (summary_html, einzeln nachgenerierbar) und Quellcode-Tab. HTTP nur via lib/api.js (Composable).
+// (summary_html, einzeln nachgenerierbar) und Quellcode-Tab (read-only CodeMirror).
+// HTTP nur via lib/api.js (Composable).
 import { ref, watch, computed } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
 import { useJavaQueue } from '../../composables/useJavaQueue.js'
 import { useArticles } from '../../composables/useArticles.js'
+import JavaCodeEditor from './JavaCodeEditor.vue'
 
 const props = defineProps({
   fileId: { type: Number, required: true },
@@ -52,11 +54,11 @@ watch(lastEvent, (ev) => {
 const queueProgress = computed(() => progressFor(props.fileId))
 
 const typeBadge = computed(() => ({
-  class: 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]',
-  interface: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
-  enum: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
-  annotation: 'bg-pink-100 text-pink-700 dark:bg-pink-500/15 dark:text-pink-300',
-}[file.value?.class_type] || 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'))
+  class: 'badge-accent',
+  interface: 'badge-success',
+  enum: 'badge-warning',
+  annotation: 'badge-danger',
+}[file.value?.class_type] || 'badge-muted'))
 
 const methodCount = computed(() => file.value?.methods?.length || 0)
 const summarizedCount = computed(() => (file.value?.methods || []).filter((m) => m.summary_html).length)
@@ -161,30 +163,28 @@ async function removeFile() {
 </script>
 
 <template>
-  <aside class="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+  <aside class="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)]">
     <!-- Header -->
-    <header class="flex items-start gap-3 border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+    <header class="flex items-start gap-3 border-b border-[var(--color-border)] px-4 py-3">
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-2">
           <span class="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase" :class="typeBadge">{{ file?.class_type }}</span>
-          <h2 class="truncate text-lg font-bold text-slate-900 dark:text-white">{{ file?.class_name }}</h2>
+          <h2 class="truncate text-xl font-bold text-[var(--color-text)]">{{ file?.class_name }}</h2>
         </div>
         <p v-if="file?.package" class="truncate font-mono text-xs text-[var(--color-text-muted)]">{{ file.package }}</p>
         <div v-if="file" class="mt-1.5 flex flex-wrap items-center gap-1.5">
-          <span class="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+          <span class="rounded-md bg-[var(--color-surface-offset)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-muted)]">
             {{ methodCount }} Methode(n)
           </span>
           <span
             class="rounded-md px-1.5 py-0.5 text-[10px] font-medium"
-            :class="summarizedCount === methodCount && methodCount > 0
-              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
-              : 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]'"
+            :class="summarizedCount === methodCount && methodCount > 0 ? 'badge-success' : 'badge-accent'"
           >
             KI {{ summarizedCount }}/{{ methodCount }}
           </span>
           <span
             v-if="queueProgress && queueProgress.status === 'running'"
-            class="inline-flex items-center gap-1 rounded-md bg-[var(--color-accent-soft)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-accent)]"
+            class="badge-accent inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
           >
             <svg class="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
             <span v-if="queueProgress.current">{{ queueProgress.current.name }}()</span>
@@ -195,7 +195,7 @@ async function removeFile() {
       </div>
       <button
         type="button"
-        class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+        class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
         title="Schließen"
         @click="emit('close')"
       >
@@ -204,30 +204,30 @@ async function removeFile() {
     </header>
 
     <!-- Tabs -->
-    <div v-if="file" class="flex shrink-0 gap-1 border-b border-slate-200 px-4 pt-2 dark:border-slate-800">
+    <div v-if="file" class="flex shrink-0 gap-1 border-b border-[var(--color-border)] px-4 pt-2">
       <button
         type="button"
         class="border-b-2 px-3 py-1.5 text-sm font-medium transition"
-        :class="tab === 'doc' ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400'"
+        :class="tab === 'doc' ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
         @click="tab = 'doc'"
       >Dokumentation</button>
       <button
         type="button"
         class="border-b-2 px-3 py-1.5 text-sm font-medium transition"
-        :class="tab === 'source' ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400'"
+        :class="tab === 'source' ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
         @click="tab = 'source'"
       >Quellcode</button>
     </div>
 
     <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-      <div v-if="loading" class="text-sm text-slate-400">Wird geladen…</div>
-      <div v-else-if="error" class="text-sm text-rose-500">{{ error }}</div>
+      <div v-if="loading" class="text-sm text-[var(--color-text-muted)]">Wird geladen…</div>
+      <div v-else-if="error" class="text-sm text-[var(--color-danger)]">{{ error }}</div>
 
       <template v-else-if="file">
-        <p v-if="notice" class="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">{{ notice }}</p>
+        <p v-if="notice" class="notice-warning mb-3 rounded-lg px-3 py-2 text-xs">{{ notice }}</p>
         <p
           v-if="queueProgress && queueProgress.ollamaUnavailable"
-          class="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
+          class="notice-warning mb-3 rounded-lg px-3 py-2 text-xs"
         >
           Ollama war nicht erreichbar – es wird vorhandener Javadoc-/Fallback-Text verwendet.
         </p>
@@ -245,74 +245,74 @@ async function removeFile() {
                 @click="generateClassSummary"
               >
                 <svg v-if="classBusy" class="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
-                {{ classBusy ? 'Generiere…' : (file.description_html ? 'Neu generieren' : 'Generieren') }}
+                {{ classBusy ? 'Generiere…' : (file.description_html ? 'Neu generieren' : 'Generate Class Summary') }}
               </button>
             </div>
-            <div v-if="file.description_html" class="prose prose-sm prose-slate max-w-none dark:prose-invert" v-html="file.description_html" />
-            <p v-else class="text-sm italic text-slate-500 dark:text-slate-400">Noch keine KI-Klassenbeschreibung – „Generieren" nutzt den Projekt-Kontext.</p>
+            <div v-if="file.description_html" class="prose prose-sm max-w-none dark:prose-invert" v-html="file.description_html" />
+            <p v-else class="text-sm italic text-[var(--color-text-muted)]">Noch keine KI-Klassenbeschreibung – „Generieren" nutzt den Projekt-Kontext.</p>
           </section>
 
           <!-- Methoden -->
-          <h3 class="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Methoden ({{ methodCount }})</h3>
+          <h3 class="mb-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Methoden ({{ methodCount }})</h3>
           <ul class="space-y-1.5">
-            <li v-for="m in file.methods" :key="m.id" class="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
+            <li v-for="m in file.methods" :key="m.id" class="overflow-hidden rounded-lg border border-[var(--color-border)]">
               <button
                 type="button"
-                class="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-900"
+                class="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-[var(--color-surface-offset)]"
                 @click="toggle(m.id)"
               >
-                <code class="min-w-0 flex-1 truncate text-xs text-slate-800 dark:text-slate-200">{{ signature(m) }}</code>
+                <code class="min-w-0 flex-1 truncate text-xs text-[var(--color-text)]">{{ signature(m) }}</code>
                 <span
                   class="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase"
                   :class="{
-                    'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300': methodStatus(m) === 'done',
-                    'bg-[var(--color-accent-soft)] text-[var(--color-accent)]': methodStatus(m) === 'running' || methodStatus(m) === 'pending',
-                    'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500': methodStatus(m) === 'idle',
+                    'badge-success': methodStatus(m) === 'done',
+                    'badge-accent': methodStatus(m) === 'running' || methodStatus(m) === 'pending',
+                    'badge-muted': methodStatus(m) === 'idle',
                   }"
                 >
                   {{ { done: 'generiert', running: '…', pending: 'wartet', idle: 'offen' }[methodStatus(m)] }}
                 </span>
-                <svg class="h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform" :class="openMethod === m.id ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" /></svg>
+                <svg class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)] transition-transform" :class="openMethod === m.id ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" /></svg>
               </button>
 
-              <div v-show="openMethod === m.id" class="border-t border-slate-100 px-3 py-2 dark:border-slate-800">
-                <div v-if="m.summary_html" class="prose prose-sm prose-slate mb-2 max-w-none dark:prose-invert" v-html="m.summary_html" />
-                <p v-else class="mb-2 text-sm italic text-slate-400">Noch keine KI-Beschreibung.</p>
+              <div v-show="openMethod === m.id" class="border-t border-[var(--color-border)] px-3 py-2">
+                <div v-if="m.summary_html" class="prose prose-sm mb-2 max-w-none dark:prose-invert" v-html="m.summary_html" />
+                <p v-else class="mb-2 text-sm italic text-[var(--color-text-muted)]">Noch keine KI-Beschreibung.</p>
 
                 <button
                   type="button"
-                  class="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-accent-soft)] px-2.5 py-1 text-xs font-medium text-[var(--color-accent)] transition hover:opacity-80 disabled:opacity-60"
+                  class="badge-accent inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition hover:opacity-80 disabled:opacity-60"
                   :disabled="summarizing === m.id"
                   @click="summarize(m)"
                 >
                   <svg v-if="summarizing === m.id" class="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
-                  {{ summarizing === m.id ? 'Generiere…' : (m.summary_html ? 'Neu generieren' : 'KI-Zusammenfassung erzeugen') }}
+                  {{ summarizing === m.id ? 'Generiere…' : (m.summary_html ? 'Neu generieren' : 'Generate Summary') }}
                 </button>
               </div>
             </li>
           </ul>
         </template>
 
-        <!-- QUELLCODE-TAB -->
+        <!-- QUELLCODE-TAB: read-only CodeMirror (Java-Syntax-Highlighting) -->
         <template v-else>
-          <div class="code-wrap">
+          <div class="code-wrap h-[60vh] min-h-[20rem]">
             <button
               type="button"
-              class="absolute right-2 top-2 z-10 rounded-md border border-slate-300/60 bg-white/80 px-2 py-1 text-xs font-medium text-slate-600 backdrop-blur transition hover:bg-white dark:border-slate-600/60 dark:bg-slate-800/80 dark:text-slate-300"
+              class="code-copy z-10 opacity-100"
               @click="copySource"
             >{{ copied ? 'Kopiert ✓' : 'Kopieren' }}</button>
-            <pre class="overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs leading-relaxed text-slate-800 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"><code class="language-java">{{ file.raw_source }}</code></pre>
+            <JavaCodeEditor :model-value="file.raw_source" readonly />
           </div>
         </template>
       </template>
     </div>
 
     <!-- Footer -->
-    <footer v-if="file" class="flex items-center gap-2 border-t border-slate-200 px-4 py-3 dark:border-slate-800">
+    <footer v-if="file" class="flex items-center gap-2 border-t border-[var(--color-border)] px-4 py-3">
       <RouterLink
         v-if="file.article_slug"
         :to="`/article/${file.article_slug}`"
-        class="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-center text-sm font-semibold text-white transition hover:bg-emerald-500"
+        class="flex-1 rounded-lg bg-[var(--color-success)] px-3 py-2 text-center text-sm font-semibold text-white transition hover:opacity-90"
       >
         Artikel öffnen
       </RouterLink>
@@ -327,7 +327,7 @@ async function removeFile() {
       </button>
       <button
         type="button"
-        class="rounded-lg border border-slate-200 px-3 py-2 text-sm text-rose-600 transition hover:bg-rose-50 dark:border-slate-700 dark:hover:bg-rose-500/10"
+        class="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-danger)] transition hover:bg-[var(--color-surface-offset)]"
         title="Datei löschen"
         @click="removeFile"
       >
@@ -342,5 +342,31 @@ async function removeFile() {
 
 .code-wrap {
   @apply relative;
+}
+
+/* Status-Badges auf Palette-Basis (warme Tints via color-mix). */
+.badge-accent {
+  background-color: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+.badge-success {
+  background-color: color-mix(in srgb, var(--color-success) 16%, transparent);
+  color: var(--color-success);
+}
+.badge-warning {
+  background-color: color-mix(in srgb, var(--color-warning) 18%, transparent);
+  color: var(--color-warning);
+}
+.badge-danger {
+  background-color: color-mix(in srgb, var(--color-danger) 16%, transparent);
+  color: var(--color-danger);
+}
+.badge-muted {
+  background-color: var(--color-surface-offset);
+  color: var(--color-text-muted);
+}
+.notice-warning {
+  background-color: color-mix(in srgb, var(--color-warning) 14%, transparent);
+  color: var(--color-warning);
 }
 </style>

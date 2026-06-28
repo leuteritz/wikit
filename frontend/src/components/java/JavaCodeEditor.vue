@@ -13,6 +13,8 @@ import { useTheme } from '../../composables/useTheme.js'
 const props = defineProps({
   modelValue: { type: String, default: '' },
   placeholder: { type: String, default: '// Java-Code hier einfügen…' },
+  // Read-only-Modus: dient als syntaxhervorgehobener Quellcode-Viewer (Detail-Panel).
+  readonly: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:modelValue'])
 
@@ -26,28 +28,33 @@ function themeExtension() {
 }
 
 onMounted(() => {
-  const state = EditorState.create({
-    doc: props.modelValue,
-    extensions: [
-      lineNumbers(),
+  const extensions = [
+    lineNumbers(),
+    highlightActiveLine(),
+    indentUnit.of('    '),
+    java(),
+    EditorView.lineWrapping,
+    themeComp.of(themeExtension()),
+    EditorView.theme({
+      '&': { height: '100%' },
+      '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '13px', lineHeight: '1.6' },
+      '.cm-content': { padding: '12px 0' },
+    }),
+  ]
+  if (props.readonly) {
+    // Reiner Viewer: keine Bearbeitung, keine History/Edit-Keys.
+    extensions.push(EditorState.readOnly.of(true), EditorView.editable.of(false))
+  } else {
+    extensions.push(
       history(),
-      highlightActiveLine(),
-      indentUnit.of('    '),
       keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
-      java(),
       cmPlaceholder(props.placeholder),
-      EditorView.lineWrapping,
-      themeComp.of(themeExtension()),
-      EditorView.theme({
-        '&': { height: '100%' },
-        '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '13px', lineHeight: '1.6' },
-        '.cm-content': { padding: '12px 0' },
-      }),
       EditorView.updateListener.of((u) => {
         if (u.docChanged) emit('update:modelValue', u.state.doc.toString())
       }),
-    ],
-  })
+    )
+  }
+  const state = EditorState.create({ doc: props.modelValue, extensions })
   view = new EditorView({ state, parent: editorParent.value })
 })
 
@@ -68,6 +75,6 @@ onBeforeUnmount(() => view?.destroy())
 <template>
   <div
     ref="editorParent"
-    class="h-full min-h-0 overflow-auto rounded-xl border border-slate-200 bg-white px-3 dark:border-slate-700 dark:bg-slate-900"
+    class="h-full min-h-0 overflow-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3"
   />
 </template>

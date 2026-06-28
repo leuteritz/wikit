@@ -5,53 +5,58 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* --- Design-Tokens (klassenbasierter Dark-Mode) ---------------------------- *
- * Primaer-Akzent: Dusty Denim (#6c91c2) im Light, Periwinkle (#c3c9e9) im Dark.
- * KEIN Lila/Violett. Neutrale Graustufen bleiben slate (neutral, kein Lila).
+ * Palette (5 Quellfarben, sonst nichts):
+ *   cerulean #4281a4 · tropical-teal #48a9a6 · dust-grey #e4dfda
+ *   soft-fawn #d4b483 · lobster-pink #c1666b
+ * Primaer/Akzent: cerulean (+ teal als Erfolg). Light-Surfaces aus aufgehelltem
+ * dust-grey (kein reines Weiss), Dark-Surfaces aus stark abgedunkeltem cerulean
+ * (kein reines Schwarz). soft-fawn = Warnings/Gold, lobster-pink = Errors.
  * Komponenten referenzieren diese Tokens via Tailwind-Arbitrary-Values,
  * z. B. bg-[var(--color-accent)] / text-[var(--color-accent)].                */
 :root {
   color-scheme: light dark;
 
-  --color-accent: #6c91c2;          /* Dusty Denim */
-  --color-accent-hover: oklch(0.58 0.078 254);
-  --color-accent-soft: #eef2f8;     /* dezenter Akzent-Hintergrund (Badges/aktiv) */
+  --color-accent: #4281a4;          /* Cerulean */
+  --color-accent-hover: #356a87;    /* dunkleres Cerulean */
+  --color-accent-soft: #e6eef3;     /* dezenter Akzent-Hintergrund (Badges/aktiv) */
   --color-accent-contrast: #ffffff; /* Text auf vollflaechigem Akzent-Button */
 
-  --color-surface: #f5f6f8;
-  --color-surface-2: #ffffff;
-  --color-border: #aaabbc;          /* Pale Slate */
-  --color-text: #2c2f35;
-  --color-text-muted: #8b8982;      /* Grey Olive */
+  --color-surface: #ece8e2;         /* Seite (warmes Off-White aus dust-grey) */
+  --color-surface-2: #f7f5f1;       /* hellere Card-Flaeche */
+  --color-surface-offset: #e2ddd5;  /* dritte Tiefenstufe (Wells/Inputs/Code) */
+  --color-border: #cdc6bd;          /* warmes Grau (dust-grey abgedunkelt) */
+  --color-text: #2b3138;            /* warmes Anthrazit */
+  --color-text-muted: #837b71;      /* gedaempftes Warmgrau */
 
-  --color-success: #10b981;
-  --color-warning: #f59e0b;
-  --color-danger: #f43f5e;
+  --color-success: #48a9a6;         /* Tropical Teal */
+  --color-warning: #d4b483;         /* Soft Fawn */
+  --color-danger: #c1666b;          /* Lobster Pink */
 }
 html.dark {
-  --color-accent: #c3c9e9;          /* Periwinkle */
-  --color-accent-hover: oklch(0.88 0.04 280);
-  --color-accent-soft: rgba(195, 201, 233, 0.14);
-  --color-accent-contrast: #232a33;
+  --color-accent: #7fb4d0;          /* aufgehelltes Cerulean (Kontrast auf dunkel) */
+  --color-accent-hover: #9cc6dc;
+  --color-accent-soft: rgba(127, 180, 208, 0.14);
+  --color-accent-contrast: #14222b;
 
-  --color-surface: #373f47;         /* Charcoal Blue */
-  --color-surface-2: #424b54;
-  --color-border: rgba(170, 171, 188, 0.25);
-  --color-text: #c3c9e9;
-  --color-text-muted: #9a988f;
+  --color-surface: #16242e;         /* Seite (stark abgedunkeltes Cerulean) */
+  --color-surface-2: #1e303c;       /* Card-Flaeche */
+  --color-surface-offset: #24394a;  /* dritte Tiefenstufe */
+  --color-border: rgba(127, 180, 208, 0.20);
+  --color-text: #e4dfda;            /* Dust Grey als heller Bodytext */
+  --color-text-muted: #93a4ae;
 
-  --color-success: #34d399;
-  --color-warning: #fbbf24;
-  --color-danger: #fb7185;
+  --color-success: #5fbfbb;
+  --color-warning: #e0c191;
+  --color-danger: #d68389;
 }
 
 html, body, #app {
   height: 100%;
 }
 body {
-  @apply bg-slate-50 text-slate-800 antialiased;
-}
-.dark body {
-  @apply bg-slate-950 text-slate-200;
+  @apply antialiased;
+  background-color: var(--color-surface);
+  color: var(--color-text);
 }
 
 /* --- Shiki: zwei Themes ueber CSS-Variablen (defaultColor: false) ---------- */
@@ -66,10 +71,8 @@ html.dark .shiki span {
   background-color: var(--shiki-dark-bg) !important;
 }
 .shiki {
-  @apply rounded-xl p-4 text-sm leading-relaxed overflow-x-auto border border-slate-200;
-}
-html.dark .shiki {
-  @apply border-slate-800;
+  @apply rounded-xl p-4 text-sm leading-relaxed overflow-x-auto border;
+  border-color: var(--color-border);
 }
 
 /* --- Prose-Feinschliff fuer gerenderte Artikel ---------------------------- */
@@ -82,27 +85,26 @@ html.dark .shiki {
 }
 /* Anker-Permalinks (markdown-it-anchor) dezent, erst beim Hover sichtbar */
 .article-body .header-anchor {
-  @apply text-slate-300 no-underline opacity-0 transition-opacity pr-2;
+  @apply no-underline opacity-0 transition-opacity pr-2;
+  color: var(--color-text-muted);
 }
 .article-body :where(h1, h2, h3):hover .header-anchor {
   @apply opacity-100;
 }
 .article-body :where(code):not(.shiki code) {
-  @apply rounded bg-slate-100 px-1.5 py-0.5 text-[0.85em] font-medium text-pink-600;
-}
-.dark .article-body :where(code):not(.shiki code) {
-  @apply bg-slate-800 text-pink-300;
+  @apply rounded px-1.5 py-0.5 text-[0.85em] font-medium;
+  background-color: var(--color-surface-offset);
+  color: var(--color-danger);
 }
 .article-body table {
   @apply block w-full overflow-x-auto;
 }
 
-/* Suchtreffer-Hervorhebung (FTS-Snippets) */
+/* Suchtreffer-Hervorhebung (FTS-Snippets) – Gold-Ton aus soft-fawn */
 mark {
-  @apply rounded bg-amber-200 px-0.5 text-slate-900;
-}
-.dark mark {
-  @apply bg-amber-500/40 text-amber-100;
+  @apply rounded px-0.5;
+  background-color: color-mix(in srgb, var(--color-warning) 38%, transparent);
+  color: var(--color-text);
 }
 
 /* Copy-Button an Code-Bloecken */
@@ -110,11 +112,11 @@ mark {
   @apply relative;
 }
 .code-copy {
-  @apply absolute right-2 top-2 rounded-md border border-slate-300/60 bg-white/70 px-2 py-1
-         text-xs font-medium text-slate-600 opacity-0 backdrop-blur transition;
-}
-.dark .code-copy {
-  @apply border-slate-600/60 bg-slate-800/70 text-slate-300;
+  @apply absolute right-2 top-2 rounded-md border px-2 py-1 text-xs font-medium
+         opacity-0 backdrop-blur transition;
+  border-color: var(--color-border);
+  background-color: color-mix(in srgb, var(--color-surface-2) 80%, transparent);
+  color: var(--color-text-muted);
 }
 .code-wrap:hover .code-copy {
   @apply opacity-100;
@@ -123,10 +125,7 @@ mark {
 /* Dezente Scrollbars */
 * {
   scrollbar-width: thin;
-  scrollbar-color: theme(colors.slate.300) transparent;
-}
-.dark * {
-  scrollbar-color: theme(colors.slate.700) transparent;
+  scrollbar-color: var(--color-border) transparent;
 }
 
 /* Vue Flow Basisstyles werden in den Komponenten importiert. */
