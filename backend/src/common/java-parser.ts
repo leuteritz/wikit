@@ -551,7 +551,13 @@ function extractInvocations(mNode: any): JavaInvocation[] {
       if (r && r.tokenType?.name === 'Identifier') {
         // Nur EINFACHE Empfaenger (recv.m()), keine Ketten a.b.m() (mehrdeutig).
         const before = toks[k - 4];
-        if (!before || before.image !== '.') receiver = r.image;
+        if (!before || before.image !== '.') {
+          receiver = r.image; // recv.m()
+        } else if (toks[k - 5] && toks[k - 5].image === 'this') {
+          // Kette `this.<feld>.m()` ist eindeutig: `this` macht <feld> garantiert zum Feld der
+          // Klasse -> als Empfaenger aufloesen (haeufiges Idiom bei injizierten Abhaengigkeiten).
+          receiver = r.image;
+        }
       } else if (r && r.image === ')') {
         const typeName = resolveNewType(toks, k - 3);
         if (typeName) {
