@@ -98,7 +98,7 @@ CREATE INDEX IF NOT EXISTS idx_java_deps_from ON java_dependencies(from_file_id)
 -- confidence < 1 -> unsicherer Auto-Treffer ("Bitte pruefen"-Badge im Frontend).
 -- kind='call' -> getypter Methoden-Aufruf (mit method_name-Label). kind='uses' ->
 -- struktureller Typ-Bezug (Feld-/Variablen-/Parameter-/Rueckgabetyp, new X(),
--- statischer Aufruf ohne Methoden-Treffer); kein Label, Fallback je Klassenpaar.
+-- statischer Aufruf ohne Methoden-Treffer) – kein Label, Fallback je Klassenpaar.
 -- SQLite kennt kein BOOLEAN -> INTEGER 0/1.
 CREATE TABLE IF NOT EXISTS java_edges (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
