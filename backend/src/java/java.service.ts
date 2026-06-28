@@ -377,8 +377,19 @@ export class JavaService {
   async deleteFile(idParam: string): Promise<void> {
     const id = Number(idParam);
     await this.ds.transaction(async (manager) => {
+      // Klassennamen VOR dem Loeschen merken -> alle Kanten dieser Klasse mitentfernen.
+      const file = await manager.getRepository(JavaFile).findOne({ where: { id } });
       await manager.query('DELETE FROM java_fts WHERE rowid = ?', [id]);
       await manager.getRepository(JavaFile).delete({ id });
+      // ALLE Kanten dieser Klasse entfernen (aktiv + manuell + verworfene Tombstones).
+      // Sonst ueberleben verworfene Auto-Kanten (dismissed=1) das Loeschen/den Komplett-Reset
+      // und unterdruecken die Neuberechnung beim erneuten Hinzufuegen derselben Klasse.
+      if (file?.class_name) {
+        await manager.query('DELETE FROM java_edges WHERE source_class = ? OR target_class = ?', [
+          file.class_name,
+          file.class_name,
+        ]);
+      }
       // Auto-Kanten neu berechnen -> Kanten der geloeschten Klasse verschwinden.
       await this.recomputeAutoEdges(manager);
     });
