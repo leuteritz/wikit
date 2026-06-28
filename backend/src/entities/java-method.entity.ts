@@ -26,6 +26,9 @@ export class JavaMethod {
   @Column({ type: 'text', nullable: true })
   body: string | null; // geparster Methodenrumpf (Offset-basiert)
 
+  @Column({ name: 'start_line', type: 'integer', nullable: true })
+  start_line: number | null; // 1-basierte Quellzeile der Methodendeklaration
+
   @Column({ name: 'created_at', type: 'text', nullable: true, insert: false, update: false })
   created_at: string;
 }

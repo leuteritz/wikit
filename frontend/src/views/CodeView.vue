@@ -4,7 +4,7 @@
 //  Spalte 2: Klassen-Abhaengigkeitsgraph (Vue Flow + dagre)
 //  Spalte 3: vollstaendige Klassen-Doku + KI-Zusammenfassungen
 // Datenhaltung via useJavaAnalyzer (Dateien/CRUD) + useJavaQueue (KI-Queue, Polling).
-import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { useJavaQueue } from '../composables/useJavaQueue.js'
 import { buildPackageTree, countClasses, filterClasses, LANGUAGES } from '../composables/useCodeAnalysis.js'
@@ -13,7 +13,7 @@ import JavaDependencyGraph from '../components/java/JavaDependencyGraph.vue'
 import JavaClassDetail from '../components/java/JavaClassDetail.vue'
 import { Icon } from '../lib/icons.js'
 
-const { files, fetchFiles, analyzeCode, analyzing, error, userContext, lastFileId, deleteFile } =
+const { files, fetchFiles, analyzeCode, analyzing, error, userContext, lastFileId, lastTargetLine, deleteFile } =
   useJavaAnalyzer()
 const { enqueueClass, enqueueMethods, queueClass, cancelJob, progressFor, ensurePolling } =
   useJavaQueue()
@@ -21,6 +21,7 @@ const { enqueueClass, enqueueMethods, queueClass, cancelJob, progressFor, ensure
 const source = ref('')
 const filename = ref('')
 const selectedFileId = ref(null)
+const activeTargetLine = ref(null) // Ziel-Quellzeile fuer das Detail-Panel (Such-Sprung)
 const queueNotice = ref('')
 const search = ref('')
 const showNew = ref(false)
@@ -28,15 +29,26 @@ const collapsed = reactive({}) // packagePfad -> true (eingeklappt)
 const pendingDelete = ref(null)
 const deleting = ref(false)
 
+// Hand-off aus Landing-Analyse / Suche / Edge-Panel uebernehmen: Datei vorwaehlen und
+// (optional) die Ziel-Quellzeile ans Detail-Panel durchreichen. Danach zuruecksetzen.
+function consumeHandoff() {
+  if (lastFileId.value == null) return
+  selectedFileId.value = lastFileId.value
+  activeTargetLine.value = lastTargetLine.value
+  lastFileId.value = null
+  lastTargetLine.value = null
+}
+
+// Reagiert auch, wenn /code bereits gemountet ist (z. B. Klick auf einen Edge-Panel-Link).
+watch(lastFileId, (v) => {
+  if (v != null) consumeHandoff()
+})
+
 let releasePolling = null
 onMounted(async () => {
   releasePolling = ensurePolling()
   await fetchFiles()
-  // Vorauswahl aus der Landing-Analyse uebernehmen (danach zuruecksetzen).
-  if (lastFileId.value != null) {
-    selectedFileId.value = lastFileId.value
-    lastFileId.value = null
-  }
+  consumeHandoff()
   // Beim ersten Laden noch nichts vorhanden -> Neu-Panel aufklappen.
   if (!files.value.length) showNew.value = true
 })
@@ -134,6 +146,8 @@ async function analyze() {
 }
 
 function selectFile(id) {
+  // Manuelle Auswahl -> evtl. ausstehende Such-Zielzeile verwerfen (kein Fehl-Highlight).
+  activeTargetLine.value = null
   selectedFileId.value = id
 }
 
@@ -393,6 +407,7 @@ async function onDetailClose(payload) {
           v-if="selectedFileId"
           :key="selectedFileId"
           :file-id="selectedFileId"
+          :target-line="activeTargetLine"
           @close="onDetailClose"
         />
         <div

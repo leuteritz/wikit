@@ -37,6 +37,9 @@ export const api = {
   getJavaFile: (id) => http('GET', `/java/files/${id}`),
   getJavaFileByArticle: (articleId) => http('GET', `/java/files/by-article/${articleId}`),
   getJavaGraph: () => http('GET', '/java/graph'),
+  // Shiki-gehighlightetes Quellcode-Snippet einer Methode (Graph-Edge-Panel).
+  getJavaMethodSnippet: (fileId, methodName) =>
+    http('GET', `/java/method-snippet?fileId=${encodeURIComponent(fileId)}&methodName=${encodeURIComponent(methodName)}`),
   deleteJavaFile: (id) => http('DELETE', `/java/files/${id}`),
   summarizeJavaMethod: (id, data) => http('POST', `/java/methods/${id}/summarize`, data),
   summarizeJavaClass: (id, data) => http('POST', `/java/files/${id}/summarize-class`, data),

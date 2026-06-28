@@ -95,7 +95,16 @@ const layout = computed(() => {
         labelBgPadding: [4, 2],
         labelBgBorderRadius: 4,
         markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--color-accent)' },
-        data: { kind: 'call', fromClass: fx.class_name, toClass: fy.class_name, callSites, callees, calleeSignatures },
+        data: {
+          kind: 'call',
+          fromClass: fx.class_name,
+          toClass: fy.class_name,
+          fromFileId: fx.id,
+          toFileId: fy.id,
+          callSites,
+          callees,
+          calleeSignatures,
+        },
       })
     }
   }

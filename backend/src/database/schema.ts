@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS java_files (
   description      TEXT,           -- KI-Klassenbeschreibung (Markdown, Source of Truth)
   description_html TEXT,           -- gerenderte Beschreibung (Cache, server-seitig)
   generated_at     TEXT,          -- Zeitpunkt der letzten KI-Analyse
+  class_line       INTEGER,        -- 1-basierte Quellzeile des Klassennamens (Such-Sprung/Highlight)
   created_at       TEXT DEFAULT (datetime('now'))
 );
 
@@ -77,6 +78,7 @@ CREATE TABLE IF NOT EXISTS java_methods (
   javadoc     TEXT,
   ai_summary  TEXT,
   body        TEXT,                -- geparster Methodenrumpf (Offset-basiert, KI-Kontext)
+  start_line  INTEGER,             -- 1-basierte Quellzeile der Methodendeklaration (Such-Sprung/Highlight)
   created_at  TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_java_methods_file ON java_methods(file_id);
@@ -112,5 +114,7 @@ export const COLUMN_MIGRATIONS: Array<{ table: string; column: string; ddl: stri
   { table: 'java_files', column: 'description', ddl: 'ALTER TABLE java_files ADD COLUMN description TEXT' },
   { table: 'java_files', column: 'description_html', ddl: 'ALTER TABLE java_files ADD COLUMN description_html TEXT' },
   { table: 'java_files', column: 'generated_at', ddl: 'ALTER TABLE java_files ADD COLUMN generated_at TEXT' },
+  { table: 'java_files', column: 'class_line', ddl: 'ALTER TABLE java_files ADD COLUMN class_line INTEGER' },
   { table: 'java_methods', column: 'body', ddl: 'ALTER TABLE java_methods ADD COLUMN body TEXT' },
+  { table: 'java_methods', column: 'start_line', ddl: 'ALTER TABLE java_methods ADD COLUMN start_line INTEGER' },
 ];

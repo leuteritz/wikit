@@ -14,6 +14,9 @@ const state = reactive({
   // Zuletzt analysierte/ausgewaehlte Datei -> die Landing-Seite setzt sie, der Analyzer
   // liest sie beim Mount aus (Vorauswahl nach Upload). Danach im Analyzer zuruecksetzen.
   lastFileId: null,
+  // Optionale Ziel-Quellzeile fuer den Hand-off (Suche/Edge-Panel -> CodeView): wenn gesetzt,
+  // oeffnet CodeView den Quellcode-Tab und hebt diese Zeile hervor. Wird nach Verbrauch genullt.
+  lastTargetLine: null,
 })
 
 async function fetchFiles() {

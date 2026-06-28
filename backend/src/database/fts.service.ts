@@ -95,7 +95,7 @@ export class FtsService {
     if (!match) return [];
     try {
       return await this.dataSource.query(
-        `SELECT f.id, f.filename, f.class_name, f.package,
+        `SELECT f.id, f.filename, f.class_name, f.package, f.class_line,
                 snippet(java_fts, 4, '<mark>', '</mark>', ' … ', 12) AS snippet,
                 bm25(java_fts) AS rank
          FROM java_fts
@@ -107,6 +107,28 @@ export class FtsService {
       );
     } catch {
       // Ungueltige FTS-Syntax -> leer.
+      return [];
+    }
+  }
+
+  // Methoden-genaue Code-Suche: matcht Methodennamen (LIKE, COLLATE NOCASE) und liefert die
+  // Zeilennummer mit -> das Frontend springt direkt zur Methode (Such-Sprung + Highlight).
+  // Kein FTS noetig (gezielter Namens-Treffer), bewusst SQLite-Raw analog searchJavaFiles.
+  async searchJavaMethods(q: string, limit = 10): Promise<any[]> {
+    const term = (q || '').trim();
+    if (!term) return [];
+    try {
+      return await this.dataSource.query(
+        `SELECT m.file_id, m.method_name, m.return_type, m.parameters, m.start_line,
+                f.class_name, f.package
+         FROM java_methods m
+         JOIN java_files f ON f.id = m.file_id
+         WHERE m.method_name LIKE ? COLLATE NOCASE
+         ORDER BY (m.method_name = ? COLLATE NOCASE) DESC, m.method_name COLLATE NOCASE
+         LIMIT ?`,
+        [`%${term}%`, term, limit],
+      );
+    } catch {
       return [];
     }
   }

@@ -1,11 +1,15 @@
 <script setup>
-// Edge-Detail-Panel fuer eine Call-Kante im Klassengraphen.
-// Zeigt die Abhaengigkeit als Parent -> Target: oben die aufrufende Klasse mit dem
-// verwendenden Methodenrumpf (read-only CodeMirror via JavaCodeEditor), ein Pfeil-Divider
-// in Akzentfarbe, unten die aufgerufene Klasse mit prominent dargestellten Ziel-Methoden
-// (inkl. Signatur, falls bekannt). Schliesst per ESC oder Close-Button.
-// Reines Praesentations-Panel: alle Daten kommen aus `edge` (kein Request, kein Pinia).
-import { computed, watch, onUnmounted } from 'vue'
+// Edge-Detail-Panel fuer eine Call-Kante im Klassengraphen (Aufrufer -> Definitionsklasse).
+//   * Oben: aufrufende Klasse mit dem verwendenden Methodenrumpf (read-only CodeMirror).
+//   * Pfeil-Divider in Akzentfarbe (Abhaengigkeitsrichtung).
+//   * Unten: aufgerufene Methode(n) der Zielklasse – Signatur + Shiki-gehighlighteter
+//     Quellcode (vom Backend, Dual-Theme via CSS-Variablen) + Navigations-Links
+//     („Definiert in" / „Aufgerufen in") die die jeweilige Datei zeilengenau oeffnen.
+// Schliesst per ESC, Backdrop oder Close-Button. HTTP nur ueber lib/api.js.
+import { computed, watch, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { api } from '../../lib/api.js'
+import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
 import { Icon } from '../../lib/icons.js'
 import JavaCodeEditor from './JavaCodeEditor.vue'
 
@@ -14,6 +18,9 @@ const props = defineProps({
   visible: { type: Boolean, default: false },
 })
 const emit = defineEmits(['close'])
+
+const router = useRouter()
+const { lastFileId, lastTargetLine } = useJavaAnalyzer()
 
 function close() {
   emit('close')
@@ -39,14 +46,70 @@ const calleeList = computed(() => {
   return (props.edge.callees || []).map((name) => ({ name, signature: sigs.get(name) || '' }))
 })
 
+// Shiki-Snippets der aufgerufenen Methoden (lazy beim Oeffnen geladen).
+// methodName -> { loading, html, startLine, signature, error }
+const snippets = ref({})
+
+async function loadSnippets() {
+  snippets.value = {}
+  const edge = props.edge
+  if (!edge?.toFileId) return
+  for (const c of calleeList.value) {
+    snippets.value = { ...snippets.value, [c.name]: { loading: true } }
+    try {
+      const snip = await api.getJavaMethodSnippet(edge.toFileId, c.name)
+      snippets.value = {
+        ...snippets.value,
+        [c.name]: { loading: false, html: snip.html, startLine: snip.startLine, signature: snip.signature },
+      }
+    } catch (e) {
+      snippets.value = { ...snippets.value, [c.name]: { loading: false, error: e.message } }
+    }
+  }
+}
+
+// Hand-off zu CodeView: Datei vorwaehlen + (optional) Zeile hervorheben, Panel schliessen.
+function navigateTo(fileId, line) {
+  if (fileId == null) return
+  lastFileId.value = fileId
+  lastTargetLine.value = line ?? null
+  close()
+  router.push('/code')
+}
+
+// „Definiert in <Zielklasse>": zur Methodendeklaration springen.
+function openDefinition(c) {
+  navigateTo(props.edge?.toFileId, snippets.value[c.name]?.startLine ?? null)
+}
+
+// „Aufgerufen in <Aufruferklasse>": Zeile der ersten aufrufenden Methode holen, dann springen.
+async function openUsage(c) {
+  const edge = props.edge
+  const site = (edge?.callSites || []).find((s) => s.calleeMethod === c.name)
+  let line = null
+  if (edge?.fromFileId && site?.callerMethod) {
+    try {
+      const snip = await api.getJavaMethodSnippet(edge.fromFileId, site.callerMethod)
+      line = snip.startLine
+    } catch {
+      /* Zeile optional -> Klasse trotzdem oeffnen */
+    }
+  }
+  navigateTo(edge?.fromFileId, line)
+}
+
 function onKeydown(e) {
   if (e.key === 'Escape') close()
 }
 watch(
   () => props.visible,
   (vis) => {
-    if (vis) window.addEventListener('keydown', onKeydown)
-    else window.removeEventListener('keydown', onKeydown)
+    if (vis) {
+      window.addEventListener('keydown', onKeydown)
+      loadSnippets()
+    } else {
+      window.removeEventListener('keydown', onKeydown)
+    }
   },
 )
 onUnmounted(() => window.removeEventListener('keydown', onKeydown))
@@ -66,9 +129,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         >
           <!-- Kopf -->
           <header class="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">
-            <div class="flex items-center gap-2 text-sm font-bold text-[var(--color-text)]">
-              <Icon icon="lucide:share-2" class="h-4 w-4 text-[var(--color-accent)]" />
-              Abhängigkeit
+            <div class="flex min-w-0 items-center gap-2 text-sm font-bold text-[var(--color-text)]">
+              <Icon icon="lucide:share-2" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+              <span class="truncate">{{ edge.fromClass }}</span>
+              <Icon icon="lucide:arrow-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
+              <span class="truncate">{{ edge.toClass }}</span>
             </div>
             <button
               type="button"
@@ -119,7 +184,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               <span class="h-px flex-1 bg-[var(--color-border)]" />
             </div>
 
-            <!-- ── Target: aufgerufene Klasse ── -->
+            <!-- ── Target: aufgerufene Klasse + Methoden-Quellcode (Shiki) ── -->
             <section class="p-4">
               <div class="mb-3 flex items-center gap-2.5">
                 <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
@@ -131,18 +196,54 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                 </div>
               </div>
 
-              <div class="space-y-2">
-                <div
+              <div class="space-y-3">
+                <article
                   v-for="c in calleeList"
                   :key="c.name"
-                  class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-offset)] px-3 py-2"
+                  class="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-offset)]"
                 >
-                  <div class="flex items-center gap-2">
+                  <!-- Methoden-Header: Name + Signatur -->
+                  <div class="flex items-center gap-2 px-3 py-2">
                     <Icon icon="lucide:braces" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
                     <code class="font-mono text-sm font-semibold text-[var(--color-text)]">{{ c.name }}()</code>
                   </div>
-                  <code v-if="c.signature" class="mt-1 block truncate font-mono text-[11px] text-[var(--color-text-muted)]">{{ c.signature }}</code>
-                </div>
+                  <code
+                    v-if="snippets[c.name]?.signature || c.signature"
+                    class="block truncate px-3 pb-1.5 font-mono text-[11px] text-[var(--color-text-muted)]"
+                  >{{ snippets[c.name]?.signature || c.signature }}</code>
+
+                  <!-- Code-Block (Shiki, Dual-Theme) -->
+                  <div class="px-3 pb-2">
+                    <div v-if="snippets[c.name]?.loading" class="flex items-center gap-2 px-1 py-3 text-xs text-[var(--color-text-muted)]">
+                      <Icon icon="lucide:loader-2" class="h-3.5 w-3.5 animate-spin" />
+                      Lade Quellcode…
+                    </div>
+                    <p v-else-if="snippets[c.name]?.error" class="px-1 py-2 text-xs text-[var(--color-danger)]">
+                      {{ snippets[c.name].error }}
+                    </p>
+                    <div v-else-if="snippets[c.name]?.html" class="edge-code" v-html="snippets[c.name].html" />
+                  </div>
+
+                  <!-- Fußzeile: Navigations-Links (Definiert in / Aufgerufen in) -->
+                  <div class="flex flex-wrap items-center gap-2 border-t border-[var(--color-border)] px-3 py-2">
+                    <button
+                      type="button"
+                      class="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-accent-soft)] px-2 py-1 text-xs font-medium text-[var(--color-accent)] transition hover:opacity-80"
+                      @click="openDefinition(c)"
+                    >
+                      <Icon icon="lucide:target" class="h-3.5 w-3.5" />
+                      Definiert in <span class="font-semibold">{{ edge.toClass }}</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2 py-1 text-xs font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+                      @click="openUsage(c)"
+                    >
+                      <Icon icon="lucide:code-2" class="h-3.5 w-3.5" />
+                      Aufgerufen in <span class="font-semibold">{{ edge.fromClass }}</span>
+                    </button>
+                  </div>
+                </article>
               </div>
             </section>
           </div>
@@ -154,6 +255,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 <style scoped>
 @reference "../../assets/style.css";
+
+/* Shiki-Codeblock im Panel kompakter halten (die Farbgebung kommt aus global .shiki). */
+.edge-code :deep(.shiki) {
+  margin: 0;
+  max-height: 18rem;
+  overflow: auto;
+  font-size: 12px;
+}
 
 /* Slide-in: mobil als Bottom-Sheet (translateY), ab md als Side-Panel (translateX). */
 .panel-enter-active,

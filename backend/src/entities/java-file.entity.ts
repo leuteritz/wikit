@@ -34,6 +34,9 @@ export class JavaFile {
   @Column({ name: 'generated_at', type: 'text', nullable: true })
   generated_at: string | null;
 
+  @Column({ name: 'class_line', type: 'integer', nullable: true })
+  class_line: number | null; // 1-basierte Quellzeile des Klassennamens
+
   @Column({ name: 'created_at', type: 'text', nullable: true, insert: false, update: false })
   created_at: string;
 }

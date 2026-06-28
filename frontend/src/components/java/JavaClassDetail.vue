@@ -3,7 +3,7 @@
 // Header + KI-Status, Klassen-Zusammenfassung (description_html), Methoden-Accordion
 // (summary_html, einzeln nachgenerierbar) und Quellcode-Tab (read-only CodeMirror).
 // HTTP nur via lib/api.js (Composable).
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, nextTick } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
 import { useJavaQueue } from '../../composables/useJavaQueue.js'
@@ -13,6 +13,9 @@ import { Icon } from '../../lib/icons.js'
 
 const props = defineProps({
   fileId: { type: Number, required: true },
+  // Optionale Ziel-Quellzeile: oeffnet den Quellcode-Tab und hebt die Zeile hervor
+  // (Such-Sprung bzw. Edge-Panel-Navigation).
+  targetLine: { type: Number, default: null },
 })
 const emit = defineEmits(['close', 'changed'])
 
@@ -25,6 +28,7 @@ const file = ref(null)
 const loading = ref(true)
 const error = ref('')
 const tab = ref('doc') // 'doc' | 'source'
+const sourceEditor = ref(null) // JavaCodeEditor im Quellcode-Tab (fuer highlightLine)
 const openMethod = ref(null)
 const summarizing = ref(null) // method id while running
 const classBusy = ref(false)
@@ -38,6 +42,8 @@ async function load() {
   file.value = null
   try {
     file.value = await getFile(props.fileId)
+    // Falls beim Oeffnen bereits eine Zielzeile vorliegt (Such-Sprung/Edge-Panel) -> ansteuern.
+    if (props.targetLine) applyTargetLine()
   } catch (e) {
     error.value = e.message
   } finally {
@@ -45,7 +51,17 @@ async function load() {
   }
 }
 
+// Quellcode-Tab oeffnen und die Zielzeile hervorheben (auto-fade im Editor nach 2,5 s).
+async function applyTargetLine() {
+  if (!props.targetLine || !file.value) return
+  tab.value = 'source'
+  await nextTick() // Editor erst nach Tab-Wechsel gemountet
+  sourceEditor.value?.highlightLine(props.targetLine)
+}
+
 watch(() => props.fileId, load, { immediate: true })
+// Erneutes Ziel in derselben (bereits gemounteten) Datei -> direkt ansteuern.
+watch(() => props.targetLine, applyTargetLine)
 
 // Wenn die Hintergrund-Queue eine Methode dieser Klasse fertigstellt -> Daten neu laden.
 watch(lastEvent, (ev) => {
@@ -302,7 +318,7 @@ async function removeFile() {
               class="code-copy z-10 opacity-100"
               @click="copySource"
             >{{ copied ? 'Kopiert' : 'Kopieren' }}</button>
-            <JavaCodeEditor :model-value="file.raw_source" readonly />
+            <JavaCodeEditor ref="sourceEditor" :model-value="file.raw_source" readonly />
           </div>
         </template>
       </template>

@@ -54,6 +54,7 @@ export class JavaService {
         class_name: cls.class_name,
         class_type: cls.class_type,
         raw_source: source,
+        class_line: cls.class_line ?? null,
       });
       fileId = res.identifiers[0].id as number;
 
@@ -67,6 +68,7 @@ export class JavaService {
           javadoc: m.javadoc || '',
           ai_summary: m.javadoc || '',
           body: m.body || '',
+          start_line: m.start_line ?? null,
         });
       }
 
@@ -101,6 +103,51 @@ export class JavaService {
     const row = await this.ds.getRepository(JavaFile).findOne({ where: { id: Number(idParam) } });
     if (!row) throw new NotFoundException('Datei nicht gefunden');
     return this.serializer.serializeJavaFile(row, { withSource: true });
+  }
+
+  // Quellcode EINER Methode als Shiki-gehighlightetes HTML (fuers Graph-Edge-Panel).
+  // Rein lesend + Render -> KEINE Transaktion noetig. Das HTML kommt aus dem vorhandenen
+  // Markdown-Primitiv (Dual-Theme, defaultColor:false) inkl. sanitize-html -> kein Extra-Sanitizing.
+  async getMethodSnippet(fileIdParam: string, methodNameParam: string): Promise<any> {
+    const fileId = Number(fileIdParam);
+    const methodName = (methodNameParam || '').toString().trim();
+    if (!fileId || !methodName) {
+      throw new BadRequestException('fileId und methodName sind erforderlich');
+    }
+
+    const file = await this.ds.getRepository(JavaFile).findOne({ where: { id: fileId } });
+    if (!file) throw new NotFoundException('Datei nicht gefunden');
+
+    // Overloads teilen sich den Namen -> erste Methode (ORDER BY id, wie ueberall im Serializer).
+    const method = await this.ds.getRepository(JavaMethod).findOne({
+      where: { file_id: fileId, method_name: methodName },
+      order: { id: 'ASC' },
+    });
+    if (!method) {
+      throw new NotFoundException(`Methode "${methodName}" in ${file.class_name} nicht gefunden`);
+    }
+
+    const parameters = this.safeJson(method.parameters, []);
+    const signature = this.serializer.buildSignature({ ...method, parameters });
+    // Interface-/abstract-Methoden haben keinen Body -> dann die Signatur als Snippet zeigen.
+    const code = method.body && method.body.trim() ? method.body : `${signature};`;
+    // Zeile: gespeicherter Wert (neu analysiert) oder Fallback aus dem Rohquelltext (Bestandsdaten).
+    const startLine = method.start_line ?? this.findMethodLine(file.raw_source, methodName);
+
+    const { html } = await this.markdown.renderMarkdown('```java\n' + code + '\n```');
+    return { code, startLine, html, signature, className: file.class_name, methodName };
+  }
+
+  // Fallback-Zeilenermittlung fuer Bestandsdaten ohne gespeicherte start_line:
+  // erste Quellzeile, in der "<methodName>(" auftaucht. 1-basiert, Default 1.
+  private findMethodLine(source: string, methodName: string): number {
+    const lines = (source || '').split('\n');
+    const safe = methodName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`\\b${safe}\\s*\\(`);
+    for (let i = 0; i < lines.length; i++) {
+      if (re.test(lines[i])) return i + 1;
+    }
+    return 1;
   }
 
   // On-demand KI-Beschreibung fuer EINE Methode (async, ausserhalb der Transaktion).

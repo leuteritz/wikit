@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Post, Put, Query } from '@nestjs/common';
 import { JavaService } from './java.service';
 import { JavaQueueService } from './java-queue.service';
 
@@ -22,6 +22,13 @@ export class JavaController {
   @Get('graph')
   graph() {
     return this.svc.graph();
+  }
+
+  // Shiki-gehighlightetes Code-Snippet einer Methode (Graph-Edge-Panel). Statische Route ->
+  // steht vor den parametrisierten files/:id-Routen, damit kein :id-Capture greift.
+  @Get('method-snippet')
+  methodSnippet(@Query('fileId') fileId: string, @Query('methodName') methodName: string) {
+    return this.svc.getMethodSnippet(fileId, methodName);
   }
 
   // --- KI-Generierungs-Queue (Backend-Zustand, HTTP-Polling) ---------------

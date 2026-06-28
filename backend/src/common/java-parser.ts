@@ -10,12 +10,14 @@ export interface JavaMethodInfo {
   parameters: Array<{ type: string; name: string }>;
   javadoc: string;
   body: string;
+  start_line: number; // 1-basierte Quellzeile der Methodendeklaration (fuer Sprung/Highlight)
 }
 
 export interface JavaClassInfo {
   class_name: string;
   class_type: 'class' | 'interface' | 'enum' | 'annotation';
   methods: JavaMethodInfo[];
+  class_line: number; // 1-basierte Quellzeile des Klassennamens (fuer Sprung/Highlight)
 }
 
 export interface JavaParseResult {
@@ -66,6 +68,15 @@ function findFirst(node: any, name: string): any {
 function minOffset(node: any): number {
   const toks = collectTokens(node);
   return toks.length ? Math.min(...toks.map((t) => t.startOffset)) : Infinity;
+}
+
+// Kleinste 1-basierte Quellzeile eines Teilbaums. chevrotain-Tokens tragen `startLine`
+// (Default positionTracking: "full"). Fallback 1, falls keine Zeileninfo vorliegt.
+function minLine(node: any): number {
+  const lines = collectTokens(node)
+    .map((t) => t.startLine)
+    .filter((n) => typeof n === 'number');
+  return lines.length ? Math.min(...lines) : 1;
 }
 
 // Methodenrumpf rekonstruieren: Spannweite der methodBody-Tokens aus dem Quelltext schneiden.
@@ -181,6 +192,8 @@ function extractMethods(typeNode: any, blocks: any[], source: string): JavaMetho
       parameters: params,
       javadoc: javadocFor(minOffset(mNode), blocks, source),
       body: bodyText(mNode, source),
+      // Zeile des Methoden-Identifiers (praeziser als der Knotenanfang mit Annotationen/Modifiern).
+      start_line: minLine(declarator),
     });
   }
   return methods;
@@ -222,6 +235,8 @@ export function parseJava(source: string): JavaParseResult {
         class_name: className,
         class_type: type,
         methods: extractMethods(node, blocks, source),
+        // Zeile des Klassennamens (typeIdentifier), sonst Knotenanfang.
+        class_line: minLine(typeId || node),
       };
     })
     .filter((c) => c.class_name) as JavaClassInfo[];

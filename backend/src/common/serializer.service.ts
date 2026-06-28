@@ -21,8 +21,9 @@ export class SerializerService {
     private readonly markdown: MarkdownService,
   ) {}
 
-  // Eine Methoden-Signatur als hervorgehobener Java-Codeblock (Shiki, server-seitig).
-  private buildSignature(m: { return_type?: string | null; method_name: string; parameters: any[] }): string {
+  // Eine Methoden-Signatur als String (z. B. fuers Edge-Panel / signature_html).
+  // Public, damit JavaService.getMethodSnippet dieselbe Logik wiederverwendet.
+  buildSignature(m: { return_type?: string | null; method_name: string; parameters: any[] }): string {
     const params = (m.parameters || []).map((p: any) => `${p.type} ${p.name}`.trim()).join(', ');
     return `${m.return_type || 'void'} ${m.method_name}(${params})`;
   }

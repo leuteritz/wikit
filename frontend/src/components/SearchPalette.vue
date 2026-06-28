@@ -14,7 +14,7 @@ const emit = defineEmits(['close'])
 const router = useRouter()
 const { articles } = useArticles()
 const { run } = useSearch(articles)
-const { lastFileId } = useJavaAnalyzer()
+const { lastFileId, lastTargetLine } = useJavaAnalyzer()
 
 const query = ref('')
 const active = ref(0)
@@ -44,7 +44,8 @@ watch(query, (q) => {
     try {
       const results = await api.search(term)
       if (token !== reqToken) return // veralteter Request -> verwerfen
-      codeHits.value = results.filter((r) => r.type === 'java_file')
+      // Methoden-Treffer (java_entity, zeilengenau) UND Klassen/Dateien (java_file).
+      codeHits.value = results.filter((r) => r.type === 'java_file' || r.type === 'java_entity')
     } catch {
       if (token === reqToken) codeHits.value = []
     }
@@ -76,8 +77,10 @@ function go(entry) {
   if (!entry) return
   emit('close')
   if (entry.kind === 'java_file') {
-    // Handoff wie Queue -> Code: CodeView selektiert die Klasse beim Mount via lastFileId.
-    lastFileId.value = entry.item.id
+    // Handoff wie Queue -> Code: CodeView selektiert die Klasse via lastFileId und springt
+    // (falls Zeile bekannt) im Quellcode-Tab zur Fundstelle (Methode/Klassendeklaration).
+    lastFileId.value = entry.item.fileId ?? entry.item.id
+    lastTargetLine.value = entry.item.lineNumber ?? null
     router.push('/code')
   } else {
     router.push(`/article/${entry.item.slug}`)
@@ -138,7 +141,7 @@ function flatIndex(groupKey, i) {
               {{ group.label }}
             </div>
             <ul>
-              <li v-for="(item, i) in group.items" :key="`${group.key}-${item.id}`">
+              <li v-for="(item, i) in group.items" :key="`${group.key}-${i}`">
                 <!-- Artikel-Treffer -->
                 <button
                   v-if="group.key === 'article'"
@@ -155,7 +158,32 @@ function flatIndex(groupKey, i) {
                   <CategoryBadge :category="item.category" size="xs" />
                 </button>
 
-                <!-- Code-Treffer (Java-Datei) -->
+                <!-- Methoden-Treffer (java_entity, zeilengenauer Sprung) -->
+                <button
+                  v-else-if="item.type === 'java_entity'"
+                  type="button"
+                  class="flex w-full items-start gap-3 px-4 py-2.5 text-left transition"
+                  :class="flatIndex('java_file', i) === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-slate-50 dark:hover:bg-slate-800'"
+                  @mouseenter="active = flatIndex('java_file', i)"
+                  @click="go({ kind: 'java_file', item })"
+                >
+                  <span class="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-md bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+                    <Icon icon="lucide:code-2" class="h-4 w-4" />
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2">
+                      <span class="truncate font-mono text-sm font-medium text-slate-800 dark:text-slate-100">{{ item.name }}()</span>
+                      <span class="shrink-0 rounded bg-[var(--color-accent-soft)] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[var(--color-accent)]">method</span>
+                    </div>
+                    <div class="mt-0.5 flex items-center gap-1.5 truncate text-xs text-slate-500 dark:text-slate-400">
+                      <span class="truncate">{{ item.className }}</span>
+                      <span class="text-slate-300 dark:text-slate-600">·</span>
+                      <code class="truncate font-mono text-[11px] text-[var(--color-text-muted)]">{{ item.signature }}</code>
+                    </div>
+                  </div>
+                </button>
+
+                <!-- Code-Treffer (Java-Klasse/Datei) -->
                 <button
                   v-else
                   type="button"
