@@ -135,6 +135,15 @@ async function enqueueMethods(fileId, { userContext = '' } = {}) {
   await refresh()
 }
 
+// Bulk: alle noch nicht analysierten Klassen + Methoden gesammelt einreihen. Gibt
+// { queuedClasses, queuedMethodFiles } zurueck (fuer Inline-Feedback).
+async function enqueueAllUnanalyzed({ userContext = '' } = {}) {
+  startPolling()
+  const res = await api.analyzeAllJava({ userContext })
+  await refresh()
+  return res
+}
+
 // Einzelnen Job abbrechen. Optimistisch sofort lokal entfernen (kein Warten auf das 3-s-Polling),
 // damit die Liste/Badge unmittelbar reagiert; das naechste Polling bestaetigt den Server-Zustand.
 async function cancelJob(fileId, kind) {
@@ -160,6 +169,7 @@ export function useJavaQueue() {
     enqueueClass,
     enqueueMethods,
     queueClass,
+    enqueueAllUnanalyzed,
     cancelJob,
     cancelAllJobs,
     progressFor,

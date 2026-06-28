@@ -151,6 +151,26 @@ export class JavaQueueService {
     return this.snapshot(job);
   }
 
+  // Bulk: alle noch nicht KI-analysierten Klassen + Methoden gesammelt einreihen.
+  // "Klasse unanalysiert" = description leer. "Datei hat unanalysierte Methoden" = mind. eine
+  // Methode mit leerem ai_summary ODER ai_summary == javadoc (gleiche Heuristik wie der Graph,
+  // s. SerializerService.graphForJavaFiles). Bereits Analysiertes wird uebersprungen.
+  async enqueueAllUnanalyzed(userContext?: string): Promise<{ queuedClasses: number; queuedMethodFiles: number }> {
+    const classRows: Array<{ id: number }> = await this.ds.query(
+      `SELECT id FROM java_files WHERE description IS NULL OR TRIM(description) = '' ORDER BY id ASC`,
+    );
+    const methodFileRows: Array<{ file_id: number }> = await this.ds.query(
+      `SELECT DISTINCT file_id FROM java_methods
+       WHERE ai_summary IS NULL OR TRIM(ai_summary) = '' OR ai_summary = COALESCE(javadoc, '')
+       ORDER BY file_id ASC`,
+    );
+
+    for (const r of classRows) await this.enqueueClass(r.id, userContext);
+    for (const r of methodFileRows) await this.enqueueMethods(r.file_id, userContext);
+
+    return { queuedClasses: classRows.length, queuedMethodFiles: methodFileRows.length };
+  }
+
   // --- Cancel ---------------------------------------------------------------
 
   // Einzelnen Job abbrechen: laufenden Ollama-fetch abbrechen (falls aktiv) und den Job aus der

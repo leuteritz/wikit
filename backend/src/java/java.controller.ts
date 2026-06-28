@@ -44,6 +44,14 @@ export class JavaController {
     return this.svc.createEdge(body);
   }
 
+  // Alle Auto-Call-Edges neu berechnen + persistieren (nach Massen-Imports). Statische Route ->
+  // vor edges/:id, sonst faengt :id "recompute" ab.
+  @Post('edges/recompute')
+  @HttpCode(200)
+  recomputeEdges() {
+    return this.svc.recomputeEdges();
+  }
+
   @Patch('edges/:id')
   updateEdge(@Param('id') id: string, @Body() body: any) {
     return this.svc.updateEdge(id, body);
@@ -76,6 +84,14 @@ export class JavaController {
     const job = this.queue.get(Number(id));
     if (!job) throw new NotFoundException('Keine Queue fuer diese Datei');
     return job;
+  }
+
+  // Alle noch nicht KI-analysierten Klassen + Methoden gesammelt einreihen. Statische Route ->
+  // vor queues/:id, sonst faengt :id "analyze-all" ab.
+  @Post('queues/analyze-all')
+  @HttpCode(202)
+  analyzeAll(@Body() body: any) {
+    return this.queue.enqueueAllUnanalyzed(body?.userContext);
   }
 
   // Gesamte Queue leeren (aktive Jobs abbrechen + History entfernen). Muss vor der

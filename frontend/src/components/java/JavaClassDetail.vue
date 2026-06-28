@@ -20,8 +20,8 @@ const props = defineProps({
 const emit = defineEmits(['close', 'changed'])
 
 const router = useRouter()
-const { getFile, summarizeMethod, summarizeClass, deleteFile, linkArticle, userContext } = useJavaAnalyzer()
-const { lastEvent, progressFor } = useJavaQueue()
+const { getFile, deleteFile, linkArticle, userContext } = useJavaAnalyzer()
+const { lastEvent, progressFor, queueClass, enqueueMethods } = useJavaQueue()
 const { create } = useArticles()
 
 const file = ref(null)
@@ -30,8 +30,7 @@ const error = ref('')
 const tab = ref('doc') // 'doc' | 'source'
 const sourceEditor = ref(null) // JavaCodeEditor im Quellcode-Tab (fuer highlightLine)
 const openMethod = ref(null)
-const summarizing = ref(null) // method id while running
-const classBusy = ref(false)
+const fullBusy = ref(false) // waehrend des Einreihens der Voll-Analyse
 const notice = ref('')
 const creating = ref(false)
 const copied = ref(false)
@@ -85,7 +84,6 @@ function signature(m) {
   return `${m.return_type || 'void'} ${m.method_name}(${params})`
 }
 function methodStatus(m) {
-  if (summarizing.value === m.id) return 'running'
   if (queueProgress.value && queueProgress.value.status === 'running' && !m.summary_html) return 'pending'
   return m.summary_html ? 'done' : 'idle'
 }
@@ -93,33 +91,24 @@ function toggle(id) {
   openMethod.value = openMethod.value === id ? null : id
 }
 
-async function summarize(m) {
-  summarizing.value = m.id
-  notice.value = ''
-  try {
-    const { method, summary_html, ollama_unavailable } = await summarizeMethod(m.id, { userContext: userContext.value })
-    Object.assign(m, method, { summary_html })
-    if (ollama_unavailable) notice.value = 'Ollama nicht erreichbar – es wird der Javadoc-Text angezeigt.'
-  } catch (e) {
-    notice.value = e.message
-  } finally {
-    summarizing.value = null
-  }
-}
+// Aktive Queue (laeuft/wartet) fuer diese Datei -> Voll-Analyse-Button deaktivieren.
+const analysisBusy = computed(
+  () => fullBusy.value || ['running', 'queued'].includes(queueProgress.value?.status),
+)
 
-async function generateClassSummary() {
-  if (!file.value) return
-  classBusy.value = true
+// Vollstaendige KI-Analyse: Klassen-Zusammenfassung UND alle Methoden neu in die Queue
+// einreihen (Force – die Queue-Jobs ueberschreiben bestehende Beschreibungen bedingungslos).
+async function fullAnalysis() {
+  if (!file.value || analysisBusy.value) return
+  fullBusy.value = true
   notice.value = ''
   try {
-    const { description_html, ollama_unavailable } = await summarizeClass(file.value.id, { userContext: userContext.value })
-    file.value.description_html = description_html
-    if (ollama_unavailable) notice.value = 'Ollama nicht erreichbar – Klassen-Zusammenfassung unverändert.'
-    emit('changed')
+    await queueClass(file.value.id, { userContext: userContext.value })
+    await enqueueMethods(file.value.id, { userContext: userContext.value })
   } catch (e) {
     notice.value = e.message
   } finally {
-    classBusy.value = false
+    fullBusy.value = false
   }
 }
 
@@ -258,11 +247,16 @@ async function removeFile() {
               <button
                 type="button"
                 class="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-accent)] px-2.5 py-1 text-xs font-semibold text-[var(--color-accent-contrast)] transition hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
-                :disabled="classBusy"
-                @click="generateClassSummary"
+                :disabled="analysisBusy"
+                title="Klassen-Zusammenfassung und alle Methoden neu generieren"
+                @click="fullAnalysis"
               >
-                <Icon v-if="classBusy" icon="lucide:loader-2" class="h-3.5 w-3.5 animate-spin" />
-                {{ classBusy ? 'Generiere…' : (file.description_html ? 'Neu generieren' : 'Generate Class Summary') }}
+                <Icon
+                  :icon="analysisBusy ? 'lucide:loader-2' : 'lucide:sparkles'"
+                  class="h-3.5 w-3.5"
+                  :class="analysisBusy ? 'animate-spin' : ''"
+                />
+                {{ analysisBusy ? 'Analysiere…' : 'Vollständige KI-Analyse' }}
               </button>
             </div>
             <div v-if="file.description_html" class="prose prose-sm max-w-none dark:prose-invert" v-html="file.description_html" />
@@ -293,18 +287,12 @@ async function removeFile() {
               </button>
 
               <div v-show="openMethod === m.id" class="border-t border-[var(--color-border)] px-3 py-2">
-                <div v-if="m.summary_html" class="prose prose-sm mb-2 max-w-none dark:prose-invert" v-html="m.summary_html" />
-                <p v-else class="mb-2 text-sm italic text-[var(--color-text-muted)]">Noch keine KI-Beschreibung.</p>
+                <!-- 1) Java-Code-Block (Shiki, server-gerendert) -->
+                <div v-if="m.body_html" class="method-code mb-2" v-html="m.body_html" />
 
-                <button
-                  type="button"
-                  class="badge-accent inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition hover:opacity-80 disabled:opacity-60"
-                  :disabled="summarizing === m.id"
-                  @click="summarize(m)"
-                >
-                  <Icon v-if="summarizing === m.id" icon="lucide:loader-2" class="h-3.5 w-3.5 animate-spin" />
-                  {{ summarizing === m.id ? 'Generiere…' : (m.summary_html ? 'Neu generieren' : 'Generate Summary') }}
-                </button>
+                <!-- 2) KI-Analyse / Zusammenfassung -->
+                <div v-if="m.summary_html" class="prose prose-sm max-w-none dark:prose-invert" v-html="m.summary_html" />
+                <p v-else class="text-sm italic text-[var(--color-text-muted)]">Noch keine KI-Beschreibung – über „Vollständige KI-Analyse" generieren.</p>
               </div>
             </li>
           </ul>
@@ -359,6 +347,12 @@ async function removeFile() {
 
 .code-wrap {
   @apply relative;
+}
+
+/* Methodenrumpf-Codeblock (server-gerenderte Shiki-HTML via v-html). Etwas kompakter als der
+   globale .shiki-Default; Dual-Theme-Farben kommen weiterhin aus den inline --shiki-*-Variablen. */
+.method-code :deep(.shiki) {
+  @apply p-3 text-xs leading-relaxed;
 }
 
 /* Status-Badges auf Palette-Basis (warme Tints via color-mix). */

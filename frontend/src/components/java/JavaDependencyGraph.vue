@@ -33,7 +33,18 @@ const { theme } = useTheme()
 const { fitView, zoomIn, zoomOut, setViewport } = useVueFlow()
 
 // Persistierte Call-Edges (auto + manuell) – Quelle der Wahrheit ist jetzt das Backend.
-const { edges: serverEdges, fetchEdges, createEdge, updateEdge, deleteEdge } = useJavaGraph()
+const { edges: serverEdges, fetchEdges, createEdge, updateEdge, deleteEdge, recomputeEdges, recomputing } =
+  useJavaGraph()
+
+// Kanten serverseitig neu berechnen + persistieren (nach Massen-Imports manchmal unvollstaendig).
+// fetchEdges() im Composable aktualisiert den Graphen danach automatisch.
+async function onRecomputeEdges() {
+  try {
+    await recomputeEdges()
+  } catch {
+    // Fehler liegt reaktiv in useJavaGraph().error; Button reaktiviert sich ueber recomputing.
+  }
+}
 
 // Custom-Edge-Typ registrieren.
 const edgeTypes = { managed: ManagedEdge }
@@ -502,6 +513,16 @@ onUnmounted(() => {
       </button>
       <button type="button" class="vf-tool" title="Zurücksetzen" @click="resetView">
         <Icon icon="lucide:rotate-ccw" class="h-4 w-4" />
+      </button>
+      <span class="mx-0.5 h-5 w-px bg-[var(--color-border)]"></span>
+      <button
+        type="button"
+        class="vf-tool"
+        :disabled="recomputing"
+        title="Kanten neu simulieren"
+        @click="onRecomputeEdges"
+      >
+        <Icon icon="lucide:refresh-cw" class="h-4 w-4" :class="recomputing ? 'animate-spin' : ''" />
       </button>
     </div>
 

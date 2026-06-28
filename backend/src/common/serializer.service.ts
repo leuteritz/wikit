@@ -139,7 +139,18 @@ export class SerializerService {
         const { html: summaryHtml } = m.ai_summary
           ? await this.markdown.renderMarkdown(m.ai_summary)
           : { html: '' };
-        return { ...m, parameters, signature_html: signatureHtml, summary_html: summaryHtml };
+        // body_html (Shiki java) -> Methodenrumpf wird in der Detailansicht VOR der KI-Zusammenfassung
+        // gezeigt. Transient (keine DB-Spalte), wie signature_html/summary_html.
+        const { html: bodyHtml } = m.body
+          ? await this.markdown.renderMarkdown('```java\n' + m.body + '\n```')
+          : { html: '' };
+        return {
+          ...m,
+          parameters,
+          signature_html: signatureHtml,
+          summary_html: summaryHtml,
+          body_html: bodyHtml,
+        };
       }),
     );
 

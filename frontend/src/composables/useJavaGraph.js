@@ -8,6 +8,7 @@ import { api } from '../lib/api.js'
 // Module-Singleton -> alle Konsumenten teilen sich denselben Kanten-Zustand.
 const edges = ref([])
 const loading = ref(false)
+const recomputing = ref(false)
 const error = ref('')
 
 async function fetchEdges() {
@@ -22,12 +23,30 @@ async function fetchEdges() {
   }
 }
 
+// Alle Auto-Call-Edges im Backend neu berechnen + persistieren, danach neu laden.
+async function recomputeEdges() {
+  recomputing.value = true
+  error.value = ''
+  try {
+    const res = await api.recomputeJavaEdges()
+    await fetchEdges()
+    return res
+  } catch (e) {
+    error.value = e.message
+    throw e
+  } finally {
+    recomputing.value = false
+  }
+}
+
 export function useJavaGraph() {
   return {
     edges,
     loading,
+    recomputing,
     error,
     fetchEdges,
+    recomputeEdges,
     // Gibt die erstellte/aktualisierte Kante zurueck (z. B. fuer Undo), refetcht danach.
     async createEdge(data) {
       const edge = await api.createJavaEdge(data)

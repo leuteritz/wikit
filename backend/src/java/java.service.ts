@@ -503,6 +503,17 @@ export class JavaService {
     if (toInsert.length) await repo.insert(toInsert);
   }
 
+  // Manueller Trigger: alle Auto-Call-Edges neu berechnen + persistieren. Sinnvoll nach
+  // Massen-Imports, bei denen Kanten ueber mehrere Analyse-Laeufe hinweg evtl. unvollstaendig
+  // sind. Manuelle/verworfene Kanten bleiben erhalten. Eigene Transaktion (kein Aufrufer-Kontext).
+  async recomputeEdges(): Promise<{ recomputed: true; count: number }> {
+    await this.ds.transaction(async (manager) => {
+      await this.recomputeAutoEdges(manager);
+    });
+    const count = await this.ds.getRepository(JavaEdge).count({ where: { dismissed: 0 } });
+    return { recomputed: true, count };
+  }
+
   private serializeEdge(e: JavaEdge): any {
     return {
       id: e.id,

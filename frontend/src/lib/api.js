@@ -50,6 +50,8 @@ export const api = {
   createJavaEdge: (data) => http('POST', '/java/edges', data),
   updateJavaEdge: (id, data) => http('PATCH', `/java/edges/${id}`, data),
   deleteJavaEdge: (id) => http('DELETE', `/java/edges/${id}`),
+  // Alle Auto-Call-Edges neu berechnen + persistieren (nach Massen-Imports).
+  recomputeJavaEdges: () => http('POST', '/java/edges/recompute'),
 
   summarizeJavaMethod: (id, data) => http('POST', `/java/methods/${id}/summarize`, data),
   summarizeJavaClass: (id, data) => http('POST', `/java/files/${id}/summarize-class`, data),
@@ -59,6 +61,8 @@ export const api = {
   // Server -> der Nutzer darf die Seite verlassen, die Queue laeuft weiter.
   queueJavaClass: (id, data) => http('POST', `/java/files/${id}/queue-class`, data),
   queueJavaMethods: (id, data) => http('POST', `/java/files/${id}/queue-methods`, data),
+  // Alle noch nicht analysierten Klassen + Methoden gesammelt einreihen.
+  analyzeAllJava: (data) => http('POST', '/java/queues/analyze-all', data),
   listJavaQueues: () => http('GET', '/java/queues'),
   getJavaQueue: (id) => http('GET', `/java/queues/${id}`),
   // Queue-Jobs abbrechen: einzeln (fileId + kind) oder alle auf einmal.

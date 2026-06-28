@@ -16,7 +16,7 @@ import { detectJavaClasses } from '../lib/javaDetect.js'
 
 const { files, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFileId, lastTargetLine, deleteFile } =
   useJavaAnalyzer()
-const { enqueueClass, enqueueMethods, queueClass, cancelJob, progressFor, ensurePolling } =
+const { enqueueClass, enqueueMethods, queueClass, enqueueAllUnanalyzed, cancelJob, progressFor, ensurePolling } =
   useJavaQueue()
 
 const source = ref('')
@@ -32,6 +32,7 @@ const pendingDelete = ref(null)
 const deleting = ref(false)
 const pendingConflicts = ref(null) // FQCN-Liste vorhandener Klassen -> Ueberschreiben-Dialog
 const confirming = ref(false)
+const analyzingAll = ref(false) // Spinner fuer "Alle analysieren"
 
 // Live-Vorschau der im Editor erkannten Klassen (rein clientseitig, nicht autoritativ).
 const detectedClasses = computed(() => detectJavaClasses(source.value))
@@ -116,6 +117,26 @@ async function generateClass() {
     await queueClass(selectedFileId.value, { userContext: userContext.value })
   } catch (e) {
     queueNotice.value = e.message
+  }
+}
+
+// Alle noch nicht KI-analysierten Klassen + Methoden gesammelt in die Queue einreihen.
+// Live-Fortschritt zeigt die bestehende Queue-Anzeige; hier nur kurzes Inline-Feedback.
+async function analyzeAll() {
+  if (analyzingAll.value) return
+  analyzingAll.value = true
+  queueNotice.value = ''
+  try {
+    const res = await enqueueAllUnanalyzed({ userContext: userContext.value })
+    const c = res?.queuedClasses ?? 0
+    const m = res?.queuedMethodFiles ?? 0
+    queueNotice.value = c || m
+      ? `Eingereiht: ${c} Klassen-Zusammenfassung(en), ${m} Klasse(n) mit Methoden.`
+      : 'Alles bereits analysiert – nichts einzureihen.'
+  } catch (e) {
+    queueNotice.value = e.message
+  } finally {
+    analyzingAll.value = false
   }
 }
 
@@ -375,7 +396,7 @@ async function onDetailClose(payload) {
       </Transition>
 
       <!-- Nicht-blockierendes Live-Banner fuer die gewaehlte Klasse -->
-      <p v-if="queueNotice" class="mt-3 rounded-lg bg-[var(--color-surface-offset)] px-3 py-2 text-xs text-[var(--color-danger)]">{{ queueNotice }}</p>
+      <p v-if="queueNotice" class="mt-3 rounded-lg bg-[var(--color-surface-offset)] px-3 py-2 text-xs text-[var(--color-text-muted)]">{{ queueNotice }}</p>
       <div
         v-if="selectedProgress && (selectedProgress.status === 'running' || selectedProgress.status === 'queued')"
         class="mt-3 flex items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-accent-soft)] px-3 py-2 text-sm text-[var(--color-accent)]"
@@ -419,6 +440,23 @@ async function onDetailClose(payload) {
               <Icon icon="lucide:x" class="h-3.5 w-3.5" />
             </button>
           </div>
+
+          <!-- Bulk-Aktion: alle noch nicht analysierten Klassen + Methoden einreihen -->
+          <button
+            v-if="files.length"
+            type="button"
+            class="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--color-accent)]/40 bg-[var(--color-accent-soft)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-accent)] transition hover:bg-[var(--color-accent)] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+            :disabled="analyzingAll"
+            title="Alle noch nicht analysierten Klassen und Methoden in die KI-Queue einreihen"
+            @click="analyzeAll"
+          >
+            <Icon
+              :icon="analyzingAll ? 'lucide:loader-2' : 'lucide:sparkles'"
+              class="h-3.5 w-3.5"
+              :class="analyzingAll ? 'animate-spin' : ''"
+            />
+            {{ analyzingAll ? 'Reihe ein…' : 'Alle analysieren' }}
+          </button>
         </div>
 
         <ul class="min-h-0 flex-1 overflow-y-auto p-1.5">
