@@ -17,7 +17,7 @@ import { detectJavaClasses } from '../lib/javaDetect.js'
 
 const { files, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFileId, lastTargetLine, deleteFile, resetAll } =
   useJavaAnalyzer()
-const { enqueueClass, enqueueAllUnanalyzed, cancelJob, cancelAllJobs, progressFor, ensurePolling } = useJavaQueue()
+const { allJobs, enqueueClass, enqueueAllUnanalyzed, cancelJob, cancelAllJobs, progressFor, ensurePolling } = useJavaQueue()
 const { recomputeEdges, recomputing, resetEdges } = useJavaGraph()
 
 const source = ref('')
@@ -68,6 +68,12 @@ onUnmounted(() => releasePolling?.())
 // --- Statistik (Header-Tags) ---
 const classCount = computed(() => files.value.length)
 const packageCount = computed(() => new Set(files.value.map((f) => f.package || '(default)')).size)
+
+// Aktive KI-Queue (laeuft/wartet) -> kompakter Queue-Streifen + Link zur Statusseite.
+const activeQueue = computed(() =>
+  allJobs.value.filter((j) => j.status === 'running' || j.status === 'queued'),
+)
+const runningJob = computed(() => activeQueue.value.find((j) => j.status === 'running') || null)
 
 // --- Package-Baum (gefiltert) -> flache Zeilenliste fuer iteratives Rendern ---
 const filteredFiles = computed(() => filterClasses(files.value, search.value))
@@ -125,8 +131,9 @@ async function onRecomputeEdges() {
   }
 }
 
-// Alle noch nicht KI-analysierten Klassen + Methoden gesammelt in die Queue einreihen.
-// Live-Fortschritt zeigt die bestehende Queue-Anzeige; hier nur kurzes Inline-Feedback.
+// Alle noch nicht KI-analysierten Klassen als atomare Einheit (Methoden -> Klasse) einreihen –
+// topologisch sortiert (Abhaengigkeiten zuerst). Live-Fortschritt zeigt die Queue-Anzeige; hier
+// nur kurzes Inline-Feedback.
 async function analyzeAll() {
   if (analyzingAll.value) return
   analyzingAll.value = true
@@ -134,9 +141,8 @@ async function analyzeAll() {
   try {
     const res = await enqueueAllUnanalyzed({ userContext: userContext.value })
     const c = res?.queuedClasses ?? 0
-    const m = res?.queuedMethodFiles ?? 0
-    queueNotice.value = c || m
-      ? `Eingereiht: ${c} Klassen-Zusammenfassung(en), ${m} Klasse(n) mit Methoden.`
+    queueNotice.value = c
+      ? `Eingereiht: ${c} Klasse(n) zur vollständigen Analyse (Methoden → Zusammenfassung).`
       : 'Alles bereits analysiert – nichts einzureihen.'
   } catch (e) {
     queueNotice.value = e.message
@@ -223,7 +229,7 @@ async function confirmDelete() {
   if (!file) return
   deleting.value = true
   try {
-    await Promise.allSettled([cancelJob(file.id, 'class'), cancelJob(file.id, 'methods')])
+    await cancelJob(file.id).catch(() => {})
     await deleteFile(file.id)
     if (selectedFileId.value === file.id) selectedFileId.value = null
     pendingDelete.value = null
@@ -336,26 +342,53 @@ async function confirmReset() {
           </div>
         </div>
 
-        <!-- Rechts: nur noch die Upload-/Analyse-Pill -->
+        <!-- Rechts: Link zur KI-Queue-Statusseite (zeigt aktive Anzahl) -->
         <div class="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            class="inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)]"
-            :class="showNew ? 'ring-2 ring-[var(--color-accent-soft)]' : ''"
-            @click="showNew = !showNew"
+          <RouterLink
+            to="/code/queues"
+            class="relative inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm font-semibold text-[var(--color-text)] shadow-sm transition hover:bg-[var(--color-surface-offset)]"
+            title="KI-Queue ansehen"
           >
-            <span>Code analysieren</span>
-            <Icon icon="lucide:upload" class="h-4 w-4" />
-          </button>
+            <Icon
+              :icon="runningJob ? 'lucide:loader-2' : 'lucide:list-checks'"
+              class="h-4 w-4 text-[var(--color-accent)]"
+              :class="runningJob ? 'animate-spin' : ''"
+            />
+            <span>KI-Queue</span>
+            <span
+              v-if="activeQueue.length"
+              class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--color-accent)] px-1.5 text-[11px] font-bold tabular-nums text-[var(--color-accent-contrast)]"
+            >{{ activeQueue.length }}</span>
+          </RouterLink>
         </div>
       </div>
 
-      <!-- Aufklappbares Neu-Analyse-Panel -->
-      <Transition name="slide">
-        <section
+      <!-- Neu-Analyse als Modal (ausgeloest vom prominenten Sidebar-Button). -->
+      <Teleport to="body">
+        <Transition name="modal">
+        <div
           v-if="showNew"
-          class="mt-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3"
+          class="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 backdrop-blur-sm"
+          @click.self="analyzing ? null : (showNew = false)"
         >
+          <section
+            class="w-full max-w-3xl rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 shadow-xl"
+          >
+            <div class="mb-3 flex items-center justify-between gap-2">
+              <h2 class="flex items-center gap-2 text-lg font-bold text-[var(--color-text)]">
+                <Icon icon="lucide:sparkles" class="h-5 w-5 text-[var(--color-accent)]" />
+                Code analysieren
+              </h2>
+              <button
+                type="button"
+                class="grid h-8 w-8 place-items-center rounded-lg text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-40"
+                :disabled="analyzing"
+                title="Schließen"
+                @click="showNew = false"
+              >
+                <Icon icon="lucide:x" class="h-5 w-5" />
+              </button>
+            </div>
           <div class="grid gap-3 lg:grid-cols-[1fr_280px]">
             <div class="min-w-0">
               <div class="mb-2 flex items-center justify-between gap-2">
@@ -432,8 +465,10 @@ async function confirmReset() {
               </button>
             </div>
           </div>
-        </section>
-      </Transition>
+          </section>
+        </div>
+        </Transition>
+      </Teleport>
 
       <!-- Nicht-blockierendes Live-Banner fuer die gewaehlte Klasse -->
       <p v-if="queueNotice" class="mt-3 rounded-lg bg-[var(--color-surface-offset)] px-3 py-2 text-xs text-[var(--color-text-muted)]">{{ queueNotice }}</p>
@@ -462,7 +497,16 @@ async function confirmReset() {
     <div class="grid min-h-0 flex-1 grid-cols-1 gap-4 px-5 pb-5 lg:grid-cols-[260px_minmax(0,1fr)_360px]">
       <!-- Spalte 1: Suche + Package-Tree -->
       <section class="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)]">
-        <div class="shrink-0 border-b border-[var(--color-border)] p-2">
+        <div class="shrink-0 space-y-2 border-b border-[var(--color-border)] p-2">
+          <!-- Prominenter Einstieg: neue .java-Quellen analysieren (oeffnet das Modal). -->
+          <button
+            type="button"
+            class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--color-accent)] px-3 py-2 text-sm font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)]"
+            @click="showNew = true"
+          >
+            <Icon icon="lucide:plus" class="h-4 w-4" />
+            Code analysieren
+          </button>
           <div class="relative">
             <Icon icon="lucide:search" class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]" />
             <input
@@ -718,14 +762,22 @@ async function confirmReset() {
 <style scoped>
 @reference "../assets/style.css";
 
-/* Funktionale Transition fuers Neu-Analyse-Panel (kein dekoratives Spielwerk). */
-.slide-enter-active,
-.slide-leave-active {
-  transition: opacity 0.18s ease, transform 0.18s ease;
+/* Funktionale Transition fuers Neu-Analyse-Modal (kein dekoratives Spielwerk). */
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity 0.18s ease;
 }
-.slide-enter-from,
-.slide-leave-to {
+.modal-enter-active section,
+.modal-leave-active section {
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+.modal-enter-from,
+.modal-leave-to {
   opacity: 0;
-  transform: translateY(-6px);
+}
+.modal-enter-from section,
+.modal-leave-to section {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.98);
 }
 </style>

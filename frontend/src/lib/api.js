@@ -59,15 +59,16 @@ export const api = {
 
   // Backend-gehaltene KI-Generierungs-Queue (HTTP-Polling, kein SSE). Der Zustand lebt im
   // Server -> der Nutzer darf die Seite verlassen, die Queue laeuft weiter.
+  // queue-class = atomare Analyse-Einheit der Klasse (Methoden -> Klasse). Body: { userContext?, force? }.
   queueJavaClass: (id, data) => http('POST', `/java/files/${id}/queue-class`, data),
-  queueJavaMethods: (id, data) => http('POST', `/java/files/${id}/queue-methods`, data),
-  // Alle noch nicht analysierten Klassen + Methoden gesammelt einreihen.
+  // Alle noch nicht analysierten Klassen gesammelt (topologisch) einreihen.
   analyzeAllJava: (data) => http('POST', '/java/queues/analyze-all', data),
   listJavaQueues: () => http('GET', '/java/queues'),
   getJavaQueue: (id) => http('GET', `/java/queues/${id}`),
-  // Queue-Jobs abbrechen: einzeln (fileId + kind) oder alle auf einmal.
-  cancelJavaQueue: (fileId, kind) => http('DELETE', `/java/queues/${fileId}/${kind}`),
+  // Queue-Jobs abbrechen: einzeln (fileId), alle, oder nur die abgeschlossenen ("als gelesen").
+  cancelJavaQueue: (fileId) => http('DELETE', `/java/queues/${fileId}`),
   cancelAllJavaQueues: () => http('DELETE', '/java/queues'),
+  clearFinishedJavaQueues: () => http('DELETE', '/java/queues/finished'),
   // Live-Token-Strom der KI-Queue (SSE). EventSource ist kein fetch -> nur die URL hier zentral
   // halten (gleiche dokumentierte Ausnahme wie analysisStreamUrl).
   javaQueueStreamUrl: () => `${BASE}/java/queues/stream`,

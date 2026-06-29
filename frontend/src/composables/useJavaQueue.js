@@ -1,26 +1,29 @@
 // Client fuer die BACKEND-gehaltene KI-Generierungs-Queue der Java-Analyse.
 // Der Queue-Zustand lebt im Server (Map<fileId, QueueJob>); hier wird er per HTTP-Polling
-// (alle 3 s, KEIN WebSocket/SSE) gespiegelt. Dadurch laeuft die Queue weiter, auch wenn der
-// Nutzer die Seite verlaesst – beim Zurueckkehren zeigt das Polling den aktuellen Stand.
+// (alle 3 s, KEIN WebSocket/SSE fuer den Status) gespiegelt. Dadurch laeuft die Queue weiter,
+// auch wenn der Nutzer die Seite verlaesst – beim Zurueckkehren zeigt das Polling den Stand.
 //
-// Oeffentliche API bleibt kompatibel zur frueheren (client-seitigen) Implementierung:
-//   enqueueClass(file, {userContext})  -> reiht alle Methoden ein (Auto-Start nach Upload)
-//   progressFor(fileId)                -> reaktiver Fortschritt fuer Badges/Banner
-//   lastEvent                          -> feuert bei Fortschritt -> Views laden Daten neu
-// Neu: enqueueMethods/queueClass (explizite Buttons), allJobs (Statusseite), ensurePolling().
+// ATOMARE EINHEIT pro Klasse: ein Job je fileId (Phase methods -> class). Es gibt also nur noch
+// EINEN Eintrag pro Klasse statt getrennter Klassen-/Methoden-Jobs.
+//
+//   enqueueClass(file, {userContext, force}) -> volle Analyse-Einheit einreihen (Auto-Start + Button)
+//   enqueueAllUnanalyzed({userContext})      -> alle unanalysierten Klassen (topologisch) einreihen
+//   progressFor(fileId)                      -> reaktiver Fortschritt fuer Badges/Banner
+//   markAllRead()                            -> abgeschlossene Eintraege ausblenden
+//   lastEvent                                -> feuert bei Fortschritt -> Views laden Daten neu
 import { reactive, ref } from 'vue'
 import { api } from '../lib/api.js'
 
 const POLL_MS = 3000
 
-// Vollstaendige Job-Liste vom Backend (fuer /java/queues).
+// Vollstaendige Job-Liste vom Backend (fuer /code/queues).
 const allJobs = ref([])
-// Schnellzugriff fileId -> repraesentativer Job (laufende Queue bevorzugt).
+// Schnellzugriff fileId -> Job (1:1, da pro Klasse genau ein Job existiert).
 const byFile = reactive({})
 // Letztes Fortschritts-/Statusereignis -> JavaClassDetail laedt bei Aenderung neu.
 const lastEvent = ref(null)
-// Live-Token-Puffer je Job-Key (`${fileId}:${kind}`): { text, tokens, phase }. Gespeist vom
-// SSE-Strom (Token-by-Token). Polling bleibt Source of Truth fuer Status/Fortschritt.
+// Live-Token-Puffer je fileId: { text, tokens, phase }. Gespeist vom SSE-Strom (Token-by-Token).
+// Polling bleibt Source of Truth fuer Status/Fortschritt.
 const liveByKey = ref({})
 
 let timer = null
@@ -33,39 +36,22 @@ function hasActive() {
   return allJobs.value.some((j) => j.status === 'running' || j.status === 'queued')
 }
 
-// Aus der flachen Job-Liste je Datei einen repraesentativen Job ableiten
-// (laufende/wartende Queue bevorzugt, sonst die zuletzt eingereihte).
-function indexByFile(jobs) {
-  const map = {}
-  for (const j of jobs) {
-    const prev = map[j.fileId]
-    if (!prev) {
-      map[j.fileId] = j
-      continue
-    }
-    const prevActive = prev.status === 'running' || prev.status === 'queued'
-    const curActive = j.status === 'running' || j.status === 'queued'
-    if (curActive && !prevActive) map[j.fileId] = j
-    else if (curActive === prevActive && j.queuedAt > prev.queuedAt) map[j.fileId] = j
-  }
-  return map
-}
-
 async function refresh() {
   try {
     const jobs = await api.listJavaQueues()
     allJobs.value = jobs
-    const map = indexByFile(jobs)
     // byFile reaktiv aktualisieren (Schluessel synchronisieren).
+    const map = {}
+    for (const j of jobs) map[j.fileId] = j
     for (const k of Object.keys(byFile)) if (!map[k]) delete byFile[k]
     for (const fileId in map) byFile[fileId] = map[fileId]
 
     // Fortschritts-/Status-Aenderung erkennen -> lastEvent feuern.
     for (const j of jobs) {
       const sig = `${j.status}:${j.done}:${j.failed}`
-      if (seen.get(j.fileId + ':' + j.kind) !== sig) {
-        seen.set(j.fileId + ':' + j.kind, sig)
-        lastEvent.value = { fileId: j.fileId, kind: j.kind, status: j.status, done: j.done, ts: Date.now() }
+      if (seen.get(j.fileId) !== sig) {
+        seen.set(j.fileId, sig)
+        lastEvent.value = { fileId: j.fileId, status: j.status, done: j.done, ts: Date.now() }
       }
     }
   } catch {
@@ -76,7 +62,7 @@ async function refresh() {
   }
 }
 
-// Geteilten SSE-Strom oeffnen (genau eine EventSource). Liefert die Token-Deltas live.
+// Geteilten SSE-Strom oeffnen (genau eine EventSource). Liefert die Token-Deltas live (key=fileId).
 function openLiveStream() {
   if (es) return
   try {
@@ -157,36 +143,24 @@ function progressFor(fileId) {
     done: job.done,
     failed: job.failed,
     status: job.status,
+    phase: job.phase,
     current: job.current,
     ollamaUnavailable: job.ollamaUnavailable,
   }
 }
 
-// Alle Methoden einer Datei einreihen (Name aus Kompatibilitaet beibehalten: Auto-Start
-// nach Upload reiht weiterhin die Methoden-Queue ein).
-async function enqueueClass(file, { userContext = '' } = {}) {
-  if (!file?.id) return
+// Volle Analyse-Einheit einer Klasse einreihen (Methoden -> Klasse). `file` darf das File-Objekt
+// (mit id) oder direkt die fileId sein. `force` erzwingt das Neu-Generieren analysierter Methoden.
+async function enqueueClass(file, { userContext = '', force = false } = {}) {
+  const id = typeof file === 'object' ? file?.id : file
+  if (id == null) return
   startPolling()
-  await api.queueJavaMethods(file.id, { userContext })
+  await api.queueJavaClass(id, { userContext, force })
   await refresh()
 }
 
-// Explizit: nur Klassen-Zusammenfassung einreihen.
-async function queueClass(fileId, { userContext = '' } = {}) {
-  startPolling()
-  await api.queueJavaClass(fileId, { userContext })
-  await refresh()
-}
-
-// Explizit: alle Methoden einreihen.
-async function enqueueMethods(fileId, { userContext = '' } = {}) {
-  startPolling()
-  await api.queueJavaMethods(fileId, { userContext })
-  await refresh()
-}
-
-// Bulk: alle noch nicht analysierten Klassen + Methoden gesammelt einreihen. Gibt
-// { queuedClasses, queuedMethodFiles } zurueck (fuer Inline-Feedback).
+// Bulk: alle noch nicht analysierten Klassen (topologisch) einreihen. Gibt { queuedClasses }
+// zurueck (fuer Inline-Feedback).
 async function enqueueAllUnanalyzed({ userContext = '' } = {}) {
   startPolling()
   const res = await api.analyzeAllJava({ userContext })
@@ -195,14 +169,11 @@ async function enqueueAllUnanalyzed({ userContext = '' } = {}) {
 }
 
 // Einzelnen Job abbrechen. Optimistisch sofort lokal entfernen (kein Warten auf das 3-s-Polling),
-// damit die Liste/Badge unmittelbar reagiert; das naechste Polling bestaetigt den Server-Zustand.
-async function cancelJob(fileId, kind) {
-  await api.cancelJavaQueue(fileId, kind)
-  allJobs.value = allJobs.value.filter((j) => !(j.fileId === fileId && j.kind === kind))
-  // byFile auf die verbleibenden Jobs dieser Datei neu ableiten (oder Key entfernen).
-  const rest = allJobs.value.filter((j) => j.fileId === fileId)
-  if (rest.length) Object.assign(byFile, indexByFile(rest))
-  else delete byFile[fileId]
+// damit Liste/Badge unmittelbar reagieren; das naechste Polling bestaetigt den Server-Zustand.
+async function cancelJob(fileId) {
+  await api.cancelJavaQueue(fileId)
+  allJobs.value = allJobs.value.filter((j) => j.fileId !== fileId)
+  delete byFile[fileId]
 }
 
 // Gesamte Queue abbrechen + leeren (aktive + abgeschlossene). Sofort lokal leeren.
@@ -212,17 +183,25 @@ async function cancelAllJobs() {
   for (const k of Object.keys(byFile)) delete byFile[k]
 }
 
+// "Alle als gelesen markieren": abgeschlossene Eintraege ausblenden. Die Analyse-Ergebnisse
+// bleiben in der DB; nur die transienten Queue-Eintraege verschwinden. Optimistisch lokal filtern.
+async function markAllRead() {
+  await api.clearFinishedJavaQueues()
+  const done = ['done', 'done-with-errors', 'failed', 'cancelled']
+  allJobs.value = allJobs.value.filter((j) => !done.includes(j.status))
+  for (const k of Object.keys(byFile)) if (done.includes(byFile[k].status)) delete byFile[k]
+}
+
 export function useJavaQueue() {
   return {
     allJobs,
     lastEvent,
     liveByKey,
     enqueueClass,
-    enqueueMethods,
-    queueClass,
     enqueueAllUnanalyzed,
     cancelJob,
     cancelAllJobs,
+    markAllRead,
     progressFor,
     ensurePolling,
     refresh,

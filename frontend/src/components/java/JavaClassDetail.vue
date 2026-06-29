@@ -21,7 +21,7 @@ const emit = defineEmits(['close', 'changed'])
 
 const router = useRouter()
 const { getFile, deleteFile, linkArticle, userContext } = useJavaAnalyzer()
-const { lastEvent, progressFor, queueClass, enqueueMethods } = useJavaQueue()
+const { lastEvent, progressFor, enqueueClass } = useJavaQueue()
 const { create } = useArticles()
 
 const file = ref(null)
@@ -96,15 +96,14 @@ const analysisBusy = computed(
   () => fullBusy.value || ['running', 'queued'].includes(queueProgress.value?.status),
 )
 
-// Vollstaendige KI-Analyse: Klassen-Zusammenfassung UND alle Methoden neu in die Queue
-// einreihen (Force – die Queue-Jobs ueberschreiben bestehende Beschreibungen bedingungslos).
+// Vollstaendige KI-Analyse: EINE atomare Einheit einreihen (erst alle Methoden, dann die
+// Klassen-Zusammenfassung). `force` -> bestehende Beschreibungen werden bedingungslos neu erzeugt.
 async function fullAnalysis() {
   if (!file.value || analysisBusy.value) return
   fullBusy.value = true
   notice.value = ''
   try {
-    await queueClass(file.value.id, { userContext: userContext.value })
-    await enqueueMethods(file.value.id, { userContext: userContext.value })
+    await enqueueClass(file.value, { userContext: userContext.value, force: true })
   } catch (e) {
     notice.value = e.message
   } finally {

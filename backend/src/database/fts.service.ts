@@ -67,18 +67,23 @@ export class FtsService {
 
   // Sucht in den gespeicherten Java-Analysen nach passendem Kontext (Prompt-Enrichment).
   // Liefert kurze Klartext-Snippets der bisher beschriebenen Klassen/Methoden.
-  async searchJava(q: string, limit = 5): Promise<string[]> {
+  // `excludeRowid` (= eine java_files.id) blendet die eigene Klasse aus, damit sie sich beim
+  // RAG-Kontext nicht selbst als "Wissen" zitiert.
+  async searchJava(q: string, limit = 5, excludeRowid?: number): Promise<string[]> {
     const match = this.buildMatch(q);
     if (!match) return [];
     try {
+      const where =
+        excludeRowid != null ? 'WHERE java_fts MATCH ? AND rowid != ?' : 'WHERE java_fts MATCH ?';
+      const params = excludeRowid != null ? [match, excludeRowid, limit] : [match, limit];
       const rows = await this.dataSource.query(
         `SELECT class_name,
                 snippet(java_fts, 3, '', '', ' … ', 24) AS snippet
          FROM java_fts
-         WHERE java_fts MATCH ?
+         ${where}
          ORDER BY bm25(java_fts)
          LIMIT ?`,
-        [match, limit],
+        params,
       );
       return rows
         .map((r: any) => `${r.class_name}: ${(r.snippet || '').trim()}`.trim())

@@ -102,33 +102,35 @@ export class JavaController {
     return this.queue.enqueueAllUnanalyzed(body?.userContext);
   }
 
-  // Gesamte Queue leeren (aktive Jobs abbrechen + History entfernen). Muss vor der
-  // parametrisierten DELETE-Route stehen.
+  // Gesamte Queue leeren (aktive Jobs abbrechen + History entfernen). Muss vor den
+  // parametrisierten DELETE-Routen stehen.
   @Delete('queues')
   @HttpCode(204)
   cancelAllQueues() {
     this.queue.cancelAll();
   }
 
-  // Einzelnen Job (Klassen- oder Methoden-Queue einer Datei) abbrechen/entfernen.
-  @Delete('queues/:fileId/:kind')
+  // Abgeschlossene Eintraege ausblenden ("alle als gelesen markieren"). Statische Route -> MUSS
+  // vor queues/:fileId stehen, sonst captured :fileId "finished".
+  @Delete('queues/finished')
   @HttpCode(204)
-  cancelQueue(@Param('fileId') fileId: string, @Param('kind') kind: string) {
-    this.queue.cancel(Number(fileId), kind === 'class' ? 'class' : 'methods');
+  clearFinishedQueues() {
+    this.queue.clearFinished();
   }
 
-  // Klassen-Zusammenfassung in die Queue einreihen (laeuft im Hintergrund weiter).
+  // Die (eine) Analyse-Einheit einer Datei abbrechen/entfernen.
+  @Delete('queues/:fileId')
+  @HttpCode(204)
+  cancelQueue(@Param('fileId') fileId: string) {
+    this.queue.cancel(Number(fileId));
+  }
+
+  // Vollstaendige KI-Analyse einer Klasse in die Queue einreihen (Methoden -> Klasse, laeuft im
+  // Hintergrund weiter). Body optional: { userContext?, force? } -> force erzwingt Neu-Generieren.
   @Post('files/:id/queue-class')
   @HttpCode(202)
   queueClass(@Param('id') id: string, @Body() body: any) {
-    return this.queue.enqueueClass(Number(id), body?.userContext);
-  }
-
-  // Alle Methoden der Datei sequentiell in die Queue einreihen.
-  @Post('files/:id/queue-methods')
-  @HttpCode(202)
-  queueMethods(@Param('id') id: string, @Body() body: any) {
-    return this.queue.enqueueMethods(Number(id), body?.userContext);
+    return this.queue.enqueueClass(Number(id), body?.userContext, body?.force === true);
   }
 
   // Spezifischer als /files/:id -> MUSS davor stehen, sonst faengt :id "by-article" ab.
