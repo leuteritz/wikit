@@ -1,4 +1,7 @@
-# 📚 Wikit
+<h1>
+  <img src="frontend/public/favicon.svg" alt="Wikit logo" height="30" align="center">
+  &nbsp;Wikit
+</h1>
 
 A tiny, self-hosted personal wiki — light enough for a Raspberry Pi.
 
