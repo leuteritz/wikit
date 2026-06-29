@@ -18,7 +18,7 @@ const props = defineProps({
   edge: { type: Object, default: null },
   visible: { type: Boolean, default: false },
 })
-const emit = defineEmits(['close', 'edit', 'delete'])
+const emit = defineEmits(['close', 'edit', 'delete', 'edit-method', 'delete-method'])
 
 const router = useRouter()
 const { lastFileId, lastTargetLine } = useJavaAnalyzer()
@@ -36,12 +36,24 @@ function openSourceClass() {
   navigateTo(props.edge?.fromFileId)
 }
 
-// Aufgerufene (definierte) Methoden mit (optionaler) Signatur fuer die Quell-Sektion.
+// Aufgerufene (definierte) Methoden fuer die Quell-Sektion. Bevorzugt die reichere methods-Liste
+// (mit edgeId/isManual fuer Per-Methoden-Aktionen); Fallback auf callees/calleeSignatures.
 const calleeList = computed(() => {
   if (!props.edge) return []
+  if (props.edge.methods?.length) {
+    return props.edge.methods.map((m) => ({
+      name: m.name,
+      signature: m.signature || '',
+      edgeId: m.edgeId ?? null,
+      isManual: !!m.isManual,
+    }))
+  }
   const sigs = new Map((props.edge.calleeSignatures || []).map((s) => [s.name, s.signature]))
-  return (props.edge.callees || []).map((name) => ({ name, signature: sigs.get(name) || '' }))
+  return (props.edge.callees || []).map((name) => ({ name, signature: sigs.get(name) || '', edgeId: null, isManual: false }))
 })
+
+// Buendel = mehr als eine Methode -> Per-Methoden-Aktionen im Panel, Footer-Bearbeiten ausgeblendet.
+const isBundle = computed(() => calleeList.value.length > 1)
 
 // Aufrufstellen pro aufrufende Methode gruppieren (Anwender-Sektion). Jede Site traegt ihre
 // exakte Zeile + (relative) Position im Rumpf fuer das fokussierte Snippet.
@@ -221,7 +233,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                     <div v-else-if="snippets[c.name]?.html" class="edge-code" v-html="snippets[c.name].html" />
                   </div>
 
-                  <!-- Fußzeile: zur Definition springen -->
+                  <!-- Fußzeile: zur Definition springen + (bei Bündel) Per-Methoden-Aktionen -->
                   <div class="flex flex-wrap items-center gap-2 border-t border-[var(--color-border)] px-3 py-2">
                     <button
                       type="button"
@@ -231,6 +243,26 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                       <Icon icon="lucide:target" class="h-3.5 w-3.5" />
                       Definiert in <span class="font-semibold">{{ edge.toClass }}</span>
                     </button>
+                    <template v-if="isBundle">
+                      <button
+                        type="button"
+                        class="ml-auto inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2 py-1 text-xs font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+                        title="Methodenname dieser Kante bearbeiten"
+                        @click="emit('edit-method', { edgeId: c.edgeId, name: c.name, isManual: c.isManual })"
+                      >
+                        <Icon icon="lucide:pencil" class="h-3.5 w-3.5" />
+                        Bearbeiten
+                      </button>
+                      <button
+                        type="button"
+                        class="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2 py-1 text-xs font-medium text-[var(--color-danger)] transition hover:bg-[var(--color-surface-2)]"
+                        title="Diese Methoden-Kante löschen"
+                        @click="emit('delete-method', { edgeId: c.edgeId, name: c.name, isManual: c.isManual })"
+                      >
+                        <Icon icon="lucide:trash-2" class="h-3.5 w-3.5" />
+                        Löschen
+                      </button>
+                    </template>
                   </div>
                 </article>
               </div>
@@ -304,7 +336,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             <div v-if="confirmDelete" class="flex flex-wrap items-center justify-end gap-2">
               <span class="mr-auto inline-flex items-center gap-1.5 text-sm text-[var(--color-text)]">
                 <Icon icon="lucide:alert-triangle" class="h-4 w-4 text-[var(--color-danger)]" />
-                Kante wirklich löschen?
+                {{ isBundle ? `Alle ${calleeList.length} Methoden-Kanten löschen?` : 'Kante wirklich löschen?' }}
               </span>
               <button
                 type="button"
@@ -334,6 +366,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                 Zur Klasse
               </button>
               <button
+                v-if="!isBundle"
                 type="button"
                 class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition hover:bg-[var(--color-surface-offset)]"
                 @click="emit('edit')"

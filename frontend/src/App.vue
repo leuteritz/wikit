@@ -1,15 +1,24 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import SearchPalette from './components/SearchPalette.vue'
 import ThemeToggle from './components/ThemeToggle.vue'
 import { useArticles } from './composables/useArticles.js'
+import { useJavaQueue } from './composables/useJavaQueue.js'
 import { WIKI_TITLE, WIKI_ICON, WIKI_VERSION } from './config.js'
 import { Icon } from './lib/icons.js'
 
 const { load } = useArticles()
 const route = useRoute()
 const searchOpen = ref(false)
+
+// Anzahl aktiver + wartender KI-Jobs fuer das Queues-Tab-Badge. allJobs wird NUR passiv gelesen –
+// das Polling ist ein Singleton in useJavaQueue und wird von JavaQueuesView gestartet (laeuft bei
+// aktiven Jobs ohnehin weiter). App.vue ruft daher BEWUSST kein ensurePolling() auf.
+const { allJobs } = useJavaQueue()
+const pendingCount = computed(
+  () => allJobs.value.filter((j) => ['running', 'queued'].includes(j.status)).length,
+)
 
 function onKey(e) {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
@@ -69,12 +78,19 @@ const navLinks = [
             v-for="link in navLinks"
             :key="link.to"
             :to="link.to"
-            class="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)]"
+            class="relative flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)]"
             exact-active-class="bg-[var(--color-accent-soft)] !text-[var(--color-accent)]"
             :title="link.label"
           >
             <Icon :icon="link.icon" class="h-4 w-4" />
             <span class="hidden lg:inline">{{ link.label }}</span>
+            <!-- Queue-Badge: zeigt aktive + wartende Jobs (nur am Queues-Tab). Sitzt am Tab und
+                 funktioniert auch im Icon-only-Zustand (<lg), da das Label dort ausgeblendet ist. -->
+            <span
+              v-if="link.to === '/code/queues' && pendingCount"
+              class="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--color-danger)] px-1 text-[10px] font-bold leading-none tabular-nums text-white ring-2 ring-[var(--color-surface-2)]"
+              :title="`${pendingCount} aktive/wartende Analyse-Jobs`"
+            >{{ pendingCount > 99 ? '99+' : pendingCount }}</span>
           </RouterLink>
           <ThemeToggle />
         </nav>

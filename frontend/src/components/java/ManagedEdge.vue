@@ -76,13 +76,18 @@ const d = computed(() => props.data || {})
       @click.stop="d.onOpen && d.onOpen(d, $event)"
     >
       <Icon v-if="d.isManual" icon="lucide:link" class="me-ic me-ic--manual" title="Manuelle Kante" />
-      <span class="me-method">{{ d.method ? d.method + '()' : '—' }}</span>
+      <!-- Gebuendelte Kante (>1 Methode): kompaktes Chip „n Methoden"; sonst der Methodenname. -->
+      <span v-if="d.bundleCount > 1" class="me-method me-count" title="Mehrere Methoden – Details anzeigen">
+        <Icon icon="lucide:braces" class="me-ic" />{{ d.bundleCount }} Methoden
+      </span>
+      <span v-else class="me-method">{{ d.method ? d.method + '()' : '—' }}</span>
 
       <span v-if="d.needsReview" class="me-badge" title="Unsicher erkannt – bitte prüfen">
         <Icon icon="lucide:alert-triangle" class="me-ic" />Bitte prüfen
       </span>
 
-      <span class="me-actions">
+      <!-- Inline-Schnellaktionen nur bei Einzel-Methoden-Kante; Buendel werden im Panel verwaltet. -->
+      <span v-if="d.bundleCount <= 1" class="me-actions">
         <button type="button" class="me-act" title="Bearbeiten" @click.stop="d.onEdit && d.onEdit(d, $event)">
           <Icon icon="lucide:pencil" class="me-ic" />
         </button>
@@ -136,6 +141,14 @@ const d = computed(() => props.data || {})
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+/* Buendel-Chip „n Methoden": dezent abgesetzt, mit fuehrendem Icon. */
+.me-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: inherit;
+  font-weight: 700;
 }
 .me-ic {
   width: 12px;

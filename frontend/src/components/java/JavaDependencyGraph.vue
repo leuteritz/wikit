@@ -87,10 +87,24 @@ const layout = computed(() => {
   const callPairs = new Set()
   const skipped = [] // Debug: Server-Kanten, die NICHT gezeichnet werden (Endpunkt nicht geladen)
 
-  // 1) Persistierte Call-Edges aus dem Backend (auto + manuell). source_class = Aufrufer (A),
+  // 1) Persistierte Call-/Uses-Edges aus dem Backend (auto + manuell). source_class = Aufrufer (A),
   //    target_class = definierende Klasse (B). Pfeilrichtung im Graph bleibt „Definition ->
   //    Nutzung": Graph-Quelle = B, Graph-Ziel (Pfeilspitze) = A. Nur Kanten rendern, deren
   //    beide Endpunkte geladen sind.
+  //
+  //    BUENDELUNG: Mehrere Call-Edges zwischen DEMSELBEN Klassenpaar (verschiedene method_name)
+  //    werden zu EINER Graph-Kante zusammengefasst (Label „n Methoden", Verwaltung pro Methode im
+  //    Panel) -> kein visuelles Chaos mehr bei vielen genutzten Methoden. Uses-Edges bleiben
+  //    weiterhin einzeln (sie haben ohnehin kein Label und sind reiner Typ-Fallback).
+  //
+  //    STATISCH vs. INSTANZ (Ticket 2b/2c): bewusst NICHT umgesetzt. serverEdges (Entity
+  //    backend/src/entities/java-edge.entity.ts) traegt KEIN is_static-Flag, und der Parser
+  //    (backend/src/common/java-parser.ts) erfasst keine Methoden-Modifier. Ergaenzungspfad fuer
+  //    spaeter: (1) Parser Modifier lesen; (2) Spalte is_static in schema.ts + java-method/
+  //    java-edge-Entity; (3) SerializerService + Edge-Berechnung durchreichen; (4) hier dann je
+  //    Methode strokeDasharray:'2 3', Akzent 70% Opacity, markerEnd.type = MarkerType.Arrow (hohl)
+  //    statt ArrowClosed + Legendeneintrag. Bis dahin: Visualisierung + Legende unveraendert.
+  const callGroups = new Map() // `${callerId}->${definerId}` -> { callerFile, definerFile, methods: [] }
   for (const e of serverEdges.value || []) {
     const callerFile = known.get(e.source_class) // A
     const definerFile = known.get(e.target_class) // B
@@ -105,39 +119,72 @@ const layout = computed(() => {
         })
       continue
     }
-    callPairs.add(`${callerFile.id}->${definerFile.id}`)
+    const pairKey = `${callerFile.id}->${definerFile.id}`
+    callPairs.add(pairKey)
 
     // uses-Kante = struktureller Typ-Bezug (Variablen-/Feld-/Parameter-/Rueckgabetyp, new X(),
-    // statischer Aufruf ohne Methoden-Treffer): eigener Stil, kein Label, nicht klickbar.
-    const isUses = e.kind === 'uses'
-    const needsReview = !isUses && !e.is_manual && e.confidence < 1
-    const stroke = isUses ? USES_COLOR : needsReview ? REVIEW_COLOR : 'var(--color-accent)'
+    // statischer Aufruf ohne Methoden-Treffer): eigener Stil, kein Label, nicht klickbar, einzeln.
+    if (e.kind === 'uses') {
+      edges.push({
+        id: `edge:${e.id}`,
+        source: `c:${definerFile.id}`,
+        target: `c:${callerFile.id}`,
+        type: 'managed',
+        markerEnd: { type: MarkerType.ArrowClosed, color: USES_COLOR },
+        data: {
+          kind: 'uses',
+          edgeStyle: { stroke: USES_COLOR, strokeWidth: 1.5, strokeDasharray: '4 3', cursor: 'default' },
+        },
+      })
+      continue
+    }
+
+    // call-Kante -> nach Klassenpaar gruppieren.
+    if (!callGroups.has(pairKey)) callGroups.set(pairKey, { callerFile, definerFile, methods: [] })
+    callGroups.get(pairKey).methods.push({
+      edgeId: e.id,
+      method: e.method_name,
+      isManual: !!e.is_manual,
+      confidence: e.confidence,
+      needsReview: !e.is_manual && e.confidence < 1,
+    })
+  }
+
+  // 1b) Je Klassenpaar EINE gebuendelte Call-Kante. Inline-Quick-Actions (Bearbeiten/Loeschen am
+  //     Label) + Rechtsklick gibt es nur fuer Einzel-Methoden-Kanten; Buendel werden ueber das
+  //     Detail-Panel verwaltet (onOpen ist immer gesetzt).
+  for (const { callerFile, definerFile, methods } of callGroups.values()) {
+    const single = methods.length === 1
+    const allManual = methods.every((m) => m.isManual)
+    const needsReview = methods.some((m) => m.needsReview)
+    const stroke = needsReview ? REVIEW_COLOR : 'var(--color-accent)'
     edges.push({
-      id: `edge:${e.id}`,
+      id: `call:${definerFile.id}-${callerFile.id}`,
       source: `c:${definerFile.id}`,
       target: `c:${callerFile.id}`,
       type: 'managed',
       markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
       data: {
-        kind: isUses ? 'uses' : 'call',
-        edgeId: e.id,
-        method: e.method_name,
-        isManual: !!e.is_manual,
-        confidence: e.confidence,
+        kind: 'call',
+        methods, // [{ edgeId, method, isManual, confidence, needsReview }]
+        bundleCount: methods.length,
+        method: methods[0].method, // Back-compat (Einzel-Kante: Label/Context-Menu/Editor)
+        edgeId: single ? methods[0].edgeId : null,
+        isManual: allManual,
         needsReview,
-        fromClass: e.source_class, // Aufrufer A
-        toClass: e.target_class, // Definition B
+        fromClass: callerFile.class_name, // Aufrufer A
+        toClass: definerFile.class_name, // Definition B
         fromFileId: callerFile.id,
         toFileId: definerFile.id,
         edgeStyle: {
           stroke,
-          strokeWidth: isUses ? 1.5 : 2,
-          strokeDasharray: isUses ? '4 3' : e.is_manual ? '6 4' : undefined,
-          cursor: isUses ? 'default' : 'pointer',
+          strokeWidth: 2,
+          strokeDasharray: allManual ? '6 4' : undefined,
+          cursor: 'pointer',
         },
-        onEdit: isUses ? undefined : openEdgeEditor,
-        onDelete: isUses ? undefined : removeEdge,
-        onOpen: isUses ? undefined : openEdgePanel,
+        onEdit: single ? openEdgeEditor : undefined,
+        onDelete: single ? removeEdge : undefined,
+        onOpen: openEdgePanel,
       },
     })
   }
@@ -252,42 +299,61 @@ function resetView() {
 // keinen verifizierbaren Quellcode -> oeffnen das Panel nicht.
 const activeEdge = ref(null)
 
-function computeCallEdgeData(callerFile, definerFile, methodName, edgeMeta = {}) {
+// Baut die Panel-Daten fuer eine (ggf. gebuendelte) Call-Kante. `methods` = Array von
+// { edgeId, method, isManual } -> Aufrufstellen werden ueber ALLE Methoden gesammelt; das Panel
+// listet jede Methode (mit Signatur + edgeId fuer Per-Methoden-Aktionen).
+function computeCallEdgeData(callerFile, definerFile, methods, edgeMeta = {}) {
+  const list = (methods || []).filter((m) => m && m.method)
   const callSites = []
-  for (const ca of callerFile.methods || []) {
-    const body = ca.body || ''
-    if (!body) continue
-    const base = ca.body_start_line ?? ca.start_line ?? null
-    const lineExact = ca.body_start_line != null
-    const safe = String(methodName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const re = new RegExp(`\\b${safe}\\s*\\(`, 'g')
-    let m
-    while ((m = re.exec(body)) !== null) {
-      const relLine = (body.slice(0, m.index).match(/\n/g) || []).length
-      callSites.push({
-        callerMethod: ca.method_name,
-        calleeMethod: methodName,
-        callerBody: body,
-        bodyStartLine: base,
-        line: base != null ? base + relLine : relLine + 1,
-        lineExact,
-      })
+  const panelMethods = []
+  for (const meta of list) {
+    const methodName = meta.method
+    for (const ca of callerFile.methods || []) {
+      const body = ca.body || ''
+      if (!body) continue
+      const base = ca.body_start_line ?? ca.start_line ?? null
+      const lineExact = ca.body_start_line != null
+      const safe = String(methodName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const re = new RegExp(`\\b${safe}\\s*\\(`, 'g')
+      let m
+      while ((m = re.exec(body)) !== null) {
+        const relLine = (body.slice(0, m.index).match(/\n/g) || []).length
+        callSites.push({
+          callerMethod: ca.method_name,
+          calleeMethod: methodName,
+          callerBody: body,
+          bodyStartLine: base,
+          line: base != null ? base + relLine : relLine + 1,
+          lineExact,
+        })
+      }
     }
+    const ce = (definerFile.methods || []).find((mm) => mm.method_name === methodName)
+    panelMethods.push({
+      edgeId: meta.edgeId ?? null,
+      name: methodName,
+      signature: ce ? buildSignature(ce) : '',
+      isManual: !!meta.isManual,
+    })
   }
-  const ce = (definerFile.methods || []).find((mm) => mm.method_name === methodName)
+  const single = panelMethods.length === 1
   return {
     kind: 'call',
-    // Kanten-Metadaten fuer die Footer-Aktionen (Bearbeiten/Loeschen) im Modal.
-    edgeId: edgeMeta.edgeId ?? null,
-    method: methodName,
+    bundleCount: panelMethods.length,
+    // Pro-Methoden-Liste (Panel-Anzeige + Per-Methoden-Aktionen/Footer-Loeschen).
+    methods: panelMethods,
+    // Kanten-Metadaten fuer die Footer-Aktionen (Bearbeiten/Loeschen) im Modal – nur bei Einzelkante.
+    edgeId: single ? panelMethods[0].edgeId : null,
+    method: single ? panelMethods[0].name : null,
     isManual: !!edgeMeta.isManual,
     fromClass: callerFile.class_name,
     toClass: definerFile.class_name,
     fromFileId: callerFile.id,
     toFileId: definerFile.id,
     callSites,
-    callees: [methodName],
-    calleeSignatures: [{ name: methodName, signature: ce ? buildSignature(ce) : '' }],
+    // Back-compat-Felder (alte Panel-Bindungen).
+    callees: panelMethods.map((p) => p.name),
+    calleeSignatures: panelMethods.map((p) => ({ name: p.name, signature: p.signature })),
   }
 }
 
@@ -298,15 +364,21 @@ function openEdgePanel(d) {
   try {
     // Auto- UND manuelle Call-Kanten oeffnen das Modal (manuelle haben ggf. keine verifizierten
     // Aufrufstellen -> der Verwendung-Abschnitt zeigt dann einen leeren Zustand).
-    if (!d || d.kind !== 'call' || !d.method) return
+    if (!d || d.kind !== 'call') return
+    // Gebuendelte Kante traegt d.methods; Einzel-Fallback aus d.method (z. B. Modal-Edit-Reopen).
+    const methodList = d.methods?.length
+      ? d.methods
+      : d.method
+        ? [{ edgeId: d.edgeId, method: d.method, isManual: d.isManual }]
+        : []
+    if (!methodList.length) return
     const callerFile = filesById.value.get(d.fromFileId)
     const definerFile = filesById.value.get(d.toFileId)
     if (!callerFile || !definerFile) {
       console.warn('[JavaGraph] Edge-Panel: Klasse(n) nicht in der Dateiliste gefunden', d)
       return
     }
-    activeEdge.value = computeCallEdgeData(callerFile, definerFile, d.method, {
-      edgeId: d.edgeId,
+    activeEdge.value = computeCallEdgeData(callerFile, definerFile, methodList, {
       isManual: d.isManual,
     })
   } catch (e) {
@@ -337,18 +409,53 @@ function onEdgeEditFromModal() {
   openEdgeEditor(data, { clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 })
 }
 
-// Loeschen: Kante entfernen (zeigt zusaetzlich den bestehenden Undo-Toast), dann Modal schliessen.
+// Loeschen (Footer): bei Einzel-Kante wie bisher mit Undo-Toast; bei einem Buendel werden ALLE
+// Methoden-Kanten entfernt (Bulk ohne Einzel-Undo – das Panel ist die Verwaltungsoberflaeche).
 async function onEdgeDeleteFromModal() {
   const e = activeEdge.value
   if (!e) return
-  await removeEdge({
-    edgeId: e.edgeId,
-    method: e.method,
-    isManual: e.isManual,
-    fromClass: e.fromClass,
-    toClass: e.toClass,
-  })
+  const list = e.methods || []
+  if (list.length <= 1) {
+    await removeEdge({
+      edgeId: e.edgeId ?? list[0]?.edgeId,
+      method: e.method ?? list[0]?.name,
+      isManual: e.isManual,
+      fromClass: e.fromClass,
+      toClass: e.toClass,
+    })
+  } else {
+    for (const m of list) if (m.edgeId != null) await deleteEdge(m.edgeId)
+  }
   closeEdgePanel()
+}
+
+// Per-Methode aus dem Panel bearbeiten: Panel schliessen, den Floating-Editor zentriert oeffnen.
+function onEditMethodFromModal(m) {
+  const e = activeEdge.value
+  if (!e || !m) return
+  const data = { edgeId: m.edgeId, method: m.name, fromClass: e.fromClass, toClass: e.toClass, isManual: m.isManual }
+  closeEdgePanel()
+  openEdgeEditor(data, { clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 })
+}
+
+// Per-Methode aus dem Panel loeschen (mit Undo-Toast). activeEdge danach lokal neu berechnen, damit
+// das Panel offen bleibt und die Restmethoden zeigt; bei der letzten Methode schliessen.
+async function onDeleteMethodFromModal(m) {
+  const e = activeEdge.value
+  if (!e || !m) return
+  await removeEdge({ edgeId: m.edgeId, method: m.name, isManual: m.isManual, fromClass: e.fromClass, toClass: e.toClass })
+  const remaining = (e.methods || []).filter((x) => x.edgeId !== m.edgeId)
+  if (!remaining.length) {
+    closeEdgePanel()
+    return
+  }
+  const callerFile = filesById.value.get(e.fromFileId)
+  const definerFile = filesById.value.get(e.toFileId)
+  if (!callerFile || !definerFile) {
+    closeEdgePanel()
+    return
+  }
+  activeEdge.value = computeCallEdgeData(callerFile, definerFile, remaining, { isManual: e.isManual })
 }
 
 // --- Drag-to-Connect: manuelle Kante anlegen ---------------------------------
@@ -421,7 +528,8 @@ function cancelEditor() {
 const contextMenu = ref(null)
 function onEdgeContextMenu({ event, edge }) {
   event.preventDefault()
-  if (!edge?.data || edge.data.kind !== 'call') return
+  // Nur Einzel-Methoden-Kanten: ein Buendel hat keine eindeutige edgeId -> Verwaltung im Panel.
+  if (!edge?.data || edge.data.kind !== 'call' || edge.data.bundleCount > 1) return
   contextMenu.value = { x: event.clientX, y: event.clientY, data: edge.data }
 }
 function closeContextMenu() {
@@ -597,6 +705,8 @@ watch(
       @close="closeEdgePanel"
       @edit="onEdgeEditFromModal"
       @delete="onEdgeDeleteFromModal"
+      @edit-method="onEditMethodFromModal"
+      @delete-method="onDeleteMethodFromModal"
     />
 
     <!-- Floating-Editor: Methodenname fuer neue/bearbeitete Kante (direkt an der Abwurfstelle) -->
