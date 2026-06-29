@@ -12,6 +12,7 @@ import { computed, watch, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../../lib/api.js'
 import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
+import { parseParamNames, markParamOccurrences } from '../../lib/javaParams.js'
 import { Icon } from '../../lib/icons.js'
 
 const props = defineProps({
@@ -124,7 +125,10 @@ async function loadSnippets() {
         ...snippets.value,
         [c.name]: {
           loading: false,
-          html: addLineNumbers(snip.combinedHtml ?? snip.html, snip.startLine),
+          html: markParamOccurrences(
+            addLineNumbers(snip.combinedHtml ?? snip.html, snip.startLine),
+            parseParamNames(snip.signature),
+          ),
           code: snip.combinedCode ?? snip.code,
           startLine: snip.startLine,
           endLine: snip.endLine ?? snip.startLine,
@@ -182,7 +186,10 @@ function buildCallWindow(html, bodyStartLine, siteLine) {
       else el.classList.remove('line-highlight')
       code.appendChild(el)
     }
-    const shell = doc.createElement('div')
+    // <pre> (nicht <div>): bewahrt die fuehrende Einrueckung (white-space: pre) – gleiche
+    // Element-Art wie die Quelle-Sektion. Doppelte Zeilenabstaende drohen nicht, da die `.line`
+    // ohne `\n`-Textnodes angehaengt werden und per `.line { display:block }` umbrechen.
+    const shell = doc.createElement('pre')
     shell.className = 'shiki'
     // Shiki-Inline-Style (--shiki-*-Variablen, insb. --shiki-dark-bg) vom Original-Root uebernehmen,
     // sonst fehlt dem neuen Wrapper der Hintergrund und der blaue Eltern-BG scheint durch.
@@ -204,12 +211,14 @@ async function loadUsageSnippets() {
     try {
       const snip = await api.getJavaMethodSnippet(edge.fromFileId, key)
       const base = grp.sites[0]?.bodyStartLine ?? snip.startLine ?? null
+      // Parameter der AUFRUFENDEN Methode -> in jedem Fenster faerben/markieren.
+      const names = parseParamNames(snip.signature)
       const sites = grp.sites.map((s) => ({
         line: s.line,
         lineExact: s.lineExact,
         calleeMethod: s.calleeMethod,
         // Pro Aufrufstelle ein eigenes Fenster aus dem ganzen Rumpf (snip.html).
-        html: buildCallWindow(snip.html, base, s.line),
+        html: markParamOccurrences(buildCallWindow(snip.html, base, s.line), names),
       }))
       usageSnippets.value = {
         ...usageSnippets.value,
@@ -241,6 +250,23 @@ async function copyCode(key, text) {
 onUnmounted(() => {
   if (copyTimer) clearTimeout(copyTimer)
 })
+
+// Klick auf eine Parametervariable: alle Vorkommen IN DIESEM Block (= aktuelle Methode bzw.
+// Fenster) hervorheben. Erneuter Klick auf dieselbe Variable hebt die Markierung auf; eine andere
+// Variable schaltet um. Reines DOM auf dem v-html-Container (e.currentTarget = Block-Scope).
+function onParamClick(e) {
+  const scope = e.currentTarget
+  if (!scope) return
+  const hit = e.target.closest?.('.java-param')
+  const active = scope.querySelector('.java-param-active')?.dataset.var || null
+  scope.querySelectorAll('.java-param-active').forEach((el) => el.classList.remove('java-param-active'))
+  if (hit && hit.dataset.var && hit.dataset.var !== active) {
+    const v = hit.dataset.var
+    scope.querySelectorAll('.java-param').forEach((el) => {
+      if (el.dataset.var === v) el.classList.add('java-param-active')
+    })
+  }
+}
 
 // Hand-off zu CodeView: Datei vorwaehlen + (optional) Zeile hervorheben, Panel schliessen.
 function navigateTo(fileId, line) {
@@ -371,7 +397,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                         <Icon :icon="copiedKey === 'src:' + c.name ? 'lucide:check' : 'lucide:copy'" class="h-3.5 w-3.5" />
                         {{ copiedKey === 'src:' + c.name ? 'Kopiert' : 'Kopieren' }}
                       </button>
-                      <div class="edge-code code-dark" v-html="snippets[c.name].html" />
+                      <div class="edge-code code-dark" v-html="snippets[c.name].html" @click="onParamClick" />
                     </div>
                   </div>
 
@@ -474,7 +500,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                           <Icon icon="lucide:code-2" class="h-3.5 w-3.5" />
                           Öffnen
                         </button>
-                        <div v-html="site.html" />
+                        <div v-html="site.html" @click="onParamClick" />
                       </div>
                     </div>
                   </div>
@@ -546,16 +572,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 <style scoped>
 @reference "../../assets/style.css";
 
-/* Shiki-Codeblock im Panel kompakter halten (die Farbgebung kommt aus global .shiki).
-   Padding wie der Anwender-Block (.edge-usage-code .shiki) -> gleiche Optik bei den
-   Gutter-Zeilennummern. */
-.edge-code :deep(.shiki) {
-  margin: 0;
-  max-height: 18rem;
-  overflow: auto;
-  padding: 0.5rem 0;
-  font-size: 12px;
-}
+/* Hinweis: Die Shiki-Optik der Quelle-Bloecke (.edge-code) wird gemeinsam mit den
+   Anwender-Bloecken in assets/style.css (.edge-usage-code, .edge-code) gepflegt -> identische
+   Optik. Hier nur noch Panel-spezifische Animationen. */
 
 /* Zentriertes Einblenden: Backdrop faded, Card skaliert sanft von 0.95 auf 1. */
 .modal-enter-active,

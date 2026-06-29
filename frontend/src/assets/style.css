@@ -101,7 +101,8 @@ html.dark .shiki span {
 /* --- Verwendung-Snippet (Java-Edge-Panel): Shiki + Gutter-Zeilennummern + ---
    markierte Aufrufzeile. Nur unter .edge-usage-code, damit normale Code-Bloecke
    (Artikel) voellig unberuehrt bleiben. */
-.edge-usage-code .shiki {
+.edge-usage-code .shiki,
+.edge-code .shiki {
   margin: 0;
   max-height: 18rem;
   overflow: auto;
@@ -109,6 +110,21 @@ html.dark .shiki span {
   border-radius: 0;
   padding: 0.5rem 0;
   font-size: 12px;
+}
+/* Parametervariablen im Edge-Panel (Quelle + Anwender): farbig + klickbar. Die Bloecke sind
+   via .code-dark immer dunkel -> fester aufgehellter Akzent (#7fb4d0 = Dark-`--color-accent`),
+   themenunabhaengig. Hoehere Spezifitaet als die `.code-dark .shiki span { … !important }`-Regel
+   noetig -> ebenfalls !important. */
+.code-dark .shiki .java-param {
+  color: #7fb4d0 !important;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.code-dark .shiki .java-param:hover {
+  text-decoration: underline;
+}
+.code-dark .shiki .java-param-active {
+  background-color: rgba(127, 180, 208, 0.3) !important;
 }
 .edge-usage-code .shiki code,
 .edge-code .shiki code {
