@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS java_methods (
   method_name TEXT NOT NULL,
   return_type TEXT,
   parameters  TEXT,
+  modifiers   TEXT,                -- JSON-Array der Java-Modifier (z. B. ["public","static"])
   javadoc     TEXT,
   ai_summary  TEXT,
   body        TEXT,                -- geparster Methodenrumpf (Offset-basiert, KI-Kontext)
@@ -138,6 +139,7 @@ export const COLUMN_MIGRATIONS: Array<{ table: string; column: string; ddl: stri
   { table: 'java_files', column: 'description_html', ddl: 'ALTER TABLE java_files ADD COLUMN description_html TEXT' },
   { table: 'java_files', column: 'generated_at', ddl: 'ALTER TABLE java_files ADD COLUMN generated_at TEXT' },
   { table: 'java_files', column: 'class_line', ddl: 'ALTER TABLE java_files ADD COLUMN class_line INTEGER' },
+  { table: 'java_methods', column: 'modifiers', ddl: 'ALTER TABLE java_methods ADD COLUMN modifiers TEXT' },
   { table: 'java_methods', column: 'body', ddl: 'ALTER TABLE java_methods ADD COLUMN body TEXT' },
   { table: 'java_methods', column: 'start_line', ddl: 'ALTER TABLE java_methods ADD COLUMN start_line INTEGER' },
   { table: 'java_methods', column: 'body_start_line', ddl: 'ALTER TABLE java_methods ADD COLUMN body_start_line INTEGER' },

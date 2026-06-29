@@ -23,9 +23,16 @@ export class SerializerService {
 
   // Eine Methoden-Signatur als String (z. B. fuers Edge-Panel / signature_html).
   // Public, damit JavaService.getMethodSnippet dieselbe Logik wiederverwendet.
-  buildSignature(m: { return_type?: string | null; method_name: string; parameters: any[] }): string {
+  buildSignature(m: {
+    return_type?: string | null;
+    method_name: string;
+    parameters: any[];
+    modifiers?: string[];
+  }): string {
     const params = (m.parameters || []).map((p: any) => `${p.type} ${p.name}`.trim()).join(', ');
-    return `${m.return_type || 'void'} ${m.method_name}(${params})`;
+    const mods = (m.modifiers || []).join(' ');
+    // Modifier (falls vorhanden) der Signatur voranstellen: `public static String getId(...)`.
+    return `${mods} ${m.return_type || 'void'} ${m.method_name}(${params})`.trim();
   }
 
   private safeJson(str: any, fallback: any): any {
@@ -121,6 +128,7 @@ export class SerializerService {
         method_name: true,
         return_type: true,
         parameters: true,
+        modifiers: true,
         javadoc: true,
         ai_summary: true,
         body: true,
@@ -133,8 +141,9 @@ export class SerializerService {
     const methods = await Promise.all(
       methodRows.map(async (m) => {
         const parameters = this.safeJson(m.parameters, []);
+        const modifiers = this.safeJson(m.modifiers, []);
         const { html: signatureHtml } = await this.markdown.renderMarkdown(
-          '```java\n' + this.buildSignature({ ...m, parameters }) + '\n```',
+          '```java\n' + this.buildSignature({ ...m, parameters, modifiers }) + '\n```',
         );
         const { html: summaryHtml } = m.ai_summary
           ? await this.markdown.renderMarkdown(m.ai_summary)
@@ -147,6 +156,7 @@ export class SerializerService {
         return {
           ...m,
           parameters,
+          modifiers,
           signature_html: signatureHtml,
           summary_html: summaryHtml,
           body_html: bodyHtml,

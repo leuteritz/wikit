@@ -68,6 +68,7 @@ export class JavaService {
           method_name: m.method_name,
           return_type: m.return_type,
           parameters: JSON.stringify(m.parameters),
+          modifiers: JSON.stringify(m.modifiers ?? []),
           javadoc: m.javadoc || '',
           ai_summary: m.javadoc || '',
           body: m.body || '',
@@ -183,6 +184,7 @@ export class JavaService {
             method_name: m.method_name,
             return_type: m.return_type,
             parameters: JSON.stringify(m.parameters),
+            modifiers: JSON.stringify(m.modifiers ?? []),
             javadoc: m.javadoc || '',
             ai_summary: m.javadoc || '',
             body: m.body || '',
@@ -258,7 +260,8 @@ export class JavaService {
     }
 
     const parameters = this.safeJson(method.parameters, []);
-    const signature = this.serializer.buildSignature({ ...method, parameters });
+    const modifiers = this.safeJson(method.modifiers, []);
+    const signature = this.serializer.buildSignature({ ...method, parameters, modifiers });
     // Interface-/abstract-Methoden haben keinen Body -> dann die Signatur als Snippet zeigen.
     const hasBody = !!(method.body && method.body.trim());
     const code = hasBody ? method.body : `${signature};`;

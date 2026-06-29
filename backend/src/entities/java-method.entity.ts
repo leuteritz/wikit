@@ -18,6 +18,9 @@ export class JavaMethod {
   parameters: string | null; // JSON-Array als TEXT
 
   @Column({ type: 'text', nullable: true })
+  modifiers: string | null; // JSON-Array der Java-Modifier als TEXT (z. B. ["public","static"])
+
+  @Column({ type: 'text', nullable: true })
   javadoc: string | null;
 
   @Column({ name: 'ai_summary', type: 'text', nullable: true })

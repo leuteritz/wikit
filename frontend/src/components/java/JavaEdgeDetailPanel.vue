@@ -78,6 +78,23 @@ const callerGroups = computed(() => {
 // methodName -> { loading, html, code, startLine, endLine, filename, signature, error }
 const snippets = ref({})
 
+// Server-gerendertes Shiki-HTML mit Gutter-Zeilennummern versehen: pro `.line` das
+// `data-line`-Attribut (startLine + i) setzen, das die CSS-Gutter-Regel (`::before`) anzeigt.
+// Reines DOM-Post-Processing – kein zweiter Highlighter (Farben bleiben aus Shiki-CSS-Variablen).
+function addLineNumbers(html, startLine) {
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const root = doc.querySelector('.shiki')
+    if (!root) return html
+    const base = startLine != null ? startLine : 1
+    const lines = [...root.querySelectorAll('.line')]
+    lines.forEach((el, i) => el.setAttribute('data-line', String(base + i)))
+    return root.outerHTML
+  } catch {
+    return html
+  }
+}
+
 async function loadSnippets() {
   snippets.value = {}
   const edge = props.edge
@@ -90,7 +107,7 @@ async function loadSnippets() {
         ...snippets.value,
         [c.name]: {
           loading: false,
-          html: snip.combinedHtml ?? snip.html,
+          html: addLineNumbers(snip.combinedHtml ?? snip.html, snip.startLine),
           code: snip.combinedCode ?? snip.code,
           startLine: snip.startLine,
           endLine: snip.endLine ?? snip.startLine,
@@ -509,11 +526,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 <style scoped>
 @reference "../../assets/style.css";
 
-/* Shiki-Codeblock im Panel kompakter halten (die Farbgebung kommt aus global .shiki). */
+/* Shiki-Codeblock im Panel kompakter halten (die Farbgebung kommt aus global .shiki).
+   Padding wie der Anwender-Block (.edge-usage-code .shiki) -> gleiche Optik bei den
+   Gutter-Zeilennummern. */
 .edge-code :deep(.shiki) {
   margin: 0;
   max-height: 18rem;
   overflow: auto;
+  padding: 0.5rem 0;
   font-size: 12px;
 }
 

@@ -8,11 +8,30 @@ export interface JavaMethodInfo {
   method_name: string;
   return_type: string;
   parameters: Array<{ type: string; name: string }>;
+  modifiers: string[]; // Access-/Sonstige-Modifier in Quell-Reihenfolge (z. B. ['public','static'])
   javadoc: string;
   body: string;
   start_line: number; // 1-basierte Quellzeile der Methodendeklaration (fuer Sprung/Highlight)
   body_start_line: number; // 1-basierte Quellzeile des Body-`{` (Basis fuer exakte Aufrufzeilen)
 }
+
+// Java-Methoden-Modifier (kein Annotations-Set): dient als Filter, damit aus den
+// methodModifier-/interfaceMethodModifier-CST-Knoten nur echte Keywords (keine @Annotationen)
+// in die Signatur wandern.
+const METHOD_MODIFIERS = new Set([
+  'public',
+  'private',
+  'protected',
+  'abstract',
+  'static',
+  'final',
+  'synchronized',
+  'native',
+  'strictfp',
+  'default',
+  'transient',
+  'volatile',
+]);
 
 export interface JavaClassInfo {
   class_name: string;
@@ -221,6 +240,22 @@ function extractMethods(typeNode: any, blocks: any[], source: string): JavaMetho
     let returnType = typeText(result);
     if (!returnType || /^void$/i.test(returnType)) returnType = 'void';
 
+    // Modifier aus methodModifier-/interfaceMethodModifier-Knoten: alle Leaf-Tokens nach
+    // Quell-Offset sortieren und auf das Keyword-Set filtern -> Annotationen fallen raus,
+    // Reihenfolge bleibt quelltreu (z. B. `public static`). Doppelte vermeiden.
+    const modifiers: string[] = [];
+    const modifierNodes = [
+      ...findAll(mNode, 'methodModifier'),
+      ...findAll(mNode, 'interfaceMethodModifier'),
+    ];
+    const modifierTokens = modifierNodes
+      .flatMap((node) => collectTokens(node))
+      .sort((a, b) => a.startOffset - b.startOffset);
+    for (const tok of modifierTokens) {
+      const kw = (tok.image || '').toLowerCase();
+      if (METHOD_MODIFIERS.has(kw) && !modifiers.includes(kw)) modifiers.push(kw);
+    }
+
     const params: Array<{ type: string; name: string }> = [];
     for (const p of findAll(declarator, 'variableParaRegularParameter')) {
       params.push({
@@ -244,6 +279,7 @@ function extractMethods(typeNode: any, blocks: any[], source: string): JavaMetho
       method_name: nameTok.image,
       return_type: returnType,
       parameters: params,
+      modifiers,
       javadoc: javadocFor(minOffset(mNode), blocks, source),
       body: bodyText(mNode, source),
       // Zeile des Methoden-Identifiers (praeziser als der Knotenanfang mit Annotationen/Modifiern).

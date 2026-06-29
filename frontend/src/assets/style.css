@@ -87,16 +87,19 @@ html.dark .shiki span {
   padding: 0.5rem 0;
   font-size: 12px;
 }
-.edge-usage-code .shiki code {
+.edge-usage-code .shiki code,
+.edge-code .shiki code {
   display: block;
 }
-.edge-usage-code .line {
+.edge-usage-code .line,
+.edge-code .line {
   display: block;
   padding-right: 0.85rem;
   border-left: 2px solid transparent;
 }
-/* Gutter-Zeilennummer aus dem per DOMParser gesetzten data-line-Attribut. */
-.edge-usage-code .line::before {
+/* Gutter-Zeilennummer aus dem per DOMParser gesetzten data-line-Attribut (Quelle + Anwender). */
+.edge-usage-code .line::before,
+.edge-code .line::before {
   content: attr(data-line);
   display: inline-block;
   width: 3rem;
@@ -107,20 +110,22 @@ html.dark .shiki span {
   border-right: 1px solid var(--color-border);
   user-select: none;
 }
-/* Hervorgehobene Aufrufzeile (Light-Mode). */
+/* Hervorgehobene Aufrufzeile (Light-Mode): kraeftiger Akzent-Hintergrund + deutlicher
+   linker Balken, damit die Quellzeile im Snippet sofort ins Auge faellt. */
 .edge-usage-code .line-highlight {
-  background-color: var(--color-accent-soft);
+  background-color: color-mix(in srgb, var(--color-accent) 16%, transparent);
   border-left-color: var(--color-accent);
+  border-left-width: 3px;
 }
 .edge-usage-code .line-highlight::before {
   color: var(--color-accent);
-  font-weight: 600;
+  font-weight: 700;
 }
 /* Dark-Mode: die globale `html.dark .shiki span { ... !important }`-Regel oben wuerde
    die Markierung sonst plattmachen -> mit hoeherer Spezifitaet + !important kontern. */
 html.dark .edge-usage-code .line-highlight,
 html.dark .edge-usage-code span.line-highlight {
-  background-color: color-mix(in srgb, var(--color-accent) 22%, transparent) !important;
+  background-color: color-mix(in srgb, var(--color-accent) 30%, transparent) !important;
 }
 
 /* --- Prose-Feinschliff fuer gerenderte Artikel ---------------------------- */
