@@ -93,12 +93,14 @@ function addLineNumbers(html, startLine) {
       .map((el, i) => ({ el, line: base + i }))
       .filter(({ el }) => el.textContent.trim() !== '')
     if (!kept.length) return html
-    // Frisches <code> mit den gehaltenen Zeilen (durch `\n`-Textnodes getrennt) – das Original-`<pre>`
-    // (inkl. Shiki-Inline-Style mit --shiki-*-Variablen) bleibt erhalten -> Hintergrund stimmt.
+    // Frisches <code> mit den gehaltenen Zeilen – die `.line` werden (wie in `buildCallWindow`)
+    // OHNE `\n`-Textnodes direkt aneinandergehaengt: im Original-`<pre>` (white-space: pre) wuerde
+    // jedes `\n` als zusaetzliche Leerzeile rendern -> doppelter Zeilenabstand. Der Zeilenumbruch
+    // kommt aus `.edge-code .line { display:block }`. Das `<pre>` (inkl. Shiki-Inline-Style mit
+    // --shiki-*-Variablen) bleibt erhalten -> Hintergrund + Einrueckung stimmen.
     const code = doc.createElement('code')
-    kept.forEach(({ el, line }, i) => {
+    kept.forEach(({ el, line }) => {
       el.setAttribute('data-line', String(line))
-      if (i > 0) code.appendChild(doc.createTextNode('\n'))
       code.appendChild(el)
     })
     const oldCode = root.querySelector('code')
