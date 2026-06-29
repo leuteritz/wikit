@@ -101,13 +101,6 @@ watch(() => props.article?.id, () => nextTick(enhanceCodeBlocks))
       </div>
 
       <div class="mt-5 flex gap-2">
-        <RouterLink
-          :to="`/edit/${article.slug}`"
-          class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-        >
-          <Icon icon="lucide:pencil" class="h-4 w-4" />
-          Bearbeiten
-        </RouterLink>
         <button
           type="button"
           class="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-1.5 text-sm font-medium text-rose-600 transition hover:bg-rose-50 dark:border-rose-500/30 dark:text-rose-400 dark:hover:bg-rose-500/10"

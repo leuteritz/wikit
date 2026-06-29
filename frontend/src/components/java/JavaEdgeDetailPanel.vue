@@ -19,16 +19,12 @@ const props = defineProps({
   edge: { type: Object, default: null },
   visible: { type: Boolean, default: false },
 })
-const emit = defineEmits(['close', 'edit', 'delete', 'edit-method', 'delete-method'])
+const emit = defineEmits(['close'])
 
 const router = useRouter()
 const { lastFileId, lastTargetLine } = useJavaAnalyzer()
 
-// Inline-Bestätigung für „Analyse löschen" (zweistufig im Footer).
-const confirmDelete = ref(false)
-
 function close() {
-  confirmDelete.value = false
   emit('close')
 }
 
@@ -52,9 +48,6 @@ const calleeList = computed(() => {
   const sigs = new Map((props.edge.calleeSignatures || []).map((s) => [s.name, s.signature]))
   return (props.edge.callees || []).map((name) => ({ name, signature: sigs.get(name) || '', edgeId: null, isManual: false }))
 })
-
-// Buendel = mehr als eine Methode -> Per-Methoden-Aktionen im Panel, Footer-Bearbeiten ausgeblendet.
-const isBundle = computed(() => calleeList.value.length > 1)
 
 // Aufrufstellen pro aufrufende Methode gruppieren (Anwender-Sektion). Jede Site traegt ihre
 // exakte Zeile + (relative) Position im Rumpf fuer das fokussierte Snippet.
@@ -292,15 +285,12 @@ function openUsage(c) {
 
 function onKeydown(e) {
   if (e.key !== 'Escape') return
-  // ESC verwirft zuerst die Löschen-Bestätigung, erst danach schließt es das Modal.
-  if (confirmDelete.value) confirmDelete.value = false
-  else close()
+  close()
 }
 watch(
   () => props.visible,
   (vis) => {
     if (vis) {
-      confirmDelete.value = false
       window.addEventListener('keydown', onKeydown)
       loadSnippets()
       loadUsageSnippets()
@@ -401,7 +391,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                     </div>
                   </div>
 
-                  <!-- Fußzeile: zur Definition springen + (bei Bündel) Per-Methoden-Aktionen -->
+                  <!-- Fußzeile: zur Definition springen -->
                   <div class="flex flex-wrap items-center gap-2 border-t border-[var(--color-border)] px-3 py-2">
                     <button
                       type="button"
@@ -411,26 +401,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                       <Icon icon="lucide:target" class="h-3.5 w-3.5" />
                       Definiert in <span class="font-semibold">{{ edge.toClass }}</span>
                     </button>
-                    <template v-if="isBundle">
-                      <button
-                        type="button"
-                        class="ml-auto inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2 py-1 text-xs font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
-                        title="Methodenname dieser Kante bearbeiten"
-                        @click="emit('edit-method', { edgeId: c.edgeId, name: c.name, isManual: c.isManual })"
-                      >
-                        <Icon icon="lucide:pencil" class="h-3.5 w-3.5" />
-                        Bearbeiten
-                      </button>
-                      <button
-                        type="button"
-                        class="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2 py-1 text-xs font-medium text-[var(--color-danger)] transition hover:bg-[var(--color-surface-2)]"
-                        title="Diese Methoden-Kante löschen"
-                        @click="emit('delete-method', { edgeId: c.edgeId, name: c.name, isManual: c.isManual })"
-                      >
-                        <Icon icon="lucide:trash-2" class="h-3.5 w-3.5" />
-                        Löschen
-                      </button>
-                    </template>
                   </div>
                 </article>
               </div>
@@ -509,33 +479,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             </section>
           </div>
 
-          <!-- Footer: Aktionen auf die Kante (Klasse öffnen · Methodenname bearbeiten · löschen) -->
+          <!-- Footer: zur Quell-/Aufruferklasse springen (read-only) -->
           <footer class="shrink-0 border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3">
-            <!-- Inline-Bestätigung für „Analyse löschen" -->
-            <div v-if="confirmDelete" class="flex flex-wrap items-center justify-end gap-2">
-              <span class="mr-auto inline-flex items-center gap-1.5 text-sm text-[var(--color-text)]">
-                <Icon icon="lucide:alert-triangle" class="h-4 w-4 text-[var(--color-danger)]" />
-                {{ isBundle ? `Alle ${calleeList.length} Methoden-Kanten löschen?` : 'Kante wirklich löschen?' }}
-              </span>
-              <button
-                type="button"
-                class="rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
-                @click="confirmDelete = false"
-              >
-                Abbrechen
-              </button>
-              <button
-                type="button"
-                class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-danger)] px-3 py-1.5 text-sm font-semibold text-white transition hover:opacity-90"
-                @click="emit('delete')"
-              >
-                <Icon icon="lucide:trash-2" class="h-4 w-4" />
-                Löschen
-              </button>
-            </div>
-
-            <!-- Standard-Aktionen -->
-            <div v-else class="flex flex-wrap items-center justify-end gap-2">
+            <div class="flex flex-wrap items-center justify-end gap-2">
               <button
                 type="button"
                 class="mr-auto inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition hover:bg-[var(--color-surface-offset)]"
@@ -543,23 +489,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               >
                 <Icon icon="lucide:file-code" class="h-4 w-4 text-[var(--color-text-muted)]" />
                 Zur Klasse
-              </button>
-              <button
-                v-if="!isBundle"
-                type="button"
-                class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition hover:bg-[var(--color-surface-offset)]"
-                @click="emit('edit')"
-              >
-                <Icon icon="lucide:pencil" class="h-4 w-4 text-[var(--color-text-muted)]" />
-                Analyse bearbeiten
-              </button>
-              <button
-                type="button"
-                class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-danger)] transition hover:bg-[var(--color-surface-offset)]"
-                @click="confirmDelete = true"
-              >
-                <Icon icon="lucide:trash-2" class="h-4 w-4" />
-                Analyse löschen
               </button>
             </div>
           </footer>

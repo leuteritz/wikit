@@ -85,21 +85,6 @@ const d = computed(() => props.data || {})
       <span v-if="d.needsReview" class="me-badge" title="Unsicher erkannt – bitte prüfen">
         <Icon icon="lucide:alert-triangle" class="me-ic" />Bitte prüfen
       </span>
-
-      <!-- Inline-Schnellaktionen nur bei Einzel-Methoden-Kante; Buendel werden im Panel verwaltet. -->
-      <span v-if="d.bundleCount <= 1" class="me-actions">
-        <button type="button" class="me-act" title="Bearbeiten" @click.stop="d.onEdit && d.onEdit(d, $event)">
-          <Icon icon="lucide:pencil" class="me-ic" />
-        </button>
-        <button
-          type="button"
-          class="me-act me-act--danger"
-          title="Löschen"
-          @click.stop="d.onDelete && d.onDelete(d, $event)"
-        >
-          <Icon icon="lucide:trash-2" class="me-ic" />
-        </button>
-      </span>
     </div>
   </EdgeLabelRenderer>
 </template>
@@ -168,36 +153,5 @@ const d = computed(() => props.data || {})
   font-weight: 700;
   color: #fff;
   background: #d4a017;
-}
-/* Schnell-Aktionen: erst bei Hover/Selektion sichtbar (halten das Label kompakt). */
-.me-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  max-width: 0;
-  overflow: hidden;
-  opacity: 0;
-  transition: max-width 0.15s ease, opacity 0.15s ease;
-}
-.me-label:hover .me-actions,
-.me-label--selected .me-actions {
-  max-width: 48px;
-  opacity: 1;
-}
-.me-act {
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-  color: var(--color-text-muted);
-  transition: background 0.12s ease, color 0.12s ease;
-}
-.me-act:hover {
-  background: var(--color-surface-offset);
-  color: var(--color-text);
-}
-.me-act--danger:hover {
-  color: #dc2626;
 }
 </style>
