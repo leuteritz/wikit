@@ -17,7 +17,7 @@ import { detectJavaClasses } from '../lib/javaDetect.js'
 
 const { files, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFileId, lastTargetLine, deleteFile, resetAll } =
   useJavaAnalyzer()
-const { allJobs, enqueueClass, enqueueAllUnanalyzed, cancelJob, cancelAllJobs, progressFor, ensurePolling } = useJavaQueue()
+const { enqueueClass, enqueueAllUnanalyzed, cancelJob, cancelAllJobs, progressFor, ensurePolling } = useJavaQueue()
 const { recomputeEdges, recomputing, resetEdges } = useJavaGraph()
 
 const source = ref('')
@@ -68,12 +68,6 @@ onUnmounted(() => releasePolling?.())
 // --- Statistik (Header-Tags) ---
 const classCount = computed(() => files.value.length)
 const packageCount = computed(() => new Set(files.value.map((f) => f.package || '(default)')).size)
-
-// Aktive KI-Queue (laeuft/wartet) -> kompakter Queue-Streifen + Link zur Statusseite.
-const activeQueue = computed(() =>
-  allJobs.value.filter((j) => j.status === 'running' || j.status === 'queued'),
-)
-const runningJob = computed(() => activeQueue.value.find((j) => j.status === 'running') || null)
 
 // --- Package-Baum (gefiltert) -> flache Zeilenliste fuer iteratives Rendern ---
 const filteredFiles = computed(() => filterClasses(files.value, search.value))
@@ -340,26 +334,6 @@ async function confirmReset() {
               Zurücksetzen
             </button>
           </div>
-        </div>
-
-        <!-- Rechts: Link zur KI-Queue-Statusseite (zeigt aktive Anzahl) -->
-        <div class="flex flex-wrap items-center gap-2">
-          <RouterLink
-            to="/code/queues"
-            class="relative inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm font-semibold text-[var(--color-text)] shadow-sm transition hover:bg-[var(--color-surface-offset)]"
-            title="KI-Queue ansehen"
-          >
-            <Icon
-              :icon="runningJob ? 'lucide:loader-2' : 'lucide:list-checks'"
-              class="h-4 w-4 text-[var(--color-accent)]"
-              :class="runningJob ? 'animate-spin' : ''"
-            />
-            <span>KI-Queue</span>
-            <span
-              v-if="activeQueue.length"
-              class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--color-accent)] px-1.5 text-[11px] font-bold tabular-nums text-[var(--color-accent-contrast)]"
-            >{{ activeQueue.length }}</span>
-          </RouterLink>
         </div>
       </div>
 

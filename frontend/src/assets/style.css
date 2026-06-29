@@ -75,6 +75,54 @@ html.dark .shiki span {
   border-color: var(--color-border);
 }
 
+/* --- Verwendung-Snippet (Java-Edge-Panel): Shiki + Gutter-Zeilennummern + ---
+   markierte Aufrufzeile. Nur unter .edge-usage-code, damit normale Code-Bloecke
+   (Artikel) voellig unberuehrt bleiben. */
+.edge-usage-code .shiki {
+  margin: 0;
+  max-height: 18rem;
+  overflow: auto;
+  border: 0;
+  border-radius: 0;
+  padding: 0.5rem 0;
+  font-size: 12px;
+}
+.edge-usage-code .shiki code {
+  display: block;
+}
+.edge-usage-code .line {
+  display: block;
+  padding-right: 0.85rem;
+  border-left: 2px solid transparent;
+}
+/* Gutter-Zeilennummer aus dem per DOMParser gesetzten data-line-Attribut. */
+.edge-usage-code .line::before {
+  content: attr(data-line);
+  display: inline-block;
+  width: 3rem;
+  margin-right: 0.85rem;
+  padding-right: 0.6rem;
+  text-align: right;
+  color: var(--color-text-muted);
+  border-right: 1px solid var(--color-border);
+  user-select: none;
+}
+/* Hervorgehobene Aufrufzeile (Light-Mode). */
+.edge-usage-code .line-highlight {
+  background-color: var(--color-accent-soft);
+  border-left-color: var(--color-accent);
+}
+.edge-usage-code .line-highlight::before {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+/* Dark-Mode: die globale `html.dark .shiki span { ... !important }`-Regel oben wuerde
+   die Markierung sonst plattmachen -> mit hoeherer Spezifitaet + !important kontern. */
+html.dark .edge-usage-code .line-highlight,
+html.dark .edge-usage-code span.line-highlight {
+  background-color: color-mix(in srgb, var(--color-accent) 22%, transparent) !important;
+}
+
 /* --- Prose-Feinschliff fuer gerenderte Artikel ---------------------------- */
 .article-body :where(h2, h3) {
   scroll-margin-top: 5rem;

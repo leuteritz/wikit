@@ -8,7 +8,7 @@
 //     Code-Snippet, in dem die Aufrufzeile farbig hervorgehoben ist.
 // Navigations-Links oeffnen die jeweilige Datei zeilengenau. Schliesst per ESC, Backdrop oder
 // Close-Button. HTTP nur ueber lib/api.js.
-import { computed, watch, onUnmounted, ref } from 'vue'
+import { computed, watch, onUnmounted, ref, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../../lib/api.js'
 import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
@@ -73,29 +73,8 @@ const callerGroups = computed(() => {
   }))
 })
 
-// Fokussiertes Snippet rund um eine Aufrufstelle: ±2 Zeilen, mit absoluten Zeilennummern.
-// hit === true markiert die exakte Aufrufzeile.
-const CONTEXT = 2
-function snippetFor(site) {
-  const lines = (site.callerBody || '').split('\n')
-  const base = site.bodyStartLine
-  const relIndex = base != null ? site.line - base : site.line - 1
-  const idx = Math.max(0, Math.min(lines.length - 1, relIndex))
-  const from = Math.max(0, idx - CONTEXT)
-  const to = Math.min(lines.length - 1, idx + CONTEXT)
-  const out = []
-  for (let i = from; i <= to; i++) {
-    out.push({
-      num: base != null ? base + i : i + 1,
-      text: lines[i] || '',
-      hit: i === idx,
-    })
-  }
-  return out
-}
-
-// Shiki-Snippets der definierten Methoden (lazy beim Oeffnen geladen).
-// methodName -> { loading, html, startLine, signature, error }
+// Shiki-Snippets der definierten Methoden (Quelle, lazy beim Oeffnen geladen).
+// methodName -> { loading, html, startLine, signature, code, error }
 const snippets = ref({})
 
 async function loadSnippets() {
@@ -108,13 +87,98 @@ async function loadSnippets() {
       const snip = await api.getJavaMethodSnippet(edge.toFileId, c.name)
       snippets.value = {
         ...snippets.value,
-        [c.name]: { loading: false, html: snip.html, startLine: snip.startLine, signature: snip.signature },
+        [c.name]: { loading: false, html: snip.html, startLine: snip.startLine, signature: snip.signature, code: snip.code },
       }
     } catch (e) {
       snippets.value = { ...snippets.value, [c.name]: { loading: false, error: e.message } }
     }
   }
 }
+
+// Shiki-Snippets der aufrufenden Methoden (Verwendung, lazy beim Oeffnen geladen).
+// callerMethod -> { loading, html, code, error }. Es wird der GANZE Aufrufer-Methodenrumpf
+// (Shiki, server-gerendert) gezeigt; die exakte(n) Aufrufzeile(n) werden markiert.
+const usageSnippets = ref({})
+
+// Refs auf die Verwendung-Codeblöcke (zum Auto-Scroll der markierten Zeile).
+const usageEls = {}
+function setUsageEl(key, el) {
+  if (el) usageEls[key] = el
+}
+
+// Shiki-HTML des Aufrufer-Rumpfs nachbearbeiten: pro Zeile eine Gutter-Zeilennummer (data-line)
+// setzen und die Aufrufzeile(n) mit `line-highlight` markieren. Reines DOM-Post-Processing im
+// Client – kein zweiter Highlighter, die Farben kommen weiter aus den Shiki-CSS-Variablen.
+function decorateUsageHtml(html, bodyStartLine, hitIndexes) {
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const root = doc.querySelector('.shiki')
+    if (!root) return html
+    const base = bodyStartLine != null ? bodyStartLine : 1
+    const hits = new Set(hitIndexes)
+    root.querySelectorAll('.line').forEach((el, i) => {
+      el.setAttribute('data-line', String(base + i))
+      if (hits.has(i)) el.classList.add('line-highlight')
+    })
+    return root.outerHTML
+  } catch {
+    return html
+  }
+}
+
+async function loadUsageSnippets() {
+  usageSnippets.value = {}
+  const edge = props.edge
+  if (!edge?.fromFileId) return
+  for (const grp of callerGroups.value) {
+    const key = grp.callerMethod
+    usageSnippets.value = { ...usageSnippets.value, [key]: { loading: true } }
+    try {
+      const snip = await api.getJavaMethodSnippet(edge.fromFileId, key)
+      const base = grp.sites[0]?.bodyStartLine ?? snip.startLine ?? null
+      const hitIndexes = grp.sites.map((s) => (base != null ? s.line - base : s.line - 1))
+      const html = decorateUsageHtml(snip.html, base, hitIndexes)
+      usageSnippets.value = {
+        ...usageSnippets.value,
+        [key]: { loading: false, html, code: snip.code },
+      }
+    } catch (e) {
+      usageSnippets.value = { ...usageSnippets.value, [key]: { loading: false, error: e.message } }
+    }
+  }
+  // Nach dem Rendern: erste markierte Zeile je Block im (scrollbaren) Code-Kasten zentrieren.
+  await nextTick()
+  for (const grp of callerGroups.value) {
+    const box = usageEls[grp.callerMethod]?.querySelector?.('.shiki')
+    const hit = box?.querySelector?.('.line-highlight')
+    if (box && hit) {
+      const boxRect = box.getBoundingClientRect()
+      const hitRect = hit.getBoundingClientRect()
+      box.scrollTop += hitRect.top - boxRect.top - box.clientHeight / 2 + hitRect.height / 2
+    }
+  }
+}
+
+// Kopier-Logik: ein gemeinsamer Zustand für alle Blöcke (Quelle 'src:<name>' / Verwendung
+// 'use:<name>'). Nach 1,5 s zurücksetzen. Kein fetch – nur Clipboard-API.
+const copiedKey = ref(null)
+let copyTimer = null
+async function copyCode(key, text) {
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+    copiedKey.value = key
+    if (copyTimer) clearTimeout(copyTimer)
+    copyTimer = setTimeout(() => {
+      copiedKey.value = null
+    }, 1500)
+  } catch {
+    /* Clipboard nicht verfügbar -> still ignorieren */
+  }
+}
+onUnmounted(() => {
+  if (copyTimer) clearTimeout(copyTimer)
+})
 
 // Hand-off zu CodeView: Datei vorwaehlen + (optional) Zeile hervorheben, Panel schliessen.
 function navigateTo(fileId, line) {
@@ -151,6 +215,7 @@ watch(
       confirmDelete.value = false
       window.addEventListener('keydown', onKeydown)
       loadSnippets()
+      loadUsageSnippets()
     } else {
       window.removeEventListener('keydown', onKeydown)
     }
@@ -230,7 +295,18 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                     <p v-else-if="snippets[c.name]?.error" class="px-1 py-2 text-xs text-[var(--color-danger)]">
                       {{ snippets[c.name].error }}
                     </p>
-                    <div v-else-if="snippets[c.name]?.html" class="edge-code" v-html="snippets[c.name].html" />
+                    <div v-else-if="snippets[c.name]?.html" class="code-wrap">
+                      <button
+                        type="button"
+                        class="code-copy inline-flex items-center gap-1"
+                        :title="copiedKey === 'src:' + c.name ? 'In Zwischenablage kopiert' : 'Code kopieren'"
+                        @click="copyCode('src:' + c.name, snippets[c.name].code)"
+                      >
+                        <Icon :icon="copiedKey === 'src:' + c.name ? 'lucide:check' : 'lucide:copy'" class="h-3.5 w-3.5" />
+                        {{ copiedKey === 'src:' + c.name ? 'Kopiert' : 'Kopieren' }}
+                      </button>
+                      <div class="edge-code" v-html="snippets[c.name].html" />
+                    </div>
                   </div>
 
                   <!-- Fußzeile: zur Definition springen + (bei Bündel) Per-Methoden-Aktionen -->
@@ -291,30 +367,45 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
               <div class="space-y-4">
                 <div v-for="grp in callerGroups" :key="grp.callerMethod">
-                  <div class="mb-1.5 flex items-center gap-1.5 text-xs">
+                  <!-- Aufrufer-Methode + Aufrufstellen-Chips (eine Chip je Aufrufzeile) -->
+                  <div class="mb-1.5 flex flex-wrap items-center gap-1.5 text-xs">
                     <code class="rounded-md bg-[var(--color-surface-offset)] px-1.5 py-0.5 font-mono font-semibold text-[var(--color-text)]">{{ grp.callerMethod }}()</code>
+                    <span
+                      v-for="(site, i) in grp.sites"
+                      :key="i"
+                      class="inline-flex items-center gap-1 rounded-md bg-[var(--color-accent-soft)] px-1.5 py-0.5 font-mono font-semibold text-[var(--color-accent)]"
+                      :title="site.lineExact ? 'Exakte Aufrufzeile' : 'Zeile geschätzt – Datei für exakte Zeile neu analysieren'"
+                    >
+                      <Icon icon="lucide:corner-down-right" class="h-3 w-3" />
+                      {{ site.calleeMethod }}() · {{ site.lineExact ? '' : '~' }}Z{{ site.line }}
+                    </span>
                   </div>
 
-                  <!-- pro Aufrufstelle ein fokussiertes Snippet -->
-                  <div
-                    v-for="(site, i) in grp.sites"
-                    :key="i"
-                    class="mb-2 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-offset)] last:mb-0"
-                  >
-                    <div class="flex flex-wrap items-center gap-1.5 border-b border-[var(--color-border)] px-2.5 py-1.5 text-[11px]">
-                      <span class="text-[var(--color-text-muted)]">ruft</span>
-                      <code class="rounded bg-[var(--color-accent-soft)] px-1.5 py-0.5 font-mono text-[var(--color-accent)]">{{ site.calleeMethod }}()</code>
-                      <span
-                        class="ml-auto inline-flex items-center gap-1 rounded-md bg-[var(--color-accent-soft)] px-1.5 py-0.5 font-mono font-semibold text-[var(--color-accent)]"
-                        :title="site.lineExact ? '' : 'Zeile geschätzt – Datei für exakte Zeile neu analysieren'"
-                      >{{ site.lineExact ? '' : '~' }}Zeile {{ site.line }}</span>
+                  <!-- Ganze Aufrufer-Methode (Shiki, Dual-Theme) mit markierter Aufrufzeile -->
+                  <div class="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-offset)]">
+                    <div v-if="usageSnippets[grp.callerMethod]?.loading" class="flex items-center gap-2 px-3 py-3 text-xs text-[var(--color-text-muted)]">
+                      <Icon icon="lucide:loader-2" class="h-3.5 w-3.5 animate-spin" />
+                      Lade Quellcode…
                     </div>
-                    <pre class="snippet"><code><span
-                      v-for="(ln, j) in snippetFor(site)"
-                      :key="j"
-                      class="snippet-line"
-                      :class="{ 'snippet-line--hit': ln.hit }"
-                    ><span class="snippet-gutter">{{ ln.num }}</span><span class="snippet-text">{{ ln.text || ' ' }}</span></span></code></pre>
+                    <p v-else-if="usageSnippets[grp.callerMethod]?.error" class="px-3 py-2 text-xs text-[var(--color-danger)]">
+                      {{ usageSnippets[grp.callerMethod].error }}
+                    </p>
+                    <div
+                      v-else-if="usageSnippets[grp.callerMethod]?.html"
+                      :ref="(el) => setUsageEl(grp.callerMethod, el)"
+                      class="code-wrap edge-usage-code"
+                    >
+                      <button
+                        type="button"
+                        class="code-copy inline-flex items-center gap-1"
+                        :title="copiedKey === 'use:' + grp.callerMethod ? 'In Zwischenablage kopiert' : 'Code kopieren'"
+                        @click="copyCode('use:' + grp.callerMethod, usageSnippets[grp.callerMethod].code)"
+                      >
+                        <Icon :icon="copiedKey === 'use:' + grp.callerMethod ? 'lucide:check' : 'lucide:copy'" class="h-3.5 w-3.5" />
+                        {{ copiedKey === 'use:' + grp.callerMethod ? 'Kopiert' : 'Kopieren' }}
+                      </button>
+                      <div v-html="usageSnippets[grp.callerMethod].html" />
+                    </div>
                   </div>
 
                   <button
@@ -399,40 +490,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   max-height: 18rem;
   overflow: auto;
   font-size: 12px;
-}
-
-/* Fokussiertes Aufruf-Snippet: monospace mit Gutter, exakte Aufrufzeile hervorgehoben. */
-.snippet {
-  margin: 0;
-  overflow-x: auto;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  line-height: 1.55;
-}
-.snippet-line {
-  display: flex;
-  border-left: 2px solid transparent;
-}
-.snippet-line--hit {
-  border-left-color: var(--color-accent);
-  background: var(--color-accent-soft);
-}
-.snippet-gutter {
-  flex-shrink: 0;
-  width: 3rem;
-  padding: 0 0.6rem;
-  text-align: right;
-  color: var(--color-text-muted);
-  user-select: none;
-}
-.snippet-line--hit .snippet-gutter {
-  color: var(--color-accent);
-  font-weight: 600;
-}
-.snippet-text {
-  white-space: pre;
-  padding-right: 0.75rem;
-  color: var(--color-text);
 }
 
 /* Zentriertes Einblenden: Backdrop faded, Card skaliert sanft von 0.95 auf 1. */
