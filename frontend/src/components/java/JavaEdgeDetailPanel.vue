@@ -87,8 +87,23 @@ function addLineNumbers(html, startLine) {
     const root = doc.querySelector('.shiki')
     if (!root) return html
     const base = startLine != null ? startLine : 1
-    const lines = [...root.querySelectorAll('.line')]
-    lines.forEach((el, i) => el.setAttribute('data-line', String(base + i)))
+    // Pro Zeile die ECHTE Quellzeilennummer (base + i) merken und Leerzeilen verwerfen -> der
+    // kombinierte Block ist leerzeilenfrei, die data-line-Nummern bleiben korrekt (Luecken = ok).
+    const kept = [...root.querySelectorAll('.line')]
+      .map((el, i) => ({ el, line: base + i }))
+      .filter(({ el }) => el.textContent.trim() !== '')
+    if (!kept.length) return html
+    // Frisches <code> mit den gehaltenen Zeilen (durch `\n`-Textnodes getrennt) – das Original-`<pre>`
+    // (inkl. Shiki-Inline-Style mit --shiki-*-Variablen) bleibt erhalten -> Hintergrund stimmt.
+    const code = doc.createElement('code')
+    kept.forEach(({ el, line }, i) => {
+      el.setAttribute('data-line', String(line))
+      if (i > 0) code.appendChild(doc.createTextNode('\n'))
+      code.appendChild(el)
+    })
+    const oldCode = root.querySelector('code')
+    if (oldCode) oldCode.replaceWith(code)
+    else { root.innerHTML = ''; root.appendChild(code) }
     return root.outerHTML
   } catch {
     return html
@@ -167,6 +182,9 @@ function buildCallWindow(html, bodyStartLine, siteLine) {
     }
     const shell = doc.createElement('div')
     shell.className = 'shiki'
+    // Shiki-Inline-Style (--shiki-*-Variablen, insb. --shiki-dark-bg) vom Original-Root uebernehmen,
+    // sonst fehlt dem neuen Wrapper der Hintergrund und der blaue Eltern-BG scheint durch.
+    shell.setAttribute('style', root.getAttribute('style') || '')
     shell.appendChild(code)
     return shell.outerHTML
   } catch {
