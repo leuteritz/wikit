@@ -260,12 +260,32 @@ export class JavaService {
     const parameters = this.safeJson(method.parameters, []);
     const signature = this.serializer.buildSignature({ ...method, parameters });
     // Interface-/abstract-Methoden haben keinen Body -> dann die Signatur als Snippet zeigen.
-    const code = method.body && method.body.trim() ? method.body : `${signature};`;
+    const hasBody = !!(method.body && method.body.trim());
+    const code = hasBody ? method.body : `${signature};`;
     // Zeile: gespeicherter Wert (neu analysiert) oder Fallback aus dem Rohquelltext (Bestandsdaten).
     const startLine = method.start_line ?? this.findMethodLine(file.raw_source, methodName);
 
+    // Kombinierter, leerzeilenbereinigter Block fuer das Edge-Panel: Signatur + Rumpf in EINER
+    // Shiki-Box. Leerzeilen raus -> kompakte, gut lesbare Detailansicht. endLine aus Zeilenzahl.
+    const combinedCode = (hasBody ? `${signature} ${method.body}` : `${signature};`)
+      .replace(/\n[ \t]*\n+/g, '\n')
+      .trim();
+    const endLine = startLine + combinedCode.split('\n').length - 1;
+
     const { html } = await this.markdown.renderMarkdown('```java\n' + code + '\n```');
-    return { code, startLine, html, signature, className: file.class_name, methodName };
+    const { html: combinedHtml } = await this.markdown.renderMarkdown('```java\n' + combinedCode + '\n```');
+    return {
+      code,
+      startLine,
+      endLine,
+      html,
+      combinedHtml,
+      combinedCode,
+      signature,
+      filename: file.filename,
+      className: file.class_name,
+      methodName,
+    };
   }
 
   // Fallback-Zeilenermittlung fuer Bestandsdaten ohne gespeicherte start_line:

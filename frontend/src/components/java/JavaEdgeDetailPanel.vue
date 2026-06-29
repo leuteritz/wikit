@@ -8,7 +8,7 @@
 //     Code-Snippet, in dem die Aufrufzeile farbig hervorgehoben ist.
 // Navigations-Links oeffnen die jeweilige Datei zeilengenau. Schliesst per ESC, Backdrop oder
 // Close-Button. HTTP nur ueber lib/api.js.
-import { computed, watch, onUnmounted, ref, nextTick } from 'vue'
+import { computed, watch, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../../lib/api.js'
 import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
@@ -74,7 +74,8 @@ const callerGroups = computed(() => {
 })
 
 // Shiki-Snippets der definierten Methoden (Quelle, lazy beim Oeffnen geladen).
-// methodName -> { loading, html, startLine, signature, code, error }
+// Ein KOMBINIERTER, leerzeilenfreier Block (Signatur + Rumpf) je Methode, vom Backend gerendert.
+// methodName -> { loading, html, code, startLine, endLine, filename, signature, error }
 const snippets = ref({})
 
 async function loadSnippets() {
@@ -87,7 +88,15 @@ async function loadSnippets() {
       const snip = await api.getJavaMethodSnippet(edge.toFileId, c.name)
       snippets.value = {
         ...snippets.value,
-        [c.name]: { loading: false, html: snip.html, startLine: snip.startLine, signature: snip.signature, code: snip.code },
+        [c.name]: {
+          loading: false,
+          html: snip.combinedHtml ?? snip.html,
+          code: snip.combinedCode ?? snip.code,
+          startLine: snip.startLine,
+          endLine: snip.endLine ?? snip.startLine,
+          filename: snip.filename,
+          signature: snip.signature,
+        },
       }
     } catch (e) {
       snippets.value = { ...snippets.value, [c.name]: { loading: false, error: e.message } }
@@ -96,31 +105,53 @@ async function loadSnippets() {
 }
 
 // Shiki-Snippets der aufrufenden Methoden (Verwendung, lazy beim Oeffnen geladen).
-// callerMethod -> { loading, html, code, error }. Es wird der GANZE Aufrufer-Methodenrumpf
-// (Shiki, server-gerendert) gezeigt; die exakte(n) Aufrufzeile(n) werden markiert.
+// Pro Aufrufstelle ein FOKUSSIERTES Fenster: 3 Nicht-Leerzeilen davor + Aufrufzeile + 3 danach.
+// callerMethod -> { loading, filename, sites: [{ line, lineExact, calleeMethod, html }], error }
 const usageSnippets = ref({})
 
-// Refs auf die Verwendung-Codeblöcke (zum Auto-Scroll der markierten Zeile).
-const usageEls = {}
-function setUsageEl(key, el) {
-  if (el) usageEls[key] = el
-}
+// Anzahl Kontext-Nicht-Leerzeilen je Seite der Aufrufzeile.
+const CONTEXT_LINES = 3
 
-// Shiki-HTML des Aufrufer-Rumpfs nachbearbeiten: pro Zeile eine Gutter-Zeilennummer (data-line)
-// setzen und die Aufrufzeile(n) mit `line-highlight` markieren. Reines DOM-Post-Processing im
-// Client – kein zweiter Highlighter, die Farben kommen weiter aus den Shiki-CSS-Variablen.
-function decorateUsageHtml(html, bodyStartLine, hitIndexes) {
+// Aus dem (server-gerenderten) Shiki-HTML des ganzen Aufrufer-Rumpfs ein fokussiertes Fenster um
+// `siteLine` schneiden: pro `.line` die Quellzeile (data-line = base + i) bestimmen, Leerzeilen
+// (whitespace-only) ueberspringen und je 3 Nicht-Leerzeilen vor/nach der Aufrufzeile behalten. Die
+// Aufrufzeile bekommt `line-highlight`. Reines DOM-Post-Processing – kein zweiter Highlighter, die
+// Farben kommen weiter aus den Shiki-CSS-Variablen.
+function buildCallWindow(html, bodyStartLine, siteLine) {
   try {
     const doc = new DOMParser().parseFromString(html, 'text/html')
     const root = doc.querySelector('.shiki')
     if (!root) return html
     const base = bodyStartLine != null ? bodyStartLine : 1
-    const hits = new Set(hitIndexes)
-    root.querySelectorAll('.line').forEach((el, i) => {
-      el.setAttribute('data-line', String(base + i))
-      if (hits.has(i)) el.classList.add('line-highlight')
-    })
-    return root.outerHTML
+    const allLines = [...root.querySelectorAll('.line')]
+    // Nur Nicht-Leerzeilen, je mit ihrer Quellzeilennummer.
+    const kept = allLines
+      .map((el, i) => ({ el, line: base + i }))
+      .filter(({ el }) => el.textContent.trim() !== '')
+    if (!kept.length) return html
+    // Index der Aufrufzeile in der gefilterten Liste (oder naechstgelegene).
+    let hit = kept.findIndex((k) => k.line === siteLine)
+    if (hit === -1) {
+      let best = Infinity
+      kept.forEach((k, idx) => {
+        const d = Math.abs(k.line - siteLine)
+        if (d < best) { best = d; hit = idx }
+      })
+    }
+    const from = Math.max(0, hit - CONTEXT_LINES)
+    const to = Math.min(kept.length - 1, hit + CONTEXT_LINES)
+    const code = doc.createElement('code')
+    for (let i = from; i <= to; i++) {
+      const { el, line } = kept[i]
+      el.setAttribute('data-line', String(line))
+      if (i === hit) el.classList.add('line-highlight')
+      else el.classList.remove('line-highlight')
+      code.appendChild(el)
+    }
+    const shell = doc.createElement('div')
+    shell.className = 'shiki'
+    shell.appendChild(code)
+    return shell.outerHTML
   } catch {
     return html
   }
@@ -136,25 +167,19 @@ async function loadUsageSnippets() {
     try {
       const snip = await api.getJavaMethodSnippet(edge.fromFileId, key)
       const base = grp.sites[0]?.bodyStartLine ?? snip.startLine ?? null
-      const hitIndexes = grp.sites.map((s) => (base != null ? s.line - base : s.line - 1))
-      const html = decorateUsageHtml(snip.html, base, hitIndexes)
+      const sites = grp.sites.map((s) => ({
+        line: s.line,
+        lineExact: s.lineExact,
+        calleeMethod: s.calleeMethod,
+        // Pro Aufrufstelle ein eigenes Fenster aus dem ganzen Rumpf (snip.html).
+        html: buildCallWindow(snip.html, base, s.line),
+      }))
       usageSnippets.value = {
         ...usageSnippets.value,
-        [key]: { loading: false, html, code: snip.code },
+        [key]: { loading: false, filename: snip.filename, sites },
       }
     } catch (e) {
       usageSnippets.value = { ...usageSnippets.value, [key]: { loading: false, error: e.message } }
-    }
-  }
-  // Nach dem Rendern: erste markierte Zeile je Block im (scrollbaren) Code-Kasten zentrieren.
-  await nextTick()
-  for (const grp of callerGroups.value) {
-    const box = usageEls[grp.callerMethod]?.querySelector?.('.shiki')
-    const hit = box?.querySelector?.('.line-highlight')
-    if (box && hit) {
-      const boxRect = box.getBoundingClientRect()
-      const hitRect = hit.getBoundingClientRect()
-      box.scrollTop += hitRect.top - boxRect.top - box.clientHeight / 2 + hitRect.height / 2
     }
   }
 }
@@ -276,17 +301,21 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                   :key="c.name"
                   class="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-offset)]"
                 >
-                  <!-- Methoden-Header: Name + Signatur -->
+                  <!-- Methoden-Header: Name + Datei · Zeilenbereich -->
                   <div class="flex items-center gap-2 px-3 py-2">
                     <Icon icon="lucide:braces" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
                     <code class="font-mono text-sm font-semibold text-[var(--color-text)]">{{ c.name }}()</code>
+                    <span
+                      v-if="snippets[c.name]?.filename"
+                      class="ml-auto inline-flex items-center gap-1 truncate font-mono text-[11px] text-[var(--color-text-muted)]"
+                      :title="snippets[c.name].filename"
+                    >
+                      <Icon icon="lucide:file-code" class="h-3 w-3 shrink-0" />
+                      {{ snippets[c.name].filename }} · Z{{ snippets[c.name].startLine }}–{{ snippets[c.name].endLine }}
+                    </span>
                   </div>
-                  <code
-                    v-if="snippets[c.name]?.signature || c.signature"
-                    class="block truncate px-3 pb-1.5 font-mono text-[11px] text-[var(--color-text-muted)]"
-                  >{{ snippets[c.name]?.signature || c.signature }}</code>
 
-                  <!-- Code-Block (Shiki, Dual-Theme) -->
+                  <!-- EIN kombinierter Code-Block: Signatur + Rumpf, leerzeilenfrei (Shiki, Dual-Theme) -->
                   <div class="px-3 pb-2">
                     <div v-if="snippets[c.name]?.loading" class="flex items-center gap-2 px-1 py-3 text-xs text-[var(--color-text-muted)]">
                       <Icon icon="lucide:loader-2" class="h-3.5 w-3.5 animate-spin" />
@@ -367,55 +396,51 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
               <div class="space-y-4">
                 <div v-for="grp in callerGroups" :key="grp.callerMethod">
-                  <!-- Aufrufer-Methode + Aufrufstellen-Chips (eine Chip je Aufrufzeile) -->
+                  <!-- Aufrufer-Methode als Gruppen-Überschrift -->
                   <div class="mb-1.5 flex flex-wrap items-center gap-1.5 text-xs">
                     <code class="rounded-md bg-[var(--color-surface-offset)] px-1.5 py-0.5 font-mono font-semibold text-[var(--color-text)]">{{ grp.callerMethod }}()</code>
-                    <span
-                      v-for="(site, i) in grp.sites"
-                      :key="i"
-                      class="inline-flex items-center gap-1 rounded-md bg-[var(--color-accent-soft)] px-1.5 py-0.5 font-mono font-semibold text-[var(--color-accent)]"
-                      :title="site.lineExact ? 'Exakte Aufrufzeile' : 'Zeile geschätzt – Datei für exakte Zeile neu analysieren'"
-                    >
-                      <Icon icon="lucide:corner-down-right" class="h-3 w-3" />
-                      {{ site.calleeMethod }}() · {{ site.lineExact ? '' : '~' }}Z{{ site.line }}
-                    </span>
                   </div>
 
-                  <!-- Ganze Aufrufer-Methode (Shiki, Dual-Theme) mit markierter Aufrufzeile -->
-                  <div class="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-offset)]">
-                    <div v-if="usageSnippets[grp.callerMethod]?.loading" class="flex items-center gap-2 px-3 py-3 text-xs text-[var(--color-text-muted)]">
-                      <Icon icon="lucide:loader-2" class="h-3.5 w-3.5 animate-spin" />
-                      Lade Quellcode…
-                    </div>
-                    <p v-else-if="usageSnippets[grp.callerMethod]?.error" class="px-3 py-2 text-xs text-[var(--color-danger)]">
-                      {{ usageSnippets[grp.callerMethod].error }}
-                    </p>
+                  <div v-if="usageSnippets[grp.callerMethod]?.loading" class="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-offset)] px-3 py-3 text-xs text-[var(--color-text-muted)]">
+                    <Icon icon="lucide:loader-2" class="h-3.5 w-3.5 animate-spin" />
+                    Lade Quellcode…
+                  </div>
+                  <p v-else-if="usageSnippets[grp.callerMethod]?.error" class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-offset)] px-3 py-2 text-xs text-[var(--color-danger)]">
+                    {{ usageSnippets[grp.callerMethod].error }}
+                  </p>
+
+                  <!-- Pro Aufrufstelle ein eigener Block: Datei · Zeile + ±3 Zeilen Kontext -->
+                  <div v-else class="space-y-3">
                     <div
-                      v-else-if="usageSnippets[grp.callerMethod]?.html"
-                      :ref="(el) => setUsageEl(grp.callerMethod, el)"
-                      class="code-wrap edge-usage-code"
+                      v-for="(site, i) in usageSnippets[grp.callerMethod]?.sites || []"
+                      :key="i"
+                      class="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-offset)]"
                     >
-                      <button
-                        type="button"
-                        class="code-copy inline-flex items-center gap-1"
-                        :title="copiedKey === 'use:' + grp.callerMethod ? 'In Zwischenablage kopiert' : 'Code kopieren'"
-                        @click="copyCode('use:' + grp.callerMethod, usageSnippets[grp.callerMethod].code)"
-                      >
-                        <Icon :icon="copiedKey === 'use:' + grp.callerMethod ? 'lucide:check' : 'lucide:copy'" class="h-3.5 w-3.5" />
-                        {{ copiedKey === 'use:' + grp.callerMethod ? 'Kopiert' : 'Kopieren' }}
-                      </button>
-                      <div v-html="usageSnippets[grp.callerMethod].html" />
+                      <div class="flex items-center gap-1.5 border-b border-[var(--color-border)] px-3 py-1.5 text-[11px]">
+                        <Icon icon="lucide:corner-down-right" class="h-3 w-3 shrink-0 text-[var(--color-accent)]" />
+                        <span class="truncate font-mono font-semibold text-[var(--color-accent)]">{{ site.calleeMethod }}()</span>
+                        <span
+                          class="ml-auto inline-flex items-center gap-1 truncate font-mono text-[var(--color-text-muted)]"
+                          :title="site.lineExact ? 'Exakte Aufrufzeile' : 'Zeile geschätzt – Datei für exakte Zeile neu analysieren'"
+                        >
+                          <Icon icon="lucide:file-code" class="h-3 w-3 shrink-0" />
+                          {{ usageSnippets[grp.callerMethod].filename }} · {{ site.lineExact ? '' : '~' }}Z{{ site.line }}
+                        </span>
+                      </div>
+                      <div class="code-wrap edge-usage-code">
+                        <button
+                          type="button"
+                          class="code-copy inline-flex items-center gap-1"
+                          title="Im Quellcode öffnen (zeilengenau)"
+                          @click="navigateTo(edge.fromFileId, site.line)"
+                        >
+                          <Icon icon="lucide:code-2" class="h-3.5 w-3.5" />
+                          Öffnen
+                        </button>
+                        <div v-html="site.html" />
+                      </div>
                     </div>
                   </div>
-
-                  <button
-                    type="button"
-                    class="mt-1 inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2 py-1 text-xs font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
-                    @click="navigateTo(edge.fromFileId, grp.sites[0]?.line ?? null)"
-                  >
-                    <Icon icon="lucide:code-2" class="h-3.5 w-3.5" />
-                    Im Quellcode öffnen
-                  </button>
                 </div>
               </div>
             </section>
