@@ -351,7 +351,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                         <Icon :icon="copiedKey === 'src:' + c.name ? 'lucide:check' : 'lucide:copy'" class="h-3.5 w-3.5" />
                         {{ copiedKey === 'src:' + c.name ? 'Kopiert' : 'Kopieren' }}
                       </button>
-                      <div class="edge-code" v-html="snippets[c.name].html" />
+                      <div class="edge-code code-dark" v-html="snippets[c.name].html" />
                     </div>
                   </div>
 
@@ -444,7 +444,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                           {{ usageSnippets[grp.callerMethod].filename }} · {{ site.lineExact ? '' : '~' }}Z{{ site.line }}
                         </span>
                       </div>
-                      <div class="code-wrap edge-usage-code">
+                      <div class="code-wrap edge-usage-code code-dark">
                         <button
                           type="button"
                           class="code-copy inline-flex items-center gap-1"

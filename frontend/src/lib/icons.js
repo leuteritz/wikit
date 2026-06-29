@@ -28,6 +28,8 @@ import chevronRight from '@iconify-icons/lucide/chevron-right'
 import arrowRight from '@iconify-icons/lucide/arrow-right'
 import sparkles from '@iconify-icons/lucide/sparkles'
 import list from '@iconify-icons/lucide/list'
+import foldVertical from '@iconify-icons/lucide/fold-vertical'
+import unfoldVertical from '@iconify-icons/lucide/unfold-vertical'
 import loader2 from '@iconify-icons/lucide/loader-2'
 import check from '@iconify-icons/lucide/check'
 import alertTriangle from '@iconify-icons/lucide/alert-triangle'
@@ -74,6 +76,8 @@ const ICONS = {
   'lucide:arrow-right': arrowRight,
   'lucide:sparkles': sparkles,
   'lucide:list': list,
+  'lucide:fold-vertical': foldVertical,
+  'lucide:unfold-vertical': unfoldVertical,
   'lucide:loader-2': loader2,
   'lucide:check': check,
   'lucide:alert-triangle': alertTriangle,

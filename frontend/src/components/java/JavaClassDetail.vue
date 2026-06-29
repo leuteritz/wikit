@@ -9,6 +9,7 @@ import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
 import { useJavaQueue } from '../../composables/useJavaQueue.js'
 import { useArticles } from '../../composables/useArticles.js'
 import JavaCodeEditor from './JavaCodeEditor.vue'
+import { processMethodBody } from '../../lib/javaCode.js'
 import { Icon } from '../../lib/icons.js'
 
 const props = defineProps({
@@ -30,6 +31,7 @@ const error = ref('')
 const tab = ref('doc') // 'doc' | 'source'
 const sourceEditor = ref(null) // JavaCodeEditor im Quellcode-Tab (fuer highlightLine)
 const openMethod = ref(null)
+const collapseBlanks = ref(false) // manueller Toggle: interne Leerzeilen im Methodenrumpf entfernen
 const fullBusy = ref(false) // waehrend des Einreihens der Voll-Analyse
 const notice = ref('')
 const creating = ref(false)
@@ -82,6 +84,10 @@ const summarizedCount = computed(() => (file.value?.methods || []).filter((m) =>
 function signature(m) {
   const params = (m.parameters || []).map((p) => `${p.type} ${p.name}`.trim()).join(', ')
   return `${m.return_type || 'void'} ${m.method_name}(${params})`
+}
+// Methodenrumpf-HTML aufbereiten (deklarationsfrei, Leerzeilen getrimmt; `collapseBlanks` reaktiv).
+function displayBody(m) {
+  return processMethodBody(m.body_html, { collapseBlank: collapseBlanks.value })
 }
 function methodStatus(m) {
   if (queueProgress.value && queueProgress.value.status === 'running' && !m.summary_html) return 'pending'
@@ -263,7 +269,21 @@ async function removeFile() {
           </section>
 
           <!-- Methoden -->
-          <h3 class="mb-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Methoden ({{ methodCount }})</h3>
+          <div class="mb-1.5 flex items-center justify-between gap-2">
+            <h3 class="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Methoden ({{ methodCount }})</h3>
+            <button
+              v-if="methodCount"
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2 py-1 text-[11px] font-medium transition hover:bg-[var(--color-surface-offset)]"
+              :class="collapseBlanks ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'"
+              :aria-pressed="collapseBlanks"
+              :title="collapseBlanks ? 'Leerzeilen im Methodenrumpf wieder anzeigen' : 'Leerzeilen im Methodenrumpf entfernen'"
+              @click="collapseBlanks = !collapseBlanks"
+            >
+              <Icon :icon="collapseBlanks ? 'lucide:unfold-vertical' : 'lucide:fold-vertical'" class="h-3.5 w-3.5" />
+              Leerzeilen
+            </button>
+          </div>
           <ul class="space-y-1.5">
             <li v-for="m in file.methods" :key="m.id" class="overflow-hidden rounded-lg border border-[var(--color-border)]">
               <button
@@ -286,8 +306,9 @@ async function removeFile() {
               </button>
 
               <div v-show="openMethod === m.id" class="border-t border-[var(--color-border)] px-3 py-2">
-                <!-- 1) Java-Code-Block (Shiki, server-gerendert) -->
-                <div v-if="m.body_html" class="method-code mb-2" v-html="m.body_html" />
+                <!-- 1) Java-Code-Block: nur der Rumpf (deklarationsfrei), immer dunkel (Editor-Optik),
+                        fuehrende/abschliessende Leerzeilen entfernt; Toggle blendet interne Leerzeilen aus. -->
+                <div v-if="m.body_html" class="method-code code-dark mb-2" v-html="displayBody(m)" />
 
                 <!-- 2) KI-Analyse / Zusammenfassung -->
                 <div v-if="m.summary_html" class="prose prose-sm max-w-none dark:prose-invert" v-html="m.summary_html" />

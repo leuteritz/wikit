@@ -75,6 +75,29 @@ html.dark .shiki span {
   border-color: var(--color-border);
 }
 
+/* --- Always-Dark Code-Block (Java-Methodenrumpf) -------------------------- *
+ * Unabhaengig vom App-Theme IMMER dunkel (Editor-Optik). Wir erzwingen die
+ * Shiki-Dark-Variablen auch im Light-Mode; `!important` schlaegt die globale
+ * `.shiki span`-Regel oben sowie die nicht-!important Edge-Usage-Regeln unten,
+ * sodass die Aufrufzeilen-Markierung auf dem dunklen Grund sichtbar bleibt. */
+.code-dark .shiki,
+.code-dark .shiki span {
+  color: var(--shiki-dark) !important;
+  background-color: var(--shiki-dark-bg) !important;
+}
+.code-dark .shiki {
+  border-color: rgba(127, 180, 208, 0.20);
+}
+.code-dark .line-highlight,
+.code-dark span.line-highlight {
+  background-color: color-mix(in srgb, var(--color-accent) 30%, transparent) !important;
+  border-left: 3px solid var(--color-accent);
+}
+.code-dark .line-highlight::before {
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
 /* --- Verwendung-Snippet (Java-Edge-Panel): Shiki + Gutter-Zeilennummern + ---
    markierte Aufrufzeile. Nur unter .edge-usage-code, damit normale Code-Bloecke
    (Artikel) voellig unberuehrt bleiben. */
