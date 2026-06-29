@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ALL_ENTITIES } from '../entities';
 import { DatabaseService } from '../database/database.service';
 import { FtsService } from '../database/fts.service';
+import { CodeFormatterService } from './code-formatter.service';
 import { MarkdownService } from './markdown.service';
 import { OllamaService } from './ollama.service';
 import { SeedService } from './seed.service';
@@ -17,6 +18,7 @@ import { TagsService } from './tags.service';
   providers: [
     DatabaseService,
     FtsService,
+    CodeFormatterService,
     MarkdownService,
     OllamaService,
     SerializerService,
@@ -26,6 +28,7 @@ import { TagsService } from './tags.service';
   exports: [
     TypeOrmModule,
     FtsService,
+    CodeFormatterService,
     MarkdownService,
     OllamaService,
     SerializerService,

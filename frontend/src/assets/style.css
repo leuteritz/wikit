@@ -214,6 +214,63 @@ mark {
   @apply opacity-100;
 }
 
+/* --- Variablen-Highlighting in Java-Code-Bloecken (Artikel) ----------------- *
+ * Klickbare Variablen-Tokens (vh-token) + deterministische Palette (vh-0..11).
+ * Klick faerbt alle Vorkommen einer Variable im Block ein (vh-active + vh-N).
+ * Die Hintergruende sind absichtlich halbtransparent, damit die Shiki-Syntaxfarbe
+ * lesbar bleibt; eigene Palette je Theme (kein prefers-color-scheme). */
+:root {
+  --vh-0:  hsl(0   80% 80% / 0.62);
+  --vh-1:  hsl(30  82% 78% / 0.62);
+  --vh-2:  hsl(60  78% 72% / 0.62);
+  --vh-3:  hsl(95  62% 74% / 0.62);
+  --vh-4:  hsl(135 58% 76% / 0.62);
+  --vh-5:  hsl(170 60% 74% / 0.62);
+  --vh-6:  hsl(195 72% 76% / 0.62);
+  --vh-7:  hsl(220 85% 84% / 0.62);
+  --vh-8:  hsl(250 78% 86% / 0.62);
+  --vh-9:  hsl(280 70% 84% / 0.62);
+  --vh-10: hsl(312 72% 84% / 0.62);
+  --vh-11: hsl(340 80% 84% / 0.62);
+}
+html.dark {
+  --vh-0:  hsl(0   62% 46% / 0.50);
+  --vh-1:  hsl(30  66% 44% / 0.50);
+  --vh-2:  hsl(52  60% 40% / 0.52);
+  --vh-3:  hsl(95  50% 38% / 0.52);
+  --vh-4:  hsl(135 46% 38% / 0.52);
+  --vh-5:  hsl(170 52% 36% / 0.52);
+  --vh-6:  hsl(195 64% 42% / 0.50);
+  --vh-7:  hsl(220 70% 52% / 0.50);
+  --vh-8:  hsl(255 60% 56% / 0.50);
+  --vh-9:  hsl(285 56% 52% / 0.50);
+  --vh-10: hsl(312 56% 50% / 0.50);
+  --vh-11: hsl(340 64% 52% / 0.50);
+}
+.shiki .vh-token {
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background-color 0.12s ease;
+}
+.shiki .vh-token:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* Aktiv-Hintergrund: hohe Spezifitaet + !important, um die globale
+   `html.dark .shiki span { background-color: … !important }`-Regel zu schlagen. */
+.shiki .vh-token.vh-active.vh-0  { background-color: var(--vh-0)  !important; }
+.shiki .vh-token.vh-active.vh-1  { background-color: var(--vh-1)  !important; }
+.shiki .vh-token.vh-active.vh-2  { background-color: var(--vh-2)  !important; }
+.shiki .vh-token.vh-active.vh-3  { background-color: var(--vh-3)  !important; }
+.shiki .vh-token.vh-active.vh-4  { background-color: var(--vh-4)  !important; }
+.shiki .vh-token.vh-active.vh-5  { background-color: var(--vh-5)  !important; }
+.shiki .vh-token.vh-active.vh-6  { background-color: var(--vh-6)  !important; }
+.shiki .vh-token.vh-active.vh-7  { background-color: var(--vh-7)  !important; }
+.shiki .vh-token.vh-active.vh-8  { background-color: var(--vh-8)  !important; }
+.shiki .vh-token.vh-active.vh-9  { background-color: var(--vh-9)  !important; }
+.shiki .vh-token.vh-active.vh-10 { background-color: var(--vh-10) !important; }
+.shiki .vh-token.vh-active.vh-11 { background-color: var(--vh-11) !important; }
+
 /* Dezente Scrollbars */
 * {
   scrollbar-width: thin;

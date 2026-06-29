@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import sanitizeHtml from 'sanitize-html';
+import { CodeFormatterService } from './code-formatter.service';
 
 // Server-seitige Markdown-Pipeline: markdown-it + Shiki + Sanitisierung.
 // Wird beim Speichern eines Artikels einmal ausgefuehrt; das Ergebnis (HTML + TOC) wird in
@@ -31,6 +32,8 @@ const SANITIZE_OPTS: sanitizeHtml.IOptions = {
 export class MarkdownService {
   private mdPromise: Promise<any> | null = null;
 
+  constructor(private readonly codeFormatter: CodeFormatterService) {}
+
   slugify(text: string): string {
     return String(text)
       .trim()
@@ -47,6 +50,17 @@ export class MarkdownService {
       const Shiki = (await dynamicImport('@shikijs/markdown-it')).default;
 
       const md = new MarkdownIt({ html: false, linkify: true, typographer: true });
+
+      // Java-Bloecke serverseitig neu einruecken – core-Ruler laeuft VOR dem Shiki-Renderer,
+      // sodass Shiki den bereits eingerueckten Text highlightet (reiner Text-Transform).
+      md.core.ruler.push('reindent-java', (state: any) => {
+        for (const t of state.tokens) {
+          if (t.type === 'fence' && (t.info || '').trim().split(/\s+/)[0] === 'java') {
+            t.content = this.codeFormatter.reindentJava(t.content);
+          }
+        }
+      });
+
       md.use(anchor, {
         slugify: (s: string) => this.slugify(s),
         level: [1, 2, 3, 4],

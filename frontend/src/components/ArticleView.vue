@@ -3,6 +3,7 @@ import { ref, watch, nextTick, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import CategoryBadge from './CategoryBadge.vue'
 import { Icon } from '../lib/icons.js'
+import { isHighlightableVar, varColorClass } from '../lib/varHighlight.js'
 
 const props = defineProps({
   article: { type: Object, required: true },
@@ -18,26 +19,62 @@ function fmtDate(s) {
   })
 }
 
-// Copy-Buttons an die (serverseitig gerenderten) Code-Bloecke haengen.
+// Copy-Buttons + Variablen-Highlighting an die (serverseitig gerenderten) Code-Bloecke haengen.
 function enhanceCodeBlocks() {
   const root = bodyEl.value
   if (!root) return
   root.querySelectorAll('pre.shiki').forEach((pre) => {
-    if (pre.parentElement?.classList.contains('code-wrap')) return
-    const wrap = document.createElement('div')
-    wrap.className = 'code-wrap'
-    pre.parentNode.insertBefore(wrap, pre)
-    wrap.appendChild(pre)
-    const btn = document.createElement('button')
-    btn.type = 'button'
-    btn.className = 'code-copy'
-    btn.textContent = 'Kopieren'
-    btn.addEventListener('click', async () => {
-      await navigator.clipboard.writeText(pre.innerText)
-      btn.textContent = 'Kopiert'
-      setTimeout(() => (btn.textContent = 'Kopieren'), 1500)
-    })
-    wrap.appendChild(btn)
+    if (!pre.parentElement?.classList.contains('code-wrap')) {
+      const wrap = document.createElement('div')
+      wrap.className = 'code-wrap'
+      pre.parentNode.insertBefore(wrap, pre)
+      wrap.appendChild(pre)
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'code-copy'
+      btn.textContent = 'Kopieren'
+      btn.addEventListener('click', async () => {
+        await navigator.clipboard.writeText(pre.innerText)
+        btn.textContent = 'Kopiert'
+        setTimeout(() => (btn.textContent = 'Kopieren'), 1500)
+      })
+      wrap.appendChild(btn)
+    }
+    tagJavaVars(pre)
+  })
+}
+
+// Klickbare Variablen-Tokens in Java-Bloecken markieren (Affordance via .vh-token) und einen
+// Klick-Handler anhaengen. Shiki setzt `class="language-java"` aufs <code> -> sichere Erkennung.
+function tagJavaVars(pre) {
+  if (pre._vhDone) return
+  const code = pre.querySelector('code.language-java')
+  if (!code) return
+  pre._vhDone = true
+  pre._vhActive = new Set()
+  // Nur Leaf-Token-Spans (mit direktem Text, ohne Kind-Spans) – nicht die .line-Wrapper.
+  code.querySelectorAll('span').forEach((span) => {
+    if (span.querySelector('span')) return
+    if (isHighlightableVar(span)) span.classList.add('vh-token')
+  })
+  pre.addEventListener('click', (e) => onVarClick(e, pre))
+}
+
+// Klick auf eine Variable: alle gleichnamigen Tokens im Block ein-/ausschalten (Toggle).
+// Mehrere Variablen koennen gleichzeitig aktiv sein – jede in ihrer deterministischen Farbe.
+function onVarClick(e, pre) {
+  const token = e.target.closest('.vh-token')
+  if (!token || !pre.contains(token)) return
+  const name = (token.textContent || '').trim()
+  if (!name) return
+  const colorCls = varColorClass(name)
+  const turnOn = !pre._vhActive.has(name)
+  if (turnOn) pre._vhActive.add(name)
+  else pre._vhActive.delete(name)
+  pre.querySelectorAll('.vh-token').forEach((el) => {
+    if ((el.textContent || '').trim() !== name) return
+    el.classList.toggle('vh-active', turnOn)
+    el.classList.toggle(colorCls, turnOn)
   })
 }
 
