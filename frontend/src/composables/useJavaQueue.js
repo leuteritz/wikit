@@ -16,7 +16,7 @@ import { api } from '../lib/api.js'
 
 const POLL_MS = 3000
 
-// Vollstaendige Job-Liste vom Backend (fuer /code/queues).
+// Vollstaendige Job-Liste vom Backend (fuer die Queue-Anzeige + das Queue-Modal im Code-View).
 const allJobs = ref([])
 // Schnellzugriff fileId -> Job (1:1, da pro Klasse genau ein Job existiert).
 const byFile = reactive({})

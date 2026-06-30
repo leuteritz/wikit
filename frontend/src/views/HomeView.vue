@@ -47,12 +47,13 @@ const pendingCount = computed(
   () => allJobs.value.filter((j) => ['running', 'queued'].includes(j.status)).length,
 )
 
-// Vier Kacheln = die vier Nav-Tabs (gleiche Icons/Routen wie App.vue navLinks). Reihenfolge
-// steuert das 2x2-Raster: Code (oben links) · Queues (oben rechts) · Wiki (unten links) ·
-// Graph (unten rechts). Jede Kachel traegt eine Live-Zahl als sekundaere Metrik.
+// Vier Kacheln, 2x2-Raster: Code (oben links) · AI Queue (oben rechts) · Wiki (unten links) ·
+// Graph (unten rechts). Jede Kachel traegt eine Live-Zahl als sekundaere Metrik. Die Queue lebt
+// jetzt im Code-View (Header-Anzeige + Modal) -> die Queue-Kachel fuehrt dorthin (gleiches Ziel
+// wie Code, aber eigene Metrik = aktive Jobs).
 const tabs = computed(() => [
   { icon: 'lucide:braces', value: files.value.length, label: 'Code', to: '/code' },
-  { icon: 'lucide:list-checks', value: pendingCount.value, label: 'Queues', to: '/code/queues' },
+  { icon: 'lucide:list-checks', value: pendingCount.value, label: 'AI Queue', to: '/code' },
   { icon: 'lucide:book-open', value: articles.value.length, label: 'Wiki', to: '/wiki' },
   { icon: 'lucide:share-2', value: relationCount.value, label: 'Graph', to: '/graph' },
 ])
@@ -260,7 +261,7 @@ function openClass(id) {
         <div class="grid grid-cols-2 gap-3">
           <RouterLink
             v-for="t in tabs"
-            :key="t.to"
+            :key="t.label"
             :to="t.to"
             class="group rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3.5 transition hover:border-[var(--color-accent)]"
           >

@@ -13,12 +13,13 @@ import { usePanelResize } from '../composables/usePanelResize.js'
 import JavaCodeEditor from '../components/java/JavaCodeEditor.vue'
 import JavaDependencyGraph from '../components/java/JavaDependencyGraph.vue'
 import JavaClassDetail from '../components/java/JavaClassDetail.vue'
+import JavaQueueModal from '../components/java/JavaQueueModal.vue'
 import { Icon } from '../lib/icons.js'
 import { detectJavaClasses } from '../lib/javaDetect.js'
 
 const { files, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFileId, lastTargetLine, lastTargetEndLine, deleteFile, resetAll } =
   useJavaAnalyzer()
-const { enqueueClass, enqueueAllUnanalyzed, cancelJob, cancelAllJobs, progressFor, ensurePolling } = useJavaQueue()
+const { allJobs, enqueueClass, enqueueAllUnanalyzed, cancelJob, cancelAllJobs, progressFor, ensurePolling } = useJavaQueue()
 const { recomputeEdges, recomputing, resetEdges } = useJavaGraph()
 // Verschiebbare Spaltenbreiten des 3-Spalten-Layouts (Drag-to-Resize + Reset).
 const {
@@ -48,6 +49,21 @@ const confirming = ref(false)
 const analyzingAll = ref(false) // Spinner fuer "Alle analysieren"
 const pendingReset = ref(false) // Komplett-Reset-Dialog offen?
 const resetting = ref(false) // Spinner waehrend des Komplett-Resets
+const queueOpen = ref(false) // KI-Queue-Modal offen?
+
+// Kompakte Queue-Anzeige im Header (loest den frueheren Queues-Tab ab). Liest den geteilten
+// useJavaQueue-State; das Polling laeuft bereits ueber ensurePolling() (onMounted).
+const FINISHED = ['done', 'done-with-errors', 'failed', 'cancelled']
+const activeQueueCount = computed(() => allJobs.value.filter((j) => !FINISHED.includes(j.status)).length)
+const finishedQueueCount = computed(() => allJobs.value.filter((j) => FINISHED.includes(j.status)).length)
+const runningQueueJob = computed(() => allJobs.value.find((j) => j.status === 'running') || null)
+const queuedQueueCount = computed(() => allJobs.value.filter((j) => j.status === 'queued').length)
+
+// Klasse aus dem Queue-Modal heraus oeffnen: direkt auswaehlen + Modal schliessen (wir sind im View).
+function onQueueSelect(fileId) {
+  selectFile(fileId)
+  queueOpen.value = false
+}
 
 // Live-Vorschau der im Editor erkannten Klassen (rein clientseitig, nicht autoritativ).
 const detectedClasses = computed(() => detectJavaClasses(source.value))
@@ -361,6 +377,54 @@ async function confirmReset() {
             </button>
           </div>
         </div>
+
+        <!-- Kompakte KI-Queue-Anzeige (loest den frueheren Queues-Tab ab) -> oeffnet das Queue-Modal.
+             Immer sichtbar als Einstiegspunkt; zeigt den laufenden Job bzw. Warte-/Fertig-Zaehler. -->
+        <button
+          type="button"
+          class="queue-chip group flex shrink-0 items-center gap-2.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-left transition hover:border-[var(--color-accent)] hover:bg-[var(--color-surface-offset)]"
+          :title="runningQueueJob ? `Analyzing ${runningQueueJob.className}` : 'Open the AI analysis queue'"
+          @click="queueOpen = true"
+        >
+          <span
+            class="grid h-8 w-8 shrink-0 place-items-center rounded-lg transition"
+            :class="activeQueueCount ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' : 'bg-[var(--color-surface-offset)] text-[var(--color-text-muted)]'"
+          >
+            <Icon
+              :icon="runningQueueJob ? 'lucide:loader-2' : 'lucide:list-checks'"
+              class="h-4 w-4"
+              :class="runningQueueJob ? 'animate-spin' : ''"
+            />
+          </span>
+          <span class="min-w-0">
+            <span class="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+              AI Queue
+              <Icon icon="lucide:chevron-right" class="h-3 w-3 opacity-0 transition group-hover:opacity-100" />
+            </span>
+            <!-- Laufender Job: Klassenname + Fortschritt -->
+            <span v-if="runningQueueJob" class="mt-0.5 flex items-center gap-2">
+              <span class="max-w-[11rem] truncate text-sm font-medium text-[var(--color-text)]">{{ runningQueueJob.className }}</span>
+              <span class="shrink-0 tabular-nums text-xs text-[var(--color-accent)]">{{ runningQueueJob.done }}/{{ runningQueueJob.total }}</span>
+            </span>
+            <!-- Sonst: wartende, dann fertige, sonst Ruhezustand -->
+            <span v-else-if="queuedQueueCount" class="mt-0.5 block text-sm font-medium text-[var(--color-text)]">{{ queuedQueueCount }} queued</span>
+            <span v-else-if="finishedQueueCount" class="mt-0.5 flex items-center gap-1.5 text-sm font-medium text-[var(--color-success)]">
+              <Icon icon="lucide:check-circle" class="h-3.5 w-3.5" />
+              {{ finishedQueueCount }} done
+            </span>
+            <span v-else class="mt-0.5 block text-sm text-[var(--color-text-muted)]">Idle</span>
+          </span>
+          <!-- Mini-Fortschrittsbalken nur fuer den laufenden Job -->
+          <span
+            v-if="runningQueueJob && runningQueueJob.total"
+            class="ml-1 hidden h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-[var(--color-surface-offset)] sm:block"
+          >
+            <span
+              class="block h-full rounded-full bg-[var(--color-accent)] transition-all duration-300"
+              :style="{ width: Math.round(((runningQueueJob.done + runningQueueJob.failed) / runningQueueJob.total) * 100) + '%' }"
+            />
+          </span>
+        </button>
       </div>
 
       <!-- Neu-Analyse als Modal (ausgeloest vom prominenten Sidebar-Button). -->
@@ -790,6 +854,9 @@ async function confirmReset() {
         </div>
       </div>
     </Teleport>
+
+    <!-- KI-Queue-Modal (breit/langgezogen): aus der Header-Anzeige geoeffnet. -->
+    <JavaQueueModal :open="queueOpen" @close="queueOpen = false" @select="onQueueSelect" />
   </div>
 </template>
 
