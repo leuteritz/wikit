@@ -110,6 +110,7 @@ const d = computed(() => props.data || {})
         'me-label--manual': d.isManual,
         'me-label--review': d.needsReview,
         'me-label--selected': selected,
+        'me-label--lit': d.isHighlighted,
       }"
       :style="{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }"
       title="Show details"
@@ -172,6 +173,14 @@ const d = computed(() => props.data || {})
 }
 .me-label--selected {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+/* „Aufleuchtende" Kante (Code-Tab-Klick): Label in --color-edge-highlight, identisch zum
+   Code-Token- und Pfad-Glow. */
+.me-label--lit {
+  border-color: var(--color-edge-highlight);
+  color: var(--color-edge-highlight);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-edge-highlight) 45%, transparent),
+    0 0 10px color-mix(in srgb, var(--color-edge-highlight) 55%, transparent);
 }
 .me-method {
   overflow: hidden;

@@ -15,8 +15,11 @@ const props = defineProps({
   placeholder: { type: String, default: '// Paste Java code here…' },
   // Read-only-Modus: dient als syntaxhervorgehobener Quellcode-Viewer (Detail-Panel).
   readonly: { type: Boolean, default: false },
+  // Methodennamen, die als Call-Edge existieren -> im Quellcode klickbar gemacht (dezent
+  // unterstrichen). Ein Klick auf so ein Token emittiert `method-click` (Graph-Highlight).
+  clickableWords: { type: Array, default: () => [] },
 })
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'method-click'])
 
 const { theme } = useTheme()
 const editorParent = ref(null)
@@ -79,6 +82,67 @@ const methodField = StateField.define({
   provide: (f) => EditorView.decorations.from(f),
 })
 
+// --- Call-Highlight (Code-Token <-> Graph-Edge) -------------------------------
+// Zwei Mark-Decorations auf Methodennamen-Tokens (Zeichenbereiche, nicht ganze Zeilen):
+//   1) cm-call-link: passiv, ALLE klickbaren Call-Sites (props.clickableWords) -> dezent
+//      unterstrichen, signalisiert „klickbar".
+//   2) cm-call-active: der zuletzt angeklickte Methodenname (alle Vorkommen) -> Hintergrund in
+//      --color-edge-highlight, exakt dieselbe Farbe wie die aufleuchtende Graph-Kante.
+const setLinkMarks = StateEffect.define() // value: [{from,to}] | null
+const setCallMarks = StateEffect.define() // value: [{from,to}] | null
+const linkMark = Decoration.mark({ class: 'cm-call-link' })
+const callMark = Decoration.mark({ class: 'cm-call-active' })
+function markField(effect, mark) {
+  return StateField.define({
+    create() {
+      return Decoration.none
+    },
+    update(deco, tr) {
+      deco = deco.map(tr.changes)
+      for (const e of tr.effects) {
+        if (!e.is(effect)) continue
+        deco = e.value && e.value.length ? Decoration.set(e.value.map((r) => mark.range(r.from, r.to))) : Decoration.none
+      }
+      return deco
+    },
+    provide: (f) => EditorView.decorations.from(f),
+  })
+}
+const linkField = markField(setLinkMarks, linkMark)
+const callField = markField(setCallMarks, callMark)
+
+// Methodennamen-Aufrufstellen (`name(`) im Dokument finden -> Zeichenbereiche des Namens (ohne die
+// Klammer). Regex analog zu computeCallEdgeData in JavaDependencyGraph; global -> aufsteigend sortiert.
+function scanCalls(text, names) {
+  const list = (names || []).filter(Boolean)
+  if (!list.length) return []
+  const alt = list.map((n) => String(n).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
+  const re = new RegExp(`\\b(${alt})\\s*\\(`, 'g')
+  const out = []
+  let m
+  while ((m = re.exec(text)) !== null) out.push({ from: m.index, to: m.index + m[1].length })
+  return out
+}
+
+// Passive „klickbar"-Markierung aller Call-Sites neu setzen (bei Mount, Quelltext- oder
+// clickableWords-Aenderung).
+function refreshLinks() {
+  if (!view) return
+  view.dispatch({ effects: setLinkMarks.of(scanCalls(view.state.doc.toString(), props.clickableWords)) })
+}
+
+// Oeffentliche API: alle Vorkommen EINES Methodennamens aktiv markieren + erstes ansteuern.
+function setActiveCall(name) {
+  if (!view || !name) return
+  const ranges = scanCalls(view.state.doc.toString(), [name])
+  const effects = [setCallMarks.of(ranges)]
+  if (ranges.length) effects.push(EditorView.scrollIntoView(ranges[0].from, { y: 'center' }))
+  view.dispatch({ effects })
+}
+function clearActiveCall() {
+  view?.dispatch({ effects: setCallMarks.of(null) })
+}
+
 // Oeffentliche API: zur (1-basierten) Zeile scrollen + kurz hervorheben (auto-fade nach 2,5 s).
 function highlightLine(lineNumber) {
   if (!view || !lineNumber) return
@@ -112,7 +176,7 @@ function highlightMethod(startLine, endLine) {
 function clearMethodHighlight() {
   view?.dispatch({ effects: setMethodRange.of(null) })
 }
-defineExpose({ highlightLine, highlightMethod, clearMethodHighlight })
+defineExpose({ highlightLine, highlightMethod, clearMethodHighlight, setActiveCall, clearActiveCall })
 
 onMounted(() => {
   const extensions = [
@@ -120,6 +184,22 @@ onMounted(() => {
     highlightActiveLine(),
     glowField,
     methodField,
+    linkField,
+    callField,
+    // Klick auf einen klickbaren Methodennamen -> Graph-Highlight ausloesen (Selektion nicht blocken).
+    EditorView.domEventHandlers({
+      mousedown(event, v) {
+        const words = props.clickableWords
+        if (!words || !words.length) return false
+        const pos = v.posAtCoords({ x: event.clientX, y: event.clientY })
+        if (pos == null) return false
+        const w = v.state.wordAt(pos)
+        if (!w) return false
+        const word = v.state.sliceDoc(w.from, w.to)
+        if (words.includes(word)) emit('method-click', { name: word })
+        return false
+      },
+    }),
     indentUnit.of('    '),
     java(),
     EditorView.lineWrapping,
@@ -145,14 +225,19 @@ onMounted(() => {
   }
   const state = EditorState.create({ doc: props.modelValue, extensions })
   view = new EditorView({ state, parent: editorParent.value })
+  refreshLinks()
 })
 
 // Externe Aenderungen (z. B. Datei-Upload) in den Editor spiegeln.
 watch(() => props.modelValue, (val) => {
   if (view && val !== view.state.doc.toString()) {
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: val } })
+    refreshLinks()
   }
 })
+
+// Klickbare Methodennamen aenderten sich (Edge wurde angelegt/geloescht oder Klasse gewechselt).
+watch(() => props.clickableWords, refreshLinks)
 
 watch(theme, () => {
   view?.dispatch({ effects: themeComp.reconfigure(themeExtension()) })
@@ -217,5 +302,25 @@ html.dark .cm-glow-line {
 html.dark .cm-method-highlight {
   --cm-method: 129, 140, 248; /* indigo-400, kräftiger auf dunklem Grund */
   background-color: rgba(var(--cm-method), 0.18);
+}
+
+/* Call-Token-Markierung (Code <-> Graph-Edge): Farbe kommt aus --color-edge-highlight, exakt
+   identisch zur aufleuchtenden Graph-Kante. Passiv = dezent gepunktet unterstrichen (klickbar),
+   aktiv = ausgefuellter Hintergrund. Variable funktioniert in Light + Dark (in style.css definiert). */
+.cm-call-link {
+  text-decoration: underline dotted;
+  text-decoration-color: color-mix(in srgb, var(--color-edge-highlight) 70%, transparent);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.cm-call-link:hover {
+  text-decoration-color: var(--color-edge-highlight);
+  background-color: color-mix(in srgb, var(--color-edge-highlight) 12%, transparent);
+  border-radius: 3px;
+}
+.cm-call-active {
+  background-color: color-mix(in srgb, var(--color-edge-highlight) 32%, transparent);
+  border-radius: 3px;
+  box-shadow: inset 0 -2px 0 0 var(--color-edge-highlight);
 }
 </style>

@@ -31,6 +31,8 @@
   --color-success: #48a9a6;         /* Tropical Teal */
   --color-warning: #d4b483;         /* Soft Fawn */
   --color-danger: #c1666b;          /* Lobster Pink */
+
+  --color-edge-highlight: #e08a1e;  /* warmes Gold: „aufleuchtende" Call-Edge + passender Code-Token */
 }
 html.dark {
   --color-accent: #7fb4d0;          /* aufgehelltes Cerulean (Kontrast auf dunkel) */
@@ -48,6 +50,8 @@ html.dark {
   --color-success: #5fbfbb;
   --color-warning: #e0c191;
   --color-danger: #d68389;
+
+  --color-edge-highlight: #ffb13d;  /* kraeftiger auf dunklem Grund */
 }
 
 html, body, #app {
@@ -291,3 +295,26 @@ html.dark {
 }
 
 /* Vue Flow Basisstyles werden in den Komponenten importiert. */
+
+/* „Aufleuchtende" Call-Edge: gesetzt, wenn im Code-Tab ein passender Methodenname angeklickt wird
+   (JavaDependencyGraph haengt die Klasse `edge-lit` an die Kante). Vue-Flow erzeugt das
+   `.vue-flow__edge`-DOM -> globale Regel statt scoped. Farbe = --color-edge-highlight (identisch
+   zum Code-Token-Highlight im JavaCodeEditor). */
+.vue-flow__edge.edge-lit .vue-flow__edge-path {
+  filter: drop-shadow(0 0 4px var(--color-edge-highlight));
+  animation: edge-lit-pulse 1.1s ease-in-out infinite;
+}
+@keyframes edge-lit-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 2px var(--color-edge-highlight));
+  }
+  50% {
+    filter: drop-shadow(0 0 7px var(--color-edge-highlight));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vue-flow__edge.edge-lit .vue-flow__edge-path {
+    animation: none;
+    filter: drop-shadow(0 0 5px var(--color-edge-highlight));
+  }
+}

@@ -41,7 +41,7 @@ const { fitView, zoomIn, zoomOut, setViewport } = useVueFlow()
 //   * createEdge/deleteEdge laufen ausschließlich über das Composable (HTTP via lib/api.js).
 //   * deleteEdge im Backend: manuelle Kante hart löschen, Auto-Kante als Tombstone (dismissed=1)
 //     merken -> falsch erkannte Auto-Kanten kehren bei „Kanten neu simulieren" nicht zurück.
-const { edges: serverEdges, fetchEdges, createEdge, deleteEdge } = useJavaGraph()
+const { edges: serverEdges, fetchEdges, createEdge, deleteEdge, highlightedCall } = useJavaGraph()
 
 // Custom-Edge-Typ registrieren.
 const edgeTypes = { managed: ManagedEdge }
@@ -285,7 +285,27 @@ const layout = computed(() => {
 })
 
 const nodes = computed(() => layout.value.nodes)
-const edges = computed(() => layout.value.edges)
+// Reine Projektion: das pure `layout` bleibt unberuehrt; nur hier wird die aktuell „aufleuchtende"
+// Call-Edge (highlightedCall aus dem Code-Tab) markiert -> Glow-Klasse + Edge-Highlight-Farbe.
+const edges = computed(() => {
+  const hc = highlightedCall.value
+  if (!hc) return layout.value.edges
+  return layout.value.edges.map((e) => {
+    const d = e.data || {}
+    const match =
+      d.kind === 'call' && d.fromFileId === hc.callerFileId && (d.methods || []).some((m) => m.method === hc.method)
+    if (!match) return e
+    return {
+      ...e,
+      class: 'edge-lit',
+      data: {
+        ...d,
+        isHighlighted: true,
+        edgeStyle: { ...d.edgeStyle, stroke: 'var(--color-edge-highlight)', strokeWidth: (d.edgeStyle?.strokeWidth || 2) + 0.75 },
+      },
+    }
+  })
+})
 
 const dotColor = computed(() => (theme.value === 'dark' ? '#33485a' : '#cdc6bd'))
 

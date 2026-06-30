@@ -3,10 +3,11 @@
 // Header + KI-Status, Klassen-Zusammenfassung (description_html), Methoden-Accordion
 // (summary_html, einzeln nachgenerierbar) und Quellcode-Tab (read-only CodeMirror).
 // HTTP nur via lib/api.js (Composable).
-import { ref, watch, computed, nextTick } from 'vue'
+import { ref, watch, computed, nextTick, onBeforeUnmount } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
 import { useJavaQueue } from '../../composables/useJavaQueue.js'
+import { useJavaGraph } from '../../composables/useJavaGraph.js'
 import { useArticles } from '../../composables/useArticles.js'
 import JavaCodeEditor from './JavaCodeEditor.vue'
 import { processMethodBody } from '../../lib/javaCode.js'
@@ -28,6 +29,7 @@ const router = useRouter()
 const { getFile, deleteFile, linkArticle, userContext } = useJavaAnalyzer()
 const { lastEvent, progressFor, enqueueClass } = useJavaQueue()
 const { create } = useArticles()
+const { edges: serverEdges, setHighlightedCall, clearHighlightedCall } = useJavaGraph()
 
 const file = ref(null)
 const loading = ref(true)
@@ -80,6 +82,42 @@ watch(lastEvent, (ev) => {
 })
 
 const queueProgress = computed(() => progressFor(props.fileId))
+
+// --- Code-Token <-> Graph-Edge -------------------------------------------------
+// Methodennamen, die diese Klasse (als Aufrufer) ueber eine Call-Edge nutzt -> im Quellcode
+// klickbar. `uses`-Edges (Typ-Nutzung) sind keine Methodenaufrufe und bleiben aussen vor.
+const callableMethods = computed(() => {
+  const cls = file.value?.class_name
+  if (!cls) return []
+  return [
+    ...new Set(
+      (serverEdges.value || [])
+        .filter((e) => e.source_class === cls && e.kind !== 'uses')
+        .map((e) => e.method_name)
+        .filter(Boolean),
+    ),
+  ]
+})
+
+let callTimer = null
+// Klick auf einen klickbaren Methodennamen im Quellcode: Graph-Kante aufleuchten lassen + das Token
+// im Editor in derselben Farbe markieren. Auto-Reset nach 2,5 s (analog zum Such-Glow); ein neuer
+// Klick ersetzt die Markierung.
+function onMethodClick({ name }) {
+  if (!name) return
+  clearTimeout(callTimer)
+  setHighlightedCall({ callerFileId: props.fileId, method: name })
+  sourceEditor.value?.setActiveCall(name)
+  callTimer = setTimeout(resetCallHighlight, 2500)
+}
+function resetCallHighlight() {
+  clearTimeout(callTimer)
+  clearHighlightedCall()
+  sourceEditor.value?.clearActiveCall()
+}
+// Klassenwechsel/Unmount: stehengebliebenes Highlight raeumen.
+watch(() => props.fileId, resetCallHighlight)
+onBeforeUnmount(resetCallHighlight)
 
 const typeBadge = computed(() => ({
   class: 'badge-accent',
@@ -335,7 +373,13 @@ async function removeFile() {
               class="code-copy z-10 opacity-100"
               @click="copySource"
             >{{ copied ? 'Copied' : 'Copy' }}</button>
-            <JavaCodeEditor ref="sourceEditor" :model-value="file.raw_source" readonly />
+            <JavaCodeEditor
+              ref="sourceEditor"
+              :model-value="file.raw_source"
+              :clickable-words="callableMethods"
+              readonly
+              @method-click="onMethodClick"
+            />
           </div>
         </template>
       </template>

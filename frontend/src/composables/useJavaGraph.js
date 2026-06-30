@@ -11,6 +11,12 @@ const loading = ref(false)
 const recomputing = ref(false)
 const error = ref('')
 
+// Aktuell „aufleuchtende" Call-Edge: gesetzt, wenn im Code-Tab (JavaClassDetail) ein Methodenname
+// angeklickt wird, der einer Call-Edge entspricht. Wert: { callerFileId, method } | null.
+// Der Graph (JavaDependencyGraph) liest dies und hebt die passende Kante hervor; das Code-Token
+// wird im Editor mit derselben Farbe markiert. Bewusst geteilter Module-State (kein Pinia).
+const highlightedCall = ref(null)
+
 async function fetchEdges() {
   loading.value = true
   error.value = ''
@@ -70,6 +76,13 @@ export function useJavaGraph() {
     loading,
     recomputing,
     error,
+    highlightedCall,
+    setHighlightedCall(payload) {
+      highlightedCall.value = payload
+    },
+    clearHighlightedCall() {
+      highlightedCall.value = null
+    },
     fetchEdges,
     recomputeEdges,
     // Frontend-Spiegel der Kanten sofort leeren (Komplett-Reset im Code-Tab). Die Auto-Kanten
