@@ -112,20 +112,30 @@ html.dark .shiki span {
   font-size: 12px;
 }
 /* Parametervariablen im Edge-Panel (Quelle + Anwender): farbig + klickbar. Die Bloecke sind
-   via .code-dark immer dunkel -> fester aufgehellter Akzent (#7fb4d0 = Dark-`--color-accent`),
-   themenunabhaengig. Hoehere Spezifitaet als die `.code-dark .shiki span { … !important }`-Regel
-   noetig -> ebenfalls !important. */
+   via .code-dark immer dunkel -> feste, themenunabhaengige Palette. Jede Variable bekommt per
+   `java-param-c{0..5}` (gesetzt in lib/javaParams.js) eine eigene, klar unterscheidbare Farbe,
+   damit sich `String a, int b, List<String> c` optisch trennen. Hoehere Spezifitaet als die
+   `.code-dark .shiki span { … !important }`-Regel noetig -> ebenfalls !important. */
 .code-dark .shiki .java-param {
-  color: #7fb4d0 !important;
   cursor: pointer;
   border-radius: 2px;
+  font-weight: 500;
 }
 .code-dark .shiki .java-param:hover {
   text-decoration: underline;
 }
+/* Aktiv-Markierung (Klick): Hintergrund aus currentColor -> passt automatisch zur jeweiligen
+   Variablenfarbe. */
 .code-dark .shiki .java-param-active {
-  background-color: rgba(127, 180, 208, 0.3) !important;
+  background-color: color-mix(in srgb, currentColor 24%, transparent) !important;
 }
+/* Distinkte, auf github-dark-BG gut lesbare Hues. c0 = vertrauter Akzent-Blau. */
+.code-dark .shiki .java-param-c0 { color: #7fb4d0 !important; } /* blau     */
+.code-dark .shiki .java-param-c1 { color: #e0a45e !important; } /* amber    */
+.code-dark .shiki .java-param-c2 { color: #8fce8f !important; } /* gruen    */
+.code-dark .shiki .java-param-c3 { color: #d894c4 !important; } /* magenta  */
+.code-dark .shiki .java-param-c4 { color: #b6a4e8 !important; } /* lavendel */
+.code-dark .shiki .java-param-c5 { color: #6fcfc6 !important; } /* teal     */
 .edge-usage-code .shiki code,
 .edge-code .shiki code {
   display: block;

@@ -56,12 +56,20 @@ function escapeRe(s) {
 // Vorkommen eines Parameternamens mit <span class="java-param" data-var="…"> umschliessen.
 // Es werden nur TEXT-Knoten geteilt -> die Shiki-Farbspans und die data-line-Attribute der
 // .line-Zeilen bleiben unangetastet.
+// Anzahl distinkter Parameter-Farben in der Palette (siehe `.java-param-c{0..N-1}` in style.css).
+const PARAM_PALETTE = 6
+
 export function markParamOccurrences(html, names) {
   if (!html || !Array.isArray(names) || !names.length) return html
   try {
     const doc = new DOMParser().parseFromString(html, 'text/html')
     const root = doc.querySelector('.shiki')
     if (!root) return html
+
+    // Stabiler Farb-Index je Variable (Reihenfolge aus parseParamNames = eindeutig) -> gleiche
+    // Variable bekommt ueberall (Signatur + Rumpf) dieselbe Palette-Klasse, verschiedene
+    // Variablen klar unterscheidbare Farben.
+    const idxOf = new Map(names.map((n, i) => [n, i % PARAM_PALETTE]))
 
     // Laengste Namen zuerst -> die Alternation matcht greedy den vollstaendigen Bezeichner.
     const sorted = [...names].sort((a, b) => b.length - a.length).map(escapeRe)
@@ -82,7 +90,7 @@ export function markParamOccurrences(html, names) {
       while ((m = re.exec(text))) {
         if (m.index > last) frag.appendChild(doc.createTextNode(text.slice(last, m.index)))
         const span = doc.createElement('span')
-        span.className = 'java-param'
+        span.className = `java-param java-param-c${idxOf.get(m[1]) ?? 0}`
         span.setAttribute('data-var', m[1])
         span.textContent = m[1]
         frag.appendChild(span)

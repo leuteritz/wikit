@@ -10,6 +10,7 @@ import { useJavaQueue } from '../../composables/useJavaQueue.js'
 import { useArticles } from '../../composables/useArticles.js'
 import JavaCodeEditor from './JavaCodeEditor.vue'
 import { processMethodBody } from '../../lib/javaCode.js'
+import { copyToClipboard } from '../../lib/clipboard.js'
 import { Icon } from '../../lib/icons.js'
 
 const props = defineProps({
@@ -118,11 +119,10 @@ async function fullAnalysis() {
 }
 
 async function copySource() {
-  try {
-    await navigator.clipboard.writeText(file.value?.raw_source || '')
-    copied.value = true
-    setTimeout(() => (copied.value = false), 1500)
-  } catch { /* Clipboard evtl. gesperrt */ }
+  // copyToClipboard kapselt den Secure-Context-/Fallback-Fall (Pi laeuft ueber http).
+  if (!(await copyToClipboard(file.value?.raw_source || ''))) return
+  copied.value = true
+  setTimeout(() => (copied.value = false), 1500)
 }
 
 // Wiki-Artikel aus der Klasse erzeugen und verknuepfen (-> FTS-Suche).

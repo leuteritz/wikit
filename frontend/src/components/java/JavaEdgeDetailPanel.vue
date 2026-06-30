@@ -13,6 +13,7 @@ import { useRouter } from 'vue-router'
 import { api } from '../../lib/api.js'
 import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
 import { parseParamNames, markParamOccurrences } from '../../lib/javaParams.js'
+import { copyToClipboard } from '../../lib/clipboard.js'
 import { Icon } from '../../lib/icons.js'
 
 const props = defineProps({
@@ -228,17 +229,13 @@ async function loadUsageSnippets() {
 const copiedKey = ref(null)
 let copyTimer = null
 async function copyCode(key, text) {
-  if (!text) return
-  try {
-    await navigator.clipboard.writeText(text)
-    copiedKey.value = key
-    if (copyTimer) clearTimeout(copyTimer)
-    copyTimer = setTimeout(() => {
-      copiedKey.value = null
-    }, 1500)
-  } catch {
-    /* Clipboard nicht verfügbar -> still ignorieren */
-  }
+  // copyToClipboard kapselt den Secure-Context-/Fallback-Fall (Pi laeuft ueber http).
+  if (!(await copyToClipboard(text))) return
+  copiedKey.value = key
+  if (copyTimer) clearTimeout(copyTimer)
+  copyTimer = setTimeout(() => {
+    copiedKey.value = null
+  }, 1500)
 }
 onUnmounted(() => {
   if (copyTimer) clearTimeout(copyTimer)
