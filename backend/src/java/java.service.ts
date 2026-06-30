@@ -268,12 +268,19 @@ export class JavaService {
     // Zeile: gespeicherter Wert (neu analysiert) oder Fallback aus dem Rohquelltext (Bestandsdaten).
     const startLine = method.start_line ?? this.findMethodLine(file.raw_source, methodName);
 
-    // Kombinierter, leerzeilenbereinigter Block fuer das Edge-Panel: Signatur + Rumpf in EINER
-    // Shiki-Box. Leerzeilen raus -> kompakte, gut lesbare Detailansicht. endLine aus Zeilenzahl.
+    // Kombinierter, leerzeilenbereinigter Block fuer die ANZEIGE im Edge-Panel: Signatur + Rumpf in
+    // EINER Shiki-Box. Leerzeilen raus -> kompakte, gut lesbare Detailansicht.
     const combinedCode = (hasBody ? `${signature} ${method.body}` : `${signature};`)
       .replace(/\n[ \t]*\n+/g, '\n')
       .trim();
-    const endLine = startLine + combinedCode.split('\n').length - 1;
+    // endLine = ECHTE letzte Quellzeile der Methode (schliessende `}`), NICHT die der kompaktierten
+    // Anzeige-Box. method.body ist der verbatim aus raw_source geschnittene Rumpf (mit echten
+    // Leerzeilen) -> seine Zeilenzahl ab body_start_line ergibt die reale Spanne. So markiert das
+    // Frontend die KOMPLETTE Methode im Gesamt-Quellcode statt nur bis zur kompaktierten Laenge.
+    const endLine =
+      hasBody && method.body
+        ? (method.body_start_line ?? startLine) + method.body.split('\n').length - 1
+        : startLine;
 
     const { html } = await this.markdown.renderMarkdown('```java\n' + code + '\n```');
     const { html: combinedHtml } = await this.markdown.renderMarkdown('```java\n' + combinedCode + '\n```');
