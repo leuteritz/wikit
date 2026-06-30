@@ -181,35 +181,70 @@ function openClass(id) {
             </p>
           </div>
 
-          <!-- Code einfuegen (einklappbar) -->
-          <button
-            type="button"
-            class="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-accent)] transition hover:opacity-80"
-            @click="showPaste = !showPaste"
-          >
-            <Icon icon="lucide:chevron-right" class="h-3.5 w-3.5 transition-transform" :class="showPaste ? 'rotate-90' : ''" />
-            or paste code
-          </button>
-          <div v-show="showPaste" class="mt-2 h-60">
+          <!-- Alternative Eingaben als gut erkennbare Option-Cards (statt winziger Text-Toggles). -->
+          <div class="mt-4 grid gap-3 sm:grid-cols-2">
+            <!-- Card: Code einfuegen -->
+            <button
+              type="button"
+              class="flex items-start gap-3 rounded-xl border p-3 text-left transition"
+              :class="showPaste
+                ? 'border-[var(--color-accent)] bg-[var(--color-accent-soft)]'
+                : 'border-[var(--color-border)] bg-[var(--color-surface-2)] hover:border-[var(--color-accent)]'"
+              :aria-expanded="showPaste"
+              @click="showPaste = !showPaste"
+            >
+              <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+                <Icon icon="lucide:code-2" class="h-5 w-5" />
+              </span>
+              <span class="min-w-0">
+                <span class="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text)]">
+                  Paste code
+                  <Icon icon="lucide:chevron-down" class="h-3.5 w-3.5 text-[var(--color-text-muted)] transition-transform" :class="showPaste ? 'rotate-180' : ''" />
+                </span>
+                <span class="mt-0.5 block text-xs text-[var(--color-text-muted)]">Drop a class straight into the editor</span>
+              </span>
+            </button>
+
+            <!-- Card: Projekt-Kontext -->
+            <button
+              type="button"
+              class="flex items-start gap-3 rounded-xl border p-3 text-left transition"
+              :class="showContext
+                ? 'border-[var(--color-accent)] bg-[var(--color-accent-soft)]'
+                : 'border-[var(--color-border)] bg-[var(--color-surface-2)] hover:border-[var(--color-accent)]'"
+              :aria-expanded="showContext"
+              @click="showContext = !showContext"
+            >
+              <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+                <Icon icon="lucide:wand-2" class="h-5 w-5" />
+              </span>
+              <span class="min-w-0">
+                <span class="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text)]">
+                  Project context
+                  <span
+                    v-if="userContext"
+                    class="rounded-full bg-[var(--color-accent)] px-1.5 py-0.5 text-[10px] font-bold leading-none text-[var(--color-accent-contrast)]"
+                  >active</span>
+                  <Icon icon="lucide:chevron-down" class="h-3.5 w-3.5 text-[var(--color-text-muted)] transition-transform" :class="showContext ? 'rotate-180' : ''" />
+                </span>
+                <span class="mt-0.5 block text-xs text-[var(--color-text-muted)]">Steers every AI summary</span>
+              </span>
+            </button>
+          </div>
+
+          <!-- Ausklappbares Editor-Panel (Paste) -->
+          <div v-show="showPaste" class="mt-3 h-72">
             <JavaCodeEditor v-model="source" />
           </div>
 
-          <!-- Projekt-Kontext (einklappbar) -->
-          <button
-            type="button"
-            class="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
-            @click="showContext = !showContext"
-          >
-            <Icon icon="lucide:chevron-right" class="h-3.5 w-3.5 transition-transform" :class="showContext ? 'rotate-90' : ''" />
-            Project context (optional){{ userContext ? ' · active' : '' }}
-          </button>
+          <!-- Ausklappbares Kontext-Panel -->
           <textarea
             v-show="showContext"
             v-model="userContext"
             spellcheck="false"
-            rows="2"
+            rows="3"
             placeholder="e.g. Windchill background, module purpose… – fed into every AI prompt."
-            class="mt-2 w-full resize-y rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2.5 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
+            class="mt-3 w-full resize-y rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2.5 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
           />
 
           <p v-if="error" class="mt-3 text-sm text-[var(--color-danger)]">{{ error }}</p>
