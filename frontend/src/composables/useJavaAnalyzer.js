@@ -17,6 +17,10 @@ const state = reactive({
   // Optionale Ziel-Quellzeile fuer den Hand-off (Suche/Edge-Panel -> CodeView): wenn gesetzt,
   // oeffnet CodeView den Quellcode-Tab und hebt diese Zeile hervor. Wird nach Verbrauch genullt.
   lastTargetLine: null,
+  // Optionale Ziel-End-Zeile: ist sie gesetzt (> lastTargetLine), markiert CodeView den GESAMTEN
+  // Methodenbereich (lastTargetLine..lastTargetEndLine) statt nur einer Zeile (Edge-Panel
+  // „Definiert in"). Wird ebenfalls nach Verbrauch genullt.
+  lastTargetEndLine: null,
 })
 
 async function fetchFiles() {
@@ -82,6 +86,7 @@ export function useJavaAnalyzer() {
       await fetchFiles()
       state.lastFileId = null
       state.lastTargetLine = null
+      state.lastTargetEndLine = null
       state.error = ''
     },
     summarizeMethod: (id, data) => api.summarizeJavaMethod(id, data),

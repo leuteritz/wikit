@@ -23,7 +23,7 @@ const props = defineProps({
 const emit = defineEmits(['close'])
 
 const router = useRouter()
-const { lastFileId, lastTargetLine } = useJavaAnalyzer()
+const { lastFileId, lastTargetLine, lastTargetEndLine } = useJavaAnalyzer()
 
 function close() {
   emit('close')
@@ -259,17 +259,22 @@ function onParamClick(e) {
 }
 
 // Hand-off zu CodeView: Datei vorwaehlen + (optional) Zeile hervorheben, Panel schliessen.
-function navigateTo(fileId, line) {
+// `endLine` gesetzt -> CodeView markiert den gesamten Methodenbereich (line..endLine) statt nur
+// einer Zeile.
+function navigateTo(fileId, line, endLine) {
   if (fileId == null) return
   lastFileId.value = fileId
   lastTargetLine.value = line ?? null
+  lastTargetEndLine.value = endLine ?? null
   close()
   router.push('/code')
 }
 
-// „Definiert in <Zielklasse>": zur Methodendeklaration springen.
+// „Definiert in <Zielklasse>": zur Methodendeklaration springen und die KOMPLETTE Methode
+// (Signatur bis schliessende Klammer) im Quellcode markieren.
 function openDefinition(c) {
-  navigateTo(props.edge?.toFileId, snippets.value[c.name]?.startLine ?? null)
+  const snip = snippets.value[c.name]
+  navigateTo(props.edge?.toFileId, snip?.startLine ?? null, snip?.endLine ?? null)
 }
 
 // „Aufgerufen in <Aufruferklasse>": zeilengenau zur ersten Aufrufstelle springen
@@ -351,13 +356,27 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                   :key="c.name"
                   class="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-offset)]"
                 >
-                  <!-- Methoden-Header: Name + (Datei · Zeilenbereich) + Kopier-Button.
-                       Der Kopier-Button sitzt bewusst hier (nicht schwebend ueber dem Code), damit er
-                       die Signatur-Zeile nicht ueberdeckt und die Parameter-Variablen klickbar bleiben. -->
+                  <!-- Methoden-Header: Name + „Definiert in"-Sprung + (Datei · Zeilenbereich) +
+                       Kopier-Button. Der Kopier-Button sitzt bewusst hier (nicht schwebend ueber dem
+                       Code), damit er die Signatur-Zeile nicht ueberdeckt und die Parameter-Variablen
+                       klickbar bleiben. -->
                   <div class="flex items-center gap-2 px-3 py-2">
                     <Icon icon="lucide:braces" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
                     <code class="font-mono text-sm font-semibold text-[var(--color-text)]">{{ c.name }}()</code>
                     <div class="ml-auto flex min-w-0 items-center gap-1.5">
+                      <!-- „Definiert in <Klasse>": springt in den Quellcode der Zielklasse und
+                           markiert dort die komplette Methode. Dezent, header-konform (keine
+                           grelle Hervorhebung) – Accent erst beim Hover. -->
+                      <button
+                        v-if="snippets[c.name]?.html"
+                        type="button"
+                        class="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-accent)]"
+                        :title="`Im Quellcode von ${edge.toClass} öffnen und Methode markieren`"
+                        @click="openDefinition(c)"
+                      >
+                        <Icon icon="lucide:target" class="h-3.5 w-3.5 shrink-0" />
+                        Definiert in <span class="font-semibold">{{ edge.toClass }}</span>
+                      </button>
                       <span
                         v-if="snippets[c.name]?.filename"
                         class="inline-flex min-w-0 items-center gap-1 truncate font-mono text-[11px] text-[var(--color-text-muted)]"
@@ -395,18 +414,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                       v-html="snippets[c.name].html"
                       @click="onParamClick"
                     />
-                  </div>
-
-                  <!-- Fußzeile: zur Definition springen -->
-                  <div class="flex flex-wrap items-center gap-2 border-t border-[var(--color-border)] px-3 py-2">
-                    <button
-                      type="button"
-                      class="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-accent-soft)] px-2 py-1 text-xs font-medium text-[var(--color-accent)] transition hover:opacity-80"
-                      @click="openDefinition(c)"
-                    >
-                      <Icon icon="lucide:target" class="h-3.5 w-3.5" />
-                      Definiert in <span class="font-semibold">{{ edge.toClass }}</span>
-                    </button>
                   </div>
                 </article>
               </div>

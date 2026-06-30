@@ -18,6 +18,9 @@ const props = defineProps({
   // Optionale Ziel-Quellzeile: oeffnet den Quellcode-Tab und hebt die Zeile hervor
   // (Such-Sprung bzw. Edge-Panel-Navigation).
   targetLine: { type: Number, default: null },
+  // Optionale Ziel-End-Zeile: ist sie gesetzt (> targetLine), wird der GESAMTE Methodenbereich
+  // (targetLine..targetEndLine) markiert statt nur einer Zeile (Edge-Panel „Definiert in").
+  targetEndLine: { type: Number, default: null },
 })
 const emit = defineEmits(['close', 'changed'])
 
@@ -53,12 +56,18 @@ async function load() {
   }
 }
 
-// Quellcode-Tab oeffnen und die Zielzeile hervorheben (auto-fade im Editor nach 2,5 s).
+// Quellcode-Tab oeffnen und das Ziel hervorheben. Liegt eine End-Zeile vor (Edge-Panel
+// „Definiert in") -> die KOMPLETTE Methode persistent markieren; sonst nur die eine Zeile per
+// auto-fade-Glow (Such-Sprung).
 async function applyTargetLine() {
   if (!props.targetLine || !file.value) return
   tab.value = 'source'
   await nextTick() // Editor erst nach Tab-Wechsel gemountet
-  sourceEditor.value?.highlightLine(props.targetLine)
+  if (props.targetEndLine && props.targetEndLine > props.targetLine) {
+    sourceEditor.value?.highlightMethod(props.targetLine, props.targetEndLine)
+  } else {
+    sourceEditor.value?.highlightLine(props.targetLine)
+  }
 }
 
 watch(() => props.fileId, load, { immediate: true })

@@ -15,7 +15,7 @@ import JavaClassDetail from '../components/java/JavaClassDetail.vue'
 import { Icon } from '../lib/icons.js'
 import { detectJavaClasses } from '../lib/javaDetect.js'
 
-const { files, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFileId, lastTargetLine, deleteFile, resetAll } =
+const { files, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFileId, lastTargetLine, lastTargetEndLine, deleteFile, resetAll } =
   useJavaAnalyzer()
 const { enqueueClass, enqueueAllUnanalyzed, cancelJob, cancelAllJobs, progressFor, ensurePolling } = useJavaQueue()
 const { recomputeEdges, recomputing, resetEdges } = useJavaGraph()
@@ -25,6 +25,7 @@ const filename = ref('')
 const inputMode = ref('paste') // 'paste' = Editor | 'file' = .java-Datei(en) hochladen
 const selectedFileId = ref(null)
 const activeTargetLine = ref(null) // Ziel-Quellzeile fuer das Detail-Panel (Such-Sprung)
+const activeTargetEndLine = ref(null) // Ziel-End-Zeile -> markiert den gesamten Methodenbereich
 const queueNotice = ref('')
 const search = ref('')
 const showNew = ref(false)
@@ -46,8 +47,10 @@ function consumeHandoff() {
   if (lastFileId.value == null) return
   selectedFileId.value = lastFileId.value
   activeTargetLine.value = lastTargetLine.value
+  activeTargetEndLine.value = lastTargetEndLine.value
   lastFileId.value = null
   lastTargetLine.value = null
+  lastTargetEndLine.value = null
 }
 
 // Reagiert auch, wenn /code bereits gemountet ist (z. B. Klick auf einen Edge-Panel-Link).
@@ -207,6 +210,7 @@ function cancelOverwrite() {
 function selectFile(id) {
   // Manuelle Auswahl -> evtl. ausstehende Such-Zielzeile verwerfen (kein Fehl-Highlight).
   activeTargetLine.value = null
+  activeTargetEndLine.value = null
   selectedFileId.value = id
 }
 
@@ -256,6 +260,7 @@ async function confirmReset() {
     // Lokalen View-State auf "frisch geoeffnet" zuruecksetzen.
     selectedFileId.value = null
     activeTargetLine.value = null
+    activeTargetEndLine.value = null
     source.value = ''
     filename.value = ''
     search.value = ''
@@ -568,6 +573,7 @@ async function confirmReset() {
           :key="selectedFileId"
           :file-id="selectedFileId"
           :target-line="activeTargetLine"
+          :target-end-line="activeTargetEndLine"
           @close="onDetailClose"
         />
         <div

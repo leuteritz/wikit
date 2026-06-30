@@ -49,9 +49,40 @@ const glowField = StateField.define({
   provide: (f) => EditorView.decorations.from(f),
 })
 
+// --- Methoden-Bereich-Highlight (Edge-Panel „Definiert in") -------------------
+// Persistente Mehrzeilen-Decoration: hebt den GESAMTEN Methodenbereich (Signatur bis schliessende
+// Klammer) farbig hervor. Bleibt stehen, bis eine andere Methode/ein anderes Ziel gewaehlt wird
+// (kein auto-fade wie der Such-Glow) – eine eigene Farbe macht „Methode markiert" vs.
+// „Zeile gesprungen" unterscheidbar.
+const setMethodRange = StateEffect.define() // value: { from, to } (1-basiert) | null
+const methodLineDeco = Decoration.line({ class: 'cm-method-highlight' })
+const methodField = StateField.define({
+  create() {
+    return Decoration.none
+  },
+  update(deco, tr) {
+    deco = deco.map(tr.changes)
+    for (const e of tr.effects) {
+      if (!e.is(setMethodRange)) continue
+      if (!e.value) {
+        deco = Decoration.none
+        continue
+      }
+      const ranges = []
+      for (let n = e.value.from; n <= e.value.to; n++) {
+        ranges.push(methodLineDeco.range(tr.state.doc.line(n).from))
+      }
+      deco = Decoration.set(ranges)
+    }
+    return deco
+  },
+  provide: (f) => EditorView.decorations.from(f),
+})
+
 // Oeffentliche API: zur (1-basierten) Zeile scrollen + kurz hervorheben (auto-fade nach 2,5 s).
 function highlightLine(lineNumber) {
   if (!view || !lineNumber) return
+  clearMethodHighlight() // ein Einzelzeilen-Sprung raeumt eine evtl. stehende Methoden-Markierung
   const total = view.state.doc.lines
   const n = Math.max(1, Math.min(Number(lineNumber), total))
   const line = view.state.doc.line(n)
@@ -63,13 +94,32 @@ function highlightLine(lineNumber) {
     view?.dispatch({ effects: clearGlow.of(null) })
   }, 2500)
 }
-defineExpose({ highlightLine })
+
+// Oeffentliche API: den kompletten Methodenbereich (1-basiert, inkl. End-Zeile) markieren + an den
+// Anfang scrollen. Persistent bis zur naechsten Markierung/Clear.
+function highlightMethod(startLine, endLine) {
+  if (!view || !startLine) return
+  const total = view.state.doc.lines
+  const from = Math.max(1, Math.min(Number(startLine), total))
+  const to = Math.max(from, Math.min(Number(endLine || startLine), total))
+  view.dispatch({
+    effects: [
+      setMethodRange.of({ from, to }),
+      EditorView.scrollIntoView(view.state.doc.line(from).from, { y: 'center' }),
+    ],
+  })
+}
+function clearMethodHighlight() {
+  view?.dispatch({ effects: setMethodRange.of(null) })
+}
+defineExpose({ highlightLine, highlightMethod, clearMethodHighlight })
 
 onMounted(() => {
   const extensions = [
     lineNumbers(),
     highlightActiveLine(),
     glowField,
+    methodField,
     indentUnit.of('    '),
     java(),
     EditorView.lineWrapping,
@@ -154,5 +204,18 @@ html.dark .cm-glow-line {
     animation: none;
     background-color: rgba(var(--cm-glow), 0.28);
   }
+}
+
+/* Persistente Methoden-Markierung (Edge-Panel „Definiert in"): ruhiger Accent-Tint + linker
+   Balken auf jeder Zeile des Methodenbereichs. Eigene Farbe (Indigo) -> klar abgegrenzt vom
+   amber Such-Glow. Dark-Variante kraeftiger fuer Kontrast auf dunklem Grund. */
+.cm-method-highlight {
+  --cm-method: 99, 102, 241; /* indigo-500 */
+  background-color: rgba(var(--cm-method), 0.12);
+  box-shadow: inset 3px 0 0 0 rgba(var(--cm-method), 0.85);
+}
+html.dark .cm-method-highlight {
+  --cm-method: 129, 140, 248; /* indigo-400, kräftiger auf dunklem Grund */
+  background-color: rgba(var(--cm-method), 0.18);
 }
 </style>
