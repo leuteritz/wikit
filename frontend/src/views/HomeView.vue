@@ -9,7 +9,7 @@ import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { useJavaQueue } from '../composables/useJavaQueue.js'
 import { useArticles } from '../composables/useArticles.js'
 import { api } from '../lib/api.js'
-import { WIKI_TITLE } from '../config.js'
+import { WIKI_TITLE, WIKI_ICON } from '../config.js'
 import JavaCodeEditor from '../components/java/JavaCodeEditor.vue'
 import MeshBackground from '../components/MeshBackground.vue'
 import { Icon } from '../lib/icons.js'
@@ -107,7 +107,8 @@ function openClass(id) {
           Local code intelligence · no cloud, no login
         </p>
 
-        <h1 class="text-3xl font-bold tracking-tight text-[var(--color-text)] sm:text-4xl">
+        <h1 class="flex items-center gap-3 text-3xl font-bold tracking-tight text-[var(--color-text)] sm:text-4xl">
+          <Icon :icon="WIKI_ICON" class="shrink-0 text-[var(--color-accent)]" />
           {{ WIKI_TITLE }}
         </h1>
         <p class="mt-3 max-w-xl text-[15px] leading-relaxed text-[var(--color-text-muted)]">
