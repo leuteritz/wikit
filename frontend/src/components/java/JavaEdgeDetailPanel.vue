@@ -351,18 +351,33 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                   :key="c.name"
                   class="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-offset)]"
                 >
-                  <!-- Methoden-Header: Name + Datei · Zeilenbereich -->
+                  <!-- Methoden-Header: Name + (Datei · Zeilenbereich) + Kopier-Button.
+                       Der Kopier-Button sitzt bewusst hier (nicht schwebend ueber dem Code), damit er
+                       die Signatur-Zeile nicht ueberdeckt und die Parameter-Variablen klickbar bleiben. -->
                   <div class="flex items-center gap-2 px-3 py-2">
                     <Icon icon="lucide:braces" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
                     <code class="font-mono text-sm font-semibold text-[var(--color-text)]">{{ c.name }}()</code>
-                    <span
-                      v-if="snippets[c.name]?.filename"
-                      class="ml-auto inline-flex items-center gap-1 truncate font-mono text-[11px] text-[var(--color-text-muted)]"
-                      :title="snippets[c.name].filename"
-                    >
-                      <Icon icon="lucide:file-code" class="h-3 w-3 shrink-0" />
-                      {{ snippets[c.name].filename }} · Z{{ snippets[c.name].startLine }}–{{ snippets[c.name].endLine }}
-                    </span>
+                    <div class="ml-auto flex min-w-0 items-center gap-1.5">
+                      <span
+                        v-if="snippets[c.name]?.filename"
+                        class="inline-flex min-w-0 items-center gap-1 truncate font-mono text-[11px] text-[var(--color-text-muted)]"
+                        :title="snippets[c.name].filename"
+                      >
+                        <Icon icon="lucide:file-code" class="h-3 w-3 shrink-0" />
+                        {{ snippets[c.name].filename }} · Z{{ snippets[c.name].startLine }}–{{ snippets[c.name].endLine }}
+                      </span>
+                      <button
+                        v-if="snippets[c.name]?.html"
+                        type="button"
+                        class="grid h-7 w-7 shrink-0 place-items-center rounded-md transition hover:bg-[var(--color-surface-offset)]"
+                        :class="copiedKey === 'src:' + c.name ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
+                        :title="copiedKey === 'src:' + c.name ? 'In Zwischenablage kopiert' : 'Code kopieren'"
+                        :aria-label="copiedKey === 'src:' + c.name ? 'In Zwischenablage kopiert' : 'Code kopieren'"
+                        @click="copyCode('src:' + c.name, snippets[c.name].code)"
+                      >
+                        <Icon :icon="copiedKey === 'src:' + c.name ? 'lucide:check' : 'lucide:copy'" class="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   <!-- EIN kombinierter Code-Block: Signatur + Rumpf, leerzeilenfrei (Shiki, Dual-Theme) -->
@@ -374,18 +389,12 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                     <p v-else-if="snippets[c.name]?.error" class="px-1 py-2 text-xs text-[var(--color-danger)]">
                       {{ snippets[c.name].error }}
                     </p>
-                    <div v-else-if="snippets[c.name]?.html" class="code-wrap">
-                      <button
-                        type="button"
-                        class="code-copy inline-flex items-center gap-1"
-                        :title="copiedKey === 'src:' + c.name ? 'In Zwischenablage kopiert' : 'Code kopieren'"
-                        @click="copyCode('src:' + c.name, snippets[c.name].code)"
-                      >
-                        <Icon :icon="copiedKey === 'src:' + c.name ? 'lucide:check' : 'lucide:copy'" class="h-3.5 w-3.5" />
-                        {{ copiedKey === 'src:' + c.name ? 'Kopiert' : 'Kopieren' }}
-                      </button>
-                      <div class="edge-code code-dark" v-html="snippets[c.name].html" @click="onParamClick" />
-                    </div>
+                    <div
+                      v-else-if="snippets[c.name]?.html"
+                      class="edge-code code-dark"
+                      v-html="snippets[c.name].html"
+                      @click="onParamClick"
+                    />
                   </div>
 
                   <!-- Fußzeile: zur Definition springen -->
@@ -446,29 +455,31 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                       :key="i"
                       class="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-offset)]"
                     >
+                      <!-- Site-Header: Aufrufmethode + (Datei · Zeile) + Öffnen-Button. Wie in der
+                           Quelle-Sektion sitzt der Button hier, nicht schwebend über dem Code. -->
                       <div class="flex items-center gap-1.5 border-b border-[var(--color-border)] px-3 py-1.5 text-[11px]">
                         <Icon icon="lucide:corner-down-right" class="h-3 w-3 shrink-0 text-[var(--color-accent)]" />
                         <span class="truncate font-mono font-semibold text-[var(--color-accent)]">{{ site.calleeMethod }}()</span>
-                        <span
-                          class="ml-auto inline-flex items-center gap-1 truncate font-mono text-[var(--color-text-muted)]"
-                          :title="site.lineExact ? 'Exakte Aufrufzeile' : 'Zeile geschätzt – Datei für exakte Zeile neu analysieren'"
-                        >
-                          <Icon icon="lucide:file-code" class="h-3 w-3 shrink-0" />
-                          {{ usageSnippets[grp.callerMethod].filename }} · {{ site.lineExact ? '' : '~' }}Z{{ site.line }}
-                        </span>
+                        <div class="ml-auto flex min-w-0 items-center gap-1.5">
+                          <span
+                            class="inline-flex min-w-0 items-center gap-1 truncate font-mono text-[var(--color-text-muted)]"
+                            :title="site.lineExact ? 'Exakte Aufrufzeile' : 'Zeile geschätzt – Datei für exakte Zeile neu analysieren'"
+                          >
+                            <Icon icon="lucide:file-code" class="h-3 w-3 shrink-0" />
+                            {{ usageSnippets[grp.callerMethod].filename }} · {{ site.lineExact ? '' : '~' }}Z{{ site.line }}
+                          </span>
+                          <button
+                            type="button"
+                            class="grid h-6 w-6 shrink-0 place-items-center rounded-md text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+                            title="Im Quellcode öffnen (zeilengenau)"
+                            aria-label="Im Quellcode öffnen (zeilengenau)"
+                            @click="navigateTo(edge.fromFileId, site.line)"
+                          >
+                            <Icon icon="lucide:code-2" class="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </div>
-                      <div class="code-wrap edge-usage-code code-dark">
-                        <button
-                          type="button"
-                          class="code-copy inline-flex items-center gap-1"
-                          title="Im Quellcode öffnen (zeilengenau)"
-                          @click="navigateTo(edge.fromFileId, site.line)"
-                        >
-                          <Icon icon="lucide:code-2" class="h-3.5 w-3.5" />
-                          Öffnen
-                        </button>
-                        <div v-html="site.html" @click="onParamClick" />
-                      </div>
+                      <div class="edge-usage-code code-dark" v-html="site.html" @click="onParamClick" />
                     </div>
                   </div>
                 </div>
