@@ -50,6 +50,7 @@ import clock from '@iconify-icons/lucide/clock'
 import copy from '@iconify-icons/lucide/copy'
 import code2 from '@iconify-icons/lucide/code-2'
 import arrowDown from '@iconify-icons/lucide/arrow-down'
+import arrowUpDown from '@iconify-icons/lucide/arrow-up-down'
 import target from '@iconify-icons/lucide/target'
 import link from '@iconify-icons/lucide/link'
 import terminal from '@iconify-icons/lucide/terminal'
@@ -98,6 +99,7 @@ const ICONS = {
   'lucide:copy': copy,
   'lucide:code-2': code2,
   'lucide:arrow-down': arrowDown,
+  'lucide:arrow-up-down': arrowUpDown,
   'lucide:target': target,
   'lucide:link': link,
   'lucide:terminal': terminal,

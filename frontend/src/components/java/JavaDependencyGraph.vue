@@ -24,6 +24,7 @@ import { useTheme } from '../../composables/useTheme.js'
 import { useJavaGraph } from '../../composables/useJavaGraph.js'
 import { Icon } from '../../lib/icons.js'
 import JavaEdgeDetailPanel from './JavaEdgeDetailPanel.vue'
+import ManualEdgePanel from './ManualEdgePanel.vue'
 import ManagedEdge from './ManagedEdge.vue'
 
 const props = defineProps({
@@ -35,9 +36,12 @@ const emit = defineEmits(['select'])
 const { theme } = useTheme()
 const { fitView, zoomIn, zoomOut, setViewport } = useVueFlow()
 
-// Persistierte Call-/Uses-Edges (auto + manuell) – Quelle der Wahrheit ist das Backend. Der Graph
-// ist read-only: Kanten werden nur geladen/angezeigt (kein Anlegen/Bearbeiten/Löschen im UI).
-const { edges: serverEdges, fetchEdges } = useJavaGraph()
+// Persistierte Call-/Uses-Edges (auto + manuell) – Quelle der Wahrheit ist das Backend.
+// Kanten lassen sich im Graph manuell anlegen (Drag-to-Connect) und löschen (× am Label):
+//   * createEdge/deleteEdge laufen ausschließlich über das Composable (HTTP via lib/api.js).
+//   * deleteEdge im Backend: manuelle Kante hart löschen, Auto-Kante als Tombstone (dismissed=1)
+//     merken -> falsch erkannte Auto-Kanten kehren bei „Kanten neu simulieren" nicht zurück.
+const { edges: serverEdges, fetchEdges, createEdge, deleteEdge } = useJavaGraph()
 
 // Custom-Edge-Typ registrieren.
 const edgeTypes = { managed: ManagedEdge }
@@ -183,6 +187,7 @@ const layout = computed(() => {
           cursor: 'pointer',
         },
         onOpen: openEdgePanel,
+        onDelete: onDeleteEdge,
       },
     })
   }
@@ -391,13 +396,91 @@ function closeEdgePanel() {
   activeEdge.value = null
 }
 
+// --- Kante löschen (× am Label / Detail-Panel) -------------------------------
+// edgeId = java_edges.id. Backend tombstoned Auto-Kanten (kein Wiederauftauchen),
+// löscht manuelle hart. Danach refetcht das Composable -> layout rechnet neu.
+async function onDeleteEdge(edgeId) {
+  if (edgeId == null) return
+  try {
+    await deleteEdge(edgeId)
+  } catch (e) {
+    console.warn('[JavaGraph] Kante konnte nicht gelöscht werden', edgeId, e)
+    return
+  }
+  // Offenes Detail-Panel an die neu geladenen Kanten anpassen (gelöschte Methode raus).
+  if (activeEdge.value) refreshActiveEdge()
+}
+
+// Methoden des offenen Detail-Panels gegen die aktuell geladenen Server-Kanten abgleichen;
+// keine mehr übrig -> Panel schließen.
+function refreshActiveEdge() {
+  const ae = activeEdge.value
+  if (!ae) return
+  const liveIds = new Set((serverEdges.value || []).map((e) => e.id))
+  const methods = (ae.methods || []).filter((m) => m.edgeId == null || liveIds.has(m.edgeId))
+  if (!methods.length) {
+    activeEdge.value = null
+    return
+  }
+  activeEdge.value = { ...ae, methods }
+}
+
+// --- Manuelle Kante anlegen (Drag-to-Connect -> Slide-over) -------------------
+// Vue Flow liefert Node-IDs (`c:<fileId>`). Quelle = unteres Handle (Definition), Ziel =
+// oberes Handle (Anwender) – gleiche „Definition -> Nutzung"-Richtung wie der Graph-Pfeil.
+const pendingConnection = ref(null) // { sourceFile (Definition), targetFile (Anwender) }
+
+function fileFromNodeId(nodeId) {
+  const id = Number(String(nodeId).replace(/^c:/, ''))
+  return filesById.value.get(id) || null
+}
+
+function onConnect(conn) {
+  if (!conn || conn.source === conn.target) return
+  const sourceFile = fileFromNodeId(conn.source) // Definition (oben)
+  const targetFile = fileFromNodeId(conn.target) // Anwender (unten)
+  if (!sourceFile || !targetFile) return
+  pendingConnection.value = { sourceFile, targetFile }
+}
+
+function onSwapConnection() {
+  const c = pendingConnection.value
+  if (!c) return
+  pendingConnection.value = { sourceFile: c.targetFile, targetFile: c.sourceFile }
+}
+
+function closeManualPanel() {
+  pendingConnection.value = null
+}
+
+// Speichern: source_class = Aufrufer (Anwender, unten), target_class = Definition (oben),
+// method_name = gewählte Methode der Definitionsklasse. Composable persistiert (is_manual=1)
+// und refetcht -> neue gestrichelte Kante erscheint.
+async function onSaveManualEdge({ methodName }) {
+  const c = pendingConnection.value
+  if (!c) return
+  closeManualPanel()
+  try {
+    await createEdge({
+      source: c.targetFile.class_name,
+      target: c.sourceFile.class_name,
+      methodName: methodName || undefined,
+    })
+  } catch (e) {
+    console.warn('[JavaGraph] Manuelle Kante konnte nicht angelegt werden', e)
+  }
+}
+
 // Komplett-Reset im Code-Tab (files -> []): VueFlow selbst wird via v-else unmountet (interner
 // Node/Edge-Store verworfen), aber das geteleportete Edge-Panel haengt am <body> -> hier aktiv
 // schliessen, sonst bleibt es offen stehen.
 watch(
   () => (props.files || []).length,
   (n) => {
-    if (!n) activeEdge.value = null
+    if (!n) {
+      activeEdge.value = null
+      pendingConnection.value = null
+    }
   },
 )
 </script>
@@ -419,10 +502,11 @@ watch(
       :min-zoom="0.2"
       :max-zoom="2"
       :default-edge-options="{ type: 'managed' }"
-      :nodes-connectable="false"
+      :nodes-connectable="true"
       :edges-updatable="false"
       @node-click="onNodeClick"
       @edge-click="onEdgeClick"
+      @connect="onConnect"
     >
       <!-- Custom Node: kompaktes Card-Design, Farbe nach Package -->
       <template #node-klass="{ data }">
@@ -491,11 +575,22 @@ watch(
       </div>
     </div>
 
-    <!-- Edge-Detail-Modal: read-only Ansicht Definition -> Nutzung (ESC / Close schliesst) -->
+    <!-- Edge-Detail-Modal: Ansicht Definition -> Nutzung; löscht Kanten pro Methode (ESC schliesst) -->
     <JavaEdgeDetailPanel
       :edge="activeEdge"
       :visible="!!activeEdge"
       @close="closeEdgePanel"
+      @delete-edge="onDeleteEdge"
+    />
+
+    <!-- Slide-over: manuelle Kante anlegen (ausgelöst durch Drag-to-Connect) -->
+    <ManualEdgePanel
+      :visible="!!pendingConnection"
+      :source-file="pendingConnection?.sourceFile || null"
+      :target-file="pendingConnection?.targetFile || null"
+      @save="onSaveManualEdge"
+      @swap="onSwapConnection"
+      @close="closeManualPanel"
     />
   </div>
 </template>
@@ -571,10 +666,17 @@ watch(
   background: var(--pkg);
 }
 .vf-handle {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   background: var(--color-border);
-  border: none;
+  border: 2px solid var(--color-surface-2);
+  transition: width 0.15s ease, height 0.15s ease, background 0.15s ease;
+}
+/* Beim Hover über die Klasse die Verbindungspunkte deutlich machen (Drag-to-Connect-Affordance). */
+.vf-card:hover .vf-handle {
+  width: 12px;
+  height: 12px;
+  background: var(--color-accent);
 }
 .vf-tool {
   display: grid;

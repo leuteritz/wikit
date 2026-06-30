@@ -20,13 +20,24 @@ const props = defineProps({
   edge: { type: Object, default: null },
   visible: { type: Boolean, default: false },
 })
-const emit = defineEmits(['close'])
+const emit = defineEmits(['close', 'delete-edge'])
 
 const router = useRouter()
 const { lastFileId, lastTargetLine, lastTargetEndLine } = useJavaAnalyzer()
 
+// edgeId der aktuell per Inline-Confirm abgefragten Methode (null = keine Bestätigung offen).
+const confirmingDelete = ref(null)
+
 function close() {
   emit('close')
+}
+
+// Kante einer einzelnen Methode löschen -> Parent (JavaDependencyGraph) persistiert + frischt
+// das offene Panel auf (entfernte Methode raus, leer -> schließt).
+function deleteMethodEdge(edgeId) {
+  if (edgeId == null) return
+  confirmingDelete.value = null
+  emit('delete-edge', edgeId)
 }
 
 // Footer: zur Quell-/Aufruferklasse springen.
@@ -292,6 +303,7 @@ function onKeydown(e) {
 watch(
   () => props.visible,
   (vis) => {
+    confirmingDelete.value = null
     if (vis) {
       window.addEventListener('keydown', onKeydown)
       loadSnippets()
@@ -396,6 +408,42 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                       >
                         <Icon :icon="copiedKey === 'src:' + c.name ? 'lucide:check' : 'lucide:copy'" class="h-3.5 w-3.5" />
                       </button>
+
+                      <!-- Kante dieser Methode löschen (mit Inline-Confirm). Nur, wenn die
+                           Methode einer einzelnen Kante zugeordnet ist (c.edgeId bekannt). -->
+                      <template v-if="c.edgeId != null">
+                        <button
+                          v-if="confirmingDelete !== c.edgeId"
+                          type="button"
+                          class="grid h-7 w-7 shrink-0 place-items-center rounded-md text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-danger)]"
+                          :title="`Verbindung „${c.name}()“ löschen`"
+                          :aria-label="`Verbindung ${c.name} löschen`"
+                          @click="confirmingDelete = c.edgeId"
+                        >
+                          <Icon icon="lucide:trash-2" class="h-3.5 w-3.5" />
+                        </button>
+                        <span v-else class="inline-flex shrink-0 items-center gap-1">
+                          <span class="text-[11px] font-semibold text-[var(--color-danger)]">Löschen?</span>
+                          <button
+                            type="button"
+                            class="grid h-7 w-7 place-items-center rounded-md text-[var(--color-danger)] transition hover:bg-[var(--color-surface-offset)]"
+                            title="Löschen bestätigen"
+                            aria-label="Löschen bestätigen"
+                            @click="deleteMethodEdge(c.edgeId)"
+                          >
+                            <Icon icon="lucide:check" class="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            class="grid h-7 w-7 place-items-center rounded-md text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+                            title="Abbrechen"
+                            aria-label="Abbrechen"
+                            @click="confirmingDelete = null"
+                          >
+                            <Icon icon="lucide:x" class="h-3.5 w-3.5" />
+                          </button>
+                        </span>
+                      </template>
                     </div>
                   </div>
 

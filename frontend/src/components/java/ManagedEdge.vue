@@ -13,7 +13,7 @@
 //   1) Linien: Endpunkte (und damit der Pfad) horizontal auffaechern (fanOffset).
 //   2) Labels: zusaetzlich vertikal staffeln (labelStagger) statt rotieren – rotierte Labels
 //      sind schlechter lesbar; gestapelte, leicht versetzte Labels bleiben waagerecht lesbar.
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from '@vue-flow/core'
 import { Icon } from '../../lib/icons.js'
 
@@ -42,6 +42,30 @@ const spread = (step) => {
 const fanOffset = computed(() => spread(SPREAD))
 const labelStagger = computed(() => spread(LABEL_STEP))
 
+// Inline-Loesch-Bestaetigung direkt am Label (nur Einzelkante). Bei einem Buendel uebernimmt
+// das Detail-Panel das gezielte Loeschen pro Methode.
+const confirming = ref(false)
+// Einzelkante = genau eine Methode + bekannte edgeId -> direkt loeschbar.
+const isSingle = computed(() => (props.data?.bundleCount || 1) <= 1 && props.data?.edgeId != null)
+
+function onDeleteClick(e) {
+  const dd = props.data || {}
+  if (isSingle.value) {
+    confirming.value = true
+  } else if (dd.onOpen) {
+    // Buendel: gezielt im Detail-Panel loeschen.
+    dd.onOpen(dd, e)
+  }
+}
+function confirmDelete() {
+  const dd = props.data || {}
+  if (dd.onDelete && dd.edgeId != null) dd.onDelete(dd.edgeId)
+  confirming.value = false
+}
+function cancelDelete() {
+  confirming.value = false
+}
+
 const pathData = computed(() =>
   getSmoothStepPath({
     sourceX: props.sourceX + fanOffset.value,
@@ -64,7 +88,23 @@ const d = computed(() => props.data || {})
 
   <!-- Import- und uses-Kanten haben kein Label (nur die Linie). -->
   <EdgeLabelRenderer v-if="d.kind !== 'import' && d.kind !== 'uses'">
+    <!-- Inline-Bestaetigung (Einzelkante): ersetzt das Label, bis bestaetigt/abgebrochen. -->
     <div
+      v-if="confirming"
+      class="me-label me-confirm"
+      :style="{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }"
+    >
+      <span class="me-confirm-text">Löschen?</span>
+      <button type="button" class="me-confirm-btn me-confirm-btn--yes" title="Verbindung löschen" @click.stop="confirmDelete">
+        <Icon icon="lucide:check" class="me-ic" />
+      </button>
+      <button type="button" class="me-confirm-btn" title="Abbrechen" @click.stop="cancelDelete">
+        <Icon icon="lucide:x" class="me-ic" />
+      </button>
+    </div>
+
+    <div
+      v-else
       class="me-label"
       :class="{
         'me-label--manual': d.isManual,
@@ -85,6 +125,18 @@ const d = computed(() => props.data || {})
       <span v-if="d.needsReview" class="me-badge" title="Unsicher erkannt – bitte prüfen">
         <Icon icon="lucide:alert-triangle" class="me-ic" />Bitte prüfen
       </span>
+
+      <!-- Hover-Loeschen: dezentes ×, erscheint erst beim Hover ueber dem Label. -->
+      <button
+        v-if="d.onDelete"
+        type="button"
+        class="me-del"
+        :title="d.bundleCount > 1 ? 'Methoden im Detail-Panel löschen' : 'Verbindung löschen'"
+        aria-label="Verbindung löschen"
+        @click.stop="onDeleteClick($event)"
+      >
+        <Icon icon="lucide:x" class="me-ic" />
+      </button>
     </div>
   </EdgeLabelRenderer>
 </template>
@@ -153,5 +205,54 @@ const d = computed(() => props.data || {})
   font-weight: 700;
   color: #fff;
   background: #d4a017;
+}
+
+/* Hover-Loeschen: × erscheint nur beim Hover ueber dem Label – haelt den Graphen ruhig. */
+.me-del {
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  margin-left: 1px;
+  border-radius: 4px;
+  color: var(--color-text-muted);
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.me-label:hover .me-del {
+  opacity: 1;
+}
+.me-del:hover {
+  background: color-mix(in srgb, var(--color-danger) 16%, transparent);
+  color: var(--color-danger);
+}
+
+/* Inline-Bestaetigung direkt am Label. */
+.me-confirm {
+  cursor: default;
+  border-color: color-mix(in srgb, var(--color-danger) 55%, var(--color-border));
+}
+.me-confirm-text {
+  color: var(--color-danger);
+  font-weight: 700;
+}
+.me-confirm-btn {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  color: var(--color-text-muted);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.me-confirm-btn:hover {
+  background: var(--color-surface-offset);
+  color: var(--color-text);
+}
+.me-confirm-btn--yes:hover {
+  background: color-mix(in srgb, var(--color-danger) 18%, transparent);
+  color: var(--color-danger);
 }
 </style>
