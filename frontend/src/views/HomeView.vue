@@ -2,7 +2,7 @@
 // Workbench-Landing: asymmetrisches Zwei-Spalten-Layout.
 // Links = Primaeraktion (Java hochladen/einfuegen -> analysieren -> Sprung in den Analyzer).
 // Rechts = code-thematisches Live-Panel (Demo-Snippet + Echtzeit-Stats + Schnelleinstiege).
-// Hintergrund = dezentes, theme-abhaengiges Graph-Mesh (Knoten + Kanten, opacity < 0.06).
+// Hintergrund = animiertes Constellation-Netz (Canvas-Komponente, theme-abhaengig).
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
@@ -11,6 +11,7 @@ import { useArticles } from '../composables/useArticles.js'
 import { api } from '../lib/api.js'
 import { WIKI_TITLE } from '../config.js'
 import JavaCodeEditor from '../components/java/JavaCodeEditor.vue'
+import MeshBackground from '../components/MeshBackground.vue'
 import { Icon } from '../lib/icons.js'
 
 const router = useRouter()
@@ -95,44 +96,8 @@ function openClass(id) {
 
 <template>
   <div class="landing relative min-h-[calc(100vh-3.5rem)] overflow-hidden">
-    <!-- Hintergrund: dezentes Graph-Mesh (rein dekorativ, kein Icon) -->
-    <div class="mesh pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
-      <svg class="mesh-svg h-full w-full" preserveAspectRatio="xMidYMid slice" viewBox="0 0 800 600">
-        <!-- Kanten + Knoten in EINER Gruppe -> driften gemeinsam, die Punkte bleiben exakt auf den
-             Linien-Knotenpunkten (Kreis-Koordinaten == Pfad-Endpunkte). -->
-        <g class="mesh-grid">
-          <g class="mesh-edges" stroke="var(--color-accent)" stroke-width="1" fill="none">
-            <path d="M80 120 L210 80 M210 80 L340 140 M340 140 L470 90 M470 90 L600 150 M600 150 L720 100
-                     M80 120 L140 260 M210 80 L280 310 M340 140 L280 310 M340 140 L410 250 M470 90 L410 250 M600 150 L550 330 M720 100 L690 290
-                     M140 260 L280 310 M280 310 L410 250 M410 250 L550 330 M550 330 L690 290
-                     M140 260 L100 440 M280 310 L250 470 M410 250 L390 430 M550 330 L540 500 M690 290 L680 460
-                     M100 440 L250 470 M250 470 L390 430 M390 430 L540 500 M540 500 L680 460
-                     M250 470 L330 560 M390 430 L330 560 M540 500 L600 580 M680 460 L600 580
-                     M210 80 L140 260 M470 90 L550 330" />
-          </g>
-          <g class="mesh-nodes" fill="var(--color-accent)">
-            <circle cx="80" cy="120" r="3" />
-            <circle cx="210" cy="80" r="4" />
-            <circle cx="340" cy="140" r="3.5" />
-            <circle cx="470" cy="90" r="3" />
-            <circle cx="600" cy="150" r="4" />
-            <circle cx="720" cy="100" r="2.5" />
-            <circle cx="140" cy="260" r="3.5" />
-            <circle cx="280" cy="310" r="4" />
-            <circle cx="410" cy="250" r="4" />
-            <circle cx="550" cy="330" r="3.5" />
-            <circle cx="690" cy="290" r="3" />
-            <circle cx="100" cy="440" r="3" />
-            <circle cx="250" cy="470" r="4" />
-            <circle cx="390" cy="430" r="3.5" />
-            <circle cx="540" cy="500" r="4" />
-            <circle cx="680" cy="460" r="3" />
-            <circle cx="330" cy="560" r="3.5" />
-            <circle cx="600" cy="580" r="3" />
-          </g>
-        </g>
-      </svg>
-    </div>
+    <!-- Hintergrund: animiertes Constellation-Netz (Canvas, eigene Komponente) -->
+    <MeshBackground />
 
     <div class="mx-auto grid max-w-6xl items-center gap-10 px-5 py-12 lg:min-h-[calc(100vh-3.5rem)] lg:grid-cols-[1.3fr_1fr] lg:gap-14 lg:py-0">
       <!-- ===== Links: Primaeraktion ===== -->
@@ -347,51 +312,6 @@ function openClass(id) {
 <style scoped>
 @reference "../assets/style.css";
 
-/* --- Graph-Mesh-Hintergrund: theme-abhaengig ueber --color-accent, dezent --------------- */
-.mesh-svg {
-  opacity: 0.07;
-}
-/* Kanten + Knoten driften als EINE Einheit -> die Punkte bleiben auf den Knotenpunkten. */
-.mesh-grid {
-  animation: mesh-drift 40s ease-in-out infinite alternate;
-  transform-origin: center;
-  transform-box: fill-box;
-}
-/* Kanten "atmen" dezent (nur Deckkraft, keine Verschiebung). */
-.mesh-edges {
-  animation: mesh-breathe 12s ease-in-out infinite;
-}
-/* Knoten pulsieren weich an Ort und Stelle (nur Deckkraft -> bleibt deckungsgleich). */
-.mesh-nodes {
-  animation: mesh-pulse 7s ease-in-out infinite;
-}
-@keyframes mesh-drift {
-  from {
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-  to {
-    transform: translate3d(-10px, 8px, 0) scale(1.02);
-  }
-}
-@keyframes mesh-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.55;
-  }
-}
-@keyframes mesh-breathe {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.6;
-  }
-}
-
 /* --- Statisches Java-Snippet: themenunabhaengige, ruhige Syntax-Toene ------------------- */
 .snippet {
   color: var(--color-text);
@@ -431,9 +351,6 @@ function openClass(id) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mesh-grid,
-  .mesh-edges,
-  .mesh-nodes,
   .reveal {
     animation: none;
   }
