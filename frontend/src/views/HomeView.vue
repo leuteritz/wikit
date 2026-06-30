@@ -8,6 +8,7 @@ import { useRouter } from 'vue-router'
 import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { useJavaQueue } from '../composables/useJavaQueue.js'
 import { useArticles } from '../composables/useArticles.js'
+import { api } from '../lib/api.js'
 import { WIKI_TITLE } from '../config.js'
 import JavaCodeEditor from '../components/java/JavaCodeEditor.vue'
 import { Icon } from '../lib/icons.js'
@@ -22,10 +23,19 @@ const filename = ref('')
 const dragging = ref(false)
 const showPaste = ref(false)
 const showContext = ref(false)
+// Anzahl Relationen (= Kanten im Wissens-Graph) fuer die Graph-Kachel. Eigener Fetch, da es
+// keinen Relations-Store gibt; api.getGraph() liefert { nodes, edges } (s. RelationGraph.vue).
+const relationCount = ref(0)
 
 onMounted(() => {
   fetchFiles()
   load() // gecachter No-Op, falls App.vue bereits geladen hat (useArticles als Singleton-Store)
+  api
+    .getGraph()
+    .then((g) => {
+      relationCount.value = g.edges?.length ?? 0
+    })
+    .catch(() => {}) // Graph optional – Kachel zeigt dann 0
 })
 
 const recent = computed(() => [...files.value].slice(0, 6))
@@ -36,18 +46,17 @@ const pendingCount = computed(
   () => allJobs.value.filter((j) => ['running', 'queued'].includes(j.status)).length,
 )
 
-const stats = computed(() => [
-  { icon: 'lucide:braces', value: files.value.length, label: 'Analyzed classes', to: '/code' },
-  { icon: 'lucide:book-open', value: articles.value.length, label: 'Wiki articles', to: '/wiki' },
-  { icon: 'lucide:folder', value: categories.value.length, label: 'Categories', to: '/wiki' },
-  { icon: 'lucide:list-checks', value: pendingCount.value, label: 'In queue', to: '/code/queues' },
+// Vier Kacheln = die vier Nav-Tabs (gleiche Icons/Routen wie App.vue navLinks). Reihenfolge
+// steuert das 2x2-Raster: Code (oben links) · Queues (oben rechts) · Wiki (unten links) ·
+// Graph (unten rechts). Jede Kachel traegt eine Live-Zahl als sekundaere Metrik.
+const tabs = computed(() => [
+  { icon: 'lucide:braces', value: files.value.length, label: 'Code', to: '/code' },
+  { icon: 'lucide:list-checks', value: pendingCount.value, label: 'Queues', to: '/code/queues' },
+  { icon: 'lucide:book-open', value: articles.value.length, label: 'Wiki', to: '/wiki' },
+  { icon: 'lucide:share-2', value: relationCount.value, label: 'Graph', to: '/graph' },
 ])
 
-const quickLinks = [
-  { to: '/wiki', label: 'Browse wiki', icon: 'lucide:book-open' },
-  { to: '/graph', label: 'Relation graph', icon: 'lucide:share-2' },
-  { to: '/new', label: 'New article', icon: 'lucide:plus' },
-]
+const quickLinks = [{ to: '/new', label: 'New article', icon: 'lucide:plus' }]
 
 async function readJavaFile(file) {
   if (!file) return
@@ -226,19 +235,22 @@ function openClass(id) {
 }</code></pre>
         </div>
 
-        <!-- Live-Stats -->
+        <!-- Tab-Kacheln (= die vier Nav-Tabs) mit Live-Zahl -->
         <div class="grid grid-cols-2 gap-3">
           <RouterLink
-            v-for="s in stats"
-            :key="s.label"
-            :to="s.to"
+            v-for="t in tabs"
+            :key="t.to"
+            :to="t.to"
             class="group rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3.5 transition hover:border-[var(--color-accent)]"
           >
-            <div class="flex items-center gap-2 text-[var(--color-text-muted)] transition group-hover:text-[var(--color-accent)]">
-              <Icon :icon="s.icon" class="h-4 w-4" />
-              <span class="text-xs font-medium">{{ s.label }}</span>
+            <div class="flex items-center justify-between gap-2">
+              <span class="flex items-center gap-2 text-[var(--color-text)]">
+                <Icon :icon="t.icon" class="h-4 w-4 text-[var(--color-accent)]" />
+                <span class="text-sm font-semibold">{{ t.label }}</span>
+              </span>
+              <Icon icon="lucide:arrow-right" class="h-4 w-4 -translate-x-1 text-[var(--color-accent)] opacity-0 transition group-hover:translate-x-0 group-hover:opacity-100" />
             </div>
-            <div class="mt-1.5 text-2xl font-bold tabular-nums text-[var(--color-text)]">{{ s.value }}</div>
+            <div class="mt-1.5 text-2xl font-bold tabular-nums text-[var(--color-text)]">{{ t.value }}</div>
           </RouterLink>
         </div>
 
