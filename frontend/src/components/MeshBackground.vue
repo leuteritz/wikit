@@ -87,7 +87,7 @@ function draw() {
       const dy = a.y - c.y
       const d2 = dx * dx + dy * dy
       if (d2 < LINK_DIST * LINK_DIST) {
-        const alpha = (1 - Math.sqrt(d2) / LINK_DIST) * 0.5
+        const alpha = (1 - Math.sqrt(d2) / LINK_DIST) * 0.6
         ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`
         ctx.beginPath()
         ctx.moveTo(a.x, a.y)
@@ -170,6 +170,6 @@ watch(theme, () => {
 <style scoped>
 .mesh-canvas {
   display: block;
-  opacity: 0.14; /* dezent trotz kraeftiger Per-Linie-Alpha */
+  opacity: 0.22; /* etwas praesenter, aber weiterhin Hintergrund-Textur */
 }
 </style>
