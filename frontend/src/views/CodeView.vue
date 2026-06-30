@@ -9,6 +9,7 @@ import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { useJavaQueue } from '../composables/useJavaQueue.js'
 import { useJavaGraph } from '../composables/useJavaGraph.js'
 import { buildPackageTree, countClasses, filterClasses, LANGUAGES } from '../composables/useCodeAnalysis.js'
+import { usePanelResize } from '../composables/usePanelResize.js'
 import JavaCodeEditor from '../components/java/JavaCodeEditor.vue'
 import JavaDependencyGraph from '../components/java/JavaDependencyGraph.vue'
 import JavaClassDetail from '../components/java/JavaClassDetail.vue'
@@ -19,6 +20,16 @@ const { files, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFile
   useJavaAnalyzer()
 const { enqueueClass, enqueueAllUnanalyzed, cancelJob, cancelAllJobs, progressFor, ensurePolling } = useJavaQueue()
 const { recomputeEdges, recomputing, resetEdges } = useJavaGraph()
+// Verschiebbare Spaltenbreiten des 3-Spalten-Layouts (Drag-to-Resize + Reset).
+const {
+  gridTemplate,
+  isWide,
+  isDragging,
+  activeKey,
+  isDirty: panelsDirty,
+  startDrag,
+  reset: resetPanels,
+} = usePanelResize()
 
 const source = ref('')
 const filename = ref('')
@@ -472,8 +483,29 @@ async function confirmReset() {
       </p>
     </div>
 
-    <!-- 3-Spalten-Layout -->
-    <div class="grid min-h-0 flex-1 grid-cols-1 gap-4 px-5 pb-5 lg:grid-cols-[260px_minmax(0,1fr)_360px]">
+    <!-- Schmale Leiste ueber den Panels: Layout-Reset, fest am rechten Rand verankert.
+         Feste Hoehe -> kein Layout-Shift, wenn der Button erscheint/verschwindet. -->
+    <div v-if="isWide" class="flex h-7 shrink-0 items-center justify-end px-5">
+      <Transition name="fade">
+        <button
+          v-if="panelsDirty"
+          type="button"
+          class="panel-reset inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs font-semibold text-[var(--color-text-muted)] shadow-sm transition hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+          title="Spaltenbreiten auf die Standardaufteilung zurücksetzen"
+          @click="resetPanels"
+        >
+          <Icon icon="lucide:rotate-ccw" class="h-3.5 w-3.5" />
+          Layout zurücksetzen
+        </button>
+      </Transition>
+    </div>
+
+    <!-- 3-Spalten-Layout (ab lg per Drag verschiebbar; darunter einspaltig gestapelt). -->
+    <div
+      class="grid min-h-0 flex-1 px-5 pb-5"
+      :class="isWide ? '' : 'grid-cols-1 gap-4'"
+      :style="isWide ? { gridTemplateColumns: gridTemplate } : null"
+    >
       <!-- Spalte 1: Suche + Package-Tree -->
       <section class="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)]">
         <div class="shrink-0 space-y-2 border-b border-[var(--color-border)] p-2">
@@ -561,9 +593,35 @@ async function confirmReset() {
         </ul>
       </section>
 
+      <!-- Divider 1↔2 (Drag) -->
+      <div
+        v-if="isWide"
+        class="panel-resizer"
+        :class="{ 'is-active': activeKey === 'left' }"
+        role="separator"
+        aria-orientation="vertical"
+        title="Breite ziehen"
+        @mousedown.prevent="startDrag('left', $event)"
+      >
+        <span class="panel-resizer__grip" />
+      </div>
+
       <!-- Spalte 2: Graph -->
       <div class="min-h-[55vh] lg:min-h-0">
         <JavaDependencyGraph :files="files" :selected-id="selectedFileId" @select="selectFile" />
+      </div>
+
+      <!-- Divider 2↔3 (Drag) -->
+      <div
+        v-if="isWide"
+        class="panel-resizer"
+        :class="{ 'is-active': activeKey === 'right' }"
+        role="separator"
+        aria-orientation="vertical"
+        title="Breite ziehen"
+        @mousedown.prevent="startDrag('right', $event)"
+      >
+        <span class="panel-resizer__grip" />
       </div>
 
       <!-- Spalte 3: Detail -->
@@ -584,6 +642,9 @@ async function confirmReset() {
         </div>
       </div>
     </div>
+
+    <!-- Drag-Overlay: erzwingt col-resize global und haelt mousemove vom Vue-Flow-Canvas fern. -->
+    <div v-if="isDragging" class="fixed inset-0 z-[60] cursor-col-resize select-none" />
 
     <!-- Bestaetigungs-Dialog: Klasse loeschen -->
     <Teleport to="body">
@@ -759,5 +820,66 @@ async function confirmReset() {
 .modal-leave-to section {
   opacity: 0;
   transform: translateY(-8px) scale(0.98);
+}
+
+/* --- Resizer-Divider zwischen den drei Panels ---------------------------- *
+ * 8px breiter Grid-Track (Klickflaeche); die sichtbare Linie ist das ::before.
+ * Ruhezustand dezent (Border-Farbe), Hover/Drag deutlich (Akzent + breiter). */
+.panel-resizer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: col-resize;
+  touch-action: none;
+}
+.panel-resizer::before {
+  content: '';
+  width: 2px;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-border);
+  transition: background 0.15s ease, width 0.15s ease;
+}
+.panel-resizer:hover::before,
+.panel-resizer.is-active::before {
+  width: 4px;
+  background: var(--color-accent);
+}
+/* Mittiger Griff (3 Punkte), erst beim Hover/Drag sichtbar -> klare Affordance. */
+.panel-resizer__grip {
+  position: absolute;
+  width: 4px;
+  height: 26px;
+  border-radius: 999px;
+  background-image: radial-gradient(currentColor 1px, transparent 1.4px);
+  background-size: 4px 6px;
+  background-repeat: repeat-y;
+  background-position: center;
+  color: var(--color-accent-contrast);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.panel-resizer:hover .panel-resizer__grip,
+.panel-resizer.is-active .panel-resizer__grip {
+  opacity: 0.9;
+}
+
+/* Klick-Feedback des Reset-Buttons: gedrueckt 0.95, federt in 150ms auf 1.0 zurueck. */
+.panel-reset {
+  transition: transform 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.panel-reset:active {
+  transform: scale(0.95);
+}
+
+/* Sanftes Ein-/Ausblenden des Reset-Buttons. */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>
