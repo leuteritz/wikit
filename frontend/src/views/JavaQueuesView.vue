@@ -71,12 +71,12 @@ watch(
 )
 
 const STATUS = {
-  queued: { label: 'In Warteschlange', cls: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' },
-  running: { label: 'Aktiv', cls: 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' },
-  done: { label: 'Fertig', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
-  'done-with-errors': { label: 'Fertig (mit Fehlern)', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
-  failed: { label: 'Fehlgeschlagen', cls: 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300' },
-  cancelled: { label: 'Abgebrochen', cls: 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400' },
+  queued: { label: 'Queued', cls: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' },
+  running: { label: 'Active', cls: 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' },
+  done: { label: 'Done', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
+  'done-with-errors': { label: 'Done (with errors)', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
+  failed: { label: 'Failed', cls: 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300' },
+  cancelled: { label: 'Cancelled', cls: 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400' },
 }
 function statusInfo(s) {
   return STATUS[s] || { label: s, cls: 'bg-slate-100 text-slate-600' }
@@ -93,7 +93,7 @@ function finishedIcon(s) {
 }
 // Phasen-Hinweis fuer den laufenden Job (Methoden zuerst, dann Klassen-Text).
 function phaseLabel(j) {
-  return j.phase === 'class' ? 'Klassen-Text' : 'Methoden'
+  return j.phase === 'class' ? 'Class text' : 'Methods'
 }
 function percent(j) {
   if (!j.total) return j.status === 'done' ? 100 : 0
@@ -102,7 +102,7 @@ function percent(j) {
 function fmtTime(s) {
   if (!s) return ''
   const d = new Date(s)
-  return isNaN(d) ? '' : d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return isNaN(d) ? '' : d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
 // Cancel-/Entfernen-Handler: Fehler still schlucken (z. B. wenn der Job serverseitig schon weg
@@ -134,9 +134,9 @@ async function onMarkAllRead() {
   <div class="mx-auto max-w-4xl px-5 py-6">
     <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">KI-Queue</h1>
+        <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">AI Queue</h1>
         <p class="text-sm text-slate-500 dark:text-slate-400">
-          Pro Klasse eine Einheit: erst Methoden, dann Klassen-Zusammenfassung – aktualisiert alle 3&nbsp;Sekunden.
+          One unit per class: methods first, then the class summary – refreshes every 3&nbsp;seconds.
         </p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
@@ -144,28 +144,28 @@ async function onMarkAllRead() {
           v-if="finishedCount"
           type="button"
           class="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50 dark:border-emerald-500/30 dark:text-emerald-300 dark:hover:bg-emerald-500/10"
-          title="Alle abgeschlossenen Einträge als gelesen markieren und ausblenden"
+          title="Mark all finished entries as read and hide them"
           @click="onMarkAllRead"
         >
           <Icon icon="lucide:check-circle" class="h-4 w-4" />
-          Alle als gelesen ({{ finishedCount }})
+          Mark all read ({{ finishedCount }})
         </button>
         <button
           v-if="allJobs.length"
           type="button"
           class="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-50 dark:border-rose-500/30 dark:text-rose-400 dark:hover:bg-rose-500/10"
-          title="Alle Jobs abbrechen und die Liste leeren"
+          title="Cancel all jobs and clear the list"
           @click="onCancelAll"
         >
           <Icon icon="lucide:trash-2" class="h-4 w-4" />
-          Alle abbrechen
+          Cancel all
         </button>
         <RouterLink
           to="/code"
           class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
         >
           <Icon icon="lucide:chevron-left" class="h-4 w-4" />
-          Zum Analyzer
+          To analyzer
         </RouterLink>
       </div>
     </div>
@@ -193,12 +193,12 @@ async function onMarkAllRead() {
           <Icon v-else icon="lucide:sparkles" class="h-4 w-4 shrink-0 text-slate-400" />
 
           <span class="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">
-            KI-Analyse
+            AI analysis
           </span>
           <button
             type="button"
             class="min-w-0 flex-1 truncate text-left font-semibold text-slate-800 transition hover:text-[var(--color-accent)] dark:text-slate-100"
-            :title="`${j.className} im Analyzer öffnen`"
+            :title="`Open ${j.className} in the analyzer`"
             @click="openClass(j)"
           >{{ j.className }}</button>
           <span class="rounded-md px-2 py-0.5 text-[11px] font-semibold" :class="statusInfo(j.status).cls">{{ statusInfo(j.status).label }}</span>
@@ -206,8 +206,8 @@ async function onMarkAllRead() {
           <button
             type="button"
             class="shrink-0 rounded-md p-1 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
-            :title="isFinished(j.status) ? 'Aus der Liste entfernen' : 'Job abbrechen'"
-            :aria-label="isFinished(j.status) ? 'Aus der Liste entfernen' : 'Job abbrechen'"
+            :title="isFinished(j.status) ? 'Remove from list' : 'Cancel job'"
+            :aria-label="isFinished(j.status) ? 'Remove from list' : 'Cancel job'"
             @click.stop="onCancel(j)"
           >
             <Icon icon="lucide:x" class="h-4 w-4" />
@@ -221,11 +221,11 @@ async function onMarkAllRead() {
               <span class="rounded bg-[var(--color-accent-soft)] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[var(--color-accent)]">{{ phaseLabel(j) }}</span>
               <span class="truncate">
                 <template v-if="j.current">{{ j.current.name }}<template v-if="j.phase !== 'class'">()</template></template>
-                <template v-else>vorbereiten…</template>
+                <template v-else>preparing…</template>
               </span>
             </template>
-            <template v-else-if="j.status === 'queued'">wartet…</template>
-            <template v-else>{{ j.done }}/{{ j.total }} Schritte<template v-if="j.failed"> · {{ j.failed }} Fehler</template></template>
+            <template v-else-if="j.status === 'queued'">waiting…</template>
+            <template v-else>{{ j.done }}/{{ j.total }} steps<template v-if="j.failed"> · {{ j.failed }} errors</template></template>
           </span>
           <span class="shrink-0 tabular-nums text-slate-500 dark:text-slate-400">{{ j.done }}/{{ j.total }}</span>
         </div>
@@ -242,14 +242,14 @@ async function onMarkAllRead() {
           <div class="mb-1.5 flex items-center justify-between gap-2">
             <span class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
               <Icon icon="lucide:terminal" class="h-3.5 w-3.5" />
-              Live-Ausgabe
+              Live output
             </span>
             <span class="flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums text-[var(--color-accent)]">
               <Icon icon="lucide:loader-2" class="h-3 w-3 animate-spin" />
-              {{ liveFor(j).tokens }} Tokens generiert…
+              {{ liveFor(j).tokens }} tokens generated…
             </span>
           </div>
-          <pre ref="logEl" class="queue-log">{{ liveFor(j).text || 'Warte auf Ollama…' }}</pre>
+          <pre ref="logEl" class="queue-log">{{ liveFor(j).text || 'Waiting for Ollama…' }}</pre>
           <!-- Indeterminierte Fortschritts-Bar: Ollama liefert keinen numerischen Fortschritt -->
           <div class="mt-2 h-1 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
             <div class="queue-indeterminate h-full w-2/5 rounded-full bg-[var(--color-accent)]" />
@@ -258,18 +258,18 @@ async function onMarkAllRead() {
 
         <p v-if="j.ollamaUnavailable" class="mt-2 flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400">
           <Icon icon="lucide:alert-triangle" class="h-3.5 w-3.5 shrink-0" />
-          Ollama nicht erreichbar – Fallback-Text wird verwendet.
+          Ollama unreachable – using fallback text.
         </p>
       </article>
     </div>
 
     <p v-else class="mt-10 text-center text-sm text-slate-400">
-      Noch keine Analyse gestartet. Wähle im Analyzer eine Klasse und starte eine Zusammenfassung,
-      oder nutze „Alle analysieren".
+      No analysis started yet. Pick a class in the analyzer and start a summary,
+      or use “Analyze”.
     </p>
 
     <p v-if="ordered.length" class="mt-4 text-center text-xs text-slate-400">
-      {{ activeCount }} aktiv · {{ finishedCount }} abgeschlossen
+      {{ activeCount }} active · {{ finishedCount }} finished
     </p>
   </div>
 </template>

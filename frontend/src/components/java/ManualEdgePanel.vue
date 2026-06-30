@@ -83,7 +83,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         class="fixed inset-0 z-50"
         role="dialog"
         aria-modal="true"
-        aria-label="Manuelle Verbindung anlegen"
+        aria-label="Create manual connection"
       >
         <!-- Dezenter Backdrop: klick schliesst -->
         <div class="slideover-backdrop absolute inset-0 bg-black/30 backdrop-blur-[2px]" @click="close" />
@@ -95,13 +95,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           <header class="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">
             <h2 class="flex min-w-0 items-center gap-2 text-sm font-bold text-[var(--color-text)]">
               <Icon icon="lucide:link" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
-              <span class="truncate">Verbindung anlegen</span>
+              <span class="truncate">Create connection</span>
             </h2>
             <button
               type="button"
               class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
-              title="Schließen (ESC)"
-              aria-label="Schließen"
+              title="Close (ESC)"
+              aria-label="Close"
               @click="close"
             >
               <Icon icon="lucide:x" class="h-5 w-5" />
@@ -115,15 +115,15 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                 <Icon icon="lucide:file-code" class="h-5 w-5" />
               </span>
               <div class="min-w-0 flex-1">
-                <div class="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Quelle · definiert</div>
+                <div class="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Source · defines</div>
                 <h3 class="truncate text-base font-bold text-[var(--color-text)]">{{ sourceFile.class_name }}</h3>
                 <p class="truncate font-mono text-[11px] text-[var(--color-text-muted)]">{{ sourceFile.filename }}</p>
               </div>
               <button
                 type="button"
                 class="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-[var(--color-border)] text-[var(--color-text-muted)] transition hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
-                title="Richtung tauschen"
-                aria-label="Richtung tauschen"
+                title="Swap direction"
+                aria-label="Swap direction"
                 @click="emit('swap')"
               >
                 <Icon icon="lucide:arrow-up-down" class="h-4 w-4" />
@@ -134,7 +134,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             <div class="mt-4">
               <div class="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
                 <Icon icon="lucide:braces" class="h-3.5 w-3.5" />
-                Aufgerufene Methode
+                Called method
                 <span v-if="hasMethods" class="text-[var(--color-danger)]">*</span>
               </div>
               <div v-if="hasMethods" class="flex flex-wrap gap-1.5">
@@ -153,7 +153,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                 </button>
               </div>
               <p v-else class="rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
-                Diese Klasse hat keine analysierten Methoden – die Verbindung wird ohne Methodennamen angelegt.
+                This class has no analyzed methods – the connection is created without a method name.
               </p>
             </div>
 
@@ -172,7 +172,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                 <Icon icon="lucide:code-2" class="h-5 w-5" />
               </span>
               <div class="min-w-0 flex-1">
-                <div class="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Anwender · ruft auf</div>
+                <div class="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Consumer · calls</div>
                 <h3 class="truncate text-base font-bold text-[var(--color-text)]">{{ targetFile.class_name }}</h3>
                 <p class="truncate font-mono text-[11px] text-[var(--color-text-muted)]">{{ targetFile.filename }}</p>
               </div>
@@ -188,7 +188,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               @click="save"
             >
               <Icon icon="lucide:link" class="h-4 w-4" />
-              Verbindung speichern
+              Save connection
             </button>
           </footer>
         </aside>

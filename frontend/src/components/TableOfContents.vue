@@ -36,7 +36,7 @@ function jump(id) {
 
 <template>
   <nav v-if="toc.length" class="text-sm">
-    <p class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Auf dieser Seite</p>
+    <p class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">On this page</p>
     <ul class="space-y-1 border-l border-slate-200 dark:border-slate-800">
       <li v-for="item in toc" :key="item.id">
         <a

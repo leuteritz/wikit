@@ -57,9 +57,9 @@ function openInAnalyzer() {
 function buildMarkdown(f) {
   const lines = [`# ${f.class_name}`, '']
   if (f.package) lines.push(`**Package:** \`${f.package}\``, '')
-  lines.push(`**Typ:** ${f.class_type}`, '')
+  lines.push(`**Type:** ${f.class_type}`, '')
   if (f.dependencies?.length) {
-    lines.push('## Abhängigkeiten', '')
+    lines.push('## Dependencies', '')
     for (const d of f.dependencies) lines.push(`- \`${d}\``)
     lines.push('')
   }
@@ -107,13 +107,13 @@ async function createArticle() {
             <Icon icon="lucide:braces" class="h-5 w-5" />
           </span>
           <div class="min-w-0 flex-1">
-            <h2 class="text-lg font-bold text-slate-900 dark:text-white">Java analysieren</h2>
-            <p class="text-xs text-slate-500 dark:text-slate-400">Lokal geparst – kein Cloud-Dienst. KI-Beschreibungen folgen on-demand.</p>
+            <h2 class="text-lg font-bold text-slate-900 dark:text-white">Analyze Java</h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Parsed locally – no cloud service. AI descriptions follow on demand.</p>
           </div>
           <button
             type="button"
             class="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-            title="Schließen"
+            title="Close"
             @click="close"
           >
             <Icon icon="lucide:x" class="h-5 w-5" />
@@ -127,7 +127,7 @@ async function createArticle() {
             <div class="mb-3 flex items-center gap-3">
               <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
                 <Icon icon="lucide:upload" class="h-4 w-4" />
-                .java-Datei wählen
+                Choose .java file
                 <input type="file" accept=".java" class="hidden" @change="onFile" />
               </label>
               <span v-if="filename" class="truncate text-sm text-slate-500 dark:text-slate-400">{{ filename }}</span>
@@ -136,7 +136,7 @@ async function createArticle() {
             <textarea
               v-model="source"
               spellcheck="false"
-              placeholder="// Java-Code hier einfügen…"
+              placeholder="// Paste Java code here…"
               class="h-56 w-full resize-y rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-sm text-slate-800 outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
             />
 
@@ -144,12 +144,12 @@ async function createArticle() {
             <label class="mt-4 block">
               <span class="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 <Icon icon="lucide:info" class="h-3.5 w-3.5" />
-                Projekt-Kontext (optional)
+                Project context (optional)
               </span>
               <textarea
                 v-model="userContext"
                 spellcheck="false"
-                placeholder="z. B. Windchill-Hintergrund, Modulzweck, Konventionen… – fließt in jeden KI-Prompt ein und bleibt für die Session erhalten."
+                placeholder="e.g. Windchill background, module purpose, conventions… – fed into every AI prompt and kept for the session."
                 class="h-20 w-full resize-y rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700 outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
               />
             </label>
@@ -162,11 +162,11 @@ async function createArticle() {
             <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-500/30 dark:bg-emerald-500/10">
               <p class="flex items-center gap-1.5 text-sm font-semibold text-emerald-800 dark:text-emerald-300">
                 <Icon icon="lucide:check" class="h-4 w-4 shrink-0" />
-                {{ result.class_name }} analysiert
+                {{ result.class_name }} analyzed
               </p>
               <p class="mt-1 text-xs text-emerald-700/80 dark:text-emerald-300/70">
-                {{ result.methods.length }} Methode(n){{ result.package ? ` · ${result.package}` : '' }}.
-                Als Wiki-Artikel anlegen, um die gestreamte KI-Analyse zu starten.
+                {{ result.methods.length }} method(s){{ result.package ? ` · ${result.package}` : '' }}.
+                Create a wiki article to start the streamed AI analysis.
               </p>
             </div>
             <p v-if="notice" class="mt-2 text-sm text-rose-500">{{ notice }}</p>
@@ -180,7 +180,7 @@ async function createArticle() {
               type="button"
               class="rounded-lg px-3 py-2 text-sm font-medium text-slate-500 transition hover:bg-slate-100 dark:hover:bg-slate-800"
               @click="close"
-            >Abbrechen</button>
+            >Cancel</button>
             <button
               type="button"
               class="inline-flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
@@ -188,7 +188,7 @@ async function createArticle() {
               @click="analyze"
             >
               <Icon v-if="analyzing" icon="lucide:loader-2" class="h-4 w-4 animate-spin" />
-              {{ analyzing ? 'Analysiere…' : 'Analysieren' }}
+              {{ analyzing ? 'Analyzing…' : 'Analyze' }}
             </button>
           </template>
           <template v-else>
@@ -196,7 +196,7 @@ async function createArticle() {
               type="button"
               class="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
               @click="openInAnalyzer"
-            >Im Analyzer öffnen</button>
+            >Open in analyzer</button>
             <button
               type="button"
               class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500 disabled:opacity-60"
@@ -204,7 +204,7 @@ async function createArticle() {
               @click="createArticle"
             >
               <Icon v-if="busy" icon="lucide:loader-2" class="h-4 w-4 animate-spin" />
-              {{ busy ? 'Erstelle…' : 'Wiki-Artikel erstellen' }}
+              {{ busy ? 'Creating…' : 'Create wiki article' }}
             </button>
           </template>
         </footer>

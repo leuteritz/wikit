@@ -14,7 +14,7 @@ const bodyEl = ref(null)
 
 function fmtDate(s) {
   if (!s) return ''
-  return new Date(s.replace(' ', 'T') + 'Z').toLocaleString('de-DE', {
+  return new Date(s.replace(' ', 'T') + 'Z').toLocaleString('en-GB', {
     day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
   })
 }
@@ -32,11 +32,11 @@ function enhanceCodeBlocks() {
       const btn = document.createElement('button')
       btn.type = 'button'
       btn.className = 'code-copy'
-      btn.textContent = 'Kopieren'
+      btn.textContent = 'Copy'
       btn.addEventListener('click', async () => {
         await navigator.clipboard.writeText(pre.innerText)
-        btn.textContent = 'Kopiert'
-        setTimeout(() => (btn.textContent = 'Kopieren'), 1500)
+        btn.textContent = 'Copied'
+        setTimeout(() => (btn.textContent = 'Copy'), 1500)
       })
       wrap.appendChild(btn)
     }
@@ -87,7 +87,7 @@ watch(() => props.article?.id, () => nextTick(enhanceCodeBlocks))
     <header class="mb-6 border-b border-slate-200 pb-6 dark:border-slate-800">
       <div class="mb-3 flex flex-wrap items-center gap-2">
         <CategoryBadge :category="article.category" />
-        <span class="text-xs text-slate-400">Aktualisiert {{ fmtDate(article.updated_at) }}</span>
+        <span class="text-xs text-slate-400">Updated {{ fmtDate(article.updated_at) }}</span>
       </div>
       <h1 class="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">{{ article.title }}</h1>
       <p v-if="article.summary" class="mt-2 text-lg text-slate-500 dark:text-slate-400">{{ article.summary }}</p>
@@ -107,7 +107,7 @@ watch(() => props.article?.id, () => nextTick(enhanceCodeBlocks))
           @click="$emit('delete', article)"
         >
           <Icon icon="lucide:trash-2" class="h-4 w-4" />
-          Löschen
+          Delete
         </button>
       </div>
     </header>
@@ -123,7 +123,7 @@ watch(() => props.article?.id, () => nextTick(enhanceCodeBlocks))
       v-if="article.relations && (article.relations.outgoing.length || article.relations.incoming.length)"
       class="mt-10 border-t border-slate-200 pt-6 dark:border-slate-800"
     >
-      <h2 class="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-400">Zusammenhänge</h2>
+      <h2 class="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-400">Relations</h2>
       <div class="grid gap-3 sm:grid-cols-2">
         <RouterLink
           v-for="rel in [...article.relations.outgoing, ...article.relations.incoming]"

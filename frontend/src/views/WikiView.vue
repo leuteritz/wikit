@@ -33,7 +33,7 @@ const groups = computed(() => {
   }
   const result = [...byCat.values()].filter((g) => g.items.length)
   if (uncategorized.length) {
-    result.push({ category: { id: 0, name: 'Ohne Kategorie', icon: null }, items: uncategorized })
+    result.push({ category: { id: 0, name: 'Uncategorized', icon: null }, items: uncategorized })
   }
   return result
 })
@@ -45,14 +45,14 @@ const groups = computed(() => {
     <div class="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div>
         <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Wiki</h1>
-        <p class="text-sm text-slate-500 dark:text-slate-400">{{ articles.length }} Artikel in {{ categories.length }} Kategorien.</p>
+        <p class="text-sm text-slate-500 dark:text-slate-400">{{ articles.length }} articles in {{ categories.length }} categories.</p>
       </div>
       <RouterLink
         to="/new"
         class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-[var(--color-accent-contrast)] transition hover:bg-[var(--color-accent-hover)]"
       >
         <Icon icon="lucide:plus" class="h-4 w-4" />
-        Neuer Artikel
+        New article
       </RouterLink>
     </div>
 
@@ -62,12 +62,12 @@ const groups = computed(() => {
       <input
         v-model="filter"
         type="text"
-        placeholder="Artikel filtern…"
+        placeholder="Filter articles…"
         class="w-full bg-transparent py-2.5 text-sm text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-100"
       />
     </div>
 
-    <p v-if="loading" class="text-sm text-slate-400">Lädt…</p>
+    <p v-if="loading" class="text-sm text-slate-400">Loading…</p>
 
     <!-- Gruppen -->
     <div v-else class="space-y-8">
@@ -95,7 +95,7 @@ const groups = computed(() => {
       </section>
 
       <p v-if="!groups.length" class="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-400 dark:border-slate-800">
-        Keine Artikel gefunden.
+        No articles found.
       </p>
     </div>
   </div>

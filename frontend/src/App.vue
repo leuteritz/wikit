@@ -67,9 +67,9 @@ const navLinks = [
           @click="searchOpen = true"
         >
           <Icon icon="lucide:search" class="h-4 w-4 shrink-0" />
-          <span class="hidden truncate sm:inline">Artikel, Tags, Kategorien durchsuchen…</span>
-          <span class="truncate sm:hidden">Suchen…</span>
-          <kbd class="ml-auto hidden shrink-0 rounded border border-[var(--color-border)] px-1.5 text-[10px] sm:inline">Strg K</kbd>
+          <span class="hidden truncate sm:inline">Search articles, tags, categories…</span>
+          <span class="truncate sm:hidden">Search…</span>
+          <kbd class="ml-auto hidden shrink-0 rounded border border-[var(--color-border)] px-1.5 text-[10px] sm:inline">Ctrl K</kbd>
         </button>
 
         <!-- Nav (rechts) -->
@@ -89,7 +89,7 @@ const navLinks = [
             <span
               v-if="link.to === '/code/queues' && pendingCount"
               class="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--color-danger)] px-1 text-[10px] font-bold leading-none tabular-nums text-white ring-2 ring-[var(--color-surface-2)]"
-              :title="`${pendingCount} aktive/wartende Analyse-Jobs`"
+              :title="`${pendingCount} active/queued analysis jobs`"
             >{{ pendingCount > 99 ? '99+' : pendingCount }}</span>
           </RouterLink>
           <ThemeToggle />

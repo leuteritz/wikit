@@ -133,7 +133,7 @@ async function onRecomputeEdges() {
   queueNotice.value = ''
   try {
     const res = await recomputeEdges()
-    queueNotice.value = `${res?.count ?? 0} Kante(n) neu berechnet.`
+    queueNotice.value = `${res?.count ?? 0} edge(s) recomputed.`
   } catch (e) {
     queueNotice.value = e.message
   }
@@ -150,8 +150,8 @@ async function analyzeAll() {
     const res = await enqueueAllUnanalyzed({ userContext: userContext.value })
     const c = res?.queuedClasses ?? 0
     queueNotice.value = c
-      ? `Eingereiht: ${c} Klasse(n) zur vollständigen Analyse (Methoden → Zusammenfassung).`
-      : 'Alles bereits analysiert – nichts einzureihen.'
+      ? `Queued: ${c} class(es) for full analysis (methods → summary).`
+      : 'Everything already analyzed – nothing to queue.'
   } catch (e) {
     queueNotice.value = e.message
   } finally {
@@ -162,7 +162,7 @@ async function analyzeAll() {
 async function onFile(e) {
   const list = [...(e.target.files || [])]
   if (!list.length) return
-  filename.value = list.length === 1 ? list[0].name : `${list.length} Dateien`
+  filename.value = list.length === 1 ? list[0].name : `${list.length} files`
   const texts = await Promise.all(list.map((f) => f.text()))
   // Mehrere Dateien zusammenfuegen -> das Backend trennt sie wieder (package-/Typ-Grenzen).
   source.value = texts.join('\n\n')
@@ -177,7 +177,7 @@ function finishBatch(res) {
     for (const f of res.saved) enqueueClass(f, { userContext: userContext.value })
   }
   const parts = []
-  if (res.overwritten?.length) parts.push(`${res.overwritten.length} überschrieben.`)
+  if (res.overwritten?.length) parts.push(`${res.overwritten.length} overwritten.`)
   if (res.warnings?.length) parts.push(...res.warnings)
   queueNotice.value = parts.join(' ')
   source.value = ''
@@ -305,20 +305,21 @@ async function confirmReset() {
               <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />{{ lang.label }}
             </span>
             <span class="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-0.5 font-medium text-[var(--color-text-muted)]">
-              {{ classCount }} Klasse(n)
+              {{ classCount }} class(es)
             </span>
             <span class="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-0.5 font-medium text-[var(--color-text-muted)]">
-              {{ packageCount }} Package(s)
+              {{ packageCount }} package(s)
             </span>
           </div>
 
-          <!-- Globale Aktionen: alle Klassen/Methoden analysieren + Kanten neu berechnen -->
-          <div v-if="files.length" class="mt-2.5 flex flex-wrap items-center gap-2">
+          <!-- Globale Aktionen: einheitliche Button-Reihe (1 Icon + 1 Wort), links ausgerichtet.
+               Gleicher Stil/Form, nur die Akzentfarbe unterscheidet die Aktionen. -->
+          <div v-if="files.length" class="action-bar mt-2.5 flex flex-wrap items-center gap-2">
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 py-2 text-sm font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+              class="action-btn inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] text-[var(--color-accent)] hover:bg-[color-mix(in_srgb,var(--color-accent)_20%,transparent)]"
               :disabled="analyzingAll"
-              title="Alle noch nicht analysierten Klassen und Methoden in die KI-Queue einreihen"
+              title="Queue every not-yet-analyzed class and method for AI analysis"
               @click="analyzeAll"
             >
               <Icon
@@ -326,28 +327,37 @@ async function confirmReset() {
                 class="h-4 w-4"
                 :class="analyzingAll ? 'animate-spin' : ''"
               />
-              {{ analyzingAll ? 'Reihe ein…' : 'Alle analysieren' }}
+              {{ analyzingAll ? 'Analyzing…' : 'Analyze' }}
             </button>
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-accent)] px-3 py-2 text-sm font-semibold text-[var(--color-accent)] transition hover:bg-[var(--color-accent-soft)] disabled:cursor-not-allowed disabled:opacity-50"
+              class="action-btn inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 bg-[color-mix(in_srgb,var(--color-success)_12%,transparent)] text-[var(--color-success)] hover:bg-[color-mix(in_srgb,var(--color-success)_20%,transparent)]"
               :disabled="recomputing"
-              title="Alle Klassen-Beziehungen (Kanten) neu berechnen – hilft nach Massen-Imports"
+              title="Recompute all class relationships (edges) – useful after bulk imports"
               @click="onRecomputeEdges"
             >
-              <Icon icon="lucide:refresh-cw" class="h-4 w-4" :class="recomputing ? 'animate-spin' : ''" />
-              Kanten neu simulieren
+              <Icon :icon="recomputing ? 'lucide:loader-2' : 'lucide:git-branch'" class="h-4 w-4" :class="recomputing ? 'animate-spin' : ''" />
+              Simulate
             </button>
-            <!-- Komplett-Reset: zurueckhaltender Ghost-Button, zeigt erst beim Hover Danger-Farbe -->
             <button
               type="button"
-              class="ml-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-danger)] disabled:cursor-not-allowed disabled:opacity-50"
+              class="action-btn inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)] text-[var(--color-danger)] hover:bg-[color-mix(in_srgb,var(--color-danger)_20%,transparent)]"
               :disabled="resetting"
-              title="Alle analysierten Klassen, Kanten und KI-Zusammenfassungen dauerhaft entfernen"
+              title="Permanently remove all analyzed classes, edges and AI summaries"
               @click="askReset"
             >
-              <Icon icon="lucide:rotate-ccw" class="h-4 w-4" />
-              Zurücksetzen
+              <Icon icon="lucide:trash-2" class="h-4 w-4" />
+              Reset
+            </button>
+            <button
+              type="button"
+              class="action-btn inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 bg-[color-mix(in_srgb,var(--color-text-muted)_10%,transparent)] text-[var(--color-text-muted)] hover:bg-[color-mix(in_srgb,var(--color-text-muted)_18%,transparent)]"
+              :disabled="!isWide || !panelsDirty"
+              title="Restore the column widths to the default layout"
+              @click="resetPanels"
+            >
+              <Icon icon="lucide:layout-grid" class="h-4 w-4" />
+              Layout
             </button>
           </div>
         </div>
@@ -367,13 +377,13 @@ async function confirmReset() {
             <div class="mb-3 flex items-center justify-between gap-2">
               <h2 class="flex items-center gap-2 text-lg font-bold text-[var(--color-text)]">
                 <Icon icon="lucide:sparkles" class="h-5 w-5 text-[var(--color-accent)]" />
-                Code analysieren
+                Analyze code
               </h2>
               <button
                 type="button"
                 class="grid h-8 w-8 place-items-center rounded-lg text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-40"
                 :disabled="analyzing"
-                title="Schließen"
+                title="Close"
                 @click="showNew = false"
               >
                 <Icon icon="lucide:x" class="h-5 w-5" />
@@ -391,7 +401,7 @@ async function confirmReset() {
                     @click="inputMode = 'paste'"
                   >
                     <Icon icon="lucide:code-2" class="h-3.5 w-3.5" />
-                    Code einfügen
+                    Paste code
                   </button>
                   <button
                     type="button"
@@ -400,7 +410,7 @@ async function confirmReset() {
                     @click="inputMode = 'file'"
                   >
                     <Icon icon="lucide:upload" class="h-3.5 w-3.5" />
-                    Datei hochladen
+                    Upload file
                   </button>
                 </div>
                 <label
@@ -409,7 +419,7 @@ async function confirmReset() {
                 >
                   <Icon icon="lucide:file-code" class="h-3.5 w-3.5" />
                   <span v-if="filename" class="max-w-[10rem] truncate">{{ filename }}</span>
-                  <span v-else>.java-Datei(en) wählen</span>
+                  <span v-else>Choose .java file(s)</span>
                   <input type="file" accept=".java" multiple class="hidden" @change="onFile" />
                 </label>
               </div>
@@ -419,7 +429,7 @@ async function confirmReset() {
               <!-- Live-Vorschau der erkannten Klassen (Name · Package), bevor gespeichert wird. -->
               <div v-if="detectedClasses.length" class="mt-2 flex flex-wrap items-center gap-1.5">
                 <span class="text-[11px] font-medium text-[var(--color-text-muted)]">
-                  {{ detectedClasses.length }} Klasse(n) erkannt:
+                  {{ detectedClasses.length }} class(es) detected:
                 </span>
                 <span
                   v-for="c in detectedClasses"
@@ -434,12 +444,12 @@ async function confirmReset() {
             </div>
             <div class="flex flex-col">
               <label class="mb-2 block">
-                <span class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Projekt-Kontext (optional)</span>
+                <span class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Project context (optional)</span>
                 <textarea
                   v-model="userContext"
                   spellcheck="false"
                   rows="4"
-                  placeholder="z. B. Windchill-Hintergrund, Modulzweck… – fließt in jeden KI-Prompt ein."
+                  placeholder="e.g. Windchill background, module purpose… – fed into every AI prompt."
                   class="w-full resize-y rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-xs text-[var(--color-text)] outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
                 />
               </label>
@@ -451,7 +461,7 @@ async function confirmReset() {
                 @click="analyze"
               >
                 <Icon v-if="analyzing" icon="lucide:loader-2" class="h-4 w-4 animate-spin" />
-                {{ analyzing ? 'Analysiere…' : 'Analysieren' }}
+                {{ analyzing ? 'Analyzing…' : 'Analyze' }}
               </button>
             </div>
           </div>
@@ -468,8 +478,8 @@ async function confirmReset() {
       >
         <Icon icon="lucide:loader-2" class="h-4 w-4 shrink-0 animate-spin" />
         <span class="min-w-0 flex-1 truncate">
-          Generiere Zusammenfassung
-          <template v-if="selectedProgress.current"> für <code class="font-mono">{{ selectedProgress.current.name }}()</code></template>
+          Generating summary
+          <template v-if="selectedProgress.current"> for <code class="font-mono">{{ selectedProgress.current.name }}()</code></template>
           …
         </span>
         <span v-if="selectedProgress.total > 1" class="shrink-0 tabular-nums opacity-80">{{ selectedProgress.done }}/{{ selectedProgress.total }}</span>
@@ -479,25 +489,8 @@ async function confirmReset() {
         class="mt-3 rounded-lg px-3 py-2 text-xs text-[var(--color-warning)]"
         style="background-color: color-mix(in srgb, var(--color-warning) 15%, transparent)"
       >
-        Ollama war nicht erreichbar – es wurde der vorhandene Javadoc-/Fallback-Text verwendet.
+        Ollama was unreachable – the existing Javadoc/fallback text was used.
       </p>
-    </div>
-
-    <!-- Schmale Leiste ueber den Panels: Layout-Reset, fest am rechten Rand verankert.
-         Feste Hoehe -> kein Layout-Shift, wenn der Button erscheint/verschwindet. -->
-    <div v-if="isWide" class="flex h-7 shrink-0 items-center justify-end px-5">
-      <Transition name="fade">
-        <button
-          v-if="panelsDirty"
-          type="button"
-          class="panel-reset inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs font-semibold text-[var(--color-text-muted)] shadow-sm transition hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
-          title="Spaltenbreiten auf die Standardaufteilung zurücksetzen"
-          @click="resetPanels"
-        >
-          <Icon icon="lucide:rotate-ccw" class="h-3.5 w-3.5" />
-          Layout zurücksetzen
-        </button>
-      </Transition>
     </div>
 
     <!-- 3-Spalten-Layout (ab lg per Drag verschiebbar; darunter einspaltig gestapelt). -->
@@ -516,14 +509,14 @@ async function confirmReset() {
             @click="showNew = true"
           >
             <Icon icon="lucide:plus" class="h-4 w-4" />
-            Code analysieren
+            Analyze code
           </button>
           <div class="relative">
             <Icon icon="lucide:search" class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]" />
             <input
               v-model="search"
               type="text"
-              placeholder="Klassen suchen…"
+              placeholder="Search classes…"
               class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 pl-8 pr-7 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
             />
             <button
@@ -563,7 +556,7 @@ async function confirmReset() {
               >
                 <Icon icon="lucide:braces" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
                 <span class="min-w-0 flex-1 truncate text-sm">
-                  <Icon v-if="row.file.description" icon="lucide:sparkles" class="mr-0.5 inline-block h-3.5 w-3.5 align-text-bottom text-[var(--color-accent)]" title="KI-analysiert" /><template v-for="(p, i) in hl(row.file.class_name)" :key="i"><mark v-if="p.m" class="rounded-sm bg-transparent px-0 font-semibold text-[var(--color-accent)]">{{ p.t }}</mark><template v-else>{{ p.t }}</template></template>
+                  <Icon v-if="row.file.description" icon="lucide:sparkles" class="mr-0.5 inline-block h-3.5 w-3.5 align-text-bottom text-[var(--color-accent)]" title="AI-analyzed" /><template v-for="(p, i) in hl(row.file.class_name)" :key="i"><mark v-if="p.m" class="rounded-sm bg-transparent px-0 font-semibold text-[var(--color-accent)]">{{ p.t }}</mark><template v-else>{{ p.t }}</template></template>
                 </span>
                 <span
                   v-if="progressFor(row.file.id)"
@@ -579,8 +572,8 @@ async function confirmReset() {
               <button
                 type="button"
                 class="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-[var(--color-danger)] opacity-0 transition hover:bg-[var(--color-surface-offset)] focus:opacity-100 group-hover:opacity-100"
-                title="Klasse löschen"
-                :aria-label="`Klasse ${row.file.class_name} löschen`"
+                title="Delete class"
+                :aria-label="`Delete class ${row.file.class_name}`"
                 @click.stop="askDelete(row.file)"
               >
                 <Icon icon="lucide:trash-2" class="h-4 w-4" />
@@ -588,7 +581,7 @@ async function confirmReset() {
             </div>
           </li>
           <li v-if="!rows.length" class="px-3 py-6 text-center text-xs text-[var(--color-text-muted)]">
-            {{ searching ? 'Keine Treffer.' : 'Noch keine Klassen analysiert.' }}
+            {{ searching ? 'No results.' : 'No classes analyzed yet.' }}
           </li>
         </ul>
       </section>
@@ -600,7 +593,7 @@ async function confirmReset() {
         :class="{ 'is-active': activeKey === 'left' }"
         role="separator"
         aria-orientation="vertical"
-        title="Breite ziehen"
+        title="Drag to resize"
         @mousedown.prevent="startDrag('left', $event)"
       >
         <span class="panel-resizer__grip" />
@@ -618,7 +611,7 @@ async function confirmReset() {
         :class="{ 'is-active': activeKey === 'right' }"
         role="separator"
         aria-orientation="vertical"
-        title="Breite ziehen"
+        title="Drag to resize"
         @mousedown.prevent="startDrag('right', $event)"
       >
         <span class="panel-resizer__grip" />
@@ -638,7 +631,7 @@ async function confirmReset() {
           v-else
           class="grid h-full place-items-center rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)]/50 px-6 text-center text-sm text-[var(--color-text-muted)]"
         >
-          Select a class to inspect – links in der Liste oder als Knoten im Graphen.
+          Select a class to inspect – from the list or as a node in the graph.
         </div>
       </div>
     </div>
@@ -662,12 +655,12 @@ async function confirmReset() {
               <Icon icon="lucide:trash-2" class="h-5 w-5" />
             </span>
             <div class="min-w-0">
-              <h3 class="truncate font-semibold text-[var(--color-text)]">Klasse löschen?</h3>
+              <h3 class="truncate font-semibold text-[var(--color-text)]">Delete class?</h3>
               <p class="truncate font-mono text-xs text-[var(--color-text-muted)]">{{ pendingDelete.class_name }}</p>
             </div>
           </div>
           <p class="mb-4 text-sm text-[var(--color-text-muted)]">
-            Alle Verknüpfungen im Graph werden entfernt. Ein eventuell verknüpfter Wiki-Artikel bleibt erhalten.
+            All graph connections will be removed. A linked wiki article (if any) is kept.
           </p>
           <div class="flex justify-end gap-2">
             <button
@@ -676,7 +669,7 @@ async function confirmReset() {
               :disabled="deleting"
               @click="cancelDelete"
             >
-              Abbrechen
+              Cancel
             </button>
             <button
               type="button"
@@ -685,7 +678,7 @@ async function confirmReset() {
               @click="confirmDelete"
             >
               <Icon v-if="deleting" icon="lucide:loader-2" class="h-4 w-4 animate-spin" />
-              {{ deleting ? 'Lösche…' : 'Löschen' }}
+              {{ deleting ? 'Deleting…' : 'Delete' }}
             </button>
           </div>
         </div>
@@ -708,9 +701,9 @@ async function confirmReset() {
               <Icon icon="lucide:alert-triangle" class="h-5 w-5" />
             </span>
             <div class="min-w-0">
-              <h3 class="truncate font-semibold text-[var(--color-text)]">Klasse(n) überschreiben?</h3>
+              <h3 class="truncate font-semibold text-[var(--color-text)]">Overwrite class(es)?</h3>
               <p class="text-xs text-[var(--color-text-muted)]">
-                {{ pendingConflicts.length }} Klasse(n) sind bereits analysiert.
+                {{ pendingConflicts.length }} class(es) already analyzed.
               </p>
             </div>
           </div>
@@ -725,7 +718,7 @@ async function confirmReset() {
             </li>
           </ul>
           <p class="mb-4 text-sm text-[var(--color-text-muted)]">
-            Beim Überschreiben werden die bisherigen Datensätze (inkl. KI-Beschreibungen) ersetzt.
+            Overwriting replaces the existing records (including AI descriptions).
           </p>
           <div class="flex justify-end gap-2">
             <button
@@ -734,7 +727,7 @@ async function confirmReset() {
               :disabled="confirming"
               @click="cancelOverwrite"
             >
-              Abbrechen
+              Cancel
             </button>
             <button
               type="button"
@@ -743,7 +736,7 @@ async function confirmReset() {
               @click="confirmOverwrite"
             >
               <Icon v-if="confirming" icon="lucide:loader-2" class="h-4 w-4 animate-spin" />
-              {{ confirming ? 'Überschreibe…' : 'Überschreiben' }}
+              {{ confirming ? 'Overwriting…' : 'Overwrite' }}
             </button>
           </div>
         </div>
@@ -766,14 +759,14 @@ async function confirmReset() {
               <Icon icon="lucide:alert-triangle" class="h-5 w-5" />
             </span>
             <div class="min-w-0">
-              <h3 class="truncate font-semibold text-[var(--color-text)]">Alles zurücksetzen?</h3>
-              <p class="text-xs text-[var(--color-text-muted)]">{{ classCount }} Klasse(n) betroffen</p>
+              <h3 class="truncate font-semibold text-[var(--color-text)]">Reset everything?</h3>
+              <p class="text-xs text-[var(--color-text-muted)]">{{ classCount }} class(es) affected</p>
             </div>
           </div>
           <p class="mb-4 text-sm text-[var(--color-text-muted)]">
-            Alle analysierten Klassen, Kanten und KI-Zusammenfassungen werden
-            <span class="font-semibold text-[var(--color-text)]">dauerhaft gelöscht</span>.
-            Verknüpfte Wiki-Artikel bleiben erhalten.
+            All analyzed classes, edges and AI summaries will be
+            <span class="font-semibold text-[var(--color-text)]">permanently deleted</span>.
+            Linked wiki articles are kept.
           </p>
           <div class="flex justify-end gap-2">
             <button
@@ -782,7 +775,7 @@ async function confirmReset() {
               :disabled="resetting"
               @click="cancelReset"
             >
-              Abbrechen
+              Cancel
             </button>
             <button
               type="button"
@@ -791,7 +784,7 @@ async function confirmReset() {
               @click="confirmReset"
             >
               <Icon v-if="resetting" icon="lucide:loader-2" class="h-4 w-4 animate-spin" />
-              {{ resetting ? 'Lösche…' : 'Alles löschen' }}
+              {{ resetting ? 'Deleting…' : 'Delete all' }}
             </button>
           </div>
         </div>
@@ -865,21 +858,11 @@ async function confirmReset() {
   opacity: 0.9;
 }
 
-/* Klick-Feedback des Reset-Buttons: gedrueckt 0.95, federt in 150ms auf 1.0 zurueck. */
-.panel-reset {
-  transition: transform 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+/* Klick-Feedback der Aktions-Buttons: gedrueckt 0.96, federt in 150ms auf 1.0 zurueck. */
+.action-btn {
+  transition: transform 0.15s ease, background-color 0.15s ease, color 0.15s ease;
 }
-.panel-reset:active {
-  transform: scale(0.95);
-}
-
-/* Sanftes Ein-/Ausblenden des Reset-Buttons. */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.18s ease;
-}
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
+.action-btn:not(:disabled):active {
+  transform: scale(0.96);
 }
 </style>

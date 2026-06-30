@@ -63,10 +63,10 @@ function openClass(id) {
     <!-- Hero-Text -->
     <div class="mb-7 text-center">
       <h1 class="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl dark:text-white">
-        Code verstehen mit {{ WIKI_TITLE }}
+        Understand code with {{ WIKI_TITLE }}
       </h1>
       <p class="mx-auto mt-2 max-w-md text-slate-500 dark:text-slate-400">
-        Java-Klasse hochladen – lokal geparst, als Package-Graph dargestellt und pro Methode KI-dokumentiert.
+        Upload a Java class – parsed locally, shown as a package graph and AI-documented per method.
       </p>
     </div>
 
@@ -86,9 +86,9 @@ function openClass(id) {
             <Icon icon="lucide:upload" class="h-8 w-8" />
           </span>
           <span class="mt-4 text-base font-semibold text-slate-800 dark:text-slate-100">
-            <span class="text-[var(--color-accent)]">.java</span> ablegen oder auswählen
+            Drop or choose a <span class="text-[var(--color-accent)]">.java</span> file
           </span>
-          <span class="mt-1 text-xs text-slate-400">Drag &amp; Drop oder Klick · alles bleibt lokal</span>
+          <span class="mt-1 text-xs text-slate-400">Drag &amp; drop or click · everything stays local</span>
           <input type="file" accept=".java" class="hidden" @change="onFile" />
         </label>
 
@@ -105,7 +105,7 @@ function openClass(id) {
         @click="showPaste = !showPaste"
       >
         <Icon icon="lucide:chevron-right" class="h-3.5 w-3.5 transition-transform" :class="showPaste ? 'rotate-90' : ''" />
-        oder Code einfügen
+        or paste code
       </button>
       <div v-show="showPaste" class="mt-2 h-60">
         <JavaCodeEditor v-model="source" />
@@ -118,14 +118,14 @@ function openClass(id) {
         @click="showContext = !showContext"
       >
         <Icon icon="lucide:chevron-right" class="h-3.5 w-3.5 transition-transform" :class="showContext ? 'rotate-90' : ''" />
-        Projekt-Kontext (optional){{ userContext ? ' · aktiv' : '' }}
+        Project context (optional){{ userContext ? ' · active' : '' }}
       </button>
       <textarea
         v-show="showContext"
         v-model="userContext"
         spellcheck="false"
         rows="2"
-        placeholder="z. B. Windchill-Hintergrund, Modulzweck… – fließt in jeden KI-Prompt ein."
+        placeholder="e.g. Windchill background, module purpose… – fed into every AI prompt."
         class="mt-2 w-full resize-y rounded-lg border border-slate-200 bg-white p-2.5 text-sm text-slate-700 outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
       />
 
@@ -139,13 +139,13 @@ function openClass(id) {
         @click="analyze"
       >
         <Icon v-if="analyzing" icon="lucide:loader-2" class="h-4 w-4 animate-spin" />
-        {{ analyzing ? 'Analysiere…' : 'Analysieren' }}
+        {{ analyzing ? 'Analyzing…' : 'Analyze' }}
       </button>
     </div>
 
     <!-- Zuletzt analysiert -->
     <div v-if="recent.length" class="mt-8 w-full">
-      <p class="mb-2 text-center text-xs font-semibold uppercase tracking-wide text-slate-400">Zuletzt analysiert</p>
+      <p class="mb-2 text-center text-xs font-semibold uppercase tracking-wide text-slate-400">Recently analyzed</p>
       <div class="flex flex-wrap justify-center gap-2">
         <button
           v-for="f in recent"
@@ -162,9 +162,9 @@ function openClass(id) {
 
     <!-- Sekundaere Einstiege -->
     <div class="mt-8 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-slate-500 dark:text-slate-400">
-      <RouterLink to="/wiki" class="inline-flex items-center gap-1.5 transition hover:text-[var(--color-accent)]"><Icon icon="lucide:book-open" class="h-4 w-4" /> Wiki durchstöbern</RouterLink>
-      <RouterLink to="/graph" class="inline-flex items-center gap-1.5 transition hover:text-[var(--color-accent)]"><Icon icon="lucide:share-2" class="h-4 w-4" /> Zusammenhang-Graph</RouterLink>
-      <RouterLink to="/new" class="inline-flex items-center gap-1.5 transition hover:text-[var(--color-accent)]"><Icon icon="lucide:plus" class="h-4 w-4" /> Neuer Artikel</RouterLink>
+      <RouterLink to="/wiki" class="inline-flex items-center gap-1.5 transition hover:text-[var(--color-accent)]"><Icon icon="lucide:book-open" class="h-4 w-4" /> Browse wiki</RouterLink>
+      <RouterLink to="/graph" class="inline-flex items-center gap-1.5 transition hover:text-[var(--color-accent)]"><Icon icon="lucide:share-2" class="h-4 w-4" /> Relation Graph</RouterLink>
+      <RouterLink to="/new" class="inline-flex items-center gap-1.5 transition hover:text-[var(--color-accent)]"><Icon icon="lucide:plus" class="h-4 w-4" /> New article</RouterLink>
     </div>
   </div>
 </template>

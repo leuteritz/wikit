@@ -33,7 +33,7 @@ onMounted(async () => {
 })
 
 async function onDelete(a) {
-  if (!confirm(`Artikel „${a.title}" wirklich löschen?`)) return
+  if (!confirm(`Really delete article “${a.title}”?`)) return
   await remove(a.id)
   router.push('/')
 }
@@ -41,7 +41,7 @@ async function onDelete(a) {
 
 <template>
   <div class="px-5 py-8">
-    <div v-if="loading" class="mx-auto max-w-3xl text-sm text-slate-400">Lädt…</div>
+    <div v-if="loading" class="mx-auto max-w-3xl text-sm text-slate-400">Loading…</div>
     <div v-else-if="error" class="mx-auto max-w-3xl">
       <p class="rounded-xl border border-rose-200 bg-rose-50 p-4 text-rose-600 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-400">
         {{ error }}

@@ -138,14 +138,14 @@ async function copySource() {
 function buildMarkdown(f) {
   const lines = [`# ${f.class_name}`, '']
   if (f.package) lines.push(`**Package:** \`${f.package}\``, '')
-  lines.push(`**Typ:** ${f.class_type}`, '')
+  lines.push(`**Type:** ${f.class_type}`, '')
   if (f.description) lines.push('', f.description, '')
   if (f.dependencies?.length) {
-    lines.push('## Abhängigkeiten', '')
+    lines.push('## Dependencies', '')
     for (const d of f.dependencies) lines.push(`- \`${d}\``)
     lines.push('')
   }
-  lines.push('## Methoden', '')
+  lines.push('## Methods', '')
   for (const m of f.methods || []) {
     lines.push(`### ${m.method_name}`, '', '```java', signature(m), '```', '')
     if (m.ai_summary) lines.push(m.ai_summary, '')
@@ -194,7 +194,7 @@ async function removeFile() {
         <p v-if="file?.package" class="truncate font-mono text-xs text-[var(--color-text-muted)]">{{ file.package }}</p>
         <div v-if="file" class="mt-1.5 flex flex-wrap items-center gap-1.5">
           <span class="rounded-md bg-[var(--color-surface-offset)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-muted)]">
-            {{ methodCount }} Methode(n)
+            {{ methodCount }} method(s)
           </span>
           <span
             class="rounded-md px-1.5 py-0.5 text-[10px] font-medium"
@@ -208,7 +208,7 @@ async function removeFile() {
           >
             <Icon icon="lucide:loader-2" class="h-3 w-3 animate-spin" />
             <span v-if="queueProgress.current">{{ queueProgress.current.name }}()</span>
-            <span v-else>Queue läuft</span>
+            <span v-else>Queue running</span>
             <span v-if="queueProgress.total > 1" class="tabular-nums opacity-70">{{ queueProgress.done }}/{{ queueProgress.total }}</span>
           </span>
         </div>
@@ -216,7 +216,7 @@ async function removeFile() {
       <button
         type="button"
         class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
-        title="Schließen"
+        title="Close"
         @click="emit('close')"
       >
         <Icon icon="lucide:x" class="h-5 w-5" />
@@ -230,17 +230,17 @@ async function removeFile() {
         class="border-b-2 px-3 py-1.5 text-sm font-medium transition"
         :class="tab === 'doc' ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
         @click="tab = 'doc'"
-      >Dokumentation</button>
+      >Documentation</button>
       <button
         type="button"
         class="border-b-2 px-3 py-1.5 text-sm font-medium transition"
         :class="tab === 'source' ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
         @click="tab = 'source'"
-      >Quellcode</button>
+      >Source</button>
     </div>
 
     <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-      <div v-if="loading" class="text-sm text-[var(--color-text-muted)]">Wird geladen…</div>
+      <div v-if="loading" class="text-sm text-[var(--color-text-muted)]">Loading…</div>
       <div v-else-if="error" class="text-sm text-[var(--color-danger)]">{{ error }}</div>
 
       <template v-else-if="file">
@@ -249,7 +249,7 @@ async function removeFile() {
           v-if="queueProgress && queueProgress.ollamaUnavailable"
           class="notice-warning mb-3 rounded-lg px-3 py-2 text-xs"
         >
-          Ollama war nicht erreichbar – es wird vorhandener Javadoc-/Fallback-Text verwendet.
+          Ollama was unreachable – using the existing Javadoc/fallback text.
         </p>
 
         <!-- DOKU-TAB -->
@@ -257,12 +257,12 @@ async function removeFile() {
           <!-- Klassen-Zusammenfassung -->
           <section class="mb-5 rounded-xl border border-[var(--color-border)] bg-[var(--color-accent-soft)] p-3">
             <div class="mb-1.5 flex items-center justify-between gap-2">
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-[var(--color-accent)]">Klassen-Zusammenfassung</h3>
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-[var(--color-accent)]">Class summary</h3>
               <button
                 type="button"
                 class="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-accent)] px-2.5 py-1 text-xs font-semibold text-[var(--color-accent-contrast)] transition hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
                 :disabled="analysisBusy"
-                title="Klassen-Zusammenfassung und alle Methoden neu generieren"
+                title="Regenerate the class summary and all methods"
                 @click="fullAnalysis"
               >
                 <Icon
@@ -270,27 +270,27 @@ async function removeFile() {
                   class="h-3.5 w-3.5"
                   :class="analysisBusy ? 'animate-spin' : ''"
                 />
-                {{ analysisBusy ? 'Analysiere…' : 'Vollständige KI-Analyse' }}
+                {{ analysisBusy ? 'Analyzing…' : 'Full AI analysis' }}
               </button>
             </div>
             <div v-if="file.description_html" class="prose prose-sm max-w-none dark:prose-invert" v-html="file.description_html" />
-            <p v-else class="text-sm italic text-[var(--color-text-muted)]">Noch keine KI-Klassenbeschreibung – „Generieren" nutzt den Projekt-Kontext.</p>
+            <p v-else class="text-sm italic text-[var(--color-text-muted)]">No AI class description yet – “Generate” uses the project context.</p>
           </section>
 
           <!-- Methoden -->
           <div class="mb-1.5 flex items-center justify-between gap-2">
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Methoden ({{ methodCount }})</h3>
+            <h3 class="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Methods ({{ methodCount }})</h3>
             <button
               v-if="methodCount"
               type="button"
               class="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2 py-1 text-[11px] font-medium transition hover:bg-[var(--color-surface-offset)]"
               :class="collapseBlanks ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'"
               :aria-pressed="collapseBlanks"
-              :title="collapseBlanks ? 'Leerzeilen im Methodenrumpf wieder anzeigen' : 'Leerzeilen im Methodenrumpf entfernen'"
+              :title="collapseBlanks ? 'Show blank lines in the method body again' : 'Remove blank lines from the method body'"
               @click="collapseBlanks = !collapseBlanks"
             >
               <Icon :icon="collapseBlanks ? 'lucide:unfold-vertical' : 'lucide:fold-vertical'" class="h-3.5 w-3.5" />
-              Leerzeilen
+              Blank lines
             </button>
           </div>
           <ul class="space-y-1.5">
@@ -309,7 +309,7 @@ async function removeFile() {
                     'badge-muted': methodStatus(m) === 'idle',
                   }"
                 >
-                  {{ { done: 'generiert', running: '…', pending: 'wartet', idle: 'offen' }[methodStatus(m)] }}
+                  {{ { done: 'generated', running: '…', pending: 'waiting', idle: 'open' }[methodStatus(m)] }}
                 </span>
                 <Icon icon="lucide:chevron-down" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)] transition-transform" :class="openMethod === m.id ? 'rotate-180' : ''" />
               </button>
@@ -321,7 +321,7 @@ async function removeFile() {
 
                 <!-- 2) KI-Analyse / Zusammenfassung -->
                 <div v-if="m.summary_html" class="prose prose-sm max-w-none dark:prose-invert" v-html="m.summary_html" />
-                <p v-else class="text-sm italic text-[var(--color-text-muted)]">Noch keine KI-Beschreibung – über „Vollständige KI-Analyse" generieren.</p>
+                <p v-else class="text-sm italic text-[var(--color-text-muted)]">No AI description yet – generate it via “Full AI analysis”.</p>
               </div>
             </li>
           </ul>
@@ -334,7 +334,7 @@ async function removeFile() {
               type="button"
               class="code-copy z-10 opacity-100"
               @click="copySource"
-            >{{ copied ? 'Kopiert' : 'Kopieren' }}</button>
+            >{{ copied ? 'Copied' : 'Copy' }}</button>
             <JavaCodeEditor ref="sourceEditor" :model-value="file.raw_source" readonly />
           </div>
         </template>
@@ -348,7 +348,7 @@ async function removeFile() {
         :to="`/article/${file.article_slug}`"
         class="flex-1 rounded-lg bg-[var(--color-success)] px-3 py-2 text-center text-sm font-semibold text-white transition hover:opacity-90"
       >
-        Artikel öffnen
+        Open article
       </RouterLink>
       <button
         v-else
@@ -357,15 +357,15 @@ async function removeFile() {
         :disabled="creating"
         @click="createArticle"
       >
-        {{ creating ? 'Erstelle…' : 'In Wiki speichern' }}
+        {{ creating ? 'Creating…' : 'Save to wiki' }}
       </button>
       <button
         type="button"
         class="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-danger)] transition hover:bg-[var(--color-surface-offset)]"
-        title="Datei löschen"
+        title="Delete file"
         @click="removeFile"
       >
-        Löschen
+        Delete
       </button>
     </footer>
   </aside>

@@ -341,8 +341,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             <button
               type="button"
               class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
-              title="Schließen (ESC)"
-              aria-label="Schließen"
+              title="Close (ESC)"
+              aria-label="Close"
               @click="close"
             >
               <Icon icon="lucide:x" class="h-5 w-5" />
@@ -357,7 +357,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                   <Icon icon="lucide:file-code" class="h-5 w-5" />
                 </span>
                 <div class="min-w-0">
-                  <div class="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Quelle · definiert</div>
+                  <div class="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Source · defines</div>
                   <h2 class="truncate text-base font-bold text-[var(--color-text)]">{{ edge.toClass }}</h2>
                 </div>
               </div>
@@ -383,11 +383,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                         v-if="snippets[c.name]?.html"
                         type="button"
                         class="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-accent)]"
-                        :title="`Im Quellcode von ${edge.toClass} öffnen und Methode markieren`"
+                        :title="`Open in the source of ${edge.toClass} and highlight the method`"
                         @click="openDefinition(c)"
                       >
                         <Icon icon="lucide:target" class="h-3.5 w-3.5 shrink-0" />
-                        Definiert in <span class="font-semibold">{{ edge.toClass }}</span>
+                        Defined in <span class="font-semibold">{{ edge.toClass }}</span>
                       </button>
                       <span
                         v-if="snippets[c.name]?.filename"
@@ -395,15 +395,15 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                         :title="snippets[c.name].filename"
                       >
                         <Icon icon="lucide:file-code" class="h-3 w-3 shrink-0" />
-                        {{ snippets[c.name].filename }} · Z{{ snippets[c.name].startLine }}–{{ snippets[c.name].endLine }}
+                        {{ snippets[c.name].filename }} · L{{ snippets[c.name].startLine }}–{{ snippets[c.name].endLine }}
                       </span>
                       <button
                         v-if="snippets[c.name]?.html"
                         type="button"
                         class="grid h-7 w-7 shrink-0 place-items-center rounded-md transition hover:bg-[var(--color-surface-offset)]"
                         :class="copiedKey === 'src:' + c.name ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
-                        :title="copiedKey === 'src:' + c.name ? 'In Zwischenablage kopiert' : 'Code kopieren'"
-                        :aria-label="copiedKey === 'src:' + c.name ? 'In Zwischenablage kopiert' : 'Code kopieren'"
+                        :title="copiedKey === 'src:' + c.name ? 'Copied to clipboard' : 'Copy code'"
+                        :aria-label="copiedKey === 'src:' + c.name ? 'Copied to clipboard' : 'Copy code'"
                         @click="copyCode('src:' + c.name, snippets[c.name].code)"
                       >
                         <Icon :icon="copiedKey === 'src:' + c.name ? 'lucide:check' : 'lucide:copy'" class="h-3.5 w-3.5" />
@@ -416,19 +416,19 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                           v-if="confirmingDelete !== c.edgeId"
                           type="button"
                           class="grid h-7 w-7 shrink-0 place-items-center rounded-md text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-danger)]"
-                          :title="`Verbindung „${c.name}()“ löschen`"
-                          :aria-label="`Verbindung ${c.name} löschen`"
+                          :title="`Delete connection “${c.name}()”`"
+                          :aria-label="`Delete connection ${c.name}`"
                           @click="confirmingDelete = c.edgeId"
                         >
                           <Icon icon="lucide:trash-2" class="h-3.5 w-3.5" />
                         </button>
                         <span v-else class="inline-flex shrink-0 items-center gap-1">
-                          <span class="text-[11px] font-semibold text-[var(--color-danger)]">Löschen?</span>
+                          <span class="text-[11px] font-semibold text-[var(--color-danger)]">Delete?</span>
                           <button
                             type="button"
                             class="grid h-7 w-7 place-items-center rounded-md text-[var(--color-danger)] transition hover:bg-[var(--color-surface-offset)]"
-                            title="Löschen bestätigen"
-                            aria-label="Löschen bestätigen"
+                            title="Confirm delete"
+                            aria-label="Confirm delete"
                             @click="deleteMethodEdge(c.edgeId)"
                           >
                             <Icon icon="lucide:check" class="h-3.5 w-3.5" />
@@ -436,8 +436,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                           <button
                             type="button"
                             class="grid h-7 w-7 place-items-center rounded-md text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
-                            title="Abbrechen"
-                            aria-label="Abbrechen"
+                            title="Cancel"
+                            aria-label="Cancel"
                             @click="confirmingDelete = null"
                           >
                             <Icon icon="lucide:x" class="h-3.5 w-3.5" />
@@ -451,7 +451,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                   <div class="px-3 pb-2">
                     <div v-if="snippets[c.name]?.loading" class="flex items-center gap-2 px-1 py-3 text-xs text-[var(--color-text-muted)]">
                       <Icon icon="lucide:loader-2" class="h-3.5 w-3.5 animate-spin" />
-                      Lade Quellcode…
+                      Loading source…
                     </div>
                     <p v-else-if="snippets[c.name]?.error" class="px-1 py-2 text-xs text-[var(--color-danger)]">
                       {{ snippets[c.name].error }}
@@ -483,7 +483,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                   <Icon icon="lucide:code-2" class="h-5 w-5" />
                 </span>
                 <div class="min-w-0">
-                  <div class="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Anwender · ruft auf</div>
+                  <div class="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Consumer · calls</div>
                   <h2 class="truncate text-base font-bold text-[var(--color-text)]">{{ edge.fromClass }}</h2>
                 </div>
               </div>
@@ -492,7 +492,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                 <div v-for="grp in callerGroups" :key="grp.callerMethod">
                   <div v-if="usageSnippets[grp.callerMethod]?.loading" class="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-offset)] px-3 py-3 text-xs text-[var(--color-text-muted)]">
                     <Icon icon="lucide:loader-2" class="h-3.5 w-3.5 animate-spin" />
-                    Lade Quellcode…
+                    Loading source…
                   </div>
                   <p v-else-if="usageSnippets[grp.callerMethod]?.error" class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-offset)] px-3 py-2 text-xs text-[var(--color-danger)]">
                     {{ usageSnippets[grp.callerMethod].error }}
@@ -517,16 +517,16 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                         <div class="ml-auto flex min-w-0 items-center gap-1.5">
                           <span
                             class="inline-flex min-w-0 items-center gap-1 truncate font-mono text-[11px] text-[var(--color-text-muted)]"
-                            :title="site.lineExact ? 'Exakte Aufrufzeile' : 'Zeile geschätzt – Datei für exakte Zeile neu analysieren'"
+                            :title="site.lineExact ? 'Exact call line' : 'Line estimated – re-analyze the file for the exact line'"
                           >
                             <Icon icon="lucide:file-code" class="h-3 w-3 shrink-0" />
-                            {{ usageSnippets[grp.callerMethod].filename }} · {{ site.lineExact ? '' : '~' }}Z{{ site.line }}
+                            {{ usageSnippets[grp.callerMethod].filename }} · {{ site.lineExact ? '' : '~' }}L{{ site.line }}
                           </span>
                           <button
                             type="button"
                             class="grid h-6 w-6 shrink-0 place-items-center rounded-md text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
-                            title="Im Quellcode öffnen (zeilengenau)"
-                            aria-label="Im Quellcode öffnen (zeilengenau)"
+                            title="Open in source (jump to line)"
+                            aria-label="Open in source (jump to line)"
                             @click="navigateTo(edge.fromFileId, site.line)"
                           >
                             <Icon icon="lucide:code-2" class="h-3.5 w-3.5" />
@@ -550,7 +550,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                 @click="openSourceClass"
               >
                 <Icon icon="lucide:file-code" class="h-4 w-4 text-[var(--color-text-muted)]" />
-                Zur Klasse
+                To class
               </button>
             </div>
           </footer>

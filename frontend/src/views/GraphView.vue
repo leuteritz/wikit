@@ -5,9 +5,9 @@ import RelationGraph from '../components/RelationGraph.vue'
 <template>
   <div class="flex h-[calc(100vh-3.5rem)] flex-col px-5 py-6">
     <div class="mb-4 shrink-0">
-      <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Zusammenhang-Graph</h1>
+      <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Relation Graph</h1>
       <p class="text-sm text-slate-500 dark:text-slate-400">
-        Knoten = Artikel, Pfeile = Beziehungen. Knoten ziehen zum Umordnen, klicken zum Öffnen.
+        Nodes = articles, arrows = relations. Drag nodes to rearrange, click to open.
       </p>
     </div>
     <div class="min-h-0 flex-1">

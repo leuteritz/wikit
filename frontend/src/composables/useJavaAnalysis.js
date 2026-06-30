@@ -144,7 +144,7 @@ export function useJavaAnalysis() {
         // Sauberes Ende: Server schliesst den Stream nach all_done/cancelled.
         if (finished || cancelled) { close(); if (running.value) running.value = false; return }
         // Sonst echter Verbindungsverlust -> sichtbar machen, State fuer Retry behalten.
-        error.value = 'Verbindung zum Analyse-Stream verloren.'
+        error.value = 'Lost connection to the analysis stream.'
         stalled.value = true
         running.value = false
         close()

@@ -12,7 +12,7 @@ import { useTheme } from '../../composables/useTheme.js'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
-  placeholder: { type: String, default: '// Java-Code hier einfügen…' },
+  placeholder: { type: String, default: '// Paste Java code here…' },
   // Read-only-Modus: dient als syntaxhervorgehobener Quellcode-Viewer (Detail-Panel).
   readonly: { type: Boolean, default: false },
 })

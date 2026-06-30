@@ -39,8 +39,8 @@ const percent = computed(() => (steps.value ? Math.round((completed.value / step
 const runningLabel = computed(() => {
   if (!analysis.running.value) return ''
   return analysis.currentIndex.value <= 0
-    ? 'Klassenbeschreibung…'
-    : `Methode ${analysis.currentIndex.value}/${total.value}…`
+    ? 'Class description…'
+    : `Method ${analysis.currentIndex.value}/${total.value}…`
 })
 
 const classState = computed(() => {
@@ -90,7 +90,7 @@ async function reRun(m) {
     })
     m.ai_summary = method.ai_summary
     m.summary_html = summary_html
-    if (ollama_unavailable) notice.value = 'Ollama nicht erreichbar – es wird der Javadoc-Text angezeigt.'
+    if (ollama_unavailable) notice.value = 'Ollama unreachable – showing the Javadoc text.'
   } catch (e) {
     notice.value = e.message
   } finally {
@@ -101,7 +101,7 @@ async function reRun(m) {
 function fmtDate(s) {
   if (!s) return ''
   const d = new Date(s)
-  return isNaN(d) ? '' : d.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return isNaN(d) ? '' : d.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 // Dauer als mm:ss.
@@ -120,11 +120,11 @@ function fmtDur(ms) {
         <Icon icon="lucide:sparkles" class="h-5 w-5" />
       </span>
       <div class="min-w-0 flex-1">
-        <h2 class="text-sm font-bold uppercase tracking-wide text-[var(--color-accent)]">KI-Code-Analyse</h2>
+        <h2 class="text-sm font-bold uppercase tracking-wide text-[var(--color-accent)]">AI code analysis</h2>
         <p class="text-xs text-[var(--color-text-muted)]">
-          {{ methods.length }} Methode(n)
-          <span v-if="generatedAt"> · zuletzt {{ fmtDate(generatedAt) }}</span>
-          <span v-else> · noch nicht analysiert</span>
+          {{ methods.length }} method(s)
+          <span v-if="generatedAt"> · last {{ fmtDate(generatedAt) }}</span>
+          <span v-else> · not analyzed yet</span>
         </p>
       </div>
       <button
@@ -135,7 +135,7 @@ function fmtDur(ms) {
       >
         <Icon v-if="analysis.running.value" icon="lucide:loader-2" class="h-4 w-4 animate-spin" />
         <Icon v-else icon="lucide:play" class="h-4 w-4" />
-        {{ analysis.running.value ? 'Analysiere…' : (hasContent ? 'Erneut analysieren' : 'KI-Analyse starten') }}
+        {{ analysis.running.value ? 'Analyzing…' : (hasContent ? 'Re-analyze' : 'Start AI analysis') }}
       </button>
     </header>
 
@@ -147,13 +147,13 @@ function fmtDur(ms) {
         @click="showContext = !showContext"
       >
         <Icon icon="lucide:chevron-right" class="h-3.5 w-3.5 transition-transform" :class="showContext ? 'rotate-90' : ''" />
-        Projekt-Kontext (optional){{ userContext ? ' · aktiv' : '' }}
+        Project context (optional){{ userContext ? ' · active' : '' }}
       </button>
       <textarea
         v-show="showContext"
         v-model="userContext"
         spellcheck="false"
-        placeholder="z. B. Windchill-Hintergrund, Modulzweck… – fließt in jeden KI-Prompt ein."
+        placeholder="e.g. Windchill background, module purpose… – fed into every AI prompt."
         class="mb-4 h-20 w-full resize-y rounded-xl border border-[var(--color-border)] bg-white p-3 text-sm text-slate-700 outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)] dark:bg-slate-900 dark:text-slate-200"
       />
 
@@ -172,8 +172,8 @@ function fmtDur(ms) {
         </div>
         <div class="mt-1.5 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
           <span class="tabular-nums">
-            Gesamt {{ fmtDur(analysis.totalElapsedMs.value) }}
-            <span v-if="completed < steps"> · ~noch {{ fmtDur(analysis.etaMs.value) }}</span>
+            Total {{ fmtDur(analysis.totalElapsedMs.value) }}
+            <span v-if="completed < steps"> · ~{{ fmtDur(analysis.etaMs.value) }} left</span>
           </span>
           <button
             type="button"
@@ -182,7 +182,7 @@ function fmtDur(ms) {
             @click="analysis.cancel(articleId)"
           >
             <Icon icon="lucide:x" class="h-3 w-3" />
-            {{ analysis.cancelling.value ? 'Wird abgebrochen…' : 'Abbrechen' }}
+            {{ analysis.cancelling.value ? 'Cancelling…' : 'Cancel' }}
           </button>
         </div>
         <!-- Schritt-Pills -->
@@ -192,7 +192,7 @@ function fmtDur(ms) {
             :class="classState === 'done' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : classState === 'running' ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'"
           >
             <Icon v-if="classState === 'done'" icon="lucide:check" class="h-3 w-3" /><Icon v-else-if="classState === 'running'" icon="lucide:loader-2" class="h-3 w-3 animate-spin" />
-            Klasse
+            Class
           </span>
           <span
             v-for="(m, i) in methods"
@@ -206,19 +206,19 @@ function fmtDur(ms) {
 
       <!-- Stall-Watchdog: keine Antwort vom Server -->
       <div v-if="analysis.stalled.value" class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
-        <span class="flex-1">Keine Antwort vom Server – evtl. hängt die lokale KI. Lokale KI auf dem Pi ist langsam (ca. 30–90 s pro Schritt).</span>
+        <span class="flex-1">No response from the server – the local AI may be stuck. The local AI on the Pi is slow (about 30–90 s per step).</span>
         <button
           v-if="analysis.running.value"
           type="button"
           class="rounded-md border border-amber-300 px-2 py-0.5 font-medium hover:bg-amber-100 dark:border-amber-500/40 dark:hover:bg-amber-500/15"
           :disabled="analysis.cancelling.value"
           @click="analysis.cancel(articleId)"
-        >Abbrechen</button>
+        >Cancel</button>
         <button
           type="button"
           class="rounded-md border border-amber-300 px-2 py-0.5 font-medium hover:bg-amber-100 dark:border-amber-500/40 dark:hover:bg-amber-500/15"
           @click="startAnalysis"
-        >Neu starten</button>
+        >Restart</button>
       </div>
 
       <p v-if="analysis.error.value" class="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-600 dark:bg-rose-500/10 dark:text-rose-400">{{ analysis.error.value }}</p>
@@ -226,8 +226,8 @@ function fmtDur(ms) {
 
       <!-- Leerzustand -->
       <div v-if="!hasContent && !analysis.running.value" class="rounded-lg border border-dashed border-[var(--color-border)] px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-400">
-        <p>Starte die KI-Analyse, um Klassen- und Methodenbeschreibungen zu generieren – sie erscheinen hier nacheinander.</p>
-        <p class="mt-1.5 text-xs text-slate-400 dark:text-slate-500">Hinweis: Die lokale KI läuft auf dem Pi und ist langsam – rechne mit ca. 30–90 s pro Schritt.</p>
+        <p>Start the AI analysis to generate class and method descriptions – they appear here one by one.</p>
+        <p class="mt-1.5 text-xs text-slate-400 dark:text-slate-500">Note: The local AI runs on the Pi and is slow – expect about 30–90 s per step.</p>
       </div>
 
       <!-- Klassenbeschreibung -->
@@ -240,7 +240,7 @@ function fmtDur(ms) {
           v-if="classAiGenerated !== null"
           class="mt-1.5 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
           :class="classAiGenerated ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'"
-        ><Icon :icon="classAiGenerated ? 'lucide:check' : 'lucide:alert-triangle'" class="h-3 w-3" />{{ classAiGenerated ? 'KI-Text erzeugt' : 'Fallback: vorhandene Beschreibung' }}</span>
+        ><Icon :icon="classAiGenerated ? 'lucide:check' : 'lucide:alert-triangle'" class="h-3 w-3" />{{ classAiGenerated ? 'AI text generated' : 'Fallback: existing description' }}</span>
       </div>
 
       <!-- Methoden -->
@@ -255,7 +255,7 @@ function fmtDur(ms) {
               type="button"
               class="group flex min-w-0 flex-1 items-center gap-1.5 text-left"
               :disabled="analysis.running.value"
-              :title="`„${m.method_name}“ einzeln neu generieren`"
+              :title="`Regenerate “${m.method_name}” individually`"
               @click="reRun(m)"
             >
               <span class="truncate font-mono text-sm font-semibold text-[var(--color-accent)] group-hover:underline disabled:no-underline">{{ m.method_name }}</span>
@@ -264,15 +264,15 @@ function fmtDur(ms) {
             <span
               v-if="m.ai_generated === false"
               class="shrink-0 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
-              title="Ollama lieferte keinen Text – Javadoc als Fallback angezeigt"
+              title="Ollama returned no text – showing Javadoc as fallback"
             >Fallback: Javadoc</span>
             <span
               v-else-if="m.ai_generated === true"
               class="shrink-0 rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
-              title="KI-Text erzeugt"
-            >KI-Text</span>
+              title="AI text generated"
+            >AI text</span>
             <Icon v-if="methodState(i, m) === 'running'" icon="lucide:loader-2" class="h-4 w-4 shrink-0 animate-spin text-[var(--color-accent)]" />
-            <Icon v-else-if="methodState(i, m) === 'done'" icon="lucide:check" class="h-4 w-4 shrink-0 text-emerald-500" title="analysiert" />
+            <Icon v-else-if="methodState(i, m) === 'done'" icon="lucide:check" class="h-4 w-4 shrink-0 text-emerald-500" title="analyzed" />
           </div>
 
           <!-- Signatur (Shiki java, server-gerendert) -->
@@ -284,7 +284,7 @@ function fmtDur(ms) {
             class="prose prose-sm prose-slate max-w-none px-3 pb-3 dark:prose-invert"
             v-html="m.summary_html"
           />
-          <p v-else class="px-3 pb-3 text-sm italic text-slate-400">Noch keine KI-Beschreibung – Methodennamen klicken zum Generieren.</p>
+          <p v-else class="px-3 pb-3 text-sm italic text-slate-400">No AI description yet – click the method name to generate.</p>
         </li>
       </ul>
     </div>

@@ -83,7 +83,7 @@ function onNodeClick({ node }) {
 
 <template>
   <div class="relative h-full w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900">
-    <div v-if="loading" class="absolute inset-0 grid place-items-center text-sm text-slate-400">Graph wird geladen…</div>
+    <div v-if="loading" class="absolute inset-0 grid place-items-center text-sm text-slate-400">Loading graph…</div>
     <div v-else-if="error" class="absolute inset-0 grid place-items-center text-sm text-rose-500">{{ error }}</div>
     <VueFlow
       v-else

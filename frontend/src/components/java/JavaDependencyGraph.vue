@@ -490,7 +490,7 @@ watch(
     class="relative h-full w-full overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]"
   >
     <div v-if="!files.length" class="absolute inset-0 grid place-items-center px-6 text-center text-sm text-[var(--color-text-muted)]">
-      Noch keine Java-Klassen analysiert. Lade über „Code analysieren" eine <code class="mx-1">.java</code>-Datei hoch.
+      No Java classes analyzed yet. Upload a <code class="mx-1">.java</code> file via “Analyze code”.
     </div>
 
     <VueFlow
@@ -519,7 +519,7 @@ watch(
           <span class="vf-strip" />
           <div class="vf-body">
             <div class="vf-name">
-              <Icon v-if="data.analyzed" icon="lucide:sparkles" class="vf-ai" title="KI-analysiert" />{{ data.className }}
+              <Icon v-if="data.analyzed" icon="lucide:sparkles" class="vf-ai" title="AI-analyzed" />{{ data.className }}
             </div>
             <div class="vf-pkg">{{ data.pkg }}</div>
           </div>
@@ -533,16 +533,16 @@ watch(
 
     <!-- Toolbar: Zoom / Fit / Reset -->
     <div v-if="files.length" class="absolute left-3 top-3 flex items-center gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]/90 p-1 shadow-sm backdrop-blur">
-      <button type="button" class="vf-tool" title="Hineinzoomen" @click="zoomIn()">
+      <button type="button" class="vf-tool" title="Zoom in" @click="zoomIn()">
         <Icon icon="lucide:zoom-in" class="h-4 w-4" />
       </button>
-      <button type="button" class="vf-tool" title="Herauszoomen" @click="zoomOut()">
+      <button type="button" class="vf-tool" title="Zoom out" @click="zoomOut()">
         <Icon icon="lucide:zoom-out" class="h-4 w-4" />
       </button>
-      <button type="button" class="vf-tool" title="Einpassen" @click="fitView()">
+      <button type="button" class="vf-tool" title="Fit" @click="fitView()">
         <Icon icon="lucide:maximize" class="h-4 w-4" />
       </button>
-      <button type="button" class="vf-tool" title="Zurücksetzen" @click="resetView">
+      <button type="button" class="vf-tool" title="Reset" @click="resetView">
         <Icon icon="lucide:rotate-ccw" class="h-4 w-4" />
       </button>
     </div>
@@ -551,27 +551,27 @@ watch(
     <div v-if="files.length" class="absolute right-3 top-3 flex flex-col gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]/90 px-3 py-2 text-xs shadow-sm backdrop-blur">
       <div class="flex items-center gap-2">
         <span class="h-0.5 w-4 rounded" style="background: var(--color-accent)" />
-        <span class="text-[var(--color-text-muted)]">ruft auf · klickbar</span>
+        <span class="text-[var(--color-text-muted)]">calls · clickable</span>
       </div>
       <div class="flex items-center gap-2">
         <span class="h-0.5 w-4 rounded" style="background: var(--color-accent); border-top: 1px dashed; border-color: var(--color-accent)" />
-        <span class="text-[var(--color-text-muted)]">manuelle Kante</span>
+        <span class="text-[var(--color-text-muted)]">manual edge</span>
       </div>
       <div class="flex items-center gap-2">
         <span class="h-0.5 w-4 rounded" style="background: #d4a017" />
-        <span class="text-[var(--color-text-muted)]">unsicher · „Bitte prüfen"</span>
+        <span class="text-[var(--color-text-muted)]">uncertain · “Please review”</span>
       </div>
       <div class="flex items-center gap-2">
         <span class="h-0.5 w-4 rounded" style="background: var(--color-text-muted); border-top: 1px dashed" />
-        <span class="text-[var(--color-text-muted)]">importiert von</span>
+        <span class="text-[var(--color-text-muted)]">imported by</span>
       </div>
       <div class="flex items-center gap-2">
         <span class="h-0.5 w-4 rounded" style="background: #a07cc5; border-top: 1px dashed" />
-        <span class="text-[var(--color-text-muted)]">nutzt Typ (Variable/new)</span>
+        <span class="text-[var(--color-text-muted)]">uses type (variable/new)</span>
       </div>
       <div class="flex items-center gap-2">
         <Icon icon="lucide:sparkles" class="h-3.5 w-3.5 text-[var(--color-accent)]" />
-        <span class="text-[var(--color-text-muted)]">KI-analysiert</span>
+        <span class="text-[var(--color-text-muted)]">AI-analyzed</span>
       </div>
     </div>
 

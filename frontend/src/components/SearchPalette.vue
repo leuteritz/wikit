@@ -55,7 +55,7 @@ watch(query, (q) => {
 // Gruppierte Anzeige + flache Liste fuer Tastatur-Navigation (ein gemeinsamer Index).
 const groups = computed(() => {
   const out = []
-  if (articleHits.value.length) out.push({ key: 'article', label: 'Artikel', items: articleHits.value })
+  if (articleHits.value.length) out.push({ key: 'article', label: 'Articles', items: articleHits.value })
   if (codeHits.value.length) out.push({ key: 'java_file', label: 'Code', items: codeHits.value })
   return out
 })
@@ -127,7 +127,7 @@ function flatIndex(groupKey, i) {
             ref="inputEl"
             v-model="query"
             type="text"
-            placeholder="Artikel, Tags, Code durchsuchen…"
+            placeholder="Search articles, tags, code…"
             class="w-full bg-transparent py-3.5 text-sm text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-100"
             @keydown="onKeydown"
           />
@@ -209,8 +209,8 @@ function flatIndex(groupKey, i) {
           </div>
         </div>
         <div v-else class="px-4 py-10 text-center text-sm text-slate-400">
-          <template v-if="query.trim()">Keine Treffer für „{{ query }}".</template>
-          <template v-else>Tippe, um Artikel und Code zu durchsuchen…</template>
+          <template v-if="query.trim()">No results for “{{ query }}”.</template>
+          <template v-else>Type to search articles and code…</template>
         </div>
       </div>
     </div>

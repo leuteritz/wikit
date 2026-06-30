@@ -94,11 +94,11 @@ const d = computed(() => props.data || {})
       class="me-label me-confirm"
       :style="{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }"
     >
-      <span class="me-confirm-text">Löschen?</span>
-      <button type="button" class="me-confirm-btn me-confirm-btn--yes" title="Verbindung löschen" @click.stop="confirmDelete">
+      <span class="me-confirm-text">Delete?</span>
+      <button type="button" class="me-confirm-btn me-confirm-btn--yes" title="Delete connection" @click.stop="confirmDelete">
         <Icon icon="lucide:check" class="me-ic" />
       </button>
-      <button type="button" class="me-confirm-btn" title="Abbrechen" @click.stop="cancelDelete">
+      <button type="button" class="me-confirm-btn" title="Cancel" @click.stop="cancelDelete">
         <Icon icon="lucide:x" class="me-ic" />
       </button>
     </div>
@@ -112,18 +112,18 @@ const d = computed(() => props.data || {})
         'me-label--selected': selected,
       }"
       :style="{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }"
-      title="Details anzeigen"
+      title="Show details"
       @click.stop="d.onOpen && d.onOpen(d, $event)"
     >
-      <Icon v-if="d.isManual" icon="lucide:link" class="me-ic me-ic--manual" title="Manuelle Kante" />
+      <Icon v-if="d.isManual" icon="lucide:link" class="me-ic me-ic--manual" title="Manual edge" />
       <!-- Gebuendelte Kante (>1 Methode): kompaktes Chip „n Methoden"; sonst der Methodenname. -->
-      <span v-if="d.bundleCount > 1" class="me-method me-count" title="Mehrere Methoden – Details anzeigen">
-        <Icon icon="lucide:braces" class="me-ic" />{{ d.bundleCount }} Methoden
+      <span v-if="d.bundleCount > 1" class="me-method me-count" title="Multiple methods – show details">
+        <Icon icon="lucide:braces" class="me-ic" />{{ d.bundleCount }} methods
       </span>
       <span v-else class="me-method">{{ d.method ? d.method + '()' : '—' }}</span>
 
-      <span v-if="d.needsReview" class="me-badge" title="Unsicher erkannt – bitte prüfen">
-        <Icon icon="lucide:alert-triangle" class="me-ic" />Bitte prüfen
+      <span v-if="d.needsReview" class="me-badge" title="Detected as uncertain – please review">
+        <Icon icon="lucide:alert-triangle" class="me-ic" />Please review
       </span>
 
       <!-- Hover-Loeschen: dezentes ×, erscheint erst beim Hover ueber dem Label. -->
@@ -131,8 +131,8 @@ const d = computed(() => props.data || {})
         v-if="d.onDelete"
         type="button"
         class="me-del"
-        :title="d.bundleCount > 1 ? 'Methoden im Detail-Panel löschen' : 'Verbindung löschen'"
-        aria-label="Verbindung löschen"
+        :title="d.bundleCount > 1 ? 'Delete methods in the detail panel' : 'Delete connection'"
+        aria-label="Delete connection"
         @click.stop="onDeleteClick($event)"
       >
         <Icon icon="lucide:x" class="me-ic" />
