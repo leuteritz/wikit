@@ -104,8 +104,11 @@ html.dark .shiki span {
 .edge-usage-code .shiki,
 .edge-code .shiki {
   margin: 0;
-  max-height: 18rem;
-  overflow: auto;
+  /* Kein Overflow-Container: der Block behaelt seine natuerliche Breite, damit die
+     mitwachsende Modal-Card (w-max) sich an den breitesten Codeblock anpasst und kein
+     horizontaler Scrollbalken entsteht. Vertikales Scrollen uebernimmt der innere
+     Body-Container (.overflow-y-auto). */
+  overflow: visible;
   border: 0;
   border-radius: 0;
   padding: 0.5rem 0;

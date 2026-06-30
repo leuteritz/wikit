@@ -311,7 +311,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="close" />
 
         <div
-          class="card relative z-10 flex max-h-[85vh] w-[90vw] max-w-2xl flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)] shadow-2xl"
+          class="card relative z-10 flex max-h-[85vh] w-max min-w-[min(92vw,42rem)] max-w-[min(92vw,1400px)] flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)] shadow-2xl"
         >
           <!-- Kopf: Definition -> Nutzung (gleiche Richtung wie der Graph-Pfeil) -->
           <header class="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">
@@ -435,9 +435,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
               <div class="space-y-4">
                 <div v-for="grp in callerGroups" :key="grp.callerMethod">
-                  <!-- Aufrufer-Methode als Gruppen-Überschrift -->
-                  <div class="mb-1.5 flex flex-wrap items-center gap-1.5 text-xs">
-                    <code class="rounded-md bg-[var(--color-surface-offset)] px-1.5 py-0.5 font-mono font-semibold text-[var(--color-text)]">{{ grp.callerMethod }}()</code>
+                  <!-- Aufruf-Kette als Gruppen-Überschrift: aufrufende Methode → aufgerufene Methode
+                       auf EINER Zeile, in identischer Typo zum Quelle-Methoden-Header. -->
+                  <div class="mb-2 flex items-center gap-1.5">
+                    <Icon icon="lucide:corner-down-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
+                    <code class="font-mono text-sm font-semibold text-[var(--color-text)]">{{ grp.callerMethod }}()</code>
+                    <Icon icon="lucide:arrow-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
+                    <code class="font-mono text-sm font-semibold text-[var(--color-accent)]">{{ grp.sites[0]?.calleeMethod }}()</code>
                   </div>
 
                   <div v-if="usageSnippets[grp.callerMethod]?.loading" class="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-offset)] px-3 py-3 text-xs text-[var(--color-text-muted)]">
@@ -455,11 +459,15 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                       :key="i"
                       class="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-offset)]"
                     >
-                      <!-- Site-Header: Aufrufmethode + (Datei · Zeile) + Öffnen-Button. Wie in der
-                           Quelle-Sektion sitzt der Button hier, nicht schwebend über dem Code. -->
+                      <!-- Site-Header: nur (Datei · Zeile) + Öffnen-Button – die aufgerufene Methode
+                           steht bereits in der Gruppen-Kette oben. Nur wenn dieselbe Aufrufer-Methode
+                           MEHRERE verschiedene Methoden der Zielklasse aufruft, wird der konkrete
+                           Callee pro Site zusätzlich angezeigt, damit keine Info verloren geht. -->
                       <div class="flex items-center gap-1.5 border-b border-[var(--color-border)] px-3 py-1.5 text-[11px]">
-                        <Icon icon="lucide:corner-down-right" class="h-3 w-3 shrink-0 text-[var(--color-accent)]" />
-                        <span class="truncate font-mono font-semibold text-[var(--color-accent)]">{{ site.calleeMethod }}()</span>
+                        <template v-if="new Set((grp.sites || []).map((s) => s.calleeMethod)).size > 1">
+                          <Icon icon="lucide:corner-down-right" class="h-3 w-3 shrink-0 text-[var(--color-accent)]" />
+                          <span class="truncate font-mono font-semibold text-[var(--color-accent)]">{{ site.calleeMethod }}()</span>
+                        </template>
                         <div class="ml-auto flex min-w-0 items-center gap-1.5">
                           <span
                             class="inline-flex min-w-0 items-center gap-1 truncate font-mono text-[var(--color-text-muted)]"
