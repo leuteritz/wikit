@@ -435,15 +435,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
               <div class="space-y-4">
                 <div v-for="grp in callerGroups" :key="grp.callerMethod">
-                  <!-- Aufruf-Kette als Gruppen-Überschrift: aufrufende Methode → aufgerufene Methode
-                       auf EINER Zeile, in identischer Typo zum Quelle-Methoden-Header. -->
-                  <div class="mb-2 flex items-center gap-1.5">
-                    <Icon icon="lucide:corner-down-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
-                    <code class="font-mono text-sm font-semibold text-[var(--color-text)]">{{ grp.callerMethod }}()</code>
-                    <Icon icon="lucide:arrow-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
-                    <code class="font-mono text-sm font-semibold text-[var(--color-accent)]">{{ grp.sites[0]?.calleeMethod }}()</code>
-                  </div>
-
                   <div v-if="usageSnippets[grp.callerMethod]?.loading" class="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-offset)] px-3 py-3 text-xs text-[var(--color-text-muted)]">
                     <Icon icon="lucide:loader-2" class="h-3.5 w-3.5 animate-spin" />
                     Lade Quellcode…
@@ -459,18 +450,18 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                       :key="i"
                       class="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-offset)]"
                     >
-                      <!-- Site-Header: nur (Datei · Zeile) + Öffnen-Button – die aufgerufene Methode
-                           steht bereits in der Gruppen-Kette oben. Nur wenn dieselbe Aufrufer-Methode
-                           MEHRERE verschiedene Methoden der Zielklasse aufruft, wird der konkrete
-                           Callee pro Site zusätzlich angezeigt, damit keine Info verloren geht. -->
-                      <div class="flex items-center gap-1.5 border-b border-[var(--color-border)] px-3 py-1.5 text-[11px]">
-                        <template v-if="new Set((grp.sites || []).map((s) => s.calleeMethod)).size > 1">
-                          <Icon icon="lucide:corner-down-right" class="h-3 w-3 shrink-0 text-[var(--color-accent)]" />
-                          <span class="truncate font-mono font-semibold text-[var(--color-accent)]">{{ site.calleeMethod }}()</span>
-                        </template>
+                      <!-- Site-Header: Aufruf-Kette (aufrufende Methode → aufgerufene Methode) links,
+                           in identischer Typo zum Quelle-Methoden-Header; (Datei · Zeile) + Öffnen-Button
+                           rechts. Jeder Block nennt seinen konkreten Callee -> mehrere Aufrufe sauber
+                           getrennt (kein Aneinanderreihen). -->
+                      <div class="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2">
+                        <Icon icon="lucide:corner-down-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
+                        <code class="font-mono text-sm font-semibold text-[var(--color-text)]">{{ grp.callerMethod }}()</code>
+                        <Icon icon="lucide:arrow-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
+                        <code class="font-mono text-sm font-semibold text-[var(--color-accent)]">{{ site.calleeMethod }}()</code>
                         <div class="ml-auto flex min-w-0 items-center gap-1.5">
                           <span
-                            class="inline-flex min-w-0 items-center gap-1 truncate font-mono text-[var(--color-text-muted)]"
+                            class="inline-flex min-w-0 items-center gap-1 truncate font-mono text-[11px] text-[var(--color-text-muted)]"
                             :title="site.lineExact ? 'Exakte Aufrufzeile' : 'Zeile geschätzt – Datei für exakte Zeile neu analysieren'"
                           >
                             <Icon icon="lucide:file-code" class="h-3 w-3 shrink-0" />
