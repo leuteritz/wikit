@@ -11,10 +11,11 @@
 // Reload via localStorage.
 import { reactive, ref, computed, onMounted, onUnmounted } from 'vue'
 
-// fr-Gewichte (Summe 100). Linke Klassen-Spalte bewusst schmal -> reine Liste (Ellipsis),
-// der Platz geht an Graph (Mitte) und v. a. das Doku-/Code-Panel (rechts).
-const DEFAULTS = { left: 14, center: 56, right: 30 }
-const MIN = 10 // kein Panel < 10 %
+const MIN = 10 // kein Panel < 10 % (untere Klemmgrenze fuer ALLE Panels)
+// fr-Gewichte (Summe 100). Die linke Klassen-Spalte startet bewusst auf der Minimal-Breite
+// (left == MIN): reine Liste mit Ellipsis, der Nutzer kann sie nur breiter ziehen. Der Platz
+// geht an Graph (Mitte) und das Doku-/Code-Panel (rechts).
+const DEFAULTS = { left: MIN, center: 60, right: 30 }
 const RESIZER_PX = 8 // Breite eines Divider-Tracks (einzige Quelle: CSS-Template + px-Umrechnung)
 const STORAGE_KEY = 'wikit:code-panel-widths'
 
