@@ -309,7 +309,7 @@ async function confirmReset() {
   <div class="flex h-[calc(100vh-3.5rem)] flex-col text-[var(--color-text)]">
     <!-- Kopfzeile -->
     <div class="shrink-0 px-5 pb-3 pt-5">
-      <div class="flex flex-wrap items-start justify-between gap-3">
+      <div class="flex flex-wrap items-end justify-between gap-3">
         <div class="min-w-0 flex-1">
           <h1 class="text-2xl font-bold tracking-tight text-[var(--color-text)]">Code Analysis</h1>
           <div class="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
