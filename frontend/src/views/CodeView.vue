@@ -54,7 +54,6 @@ const queueOpen = ref(false) // KI-Queue-Modal offen?
 // Kompakte Queue-Anzeige im Header (loest den frueheren Queues-Tab ab). Liest den geteilten
 // useJavaQueue-State; das Polling laeuft bereits ueber ensurePolling() (onMounted).
 const FINISHED = ['done', 'done-with-errors', 'failed', 'cancelled']
-const activeQueueCount = computed(() => allJobs.value.filter((j) => !FINISHED.includes(j.status)).length)
 const finishedQueueCount = computed(() => allJobs.value.filter((j) => FINISHED.includes(j.status)).length)
 const runningQueueJob = computed(() => allJobs.value.find((j) => j.status === 'running') || null)
 const queuedQueueCount = computed(() => allJobs.value.filter((j) => j.status === 'queued').length)
@@ -309,7 +308,7 @@ async function confirmReset() {
   <div class="flex h-[calc(100vh-3.5rem)] flex-col text-[var(--color-text)]">
     <!-- Kopfzeile -->
     <div class="shrink-0 px-5 pb-3 pt-5">
-      <div class="flex flex-wrap items-end justify-between gap-3">
+      <div class="flex flex-wrap items-start justify-between gap-3">
         <div class="min-w-0 flex-1">
           <h1 class="text-2xl font-bold tracking-tight text-[var(--color-text)]">Code Analysis</h1>
           <div class="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
@@ -375,56 +374,32 @@ async function confirmReset() {
               <Icon icon="lucide:layout-grid" class="h-4 w-4" />
               Layout
             </button>
+            <!-- KI-Queue im selben Action-Button-Stil (loest den frueheren Queues-Tab ab) -> oeffnet
+                 das Queue-Modal. Violett (wie die AI-Badges im Modal) hebt es von den 4 Buttons ab.
+                 Einzeilig, gleiche Hoehe; nur bei Aktivitaet breiter dank Inline-Status. -->
+            <button
+              type="button"
+              class="action-btn inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition bg-violet-500/10 text-violet-600 hover:bg-violet-500/20 dark:bg-violet-500/15 dark:text-violet-300 dark:hover:bg-violet-500/25"
+              :title="runningQueueJob ? `Analyzing ${runningQueueJob.className}` : 'Open the AI analysis queue'"
+              @click="queueOpen = true"
+            >
+              <Icon
+                :icon="runningQueueJob ? 'lucide:loader-2' : 'lucide:list-checks'"
+                class="h-4 w-4 shrink-0"
+                :class="runningQueueJob ? 'animate-spin' : ''"
+              />
+              AI Queue
+              <!-- Inline-Live-Status: nur bei Bedarf -> Button wird breiter, nie hoeher. -->
+              <span v-if="runningQueueJob" class="inline-flex min-w-0 items-center gap-1.5 font-medium opacity-90">
+                <span class="opacity-60">·</span>
+                <span class="max-w-[12rem] truncate">{{ runningQueueJob.className }}</span>
+                <span class="shrink-0 tabular-nums opacity-80">{{ runningQueueJob.done }}/{{ runningQueueJob.total }}</span>
+              </span>
+              <span v-else-if="queuedQueueCount" class="font-medium opacity-90"><span class="opacity-60">·</span> {{ queuedQueueCount }} queued</span>
+              <span v-else-if="finishedQueueCount" class="font-medium opacity-90"><span class="opacity-60">·</span> {{ finishedQueueCount }} done</span>
+            </button>
           </div>
         </div>
-
-        <!-- Kompakte KI-Queue-Anzeige (loest den frueheren Queues-Tab ab) -> oeffnet das Queue-Modal.
-             Immer sichtbar als Einstiegspunkt; zeigt den laufenden Job bzw. Warte-/Fertig-Zaehler. -->
-        <button
-          type="button"
-          class="queue-chip group flex shrink-0 items-center gap-2.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-left transition hover:border-[var(--color-accent)] hover:bg-[var(--color-surface-offset)]"
-          :title="runningQueueJob ? `Analyzing ${runningQueueJob.className}` : 'Open the AI analysis queue'"
-          @click="queueOpen = true"
-        >
-          <span
-            class="grid h-8 w-8 shrink-0 place-items-center rounded-lg transition"
-            :class="activeQueueCount ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' : 'bg-[var(--color-surface-offset)] text-[var(--color-text-muted)]'"
-          >
-            <Icon
-              :icon="runningQueueJob ? 'lucide:loader-2' : 'lucide:list-checks'"
-              class="h-4 w-4"
-              :class="runningQueueJob ? 'animate-spin' : ''"
-            />
-          </span>
-          <span class="min-w-0">
-            <span class="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-              AI Queue
-              <Icon icon="lucide:chevron-right" class="h-3 w-3 opacity-0 transition group-hover:opacity-100" />
-            </span>
-            <!-- Laufender Job: Klassenname + Fortschritt -->
-            <span v-if="runningQueueJob" class="mt-0.5 flex items-center gap-2">
-              <span class="max-w-[11rem] truncate text-sm font-medium text-[var(--color-text)]">{{ runningQueueJob.className }}</span>
-              <span class="shrink-0 tabular-nums text-xs text-[var(--color-accent)]">{{ runningQueueJob.done }}/{{ runningQueueJob.total }}</span>
-            </span>
-            <!-- Sonst: wartende, dann fertige, sonst Ruhezustand -->
-            <span v-else-if="queuedQueueCount" class="mt-0.5 block text-sm font-medium text-[var(--color-text)]">{{ queuedQueueCount }} queued</span>
-            <span v-else-if="finishedQueueCount" class="mt-0.5 flex items-center gap-1.5 text-sm font-medium text-[var(--color-success)]">
-              <Icon icon="lucide:check-circle" class="h-3.5 w-3.5" />
-              {{ finishedQueueCount }} done
-            </span>
-            <span v-else class="mt-0.5 block text-sm text-[var(--color-text-muted)]">Idle</span>
-          </span>
-          <!-- Mini-Fortschrittsbalken nur fuer den laufenden Job -->
-          <span
-            v-if="runningQueueJob && runningQueueJob.total"
-            class="ml-1 hidden h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-[var(--color-surface-offset)] sm:block"
-          >
-            <span
-              class="block h-full rounded-full bg-[var(--color-accent)] transition-all duration-300"
-              :style="{ width: Math.round(((runningQueueJob.done + runningQueueJob.failed) / runningQueueJob.total) * 100) + '%' }"
-            />
-          </span>
-        </button>
       </div>
 
       <!-- Neu-Analyse als Modal (ausgeloest vom prominenten Sidebar-Button). -->
