@@ -11,6 +11,7 @@ import { useJavaGraph } from '../../composables/useJavaGraph.js'
 import { useArticles } from '../../composables/useArticles.js'
 import JavaCodeEditor from './JavaCodeEditor.vue'
 import { processMethodBody } from '../../lib/javaCode.js'
+import { parseParamNames, markParamOccurrences } from '../../lib/javaParams.js'
 import { reindentJava } from '../../lib/javaIndent.js'
 import { copyToClipboard } from '../../lib/clipboard.js'
 import { Icon } from '../../lib/icons.js'
@@ -32,7 +33,6 @@ const { lastEvent, progressFor, enqueueClass } = useJavaQueue()
 const { create } = useArticles()
 const { edges: serverEdges, highlightedCall, toggleHighlightedCall, clearHighlightedCall } = useJavaGraph()
 
-const rootRef = ref(null) // Wurzel-<aside> -> grenzt Selektions-Highlight auf diese Komponente ein
 const file = ref(null)
 const loading = ref(true)
 const error = ref('')
@@ -124,118 +124,25 @@ function onClearCall() {
 watch(() => props.fileId, clearHighlightedCall)
 onBeforeUnmount(clearHighlightedCall)
 
-// --- Farbige Variablen im Doku-Tab (pro-Parameter-Farbe + Klick-Aktivierung) ---
-// Jeder Signatur-Parameter der offenen Methode bekommt eine eigene Farbe (Slot). Die Signatur-
-// Vorkommen sind IMMER farbig (Legende); ein Klick auf ein Parameter-Token schaltet dessen
-// Rumpf-Vorkommen in derselben Farbe an/aus (Toggle, mehrere Parameter unabhaengig). Umsetzung
-// ueber die CSS Custom Highlight API (Ranges + `::highlight(java-var-N)`), damit das server-
-// gerenderte Shiki-`v-html`-DOM NICHT mutiert wird. Faellt die API (sehr alte Browser) -> No-op.
-// Wortgrenze `\b`, case-sensitive; kein Auto-Fade.
-const VAR_TOKEN_RE = /^[A-Za-z_$][\w$]*$/
-const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-const PALETTE_SIZE = 8
-const activeParams = ref(new Set()) // Parameter-Namen mit aktivem Rumpf-Highlight
-
-// Parameter der offenen Methode -> stabiler Farb-Slot (Reihenfolge, zyklisch bei >8 Parametern).
-const openMethodParams = computed(() => {
-  const m = (file.value?.methods || []).find((x) => x.id === openMethod.value)
-  if (!m) return []
-  const seen = new Set()
-  const out = []
-  for (const p of m.parameters || []) {
-    const name = p?.name
-    if (!name || seen.has(name) || !VAR_TOKEN_RE.test(name)) continue
-    seen.add(name)
-    out.push({ name, slot: out.length % PALETTE_SIZE })
-  }
-  return out
-})
-
-function clearAllVarHighlights() {
-  if (!CSS?.highlights) return
-  for (let i = 0; i < PALETTE_SIZE; i++) CSS.highlights.delete(`java-var-${i}`)
-}
-
-// Alle Highlights aus dem aktuellen Zustand (offene Methode + activeParams) neu aufbauen.
-function renderVarHighlights() {
-  if (!window.Highlight || !CSS?.highlights) return
-  clearAllVarHighlights()
-  const params = openMethodParams.value
-  if (!params.length || tab.value !== 'doc') return
-  const container = rootRef.value?.querySelector(`.method-code[data-method-id="${openMethod.value}"]`)
-  if (!container) return
-  const sigEl = container.querySelector('.sig-line') // Signaturzeile (immer farbig)
-  const bySlot = new Map() // slot -> Range[]
-  for (const { name, slot } of params) {
-    const active = activeParams.value.has(name)
-    const re = new RegExp(`\\b${escapeRegex(name)}\\b`, 'g')
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      const inSig = sigEl ? sigEl.contains(node) : false
-      // Signatur immer markieren; Rumpf nur, wenn der Parameter aktiviert ist.
-      if (!inSig && !active) continue
-      const text = node.nodeValue
-      re.lastIndex = 0
-      let m
-      while ((m = re.exec(text)) !== null) {
-        const range = document.createRange()
-        range.setStart(node, m.index)
-        range.setEnd(node, m.index + m[0].length)
-        if (!bySlot.has(slot)) bySlot.set(slot, [])
-        bySlot.get(slot).push(range)
-      }
-    }
-  }
-  for (const [slot, ranges] of bySlot) {
-    if (ranges.length) CSS.highlights.set(`java-var-${slot}`, new Highlight(...ranges))
+// --- Farbige Parameter im Doku-Tab (java-param, wie im Edge-Panel) -------------
+// Jeder Parameter bekommt eine eigene SCHRIFTFARBE (`.java-param-c{0..5}`, in `markParamOccurrences`
+// gesetzt), kein Hintergrund im Ruhezustand. Ein Klick auf eine Variable markiert ALLE Vorkommen
+// dieser Variable im Block mit `.java-param-active` (Hintergrund-Tint aus der eigenen Farbe).
+// Single-Active-Toggle – identisch zu `JavaEdgeDetailPanel.onParamClick`. Reines DOM auf dem
+// v-html-Container (`e.currentTarget` = Block-Scope).
+function onParamClick(e) {
+  const scope = e.currentTarget
+  if (!scope) return
+  const hit = e.target.closest?.('.java-param')
+  const active = scope.querySelector('.java-param-active')?.dataset.var || null
+  scope.querySelectorAll('.java-param-active').forEach((el) => el.classList.remove('java-param-active'))
+  if (hit && hit.dataset.var && hit.dataset.var !== active) {
+    const v = hit.dataset.var
+    scope.querySelectorAll('.java-param').forEach((el) => {
+      if (el.dataset.var === v) el.classList.add('java-param-active')
+    })
   }
 }
-
-// Angeklicktes Wort ueber die Caret-Position bestimmen (Wortgrenzen `[\w$]` um den Offset).
-function wordAtEvent(event) {
-  let node = null
-  let offset = 0
-  if (document.caretPositionFromPoint) {
-    const pos = document.caretPositionFromPoint(event.clientX, event.clientY)
-    if (pos) { node = pos.offsetNode; offset = pos.offset }
-  } else if (document.caretRangeFromPoint) {
-    const r = document.caretRangeFromPoint(event.clientX, event.clientY)
-    if (r) { node = r.startContainer; offset = r.startOffset }
-  }
-  if (!node || node.nodeType !== Node.TEXT_NODE) {
-    const t = event.target?.textContent?.trim()
-    return t && VAR_TOKEN_RE.test(t) ? t : null
-  }
-  const text = node.nodeValue
-  const isWord = (c) => /[\w$]/.test(c)
-  let s = offset
-  let e = offset
-  while (s > 0 && isWord(text[s - 1])) s--
-  while (e < text.length && isWord(text[e])) e++
-  const word = text.slice(s, e)
-  return VAR_TOKEN_RE.test(word) ? word : null
-}
-
-// Klick auf den Codeblock: ist das getroffene Wort ein Parameter der offenen Methode ->
-// dessen Rumpf-Highlight togglen (neues Set fuer Reaktivitaet), sonst ignorieren.
-function onMethodCodeClick(event) {
-  const name = wordAtEvent(event)
-  if (!name || !openMethodParams.value.some((p) => p.name === name)) return
-  const next = new Set(activeParams.value)
-  next.has(name) ? next.delete(name) : next.add(name)
-  activeParams.value = next
-  renderVarHighlights()
-}
-
-// Andere Methode -> aktive Rumpf-Highlights zuruecksetzen, Legende der neuen Methode aufbauen.
-watch(openMethod, () => {
-  activeParams.value = new Set()
-  nextTick(renderVarHighlights)
-})
-watch(tab, () => nextTick(renderVarHighlights))
-// Queue-Reload aendert `body_html`/`methods` -> Highlights neu aufbauen.
-watch(file, () => nextTick(renderVarHighlights))
-onBeforeUnmount(clearAllVarHighlights)
 
 const typeBadge = computed(() => ({
   class: 'badge-accent',
@@ -257,7 +164,9 @@ function signature(m) {
 // Code-Block einer Methode aufbereiten: server-gerenderte Signatur (Shiki, inkl. Modifier) als
 // erste Zeile, deklarationsfreier Rumpf, interne Leerzeilen IMMER entfernt (kein Toggle mehr).
 function displayMethodBlock(m) {
-  return processMethodBody(m.body_html, { collapseBlank: true, signatureHtml: m.signature_html })
+  const html = processMethodBody(m.body_html, { collapseBlank: true, signatureHtml: m.signature_html })
+  // Parameter-Vorkommen (Signatur + Rumpf) farbig + klickbar machen (wie im Edge-Panel).
+  return markParamOccurrences(html, parseParamNames(signature(m)))
 }
 function methodStatus(m) {
   if (queueProgress.value && queueProgress.value.status === 'running' && !m.summary_html) return 'pending'
@@ -349,7 +258,7 @@ async function removeFile() {
 </script>
 
 <template>
-  <aside ref="rootRef" class="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)]">
+  <aside class="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)]">
     <!-- Header -->
     <header class="flex items-start gap-3 border-b border-[var(--color-border)] px-4 py-3">
       <div class="min-w-0 flex-1">
@@ -469,19 +378,14 @@ async function removeFile() {
               <div v-show="openMethod === m.id" class="border-t border-[var(--color-border)] px-3 py-2">
                 <!-- 1) Java-Code-Block: Signatur als erste Zeile + deklarationsfreier Rumpf, immer
                         dunkel (Editor-Optik), Leerzeilen (fuehrend/abschliessend + intern) entfernt.
-                        Signatur-Parameter sind farbig (Legende); Klick auf eine Variable togglet ihre
-                        Rumpf-Vorkommen in derselben Farbe (onMethodCodeClick). -->
+                        Parameter sind farbig (eigene Schriftfarbe); Klick auf eine Variable markiert
+                        alle ihre Vorkommen (onParamClick, wie im Edge-Panel). -->
                 <div
                   v-if="m.body_html"
-                  :data-method-id="m.id"
-                  class="method-code code-dark mb-1"
-                  :class="m.parameters?.length ? 'cursor-pointer' : ''"
+                  class="method-code code-dark mb-2"
                   v-html="displayMethodBlock(m)"
-                  @click="onMethodCodeClick"
+                  @click="onParamClick"
                 />
-                <p v-if="m.body_html && m.parameters?.length" class="mb-2 text-[10px] text-[var(--color-text-muted)]">
-                  Click a parameter to highlight its usages.
-                </p>
 
                 <!-- 2) KI-Analyse / Zusammenfassung -->
                 <div v-if="m.summary_html" class="prose prose-sm max-w-none dark:prose-invert" v-html="m.summary_html" />
@@ -587,31 +491,4 @@ async function removeFile() {
   background-color: color-mix(in srgb, var(--color-warning) 14%, transparent);
   color: var(--color-warning);
 }
-</style>
-
-<!--
-  Global (NICHT scoped): `::highlight()` ist ein dokumentweites Highlight-Pseudo und wird von
-  scoped-[data-v-…]-Selektoren nicht getroffen (gleiche Logik wie der globale Style-Block in
-  JavaCodeEditor.vue). 8 distinkte Farb-Slots (pro Parameter) -> klar abgegrenzt von amber (glow),
-  indigo (method) und --color-edge-highlight (call-active). Nur von der Highlight-API unterstuetzte
-  Properties; Dark-Variante mit hoeherem Alpha fuer Kontrast auf dunklem Grund.
--->
-<style>
-::highlight(java-var-0) { background-color: rgba(16, 185, 129, 0.30); }  /* emerald */
-::highlight(java-var-1) { background-color: rgba(59, 130, 246, 0.30); }  /* blue    */
-::highlight(java-var-2) { background-color: rgba(139, 92, 246, 0.30); }  /* violet  */
-::highlight(java-var-3) { background-color: rgba(245, 158, 11, 0.30); }  /* amber   */
-::highlight(java-var-4) { background-color: rgba(244, 63, 94, 0.30); }   /* rose    */
-::highlight(java-var-5) { background-color: rgba(6, 182, 212, 0.30); }   /* cyan    */
-::highlight(java-var-6) { background-color: rgba(217, 70, 239, 0.30); }  /* fuchsia */
-::highlight(java-var-7) { background-color: rgba(132, 204, 22, 0.30); }  /* lime    */
-
-html.dark ::highlight(java-var-0) { background-color: rgba(52, 211, 153, 0.38); }
-html.dark ::highlight(java-var-1) { background-color: rgba(96, 165, 250, 0.38); }
-html.dark ::highlight(java-var-2) { background-color: rgba(167, 139, 250, 0.38); }
-html.dark ::highlight(java-var-3) { background-color: rgba(251, 191, 36, 0.38); }
-html.dark ::highlight(java-var-4) { background-color: rgba(251, 113, 133, 0.38); }
-html.dark ::highlight(java-var-5) { background-color: rgba(34, 211, 238, 0.38); }
-html.dark ::highlight(java-var-6) { background-color: rgba(232, 121, 249, 0.38); }
-html.dark ::highlight(java-var-7) { background-color: rgba(163, 230, 53, 0.38); }
 </style>
