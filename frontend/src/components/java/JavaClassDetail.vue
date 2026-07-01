@@ -11,6 +11,7 @@ import { useJavaGraph } from '../../composables/useJavaGraph.js'
 import { useArticles } from '../../composables/useArticles.js'
 import JavaCodeEditor from './JavaCodeEditor.vue'
 import { processMethodBody } from '../../lib/javaCode.js'
+import { reindentJava } from '../../lib/javaIndent.js'
 import { copyToClipboard } from '../../lib/clipboard.js'
 import { Icon } from '../../lib/icons.js'
 
@@ -169,9 +170,15 @@ async function fullAnalysis() {
   }
 }
 
+// Anzeige-Quelltext fuer den Source-Tab: flacher Code wird nach Klammer-Tiefe neu eingerueckt
+// (bereits eingerueckter Paste bleibt unveraendert). Zeilenanzahl bleibt konstant -> Zeilen-Highlights
+// (targetLine/highlightMethod) bleiben gueltig.
+const displaySource = computed(() => reindentJava(file.value?.raw_source || ''))
+
 async function copySource() {
   // copyToClipboard kapselt den Secure-Context-/Fallback-Fall (Pi laeuft ueber http).
-  if (!(await copyToClipboard(file.value?.raw_source || ''))) return
+  // Kopiert wird der ANGEZEIGTE (eingerueckte) Code.
+  if (!(await copyToClipboard(displaySource.value || ''))) return
   copied.value = true
   setTimeout(() => (copied.value = false), 1500)
 }
@@ -379,7 +386,7 @@ async function removeFile() {
             >{{ copied ? 'Copied' : 'Copy' }}</button>
             <JavaCodeEditor
               ref="sourceEditor"
-              :model-value="file.raw_source"
+              :model-value="displaySource"
               :clickable-words="callableMethods"
               :active-call="activeCall"
               readonly
