@@ -8,6 +8,7 @@ export { JavaFile } from './java-file.entity';
 export { JavaMethod } from './java-method.entity';
 export { JavaDependency } from './java-dependency.entity';
 export { JavaEdge } from './java-edge.entity';
+export { JavaFileVersion } from './java-file-version.entity';
 
 import { Category } from './category.entity';
 import { Article } from './article.entity';
@@ -18,6 +19,7 @@ import { JavaFile } from './java-file.entity';
 import { JavaMethod } from './java-method.entity';
 import { JavaDependency } from './java-dependency.entity';
 import { JavaEdge } from './java-edge.entity';
+import { JavaFileVersion } from './java-file-version.entity';
 
 export const ALL_ENTITIES = [
   Category,
@@ -29,4 +31,5 @@ export const ALL_ENTITIES = [
   JavaMethod,
   JavaDependency,
   JavaEdge,
+  JavaFileVersion,
 ];

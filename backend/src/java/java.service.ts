@@ -1,6 +1,7 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, IsNull } from 'typeorm';
+import { createPatch, structuredPatch } from 'diff';
 import { FtsService } from '../database/fts.service';
 import { MarkdownService } from '../common/markdown.service';
 import { OllamaService } from '../common/ollama.service';
@@ -9,6 +10,7 @@ import { parseJava, parseJavaForEdges, splitJavaSources, JavaClassGraphInfo } fr
 import { JavaDependency } from '../entities/java-dependency.entity';
 import { JavaEdge } from '../entities/java-edge.entity';
 import { JavaFile } from '../entities/java-file.entity';
+import { JavaFileVersion } from '../entities/java-file-version.entity';
 import { JavaMethod } from '../entities/java-method.entity';
 
 // Java-Code-Analyse: parsen (rein JS), speichern, Graph liefern, KI-Summaries on-demand.
@@ -80,6 +82,9 @@ export class JavaService {
       for (const fqn of parsed.imports) {
         await manager.getRepository(JavaDependency).insert({ from_file_id: fileId, to_class_name: fqn });
       }
+
+      // Erste Version im Changelog anlegen (Basislinie fuer spaetere Diffs; kein Diff/Summary).
+      await this.insertVersion(manager, fileId, source, null);
 
       // Klasse sofort in den Java-FTS aufnehmen (Wissensquelle fuer kuenftige Prompt-Anreicherung).
       await this.fts.indexJavaFile(manager, fileId);
@@ -155,17 +160,69 @@ export class JavaService {
       };
     }
 
-    // 4) Schreiben: je Klasse insert; bei Konflikt den alten Datensatz vorher loeschen
-    //    (java_fts-Zeile + Datei -> CASCADE raeumt Methoden/Dependencies, wie deleteFile()).
+    // 4) Klassifizieren (vor der Transaktion): neu / unveraendert / geaendert. Bei Konflikt den
+    //    Unified-Diff gegen den aktuellen Stand berechnen (sync, guenstig). Byte-identische
+    //    Klassen werden uebersprungen (kein neuer Version-Snapshot) und nur als Warnung gemeldet.
+    type WritePlan = { it: (typeof items)[number]; existing: JavaFile | undefined; diff: string | null };
+    const plans: WritePlan[] = [];
+    for (const it of items) {
+      const existing = existingByFqcn.get(it.fqcn);
+      if (!existing) {
+        plans.push({ it, existing: undefined, diff: null });
+        continue;
+      }
+      const fname = `${it.cls.class_name}.java`;
+      const check = structuredPatch(fname, fname, existing.raw_source, it.chunk);
+      if (!check.hunks.length) {
+        warnings.push(`Class "${it.fqcn}" unchanged — no new version created.`);
+        continue;
+      }
+      plans.push({ it, existing, diff: createPatch(fname, existing.raw_source, it.chunk) });
+    }
+
+    // Nichts zu schreiben (alle Konflikte waren identisch) -> 409, damit das Frontend meldet.
+    if (!plans.length) {
+      throw new ConflictException('No changes detected — file is identical to the current version.');
+    }
+
+    // 5) Schreiben: neue Klasse -> insert + Version 1. Geaenderte Klasse -> UPDATE in-place
+    //    (java_files.id bleibt stabil -> Versions-FK + Artikel-Verknuepfung ueberleben), Methoden/
+    //    Dependencies ersetzen, neuen Version-Snapshot mit Diff anlegen. Diff-KI folgt NACH der Tx.
     const savedIds: number[] = [];
     const overwritten: string[] = [];
+    const changedVersions: Array<{ versionId: number; className: string; diff: string }> = [];
     await this.ds.transaction(async (manager) => {
-      for (const it of items) {
-        const existing = existingByFqcn.get(it.fqcn);
+      for (const plan of plans) {
+        const { it, existing } = plan;
         if (existing) {
-          await manager.query('DELETE FROM java_fts WHERE rowid = ?', [existing.id]);
-          await manager.getRepository(JavaFile).delete({ id: existing.id });
+          // Bestandsklassen ohne Historie: aktuellen Stand als implizite Version 1 sichern.
+          const versionCount = await manager.getRepository(JavaFileVersion).count({
+            where: { java_file_id: existing.id },
+          });
+          if (versionCount === 0) {
+            await this.insertVersion(manager, existing.id, existing.raw_source, null);
+          }
+
+          await manager.getRepository(JavaFile).update(
+            { id: existing.id },
+            {
+              filename: `${it.cls.class_name}.java`,
+              class_type: it.cls.class_type,
+              raw_source: it.chunk,
+              class_line: it.cls.class_line ?? null,
+            },
+          );
+          await manager.getRepository(JavaMethod).delete({ file_id: existing.id });
+          await manager.getRepository(JavaDependency).delete({ from_file_id: existing.id });
+          await this.insertMethodsAndDeps(manager, existing.id, it.cls.methods, it.imports);
+
+          const versionId = await this.insertVersion(manager, existing.id, it.chunk, plan.diff);
+          changedVersions.push({ versionId, className: it.cls.class_name, diff: plan.diff! });
+
+          await this.fts.indexJavaFile(manager, existing.id);
+          savedIds.push(existing.id);
           overwritten.push(it.fqcn);
+          continue;
         }
 
         const res = await manager.getRepository(JavaFile).insert({
@@ -178,31 +235,24 @@ export class JavaService {
         });
         const fileId = res.identifiers[0].id as number;
 
-        for (const m of it.cls.methods) {
-          await manager.getRepository(JavaMethod).insert({
-            file_id: fileId,
-            method_name: m.method_name,
-            return_type: m.return_type,
-            parameters: JSON.stringify(m.parameters),
-            modifiers: JSON.stringify(m.modifiers ?? []),
-            javadoc: m.javadoc || '',
-            ai_summary: m.javadoc || '',
-            body: m.body || '',
-            start_line: m.start_line ?? null,
-            body_start_line: m.body_start_line ?? null,
-          });
-        }
-        for (const fqn of it.imports) {
-          await manager.getRepository(JavaDependency).insert({ from_file_id: fileId, to_class_name: fqn });
-        }
+        await this.insertMethodsAndDeps(manager, fileId, it.cls.methods, it.imports);
+        await this.insertVersion(manager, fileId, it.chunk, null);
 
         await this.fts.indexJavaFile(manager, fileId);
         savedIds.push(fileId);
       }
 
-      // Einmalig nach allen Inserts: Call-Edges global neu berechnen.
+      // Einmalig nach allen Schreibvorgaengen: Call-Edges global neu berechnen.
       await this.recomputeAutoEdges(manager);
     });
+
+    // 6) KI-Zusammenfassung je geaenderter Version im Hintergrund nachtragen (blockiert die
+    //    Antwort NICHT; Ollama optional -> ai_summary bleibt sonst NULL, Frontend faellt zurueck).
+    for (const cv of changedVersions) {
+      this.generateVersionSummary(cv.versionId, cv.className, cv.diff, b.userContext).catch((e) =>
+        this.logger.warn(`Diff-Summary fehlgeschlagen (Version ${cv.versionId}): ${e?.message || e}`),
+      );
+    }
 
     // Reihenfolge wie savedIds beibehalten (find() sortiert nicht garantiert).
     const savedRows = await repo.find({ where: { id: In(savedIds) } });
@@ -217,6 +267,104 @@ export class JavaService {
       warnings,
       overwritten,
     };
+  }
+
+  // Methoden + Import-Dependencies einer geparsten Klasse fuer file_id einfuegen. Gemeinsame
+  // Hilfe fuer Erst-Insert und Re-Upload (dort nach vorherigem Loeschen der alten Zeilen).
+  private async insertMethodsAndDeps(
+    manager: EntityManager,
+    fileId: number,
+    methods: any[],
+    imports: string[],
+  ): Promise<void> {
+    for (const m of methods) {
+      // ai_summary initial = Javadoc-Fallback (KI spaeter on-demand pro Methode).
+      await manager.getRepository(JavaMethod).insert({
+        file_id: fileId,
+        method_name: m.method_name,
+        return_type: m.return_type,
+        parameters: JSON.stringify(m.parameters),
+        modifiers: JSON.stringify(m.modifiers ?? []),
+        javadoc: m.javadoc || '',
+        ai_summary: m.javadoc || '',
+        body: m.body || '',
+        start_line: m.start_line ?? null,
+        body_start_line: m.body_start_line ?? null,
+      });
+    }
+    for (const fqn of imports) {
+      await manager.getRepository(JavaDependency).insert({ from_file_id: fileId, to_class_name: fqn });
+    }
+  }
+
+  // Neuen Version-Snapshot anlegen (version_number = bisheriges Maximum + 1). Liefert die neue id.
+  private async insertVersion(
+    manager: EntityManager,
+    fileId: number,
+    source: string,
+    diff: string | null,
+  ): Promise<number> {
+    const maxRow = await manager
+      .getRepository(JavaFileVersion)
+      .createQueryBuilder('v')
+      .select('MAX(v.version_number)', 'max')
+      .where('v.java_file_id = :id', { id: fileId })
+      .getRawOne<{ max: number | null }>();
+    const next = Number(maxRow?.max ?? 0) + 1;
+    const res = await manager.getRepository(JavaFileVersion).insert({
+      java_file_id: fileId,
+      version_number: next,
+      source,
+      diff: diff ?? null,
+    });
+    return res.identifiers[0].id as number;
+  }
+
+  // Hintergrund: KI-Zusammenfassung eines Version-Diffs erzeugen (async, ausserhalb jeder Tx)
+  // und in java_file_versions nachtragen. Ist Ollama nicht erreichbar -> '' -> nichts schreiben,
+  // ai_summary bleibt NULL (Frontend zeigt Fallback). Rendert Markdown -> HTML (Cache).
+  private async generateVersionSummary(
+    versionId: number,
+    className: string,
+    diff: string,
+    context?: string,
+  ): Promise<void> {
+    const summary = await this.ollama.generateDiffSummary({ className, diff, context });
+    if (!summary) return;
+    const { html } = await this.markdown.renderMarkdown(summary);
+    await this.ds
+      .getRepository(JavaFileVersion)
+      .update({ id: versionId }, { ai_summary: summary, ai_summary_html: html });
+  }
+
+  // Versionsverlauf einer Klasse (neueste zuerst), ohne Quelltext (kleine Payload).
+  async listVersions(idParam: string): Promise<any[]> {
+    const id = Number(idParam);
+    const file = await this.ds.getRepository(JavaFile).findOne({ where: { id }, select: { id: true } });
+    if (!file) throw new NotFoundException('Datei nicht gefunden');
+    const rows = await this.ds.getRepository(JavaFileVersion).find({
+      where: { java_file_id: id },
+      order: { version_number: 'DESC' },
+    });
+    return rows.map((v) => ({
+      id: v.id,
+      version_number: v.version_number,
+      diff: v.diff,
+      ai_summary: v.ai_summary,
+      ai_summary_html: v.ai_summary_html,
+      created_at: v.created_at,
+    }));
+  }
+
+  // Vollstaendiger Quelltext EINER Version (on-demand, z. B. fuer die Initial-Version-Ansicht).
+  async getVersionSource(idParam: string, versionIdParam: string): Promise<{ source: string }> {
+    const id = Number(idParam);
+    const versionId = Number(versionIdParam);
+    const v = await this.ds.getRepository(JavaFileVersion).findOne({
+      where: { id: versionId, java_file_id: id },
+    });
+    if (!v) throw new NotFoundException('Version nicht gefunden');
+    return { source: v.source };
   }
 
   // Liste aller analysierten Dateien (ohne raw_source). COLLATE NOCASE -> Raw-SQL.

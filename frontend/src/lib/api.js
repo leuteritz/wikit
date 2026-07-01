@@ -45,6 +45,12 @@ export const api = {
     http('GET', `/java/method-snippet?fileId=${encodeURIComponent(fileId)}&methodName=${encodeURIComponent(methodName)}`),
   deleteJavaFile: (id) => http('DELETE', `/java/files/${id}`),
 
+  // Versionsverlauf (Changelog) einer Klasse. Liste = ohne Quelltext (Diff + KI-Summary);
+  // Quelltext einer einzelnen Version separat on-demand.
+  getJavaFileVersions: (id) => http('GET', `/java/files/${id}/versions`),
+  getJavaFileVersionSource: (id, versionId) =>
+    http('GET', `/java/files/${id}/versions/${versionId}/source`),
+
   // Persistente Klassen-Graph-Kanten (auto + manuell). Quelle der Wahrheit fuers Frontend.
   listJavaEdges: () => http('GET', '/java/edges'),
   createJavaEdge: (data) => http('POST', '/java/edges', data),

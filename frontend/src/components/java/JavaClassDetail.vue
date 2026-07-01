@@ -10,6 +10,7 @@ import { useJavaQueue } from '../../composables/useJavaQueue.js'
 import { useJavaGraph } from '../../composables/useJavaGraph.js'
 import { useArticles } from '../../composables/useArticles.js'
 import JavaCodeEditor from './JavaCodeEditor.vue'
+import JavaDiffViewer from './JavaDiffViewer.vue'
 import { processMethodBody } from '../../lib/javaCode.js'
 import { parseParamNames, markParamOccurrences } from '../../lib/javaParams.js'
 import { reindentJava } from '../../lib/javaIndent.js'
@@ -28,7 +29,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'changed'])
 
 const router = useRouter()
-const { getFile, deleteFile, linkArticle, userContext } = useJavaAnalyzer()
+const { getFile, deleteFile, linkArticle, userContext, getFileVersions, getVersionSource } = useJavaAnalyzer()
 const { lastEvent, progressFor, enqueueClass } = useJavaQueue()
 const { create } = useArticles()
 const { edges: serverEdges, highlightedCall, toggleHighlightedCall, clearHighlightedCall } = useJavaGraph()
@@ -36,13 +37,95 @@ const { edges: serverEdges, highlightedCall, toggleHighlightedCall, clearHighlig
 const file = ref(null)
 const loading = ref(true)
 const error = ref('')
-const tab = ref('doc') // 'doc' | 'source'
+const tab = ref('doc') // 'doc' | 'source' | 'history'
 const sourceEditor = ref(null) // JavaCodeEditor im Quellcode-Tab (fuer highlightLine)
 const openMethod = ref(null)
 const fullBusy = ref(false) // waehrend des Einreihens der Voll-Analyse
 const notice = ref('')
 const creating = ref(false)
 const copied = ref(false)
+
+// --- Versionsverlauf (Changelog) ----------------------------------------------
+// Lazy geladen, sobald der History-Tab zum ersten Mal geoeffnet wird. Quelltext einer
+// Version wird nur on-demand nachgeladen (Liste haelt nur Diff + KI-Summary).
+const versions = ref([])
+const versionsLoading = ref(false)
+const versionsLoaded = ref(false)
+const versionsError = ref('')
+const openSources = ref({}) // versionId -> Quelltext (aufklappbar), null = laedt gerade
+
+async function loadVersions() {
+  versionsLoading.value = true
+  versionsError.value = ''
+  try {
+    versions.value = await getFileVersions(props.fileId)
+    versionsLoaded.value = true
+  } catch (e) {
+    versionsError.value = e.message
+  } finally {
+    versionsLoading.value = false
+  }
+}
+
+// Quelltext einer Version aus-/einklappen (on-demand nachladen).
+async function toggleSource(v) {
+  if (v.id in openSources.value) {
+    const next = { ...openSources.value }
+    delete next[v.id]
+    openSources.value = next
+    return
+  }
+  openSources.value = { ...openSources.value, [v.id]: null }
+  try {
+    const { source } = await getVersionSource(props.fileId, v.id)
+    openSources.value = { ...openSources.value, [v.id]: source }
+  } catch (e) {
+    versionsError.value = e.message
+    const next = { ...openSources.value }
+    delete next[v.id]
+    openSources.value = next
+  }
+}
+
+// SQLite datetime('now') liefert UTC ohne Zeitzone -> als UTC interpretieren.
+function parseTs(ts) {
+  if (!ts) return null
+  const iso = /Z|[+-]\d\d:?\d\d$/.test(ts) ? ts : ts.replace(' ', 'T') + 'Z'
+  const d = new Date(iso)
+  return isNaN(d) ? null : d
+}
+
+// Kompakte Relativzeit (kein date-Helper im Repo). Fallback auf lokale Datums-/Zeitangabe.
+function formatRelative(ts) {
+  const then = parseTs(ts)
+  if (!then) return ts || ''
+  const diff = Math.round((Date.now() - then.getTime()) / 1000)
+  if (diff < 45) return 'just now'
+  if (diff < 90) return 'a minute ago'
+  const mins = Math.round(diff / 60)
+  if (mins < 60) return `${mins} minutes ago`
+  const hrs = Math.round(mins / 60)
+  if (hrs < 24) return `${hrs} hour${hrs === 1 ? '' : 's'} ago`
+  const days = Math.round(hrs / 24)
+  if (days < 30) return `${days} day${days === 1 ? '' : 's'} ago`
+  return then.toLocaleString()
+}
+
+// Zustand der KI-Aenderungs-Zusammenfassung: 'ready' | 'initial' | 'generating' | 'unavailable'.
+// Da die Generierung im Hintergrund laeuft, wird bei fehlendem Summary anhand des Alters
+// unterschieden: frisch (< 2 min) -> vermutlich noch in Arbeit; sonst war Ollama nicht erreichbar.
+function summaryState(v) {
+  if (v.ai_summary_html) return 'ready'
+  if (!v.diff) return 'initial'
+  const then = parseTs(v.created_at)
+  const ageSec = then ? (Date.now() - then.getTime()) / 1000 : Infinity
+  return ageSec < 120 ? 'generating' : 'unavailable'
+}
+
+// History erst beim ersten Oeffnen des Tabs laden.
+watch(tab, (t) => {
+  if (t === 'history' && !versionsLoaded.value && !versionsLoading.value) loadVersions()
+})
 
 async function load() {
   loading.value = true
@@ -312,6 +395,12 @@ async function removeFile() {
         :class="tab === 'source' ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
         @click="tab = 'source'"
       >Source</button>
+      <button
+        type="button"
+        class="border-b-2 px-3 py-1.5 text-sm font-medium transition"
+        :class="tab === 'history' ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
+        @click="tab = 'history'"
+      >History</button>
     </div>
 
     <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
@@ -396,7 +485,7 @@ async function removeFile() {
         </template>
 
         <!-- QUELLCODE-TAB: read-only CodeMirror (Java-Syntax-Highlighting) -->
-        <template v-else>
+        <template v-else-if="tab === 'source'">
           <div class="code-wrap h-[60vh] min-h-[20rem]">
             <button
               type="button"
@@ -413,6 +502,96 @@ async function removeFile() {
               @clear-call="onClearCall"
             />
           </div>
+        </template>
+
+        <!-- HISTORY-TAB: Versionsverlauf (Changelog) -->
+        <template v-else>
+          <div class="mb-3 flex items-center justify-between gap-2">
+            <h3 class="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+              Version history
+            </h3>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-60"
+              :disabled="versionsLoading"
+              title="Reload version history"
+              @click="loadVersions"
+            >
+              <Icon icon="lucide:refresh-cw" class="h-3.5 w-3.5" :class="versionsLoading ? 'animate-spin' : ''" />
+              Refresh
+            </button>
+          </div>
+
+          <p v-if="versionsError" class="notice-warning mb-3 rounded-lg px-3 py-2 text-xs">{{ versionsError }}</p>
+
+          <!-- Skeleton beim Laden -->
+          <div v-if="versionsLoading && !versions.length" class="space-y-3">
+            <div v-for="n in 3" :key="n" class="animate-pulse rounded-xl border border-[var(--color-border)] p-3">
+              <div class="mb-3 h-4 w-1/3 rounded bg-[var(--color-surface-offset)]" />
+              <div class="h-24 rounded bg-[var(--color-surface-offset)]" />
+            </div>
+          </div>
+
+          <p
+            v-else-if="versionsLoaded && !versions.length"
+            class="text-sm italic text-[var(--color-text-muted)]"
+          >
+            No version history yet.
+          </p>
+
+          <ol v-else class="space-y-4">
+            <li
+              v-for="v in versions"
+              :key="v.id"
+              class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
+            >
+              <div class="mb-2 flex flex-wrap items-center gap-2">
+                <span class="rounded-md bg-[var(--color-accent-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--color-accent)]">
+                  Version {{ v.version_number }}
+                </span>
+                <span v-if="!v.diff" class="badge-muted rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase">
+                  Initial upload
+                </span>
+                <span class="text-xs text-[var(--color-text-muted)]">{{ formatRelative(v.created_at) }}</span>
+                <button
+                  type="button"
+                  class="ml-auto inline-flex items-center gap-1 text-xs font-medium text-[var(--color-accent)] transition hover:text-[var(--color-accent-hover)]"
+                  @click="toggleSource(v)"
+                >
+                  <Icon icon="lucide:code-2" class="h-3.5 w-3.5" />
+                  {{ v.id in openSources ? 'Hide source' : 'View source' }}
+                </button>
+              </div>
+
+              <!-- Diff (farbig, Java-Highlighting). Version 1 hat keinen Diff. -->
+              <div v-if="v.diff" class="mb-2 h-[40vh] min-h-[14rem]">
+                <JavaDiffViewer :diff="v.diff" />
+              </div>
+
+              <!-- Optional aufgeklappter Quelltext der Version -->
+              <div v-if="v.id in openSources" class="mb-2 h-[40vh] min-h-[14rem]">
+                <div v-if="openSources[v.id] === null" class="animate-pulse h-full rounded-xl bg-[var(--color-surface-offset)]" />
+                <JavaCodeEditor v-else :model-value="openSources[v.id]" readonly />
+              </div>
+
+              <!-- KI-Zusammenfassung der Aenderung -->
+              <blockquote
+                v-if="summaryState(v) === 'ready'"
+                class="prose prose-sm max-w-none border-l-2 border-[var(--color-accent)] pl-3 dark:prose-invert"
+                v-html="v.ai_summary_html"
+              />
+              <p v-else-if="summaryState(v) === 'initial'" class="text-sm italic text-[var(--color-text-muted)]">
+                Initial version — no change summary.
+              </p>
+              <p v-else-if="summaryState(v) === 'generating'" class="inline-flex items-center gap-1.5 text-sm italic text-[var(--color-text-muted)]">
+                <Icon icon="lucide:loader-2" class="h-3.5 w-3.5 animate-spin" />
+                Generating AI change summary… (refresh in a moment)
+              </p>
+              <p v-else class="text-sm italic text-[var(--color-text-muted)]">
+                No AI summary available.
+              </p>
+            </li>
+          </ol>
         </template>
       </template>
     </div>

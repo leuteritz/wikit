@@ -232,4 +232,30 @@ export class OllamaService {
       (methodList ? `Methoden: ${methodList}` : '');
     return onToken ? this.runStream(prompt, onToken, signal) : this.run(prompt, signal);
   }
+
+  // Zusammenfassung einer Klassen-Aenderung aus einem Unified-Diff (Changelog-Eintrag).
+  // Liefert eine knappe, stichpunktartige Beschreibung dessen, was sich geaendert hat.
+  // '' bei Nichterreichbarkeit -> Aufrufer laesst ai_summary dann leer (Frontend-Fallback).
+  async generateDiffSummary(
+    {
+      className,
+      diff,
+      context,
+    }: {
+      className: string;
+      diff: string;
+      context?: string;
+    },
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const prompt =
+      this.contextBlock(context) +
+      `Du dokumentierst Aenderungen an Java-Code fuer ein technisches Wiki. Unten steht ein ` +
+      `Unified-Diff der Klasse ${className}. Fasse in wenigen kurzen Stichpunkten (Markdown-Liste ` +
+      `mit "-") zusammen, WAS sich gegenueber der Vorversion geaendert hat (z. B. neue/entfernte ` +
+      `Methoden, geaenderte Signaturen, angepasste Logik). Sei praegnant, keine Zeilennummern, ` +
+      `kein kompletter Code-Block. Antworte nur mit der Aufzaehlung.\n\n` +
+      `\`\`\`diff\n${diff}\n\`\`\``;
+    return this.run(prompt, signal);
+  }
 }

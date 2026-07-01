@@ -41,6 +41,9 @@ export function useJavaAnalyzer() {
     fetchFiles,
     fetchGraph: () => api.getJavaGraph(),
     getFile: (id) => api.getJavaFile(id),
+    // Versionsverlauf (Changelog) einer Klasse + Quelltext einer einzelnen Version (on-demand).
+    getFileVersions: (id) => api.getJavaFileVersions(id),
+    getVersionSource: (id, versionId) => api.getJavaFileVersionSource(id, versionId),
     async analyzeCode(source, filename = '') {
       state.analyzing = true
       state.error = ''

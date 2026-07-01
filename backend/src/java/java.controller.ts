@@ -144,6 +144,18 @@ export class JavaController {
     return this.svc.getFile(id);
   }
 
+  // Versionsverlauf (Changelog) einer Klasse, neueste zuerst. Ohne Quelltext (kleine Payload).
+  @Get('files/:id/versions')
+  listVersions(@Param('id') id: string) {
+    return this.svc.listVersions(id);
+  }
+
+  // Quelltext einer einzelnen Version (on-demand).
+  @Get('files/:id/versions/:versionId/source')
+  getVersionSource(@Param('id') id: string, @Param('versionId') versionId: string) {
+    return this.svc.getVersionSource(id, versionId);
+  }
+
   // KI-Summary signalisiert "Ollama down" ueber ein Flag in einer 200-Antwort (kein Fehlerstatus).
   // Body optional: { userContext } -> Projekt-Kontext fuer den Prompt.
   @Post('methods/:id/summarize')

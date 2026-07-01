@@ -92,6 +92,25 @@ CREATE TABLE IF NOT EXISTS java_dependencies (
 );
 CREATE INDEX IF NOT EXISTS idx_java_deps_from ON java_dependencies(from_file_id);
 
+-- Versionsverlauf ("Changelog") einer analysierten Java-Klasse: bei erneutem Hochladen
+-- derselben Klasse (class_name + package) wird der Datensatz aktualisiert (java_files.id
+-- bleibt stabil) UND hier ein Snapshot abgelegt. version_number ist 1-basiert je Klasse.
+-- diff = Unified-Diff zur Vorversion (NULL bei Version 1). ai_summary(_html) = KI-Zusammenfassung
+-- der Aenderung, asynchron nachgetragen (NULL bei Version 1 oder wenn Ollama fehlt).
+-- Hinweis: KEIN Semikolon in diesem Kommentar (SCHEMA wird beim Init daran gesplittet).
+CREATE TABLE IF NOT EXISTS java_file_versions (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  java_file_id    INTEGER NOT NULL REFERENCES java_files(id) ON DELETE CASCADE,
+  version_number  INTEGER NOT NULL,
+  source          TEXT NOT NULL,
+  diff            TEXT,
+  ai_summary      TEXT,
+  ai_summary_html TEXT,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (java_file_id, version_number)
+);
+CREATE INDEX IF NOT EXISTS idx_java_file_versions_file ON java_file_versions(java_file_id);
+
 -- Persistente Klassen-Kanten des Code-Graphen (ersetzt die alte rein client-seitige
 -- Substring-Heuristik). source_class ruft method_name auf einer Instanz von target_class auf.
 -- is_manual=1 -> vom Nutzer per Drag-to-Connect angelegt (ueberlebt Neuanalyse).
