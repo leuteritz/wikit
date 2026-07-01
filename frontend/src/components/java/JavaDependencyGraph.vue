@@ -289,12 +289,15 @@ const nodes = computed(() => layout.value.nodes)
 // Call-Edge (highlightedCall aus dem Code-Tab) markiert -> Glow-Klasse + Edge-Highlight-Farbe.
 const edges = computed(() => {
   const hc = highlightedCall.value
-  if (!hc) return layout.value.edges
   return layout.value.edges.map((e) => {
     const d = e.data || {}
     const match =
-      d.kind === 'call' && d.fromFileId === hc.callerFileId && (d.methods || []).some((m) => m.method === hc.method)
-    if (!match) return e
+      hc && d.kind === 'call' && d.fromFileId === hc.callerFileId && (d.methods || []).some((m) => m.method === hc.method)
+    // `class` MUSS auf JEDER Kante gesetzt sein: Vue Flow merged eingehende Kanten per
+    // Object.assign auf die bestehende GraphEdge (parseEdge). Fehlt der `class`-Key, bleibt ein
+    // zuvor gesetztes 'edge-lit' haengen -> die Kante leuchtet weiter, auch nach dem Deselektieren.
+    // Darum explizit '' statt den Key wegzulassen (erzwingt das Ueberschreiben).
+    if (!match) return { ...e, class: '' }
     return {
       ...e,
       class: 'edge-lit',
