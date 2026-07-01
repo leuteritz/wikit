@@ -17,6 +17,12 @@ const error = ref('')
 // wird im Editor mit derselben Farbe markiert. Bewusst geteilter Module-State (kein Pinia).
 const highlightedCall = ref(null)
 
+// Aktuell „aufleuchtende" Methoden-DEFINITION (SOURCE-Seite): gesetzt, wenn im Code-Tab
+// (JavaClassDetail) eine Methode angeklickt wird, die eine EINGEHENDE Call-Edge hat. Wert:
+// { definerFileId, method } | null. Symmetrisch zu highlightedCall (Consumer-Seite): der Graph
+// hebt die eingehenden Kanten dieser Methode hervor, der Editor markiert den GESAMTEN Methodenblock.
+const highlightedDef = ref(null)
+
 async function fetchEdges() {
   loading.value = true
   error.value = ''
@@ -93,6 +99,24 @@ export function useJavaGraph() {
     },
     clearHighlightedCall() {
       highlightedCall.value = null
+    },
+    // --- SOURCE-Seite (eingehende Kanten): spiegelt die Consumer-API oben ---------------------
+    highlightedDef,
+    setHighlightedDef(payload) {
+      highlightedDef.value = payload
+    },
+    // Toggle-Semantik analog zu toggleHighlightedCall: dieselbe {definerFileId, method} erneut
+    // angeklickt -> aus; sonst auf die neue Definition umschalten.
+    toggleHighlightedDef(payload) {
+      const cur = highlightedDef.value
+      if (cur && cur.definerFileId === payload.definerFileId && cur.method === payload.method) {
+        highlightedDef.value = null
+      } else {
+        highlightedDef.value = payload
+      }
+    },
+    clearHighlightedDef() {
+      highlightedDef.value = null
     },
     fetchEdges,
     recomputeEdges,

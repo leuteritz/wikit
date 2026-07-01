@@ -21,8 +21,15 @@ const props = defineProps({
   // Aktuell hervorgehobener Methodenname (reaktiv, aus dem geteilten highlightedCall-State).
   // Setzen/Loeschen der aktiven Token-Markierung folgt diesem Prop -> KEIN imperatives Setzen mehr.
   activeCall: { type: String, default: null },
+  // SOURCE-Seite (eingehende Kanten): Methoden-DEFINITIONEN, die von anderen Klassen aufgerufen
+  // werden -> im Quellcode klickbar. Ein Klick emittiert `def-click` (Graph-Highlight der
+  // eingehenden Kanten + Ganz-Block-Markierung dieser Methode).
+  defWords: { type: Array, default: () => [] },
+  // Aktuell markierter Methodenbereich (reaktiv, aus dem geteilten highlightedDef-State):
+  // { from, to } (1-basierte Zeilen) | null. Treibt die persistente Block-Decoration.
+  activeDefRange: { type: Object, default: null },
 })
-const emit = defineEmits(['update:modelValue', 'method-click', 'clear-call'])
+const emit = defineEmits(['update:modelValue', 'method-click', 'clear-call', 'def-click', 'clear-def'])
 
 const { theme } = useTheme()
 const editorParent = ref(null)
@@ -84,6 +91,55 @@ const methodField = StateField.define({
   },
   provide: (f) => EditorView.decorations.from(f),
 })
+
+// --- Source-Methoden-Highlight (SOURCE-Seite: eingehende Kanten) ---------------
+// Zweite, UNABHAENGIGE Block-Decoration (eigene Klasse `cm-source-method-highlight`, Violett).
+// Bewusst getrennt von setMethodRange/`cm-method-highlight` (Edge-Panel „Definiert in"), damit
+// sich beide nicht in die Quere kommen und die Richtung (eingehend) farblich eigenstaendig bleibt.
+// Reaktiv getrieben von props.activeDefRange (kein imperatives Setzen von aussen).
+const setSourceMethodRange = StateEffect.define() // value: { from, to } (1-basiert) | null
+const sourceMethodLineDeco = Decoration.line({ class: 'cm-source-method-highlight' })
+const sourceMethodField = StateField.define({
+  create() {
+    return Decoration.none
+  },
+  update(deco, tr) {
+    deco = deco.map(tr.changes)
+    for (const e of tr.effects) {
+      if (!e.is(setSourceMethodRange)) continue
+      if (!e.value) {
+        deco = Decoration.none
+        continue
+      }
+      const ranges = []
+      for (let n = e.value.from; n <= e.value.to; n++) {
+        ranges.push(sourceMethodLineDeco.range(tr.state.doc.line(n).from))
+      }
+      deco = Decoration.set(ranges)
+    }
+    return deco
+  },
+  provide: (f) => EditorView.decorations.from(f),
+})
+
+// Reaktiv an props.activeDefRange ausrichten: Bereich gesetzt -> ganze Methode markieren + an den
+// Anfang scrollen; null -> Markierung entfernen.
+function applyActiveDefRange(range) {
+  if (!view) return
+  if (!range || !range.from) {
+    view.dispatch({ effects: setSourceMethodRange.of(null) })
+    return
+  }
+  const total = view.state.doc.lines
+  const from = Math.max(1, Math.min(Number(range.from), total))
+  const to = Math.max(from, Math.min(Number(range.to || range.from), total))
+  view.dispatch({
+    effects: [
+      setSourceMethodRange.of({ from, to }),
+      EditorView.scrollIntoView(view.state.doc.line(from).from, { y: 'center' }),
+    ],
+  })
+}
 
 // --- Call-Highlight (Code-Token <-> Graph-Edge) -------------------------------
 // Zwei Mark-Decorations auf Methodennamen-Tokens (Zeichenbereiche, nicht ganze Zeilen):
@@ -197,29 +253,54 @@ function clickableWordAt(event, v) {
   return words.includes(word) ? word : null
 }
 
+// Klickbaren Methoden-DEFINITIONSnamen (SOURCE-Seite) an der Klick-Position ermitteln.
+// Rueckgabe: der Name, falls er in props.defWords ist, sonst null. (Getrennt von clickableWordAt,
+// damit die Consumer-Erkennung unveraendert bleibt.)
+function defWordAt(event, v) {
+  const words = props.defWords
+  if (!words || !words.length) return null
+  const pos = v.posAtCoords({ x: event.clientX, y: event.clientY })
+  if (pos == null) return null
+  const w = v.state.wordAt(pos)
+  if (!w) return null
+  const word = v.state.sliceDoc(w.from, w.to)
+  return words.includes(word) ? word : null
+}
+
 onMounted(() => {
   const extensions = [
     lineNumbers(),
     highlightActiveLine(),
     glowField,
     methodField,
+    sourceMethodField,
     linkField,
     callField,
     // Klick (links ODER rechts – mousedown feuert fuer beide Buttons):
-    //   - auf einen klickbaren Methodennamen -> Toggle-Highlight ausloesen (method-click)
-    //   - sonst (leere Flaeche / Nicht-Methoden-Token) -> Highlight loeschen (clear-call)
-    // Selektion/Caret bleiben unblockiert (return false).
+    //   - auf eine Consumer-Call-Site (clickableWords) -> method-click (ausgehende Kante)
+    //   - sonst auf eine Methoden-Definition mit eingehender Kante (defWords) -> def-click
+    //   - sonst (leere Flaeche / anderes Token) -> beide Highlights loeschen
+    // Consumer hat Vorrang (identischer Pfad wie bisher). Selektion/Caret bleiben unblockiert.
     EditorView.domEventHandlers({
       mousedown(event, v) {
         const word = clickableWordAt(event, v)
-        if (word) emit('method-click', { name: word })
-        else emit('clear-call')
+        if (word) {
+          emit('method-click', { name: word })
+          return false
+        }
+        const def = defWordAt(event, v)
+        if (def) {
+          emit('def-click', { name: def })
+          return false
+        }
+        emit('clear-call')
+        emit('clear-def')
         return false
       },
-      // Rechtsklick auf eine klickbare Methode: natives Kontextmenue unterdruecken (der Toggle
-      // wurde bereits vom vorausgehenden mousedown erledigt), sonst normales Menue zulassen.
+      // Rechtsklick auf eine klickbare Methode (Consumer ODER Definition): natives Kontextmenue
+      // unterdruecken (der Toggle wurde bereits vom vorausgehenden mousedown erledigt).
       contextmenu(event, v) {
-        if (clickableWordAt(event, v)) {
+        if (clickableWordAt(event, v) || defWordAt(event, v)) {
           event.preventDefault()
           return true
         }
@@ -253,6 +334,7 @@ onMounted(() => {
   view = new EditorView({ state, parent: editorParent.value })
   refreshLinks()
   applyActiveCall(props.activeCall) // evtl. bereits gesetztes Highlight sofort spiegeln
+  applyActiveDefRange(props.activeDefRange) // evtl. bereits gesetzten Methodenbereich spiegeln
 })
 
 // Externe Aenderungen (z. B. Datei-Upload) in den Editor spiegeln.
@@ -268,6 +350,9 @@ watch(() => props.clickableWords, refreshLinks)
 
 // Reaktive Call-Token-Markierung: folgt dem geteilten Highlight-State (Setzen/Wechseln/Loeschen).
 watch(() => props.activeCall, (name) => applyActiveCall(name))
+
+// Reaktive Source-Methoden-Block-Markierung: folgt props.activeDefRange (Setzen/Wechseln/Loeschen).
+watch(() => props.activeDefRange, (range) => applyActiveDefRange(range))
 
 watch(theme, () => {
   view?.dispatch({ effects: themeComp.reconfigure(themeExtension()) })
@@ -332,6 +417,20 @@ html.dark .cm-glow-line {
 html.dark .cm-method-highlight {
   --cm-method: 129, 140, 248; /* indigo-400, kräftiger auf dunklem Grund */
   background-color: rgba(var(--cm-method), 0.18);
+}
+
+/* Source-Methoden-Markierung (SOURCE-Seite: „wer ruft DIESE Methode auf?"). Eigene Farbe
+   (Violett) -> klar unterscheidbar von der Consumer-Token-Markierung (Gold), dem Indigo der
+   „Definiert in"-Navigation und dem amber Such-Glow. Gleiche Balken-Optik wie cm-method-highlight,
+   damit „ganze Methode markiert" konsistent wirkt. */
+.cm-source-method-highlight {
+  --cm-source: 139, 92, 246; /* violet-500 */
+  background-color: rgba(var(--cm-source), 0.12);
+  box-shadow: inset 3px 0 0 0 rgba(var(--cm-source), 0.85);
+}
+html.dark .cm-source-method-highlight {
+  --cm-source: 167, 139, 250; /* violet-400, kräftiger auf dunklem Grund */
+  background-color: rgba(var(--cm-source), 0.18);
 }
 
 /* Call-Token-Markierung (Code <-> Graph-Edge): Farbe kommt aus --color-edge-highlight, exakt

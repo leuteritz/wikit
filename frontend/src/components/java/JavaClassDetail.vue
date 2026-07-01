@@ -15,6 +15,7 @@ import { processMethodBody } from '../../lib/javaCode.js'
 import { parseParamNames, markParamOccurrences } from '../../lib/javaParams.js'
 import { reindentJava } from '../../lib/javaIndent.js'
 import { copyToClipboard } from '../../lib/clipboard.js'
+import { api } from '../../lib/api.js'
 import { Icon } from '../../lib/icons.js'
 
 const props = defineProps({
@@ -32,7 +33,7 @@ const router = useRouter()
 const { getFile, deleteFile, linkArticle, userContext, getFileVersions, getVersionSource } = useJavaAnalyzer()
 const { lastEvent, progressFor, enqueueClass } = useJavaQueue()
 const { create } = useArticles()
-const { edges: serverEdges, highlightedCall, toggleHighlightedCall, clearHighlightedCall } = useJavaGraph()
+const { edges: serverEdges, highlightedCall, toggleHighlightedCall, clearHighlightedCall, highlightedDef, toggleHighlightedDef, clearHighlightedDef } = useJavaGraph()
 
 const file = ref(null)
 const loading = ref(true)
@@ -197,15 +198,82 @@ const activeCall = computed(() =>
 // Methode erneut = aus, andere = umschalten. Graph-Kante + Code-Token folgen reaktiv.
 function onMethodClick({ name }) {
   if (!name) return
+  clearHighlightedDef() // Consumer- und Source-Highlight schliessen sich gegenseitig aus
   toggleHighlightedCall({ callerFileId: props.fileId, method: name })
 }
 // Klick daneben (kein Methoden-Token / leere Editorflaeche) -> Highlight vollstaendig entfernen.
 function onClearCall() {
   clearHighlightedCall()
 }
-// Klassenwechsel/Unmount: stehengebliebenes Highlight raeumen.
-watch(() => props.fileId, clearHighlightedCall)
-onBeforeUnmount(clearHighlightedCall)
+
+// --- Code-Token <-> Graph-Edge: SOURCE-Seite (eingehende Kanten) ---------------
+// Methodennamen, die diese Klasse (als DEFINITION) fuer andere bereitstellt und die per Call-Edge
+// genutzt werden -> im Quellcode klickbar. `uses`-Edges (Typ-Nutzung) bleiben aussen vor.
+const incomingMethods = computed(() => {
+  const cls = file.value?.class_name
+  if (!cls) return []
+  return [
+    ...new Set(
+      (serverEdges.value || [])
+        .filter((e) => e.target_class === cls && e.kind !== 'uses')
+        .map((e) => e.method_name)
+        .filter(Boolean),
+    ),
+  ]
+})
+
+// Aktiver Methodenbereich FUER DIESE Klasse: nur wenn das geteilte Source-Highlight diese Datei als
+// Definition betrifft. Die exakte Zeilenspanne (Signatur..schliessende Klammer) liefert das Backend
+// (getJavaMethodSnippet, identisch zur „Definiert in"-Funktion) -> auf Klick nachladen + cachen.
+const activeDefRange = ref(null)
+const defRangeCache = new Map() // methodName -> { from, to }
+
+async function resolveDefRange(method) {
+  if (defRangeCache.has(method)) return defRangeCache.get(method)
+  const snip = await api.getJavaMethodSnippet(props.fileId, method)
+  const range = { from: snip.startLine, to: snip.endLine ?? snip.startLine }
+  defRangeCache.set(method, range)
+  return range
+}
+
+// highlightedDef spiegeln: betrifft der State diese Datei -> Methodenbereich aufloesen und markieren;
+// sonst Markierung entfernen. Fehlt der Snippet (Fehler) -> nur der Block bleibt aus, die Kanten
+// leuchten trotzdem (reaktiv ueber den Graphen).
+watch(highlightedDef, async (hd) => {
+  if (!hd || hd.definerFileId !== props.fileId) {
+    activeDefRange.value = null
+    return
+  }
+  const method = hd.method
+  try {
+    const range = await resolveDefRange(method)
+    // Nach dem await pruefen, ob der State noch gilt (kein Race bei schnellem Umschalten).
+    if (highlightedDef.value?.definerFileId === props.fileId && highlightedDef.value?.method === method) {
+      activeDefRange.value = range
+    }
+  } catch {
+    activeDefRange.value = null
+  }
+})
+
+// Klick auf eine klickbare Methoden-Definition -> Toggle. Graph-Kanten (eingehend) + Block-Markierung
+// folgen reaktiv. Consumer-Highlight wird ausgeschlossen.
+function onDefClick({ name }) {
+  if (!name) return
+  clearHighlightedCall()
+  toggleHighlightedDef({ definerFileId: props.fileId, method: name })
+}
+function onClearDef() {
+  clearHighlightedDef()
+}
+
+// Klassenwechsel/Unmount: beide stehengebliebenen Highlights raeumen.
+function clearHighlights() {
+  clearHighlightedCall()
+  clearHighlightedDef()
+}
+watch(() => props.fileId, clearHighlights)
+onBeforeUnmount(clearHighlights)
 
 // --- Farbige Parameter im Doku-Tab (java-param, wie im Edge-Panel) -------------
 // Jeder Parameter bekommt eine eigene SCHRIFTFARBE (`.java-param-c{0..5}`, in `markParamOccurrences`
@@ -497,9 +565,13 @@ async function removeFile() {
               :model-value="displaySource"
               :clickable-words="callableMethods"
               :active-call="activeCall"
+              :def-words="incomingMethods"
+              :active-def-range="activeDefRange"
               readonly
               @method-click="onMethodClick"
               @clear-call="onClearCall"
+              @def-click="onDefClick"
+              @clear-def="onClearDef"
             />
           </div>
         </template>

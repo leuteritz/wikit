@@ -41,7 +41,14 @@ const { fitView, zoomIn, zoomOut, setViewport } = useVueFlow()
 //   * createEdge/deleteEdge laufen ausschließlich über das Composable (HTTP via lib/api.js).
 //   * deleteEdge im Backend: manuelle Kante hart löschen, Auto-Kante als Tombstone (dismissed=1)
 //     merken -> falsch erkannte Auto-Kanten kehren bei „Kanten neu simulieren" nicht zurück.
-const { edges: serverEdges, fetchEdges, createEdge, deleteEdge, highlightedCall, clearHighlightedCall } = useJavaGraph()
+const { edges: serverEdges, fetchEdges, createEdge, deleteEdge, highlightedCall, clearHighlightedCall, highlightedDef, clearHighlightedDef } = useJavaGraph()
+
+// Beide Code-Tab-Highlights (Consumer ausgehend / Source eingehend) gemeinsam loeschen -> jeder
+// Graph-Klick (Node/Pane) raeumt einen evtl. stehenden Zustand vollstaendig auf.
+function clearHighlights() {
+  clearHighlightedCall()
+  clearHighlightedDef()
+}
 
 // Custom-Edge-Typ registrieren.
 const edgeTypes = { managed: ManagedEdge }
@@ -290,15 +297,20 @@ const nodes = computed(() => layout.value.nodes)
 // Call-Edge (highlightedCall aus dem Code-Tab) markiert -> Glow-Klasse + Edge-Highlight-Farbe.
 const edges = computed(() => {
   const hc = highlightedCall.value
+  const hd = highlightedDef.value
   return layout.value.edges.map((e) => {
     const d = e.data || {}
+    // Consumer-Seite (ausgehend): geklickte Aufruf-Kante des Aufrufers.
     const match =
       hc && d.kind === 'call' && d.fromFileId === hc.callerFileId && (d.methods || []).some((m) => m.method === hc.method)
+    // Source-Seite (eingehend): Kanten, die genau die geklickte Definition dieser Klasse nutzen.
+    const matchIn =
+      hd && d.kind === 'call' && d.toFileId === hd.definerFileId && (d.methods || []).some((m) => m.method === hd.method)
     // `class` MUSS auf JEDER Kante gesetzt sein: Vue Flow merged eingehende Kanten per
     // Object.assign auf die bestehende GraphEdge (parseEdge). Fehlt der `class`-Key, bleibt ein
     // zuvor gesetztes 'edge-lit' haengen -> die Kante leuchtet weiter, auch nach dem Deselektieren.
     // Darum explizit '' statt den Key wegzulassen (erzwingt das Ueberschreiben).
-    if (!match) return { ...e, class: '' }
+    if (!match && !matchIn) return { ...e, class: '' }
     return {
       ...e,
       class: 'edge-lit',
@@ -314,8 +326,8 @@ const edges = computed(() => {
 const dotColor = computed(() => (theme.value === 'dark' ? '#33485a' : '#cdc6bd'))
 
 function onNodeClick({ node }) {
-  // Klick in den Graph (Node) -> transientes Call-Highlight verwerfen (Spec: „Node ohne Kante").
-  clearHighlightedCall()
+  // Klick in den Graph (Node) -> transiente Code-Tab-Highlights verwerfen (Spec: „Node ohne Kante").
+  clearHighlights()
   if (node?.data?.fileId != null) emit('select', node.data.fileId)
 }
 function resetView() {
@@ -532,7 +544,7 @@ watch(
       :edges-updatable="false"
       @node-click="onNodeClick"
       @edge-click="onEdgeClick"
-      @pane-click="clearHighlightedCall"
+      @pane-click="clearHighlights"
       @connect="onConnect"
     >
       <!-- Custom Node: kompaktes Card-Design, Farbe nach Package -->
