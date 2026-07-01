@@ -7,6 +7,7 @@ import { ArticleTag } from '../entities/article-tag.entity';
 import { Category } from '../entities/category.entity';
 import { JavaDependency } from '../entities/java-dependency.entity';
 import { JavaFile } from '../entities/java-file.entity';
+import { JavaFileVersion } from '../entities/java-file-version.entity';
 import { JavaMethod } from '../entities/java-method.entity';
 import { Relation } from '../entities/relation.entity';
 import { Tag } from '../entities/tag.entity';
@@ -180,6 +181,15 @@ export class SerializerService {
         )?.slug ?? null
       : null;
 
+    // Aktuelle Versionsnummer (Changelog): hoechste version_number, Fallback 1 fuer Klassen ohne
+    // Versionszeilen (Altbestand vor v2.46 -> ein einziger aktueller Stand = v1).
+    const maxV = await this.ds
+      .getRepository(JavaFileVersion)
+      .createQueryBuilder('v')
+      .select('MAX(v.version_number)', 'max')
+      .where('v.java_file_id = :id', { id: row.id })
+      .getRawOne<{ max: number | null }>();
+
     const out: any = {
       id: row.id,
       article_id: row.article_id,
@@ -192,6 +202,7 @@ export class SerializerService {
       description_html: row.description_html ?? null,
       generated_at: row.generated_at ?? null,
       created_at: row.created_at,
+      version: Number(maxV?.max ?? 0) || 1,
       methods,
       dependencies,
     };
@@ -215,6 +226,13 @@ export class SerializerService {
     );
     const analyzedByFile = new Map<number, number>();
     for (const s of methodStats) analyzedByFile.set(s.file_id, Number(s.analyzed) || 0);
+
+    // Aktuelle Versionsnummer je Datei (Changelog) in einem Rutsch.
+    const versionStats: Array<{ java_file_id: number; version: number }> = await this.ds.query(
+      `SELECT java_file_id, MAX(version_number) AS version FROM java_file_versions GROUP BY java_file_id`,
+    );
+    const versionByFile = new Map<number, number>();
+    for (const s of versionStats) versionByFile.set(s.java_file_id, Number(s.version) || 0);
 
     const byFqn = new Map<string, number>();
     const byClass = new Map<string, number[]>();
@@ -252,6 +270,7 @@ export class SerializerService {
       // KI-Indikatoren fuer den Graphen.
       analyzed: !!(f.description && f.description.trim()),
       methods_analyzed: analyzedByFile.get(f.id) || 0,
+      version: versionByFile.get(f.id) || 1,
     }));
     return { nodes, edges };
   }

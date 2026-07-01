@@ -263,6 +263,7 @@ const layout = computed(() => {
         methodCount: (f.methods || []).length,
         color: pkgColor.get(pkg),
         analyzed: !!(f.description && f.description.trim()),
+        version: f.version ?? 1,
       },
     }
   })
@@ -549,7 +550,12 @@ watch(
             </div>
             <div class="vf-pkg">{{ data.pkg }}</div>
           </div>
-          <span class="vf-badge">{{ data.methodCount }}</span>
+          <span
+            class="vf-version"
+            :class="{ 'vf-version--multi': data.version > 1 }"
+            :title="`Version ${data.version}`"
+          >v{{ data.version }}</span>
+          <span class="vf-badge" title="Methods">{{ data.methodCount }}</span>
           <Handle type="source" :position="Position.Bottom" class="vf-handle" />
         </div>
       </template>
@@ -598,6 +604,10 @@ watch(
       <div class="flex items-center gap-2">
         <Icon icon="lucide:sparkles" class="h-3.5 w-3.5 text-[var(--color-accent)]" />
         <span class="text-[var(--color-text-muted)]">AI-analyzed</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="legend-version">v2</span>
+        <span class="text-[var(--color-text-muted)]">version · history</span>
       </div>
     </div>
 
@@ -690,6 +700,36 @@ watch(
   font-weight: 700;
   color: #fff;
   background: var(--pkg);
+}
+/* Versions-Chip (Changelog): sekundaer/outlined -> klar abgesetzt von der gefuellten
+   Methoden-Pille. Ab v2 in Akzentfarbe, um „hat Historie" hervorzuheben. */
+.vf-version {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+.vf-version--multi {
+  color: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+  background: var(--color-accent-soft);
+}
+/* Legenden-Swatch fuer den Versions-Chip (spiegelt .vf-version--multi). */
+.legend-version {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-accent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 45%, transparent);
+  background: var(--color-accent-soft);
 }
 .vf-handle {
   width: 8px;
