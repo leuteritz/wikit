@@ -3,7 +3,6 @@ import { createRouter, createWebHistory } from 'vue-router'
 const routes = [
   { path: '/', name: 'home', component: () => import('./views/HomeView.vue') },
   { path: '/wiki', name: 'wiki', component: () => import('./views/WikiView.vue') },
-  { path: '/graph', name: 'graph', component: () => import('./views/GraphView.vue') },
   { path: '/code', name: 'code', component: () => import('./views/CodeView.vue') },
   // Die Queue lebt jetzt im Code-View (Header-Anzeige + Modal). Alte Pfade leiten dorthin um.
   { path: '/code/queues', redirect: '/code' },

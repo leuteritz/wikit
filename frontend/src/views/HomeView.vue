@@ -8,7 +8,6 @@ import { useRouter } from 'vue-router'
 import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { useJavaQueue } from '../composables/useJavaQueue.js'
 import { useArticles } from '../composables/useArticles.js'
-import { api } from '../lib/api.js'
 import { WIKI_TITLE, WIKI_ICON } from '../config.js'
 import JavaCodeEditor from '../components/java/JavaCodeEditor.vue'
 import MeshBackground from '../components/MeshBackground.vue'
@@ -16,7 +15,7 @@ import { Icon } from '../lib/icons.js'
 
 const router = useRouter()
 const { files, fetchFiles, analyzeCode, analyzing, error, userContext, lastFileId } = useJavaAnalyzer()
-const { enqueueClass, allJobs } = useJavaQueue()
+const { enqueueClass } = useJavaQueue()
 const { articles, categories, load } = useArticles()
 
 const source = ref('')
@@ -24,38 +23,19 @@ const filename = ref('')
 const dragging = ref(false)
 const showPaste = ref(false)
 const showContext = ref(false)
-// Anzahl Relationen (= Kanten im Wissens-Graph) fuer die Graph-Kachel. Eigener Fetch, da es
-// keinen Relations-Store gibt; api.getGraph() liefert { nodes, edges } (s. RelationGraph.vue).
-const relationCount = ref(0)
 
 onMounted(() => {
   fetchFiles()
   load() // gecachter No-Op, falls App.vue bereits geladen hat (useArticles als Singleton-Store)
-  api
-    .getGraph()
-    .then((g) => {
-      relationCount.value = g.edges?.length ?? 0
-    })
-    .catch(() => {}) // Graph optional – Kachel zeigt dann 0
 })
 
 const recent = computed(() => [...files.value].slice(0, 6))
 
-// Aktive + wartende KI-Jobs (gleiche Logik wie App.vue). Bewusst KEIN ensurePolling() hier –
-// die Landing zeigt den zuletzt bekannten Stand; 0 im Leerlauf ist korrekt.
-const pendingCount = computed(
-  () => allJobs.value.filter((j) => ['running', 'queued'].includes(j.status)).length,
-)
-
-// Vier Kacheln, 2x2-Raster: Code (oben links) · AI Queue (oben rechts) · Wiki (unten links) ·
-// Graph (unten rechts). Jede Kachel traegt eine Live-Zahl als sekundaere Metrik. Die Queue lebt
-// jetzt im Code-View (Header-Anzeige + Modal) -> die Queue-Kachel fuehrt dorthin (gleiches Ziel
-// wie Code, aber eigene Metrik = aktive Jobs).
+// Zwei Kacheln nebeneinander (grid-cols-2): Code (links) · Wiki (rechts). Jede Kachel traegt eine
+// Live-Zahl als sekundaere Metrik (analysierte Klassen bzw. Artikel).
 const tabs = computed(() => [
   { icon: 'lucide:braces', value: files.value.length, label: 'Code', to: '/code' },
-  { icon: 'lucide:list-checks', value: pendingCount.value, label: 'AI Queue', to: '/code' },
   { icon: 'lucide:book-open', value: articles.value.length, label: 'Wiki', to: '/wiki' },
-  { icon: 'lucide:share-2', value: relationCount.value, label: 'Graph', to: '/graph' },
 ])
 
 const quickLinks = [{ to: '/new', label: 'New article', icon: 'lucide:plus' }]

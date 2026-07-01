@@ -26,11 +26,10 @@ onMounted(() => {
 })
 onUnmounted(() => window.removeEventListener('keydown', onKey))
 
-// Navigation: code-first. Analyzer zuerst, dann Wiki/Graph. Icons ausschliesslich via Iconify.
+// Navigation: code-first. Analyzer zuerst, dann Wiki. Icons ausschliesslich via Iconify.
 const navLinks = [
   { to: '/code', label: 'Code', icon: 'lucide:braces' },
   { to: '/wiki', label: 'Wiki', icon: 'lucide:book-open' },
-  { to: '/graph', label: 'Graph', icon: 'lucide:share-2' },
 ]
 </script>
 
