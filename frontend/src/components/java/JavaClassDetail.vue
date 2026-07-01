@@ -133,14 +133,17 @@ const typeBadge = computed(() => ({
 const methodCount = computed(() => file.value?.methods?.length || 0)
 const summarizedCount = computed(() => (file.value?.methods || []).filter((m) => m.summary_html).length)
 
+// Signatur als String (Header-Chip + Wiki-Export). Modifier voranstellen, analog zum Backend
+// (SerializerService.buildSignature) -> `public static String getId(User u)`.
 function signature(m) {
   const params = (m.parameters || []).map((p) => `${p.type} ${p.name}`.trim()).join(', ')
-  return `${m.return_type || 'void'} ${m.method_name}(${params})`
+  const mods = (m.modifiers || []).join(' ')
+  return `${mods} ${m.return_type || 'void'} ${m.method_name}(${params})`.trim()
 }
-// Code-Block einer Methode aufbereiten: Signatur als erste Zeile, deklarationsfreier Rumpf,
-// interne Leerzeilen IMMER entfernt (kein Toggle mehr).
+// Code-Block einer Methode aufbereiten: server-gerenderte Signatur (Shiki, inkl. Modifier) als
+// erste Zeile, deklarationsfreier Rumpf, interne Leerzeilen IMMER entfernt (kein Toggle mehr).
 function displayMethodBlock(m) {
-  return processMethodBody(m.body_html, { collapseBlank: true, signature: signature(m) })
+  return processMethodBody(m.body_html, { collapseBlank: true, signatureHtml: m.signature_html })
 }
 function methodStatus(m) {
   if (queueProgress.value && queueProgress.value.status === 'running' && !m.summary_html) return 'pending'
@@ -427,11 +430,10 @@ async function removeFile() {
   @apply p-3 text-xs leading-relaxed;
 }
 
-/* Vorangestellte Signaturzeile (plain, ohne Shiki-Token-Farben) als bewusster Snippet-Kopf:
-   volle Textfarbe + fett hebt sie vom farbig gehighlighteten Rumpf ab (Dual-Theme via Palette-Var). */
+/* Vorangestellte Signaturzeile (server-gerendertes Shiki-HTML, inkl. Modifier): nur fett als
+   bewusster Snippet-Kopf – KEIN color-Override, damit die Java-Token-Farben erhalten bleiben. */
 .method-code :deep(.sig-line) {
   @apply font-semibold;
-  color: var(--color-text);
 }
 
 /* Status-Badges auf Palette-Basis (warme Tints via color-mix). */
