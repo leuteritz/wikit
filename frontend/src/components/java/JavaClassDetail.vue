@@ -3,7 +3,7 @@
 // Header + KI-Status, Klassen-Zusammenfassung (description_html), Methoden-Accordion
 // (summary_html, einzeln nachgenerierbar) und Quellcode-Tab (read-only CodeMirror).
 // HTTP nur via lib/api.js (Composable).
-import { ref, watch, computed, nextTick, onBeforeUnmount } from 'vue'
+import { ref, watch, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
 import { useJavaQueue } from '../../composables/useJavaQueue.js'
@@ -32,6 +32,7 @@ const { lastEvent, progressFor, enqueueClass } = useJavaQueue()
 const { create } = useArticles()
 const { edges: serverEdges, highlightedCall, toggleHighlightedCall, clearHighlightedCall } = useJavaGraph()
 
+const rootRef = ref(null) // Wurzel-<aside> -> grenzt Selektions-Highlight auf diese Komponente ein
 const file = ref(null)
 const loading = ref(true)
 const error = ref('')
@@ -122,6 +123,71 @@ function onClearCall() {
 // Klassenwechsel/Unmount: stehengebliebenes Highlight raeumen.
 watch(() => props.fileId, clearHighlightedCall)
 onBeforeUnmount(clearHighlightedCall)
+
+// --- Variablen-Highlight im Doku-Tab (pro Methode) ----------------------------
+// Markiert der Nutzer im Methoden-Codeblock (Signatur ODER Rumpf) ein Bezeichner-Token, werden
+// ALLE Vorkommen desselben Tokens in genau diesem Methodenblock emerald hinterlegt. Umsetzung
+// ueber die CSS Custom Highlight API (Ranges + `::highlight()`), damit das server-gerenderte
+// Shiki-`v-html`-DOM NICHT mutiert wird (kein Konflikt mit Vue, triviales Loeschen). Faellt die
+// API (sehr alte Browser), passiert nichts. Wortgrenze `\b`, case-sensitive; kein Auto-Fade.
+const VAR_HL = 'java-var-highlight'
+const VAR_TOKEN_RE = /^[A-Za-z_$][\w$]*$/
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+function clearVariableHighlight() {
+  CSS?.highlights?.delete(VAR_HL)
+}
+
+function highlightVariable(token, container) {
+  if (!window.Highlight || !CSS?.highlights) return
+  if (!container || !VAR_TOKEN_RE.test(token)) {
+    clearVariableHighlight()
+    return
+  }
+  const re = new RegExp(`\\b${escapeRegex(token)}\\b`, 'g')
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
+  const ranges = []
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const text = node.nodeValue
+    re.lastIndex = 0
+    let m
+    while ((m = re.exec(text)) !== null) {
+      const range = document.createRange()
+      range.setStart(node, m.index)
+      range.setEnd(node, m.index + m[0].length)
+      ranges.push(range)
+    }
+  }
+  if (ranges.length) CSS.highlights.set(VAR_HL, new Highlight(...ranges))
+  else clearVariableHighlight()
+}
+
+// document-weites `selectionchange`: nur greifen, wenn die Selektion in einem `.method-code`-Block
+// DIESER Komponente liegt. Leere/aufgehobene Selektion oder Nicht-Token -> Highlight loeschen.
+function onSelectionChange() {
+  const sel = window.getSelection()
+  if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+    clearVariableHighlight()
+    return
+  }
+  const node = sel.getRangeAt(0).commonAncestorContainer
+  const el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement
+  const container = el?.closest?.('.method-code')
+  if (!container || !rootRef.value?.contains(container)) {
+    clearVariableHighlight()
+    return
+  }
+  highlightVariable(sel.toString().trim(), container)
+}
+
+onMounted(() => document.addEventListener('selectionchange', onSelectionChange))
+onBeforeUnmount(() => {
+  document.removeEventListener('selectionchange', onSelectionChange)
+  clearVariableHighlight()
+})
+// Tab- oder Accordion-Wechsel entfernt ein stehendes Variablen-Highlight.
+watch(tab, clearVariableHighlight)
+watch(openMethod, clearVariableHighlight)
 
 const typeBadge = computed(() => ({
   class: 'badge-accent',
@@ -235,7 +301,7 @@ async function removeFile() {
 </script>
 
 <template>
-  <aside class="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)]">
+  <aside ref="rootRef" class="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)]">
     <!-- Header -->
     <header class="flex items-start gap-3 border-b border-[var(--color-border)] px-4 py-3">
       <div class="min-w-0 flex-1">
@@ -460,5 +526,21 @@ async function removeFile() {
 .notice-warning {
   background-color: color-mix(in srgb, var(--color-warning) 14%, transparent);
   color: var(--color-warning);
+}
+</style>
+
+<!--
+  Global (NICHT scoped): `::highlight()` ist ein dokumentweites Highlight-Pseudo und wird von
+  scoped-[data-v-…]-Selektoren nicht getroffen (gleiche Logik wie der globale Style-Block in
+  JavaCodeEditor.vue). Eigener Emerald-Ton -> klar abgegrenzt von amber (glow), indigo (method)
+  und --color-edge-highlight (call-active). Nur von der Highlight-API unterstuetzte Properties.
+-->
+<style>
+::highlight(java-var-highlight) {
+  background-color: rgba(16, 185, 129, 0.28); /* emerald-500 */
+  color: inherit;
+}
+html.dark ::highlight(java-var-highlight) {
+  background-color: rgba(52, 211, 153, 0.32); /* emerald-400, kräftiger auf dunklem Grund */
 }
 </style>
