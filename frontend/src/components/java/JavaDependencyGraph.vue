@@ -41,7 +41,7 @@ const { fitView, zoomIn, zoomOut, setViewport } = useVueFlow()
 //   * createEdge/deleteEdge laufen ausschließlich über das Composable (HTTP via lib/api.js).
 //   * deleteEdge im Backend: manuelle Kante hart löschen, Auto-Kante als Tombstone (dismissed=1)
 //     merken -> falsch erkannte Auto-Kanten kehren bei „Kanten neu simulieren" nicht zurück.
-const { edges: serverEdges, fetchEdges, createEdge, deleteEdge, highlightedCall } = useJavaGraph()
+const { edges: serverEdges, fetchEdges, createEdge, deleteEdge, highlightedCall, clearHighlightedCall } = useJavaGraph()
 
 // Custom-Edge-Typ registrieren.
 const edgeTypes = { managed: ManagedEdge }
@@ -310,6 +310,8 @@ const edges = computed(() => {
 const dotColor = computed(() => (theme.value === 'dark' ? '#33485a' : '#cdc6bd'))
 
 function onNodeClick({ node }) {
+  // Klick in den Graph (Node) -> transientes Call-Highlight verwerfen (Spec: „Node ohne Kante").
+  clearHighlightedCall()
   if (node?.data?.fileId != null) emit('select', node.data.fileId)
 }
 function resetView() {
@@ -526,6 +528,7 @@ watch(
       :edges-updatable="false"
       @node-click="onNodeClick"
       @edge-click="onEdgeClick"
+      @pane-click="clearHighlightedCall"
       @connect="onConnect"
     >
       <!-- Custom Node: kompaktes Card-Design, Farbe nach Package -->

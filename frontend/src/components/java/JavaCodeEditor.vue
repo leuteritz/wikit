@@ -18,8 +18,11 @@ const props = defineProps({
   // Methodennamen, die als Call-Edge existieren -> im Quellcode klickbar gemacht (dezent
   // unterstrichen). Ein Klick auf so ein Token emittiert `method-click` (Graph-Highlight).
   clickableWords: { type: Array, default: () => [] },
+  // Aktuell hervorgehobener Methodenname (reaktiv, aus dem geteilten highlightedCall-State).
+  // Setzen/Loeschen der aktiven Token-Markierung folgt diesem Prop -> KEIN imperatives Setzen mehr.
+  activeCall: { type: String, default: null },
 })
-const emit = defineEmits(['update:modelValue', 'method-click'])
+const emit = defineEmits(['update:modelValue', 'method-click', 'clear-call'])
 
 const { theme } = useTheme()
 const editorParent = ref(null)
@@ -131,16 +134,19 @@ function refreshLinks() {
   view.dispatch({ effects: setLinkMarks.of(scanCalls(view.state.doc.toString(), props.clickableWords)) })
 }
 
-// Oeffentliche API: alle Vorkommen EINES Methodennamens aktiv markieren + erstes ansteuern.
-function setActiveCall(name) {
-  if (!view || !name) return
+// Aktive Call-Markierung reaktiv an `props.activeCall` ausrichten: Name gesetzt -> alle Vorkommen
+// markieren + erstes ansteuern; null -> Markierung entfernen. Wird aus dem watch + onMounted
+// aufgerufen (kein imperativer Aufruf von aussen mehr).
+function applyActiveCall(name) {
+  if (!view) return
+  if (!name) {
+    view.dispatch({ effects: setCallMarks.of(null) })
+    return
+  }
   const ranges = scanCalls(view.state.doc.toString(), [name])
   const effects = [setCallMarks.of(ranges)]
   if (ranges.length) effects.push(EditorView.scrollIntoView(ranges[0].from, { y: 'center' }))
   view.dispatch({ effects })
-}
-function clearActiveCall() {
-  view?.dispatch({ effects: setCallMarks.of(null) })
 }
 
 // Oeffentliche API: zur (1-basierten) Zeile scrollen + kurz hervorheben (auto-fade nach 2,5 s).
@@ -176,7 +182,20 @@ function highlightMethod(startLine, endLine) {
 function clearMethodHighlight() {
   view?.dispatch({ effects: setMethodRange.of(null) })
 }
-defineExpose({ highlightLine, highlightMethod, clearMethodHighlight, setActiveCall, clearActiveCall })
+defineExpose({ highlightLine, highlightMethod, clearMethodHighlight })
+
+// Klickbaren Methodennamen an der Klick-Position ermitteln (fuer mousedown/contextmenu).
+// Rueckgabe: der Name, falls er in props.clickableWords ist, sonst null.
+function clickableWordAt(event, v) {
+  const words = props.clickableWords
+  if (!words || !words.length) return null
+  const pos = v.posAtCoords({ x: event.clientX, y: event.clientY })
+  if (pos == null) return null
+  const w = v.state.wordAt(pos)
+  if (!w) return null
+  const word = v.state.sliceDoc(w.from, w.to)
+  return words.includes(word) ? word : null
+}
 
 onMounted(() => {
   const extensions = [
@@ -186,17 +205,24 @@ onMounted(() => {
     methodField,
     linkField,
     callField,
-    // Klick auf einen klickbaren Methodennamen -> Graph-Highlight ausloesen (Selektion nicht blocken).
+    // Klick (links ODER rechts – mousedown feuert fuer beide Buttons):
+    //   - auf einen klickbaren Methodennamen -> Toggle-Highlight ausloesen (method-click)
+    //   - sonst (leere Flaeche / Nicht-Methoden-Token) -> Highlight loeschen (clear-call)
+    // Selektion/Caret bleiben unblockiert (return false).
     EditorView.domEventHandlers({
       mousedown(event, v) {
-        const words = props.clickableWords
-        if (!words || !words.length) return false
-        const pos = v.posAtCoords({ x: event.clientX, y: event.clientY })
-        if (pos == null) return false
-        const w = v.state.wordAt(pos)
-        if (!w) return false
-        const word = v.state.sliceDoc(w.from, w.to)
-        if (words.includes(word)) emit('method-click', { name: word })
+        const word = clickableWordAt(event, v)
+        if (word) emit('method-click', { name: word })
+        else emit('clear-call')
+        return false
+      },
+      // Rechtsklick auf eine klickbare Methode: natives Kontextmenue unterdruecken (der Toggle
+      // wurde bereits vom vorausgehenden mousedown erledigt), sonst normales Menue zulassen.
+      contextmenu(event, v) {
+        if (clickableWordAt(event, v)) {
+          event.preventDefault()
+          return true
+        }
         return false
       },
     }),
@@ -226,6 +252,7 @@ onMounted(() => {
   const state = EditorState.create({ doc: props.modelValue, extensions })
   view = new EditorView({ state, parent: editorParent.value })
   refreshLinks()
+  applyActiveCall(props.activeCall) // evtl. bereits gesetztes Highlight sofort spiegeln
 })
 
 // Externe Aenderungen (z. B. Datei-Upload) in den Editor spiegeln.
@@ -238,6 +265,9 @@ watch(() => props.modelValue, (val) => {
 
 // Klickbare Methodennamen aenderten sich (Edge wurde angelegt/geloescht oder Klasse gewechselt).
 watch(() => props.clickableWords, refreshLinks)
+
+// Reaktive Call-Token-Markierung: folgt dem geteilten Highlight-State (Setzen/Wechseln/Loeschen).
+watch(() => props.activeCall, (name) => applyActiveCall(name))
 
 watch(theme, () => {
   view?.dispatch({ effects: themeComp.reconfigure(themeExtension()) })

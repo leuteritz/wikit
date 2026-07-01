@@ -296,6 +296,11 @@ html.dark {
 
 /* Vue Flow Basisstyles werden in den Komponenten importiert. */
 
+/* Weiche Ueberblendung von Farbe/Staerke beim (De-)Aktivieren des Call-Highlights. */
+.vue-flow__edge .vue-flow__edge-path {
+  transition: stroke 0.15s ease, stroke-width 0.15s ease;
+}
+
 /* „Aufleuchtende" Call-Edge: gesetzt, wenn im Code-Tab ein passender Methodenname angeklickt wird
    (JavaDependencyGraph haengt die Klasse `edge-lit` an die Kante). Vue-Flow erzeugt das
    `.vue-flow__edge`-DOM -> globale Regel statt scoped. Farbe = --color-edge-highlight (identisch

@@ -29,7 +29,7 @@ const router = useRouter()
 const { getFile, deleteFile, linkArticle, userContext } = useJavaAnalyzer()
 const { lastEvent, progressFor, enqueueClass } = useJavaQueue()
 const { create } = useArticles()
-const { edges: serverEdges, setHighlightedCall, clearHighlightedCall } = useJavaGraph()
+const { edges: serverEdges, highlightedCall, toggleHighlightedCall, clearHighlightedCall } = useJavaGraph()
 
 const file = ref(null)
 const loading = ref(true)
@@ -99,25 +99,29 @@ const callableMethods = computed(() => {
   ]
 })
 
-let callTimer = null
-// Klick auf einen klickbaren Methodennamen im Quellcode: Graph-Kante aufleuchten lassen + das Token
-// im Editor in derselben Farbe markieren. Auto-Reset nach 2,5 s (analog zum Such-Glow); ein neuer
-// Klick ersetzt die Markierung.
+// Aktiver Call-Methodenname FUER DIESE Klasse (Editor-Prop): nur wenn das geteilte Highlight
+// diese Datei als Aufrufer betrifft. `highlightedCall` ist die einzige Quelle der Wahrheit ->
+// treibt reaktiv sowohl die Graph-Kante als auch die Code-Token-Markierung (kein imperatives
+// Setzen mehr, kein Auto-Fade-Timer).
+const activeCall = computed(() =>
+  highlightedCall.value && highlightedCall.value.callerFileId === props.fileId
+    ? highlightedCall.value.method
+    : null,
+)
+
+// Klick (links ODER rechts) auf einen klickbaren Methodennamen im Quellcode -> Toggle: dieselbe
+// Methode erneut = aus, andere = umschalten. Graph-Kante + Code-Token folgen reaktiv.
 function onMethodClick({ name }) {
   if (!name) return
-  clearTimeout(callTimer)
-  setHighlightedCall({ callerFileId: props.fileId, method: name })
-  sourceEditor.value?.setActiveCall(name)
-  callTimer = setTimeout(resetCallHighlight, 2500)
+  toggleHighlightedCall({ callerFileId: props.fileId, method: name })
 }
-function resetCallHighlight() {
-  clearTimeout(callTimer)
+// Klick daneben (kein Methoden-Token / leere Editorflaeche) -> Highlight vollstaendig entfernen.
+function onClearCall() {
   clearHighlightedCall()
-  sourceEditor.value?.clearActiveCall()
 }
 // Klassenwechsel/Unmount: stehengebliebenes Highlight raeumen.
-watch(() => props.fileId, resetCallHighlight)
-onBeforeUnmount(resetCallHighlight)
+watch(() => props.fileId, clearHighlightedCall)
+onBeforeUnmount(clearHighlightedCall)
 
 const typeBadge = computed(() => ({
   class: 'badge-accent',
@@ -377,8 +381,10 @@ async function removeFile() {
               ref="sourceEditor"
               :model-value="file.raw_source"
               :clickable-words="callableMethods"
+              :active-call="activeCall"
               readonly
               @method-click="onMethodClick"
+              @clear-call="onClearCall"
             />
           </div>
         </template>

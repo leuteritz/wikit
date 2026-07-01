@@ -80,6 +80,17 @@ export function useJavaGraph() {
     setHighlightedCall(payload) {
       highlightedCall.value = payload
     },
+    // Toggle-Semantik: derselbe {callerFileId, method} erneut angeklickt -> Highlight aus.
+    // Sonst auf die neue Call-Edge umschalten. Eine einzige Zuweisung -> Graph-Kante UND
+    // Code-Token aktualisieren sich in EINEM reaktiven Tick (kein Flackern beim Wechsel).
+    toggleHighlightedCall(payload) {
+      const cur = highlightedCall.value
+      if (cur && cur.callerFileId === payload.callerFileId && cur.method === payload.method) {
+        highlightedCall.value = null
+      } else {
+        highlightedCall.value = payload
+      }
+    },
     clearHighlightedCall() {
       highlightedCall.value = null
     },
