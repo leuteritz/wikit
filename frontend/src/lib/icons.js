@@ -56,6 +56,9 @@ import link from '@iconify-icons/lucide/link'
 import terminal from '@iconify-icons/lucide/terminal'
 import checkCircle from '@iconify-icons/lucide/check-circle'
 import gitBranch from '@iconify-icons/lucide/git-branch'
+import gitFork from '@iconify-icons/lucide/git-fork'
+import arrowUpFromLine from '@iconify-icons/lucide/arrow-up-from-line'
+import unlink from '@iconify-icons/lucide/unlink'
 import layoutGrid from '@iconify-icons/lucide/layout-grid'
 
 // --- Phosphor (Duotone, fuer das Brand-Logo) ---
@@ -107,6 +110,9 @@ const ICONS = {
   'lucide:terminal': terminal,
   'lucide:check-circle': checkCircle,
   'lucide:git-branch': gitBranch,
+  'lucide:git-fork': gitFork,
+  'lucide:arrow-up-from-line': arrowUpFromLine,
+  'lucide:unlink': unlink,
   'lucide:layout-grid': layoutGrid,
   'ph:books-duotone': phBooksDuotone,
 }

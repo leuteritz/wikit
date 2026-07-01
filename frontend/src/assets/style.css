@@ -33,6 +33,14 @@
   --color-danger: #c1666b;          /* Lobster Pink */
 
   --color-edge-highlight: #e08a1e;  /* warmes Gold: „aufleuchtende" Call-Edge + passender Code-Token */
+
+  /* Knoten-Rollen im Java-Graph (Farbe = Rolle im Abhaengigkeitsnetz). Hue-getrennt von den
+     Kantenfarben (Accent/Gold/Violett/Grau) und der Package-Palette, damit sich Rolle und
+     Package nicht optisch beissen. */
+  --color-role-provider: #2e9e6a;   /* Gruen: Quelle/Provider – wird genutzt, nutzt selbst nichts */
+  --color-role-consumer: #6366e6;   /* Indigo: Anwender/Consumer – nutzt andere, ungenutzt */
+  --color-role-hub: var(--color-accent); /* Akzent: Hub/Gemischt – zentral, beides */
+  --color-role-isolated: var(--color-text-muted); /* Grau: isoliert, keine Verbindung */
 }
 html.dark {
   --color-accent: #7fb4d0;          /* aufgehelltes Cerulean (Kontrast auf dunkel) */
@@ -52,6 +60,10 @@ html.dark {
   --color-danger: #d68389;
 
   --color-edge-highlight: #ffb13d;  /* kraeftiger auf dunklem Grund */
+
+  --color-role-provider: #54c48f;   /* aufgehelltes Gruen (Kontrast auf dunkel) */
+  --color-role-consumer: #8b8ef0;   /* aufgehelltes Indigo */
+  /* hub/isolated erben aus den bereits theme-faehigen Accent/Muted-Tokens */
 }
 
 html, body, #app {

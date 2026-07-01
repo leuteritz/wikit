@@ -12,8 +12,10 @@
 // BEIDE Kantentypen rendern ueber dieselbe Custom-Kante (ManagedEdge): so greift fuer alle
 // Kanten derselbe Faecher-Versatz + die Label-Staffelung -> parallele Kanten/Labels zwischen
 // denselben Knoten (auch Call vs. Import oder A->B/B->A) ueberlappen nicht mehr.
-// Farbe je Package rotierend. Alles client-seitig aus der Dateiliste (props.files enthaelt
-// methods[].body + dependencies[]) -> kein Request, kein Backend noetig. Icons via Iconify.
+// Knoten-Akzentfarbe = ROLLE im Abhaengigkeitsnetz (provider/consumer/hub/isolated, Streifen +
+// Badge + Ring); das Package steckt nur noch in einem kleinen Farbpunkt. Alles client-seitig aus
+// der Dateiliste (props.files enthaelt methods[].body + dependencies[]) -> kein Request, kein
+// Backend noetig. Icons via Iconify.
 import { computed, ref, onMounted, watch } from 'vue'
 import { VueFlow, MarkerType, Handle, Position, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
@@ -61,6 +63,16 @@ const REVIEW_COLOR = '#d4a017'
 const USES_COLOR = '#a07cc5' // Struktur-/Typ-Bezug (uses): violett, gestrichelt, ohne Label
 const DEBUG_EDGES = true // Debug (F12): loggt geladene Klassen + nicht gezeichnete Server-Kanten
 
+// Rollen-Metadaten (Node-Glyph + Legende). Die FARBE kommt ueber die CSS-Klasse `vf-role-<role>`
+// (s. <style> / --color-role-* Tokens), hier nur Icon + English-Labels.
+const ROLE_META = {
+  provider: { icon: 'lucide:box', label: 'Source', hint: 'provides · used by others', legend: 'Source · provides' },
+  consumer: { icon: 'lucide:arrow-up-from-line', label: 'Consumer', hint: 'uses other classes', legend: 'Consumer · uses' },
+  hub: { icon: 'lucide:git-fork', label: 'Hub', hint: 'provides & uses', legend: 'Hub · both' },
+  isolated: { icon: 'lucide:unlink', label: 'Isolated', hint: 'no connections', legend: 'Isolated · none' },
+}
+const ROLE_ORDER = ['provider', 'consumer', 'hub', 'isolated']
+
 const simpleName = (fqn) => String(fqn).split('.').pop()
 
 // Methodensignatur fuers Edge-Panel: `return_type name(type name, …)` (parameters sind geparst).
@@ -97,6 +109,9 @@ const layout = computed(() => {
   const edges = []
   const callPairs = new Set()
   const skipped = [] // Debug: Server-Kanten, die NICHT gezeichnet werden (Endpunkt nicht geladen)
+  // Distinkte, referenzierte-aber-nicht-geladene Klassen (Kante hat nur EINEN geladenen Endpunkt).
+  // Speist den Legenden-Hinweis „N external classes hidden" -> macht die stille Filterung sichtbar.
+  const externalRefs = new Set()
 
   // 1) Persistierte Call-/Uses-Edges aus dem Backend (auto + manuell). source_class = Aufrufer (A),
   //    target_class = definierende Klasse (B). Pfeilrichtung im Graph bleibt „Definition ->
@@ -120,6 +135,9 @@ const layout = computed(() => {
     const callerFile = known.get(e.source_class) // A
     const definerFile = known.get(e.target_class) // B
     if (!callerFile || !definerFile || callerFile.id === definerFile.id) {
+      // Genau ein Endpunkt fehlt -> die andere Klasse ist „extern" (nicht geladen).
+      if (!callerFile && definerFile) externalRefs.add(e.source_class)
+      if (callerFile && !definerFile) externalRefs.add(e.target_class)
       if (DEBUG_EDGES)
         skipped.push({
           source: e.source_class,
@@ -203,7 +221,11 @@ const layout = computed(() => {
   for (const f of files) {
     for (const dep of f.dependencies || []) {
       const target = known.get(simpleName(dep))
-      if (!target || target.id === f.id) continue
+      if (!target) {
+        externalRefs.add(simpleName(dep)) // importierte Klasse nicht geladen -> extern, ausgeblendet
+        continue
+      }
+      if (target.id === f.id) continue
       if (callPairs.has(`${f.id}->${target.id}`)) continue
       callPairs.add(`${f.id}->${target.id}`)
       edges.push({
@@ -243,6 +265,21 @@ const layout = computed(() => {
     })
   }
 
+  // --- Rolle je Knoten im Abhaengigkeitsnetz -----------------------------------
+  // Kanten fliessen konsistent „Definition -> Nutzung": e.source = Provider/Definition-Seite,
+  // e.target = Anwender/Consumer-Seite. Daraus die Rolle jeder geladenen Klasse ableiten:
+  //   * provider – kommt nur als Quelle vor (wird genutzt, nutzt selbst keine geladene Klasse)
+  //   * consumer – kommt nur als Ziel vor (nutzt andere, wird selbst nicht referenziert)
+  //   * hub      – beides (Standard-Fall)
+  //   * isolated – keine Kante (keine Verbindung zu einer anderen geladenen Klasse)
+  const sourceNodeIds = new Set(edges.map((e) => e.source)) // Definition/Provider-Seite
+  const targetNodeIds = new Set(edges.map((e) => e.target)) // Anwender/Consumer-Seite
+  const roleFor = (nid) => {
+    const isSrc = sourceNodeIds.has(nid)
+    const isTgt = targetNodeIds.has(nid)
+    return isSrc && isTgt ? 'hub' : isSrc ? 'provider' : isTgt ? 'consumer' : 'isolated'
+  }
+
   // --- dagre-Auto-Layout ---
   // Groessere nodesep/ranksep als zuvor -> mehr Luft zwischen Knoten, damit Node-Labels (und
   // die aufgefaecherten Kanten/Kanten-Labels) bei dicht liegenden Klassen nicht kollidieren.
@@ -269,6 +306,7 @@ const layout = computed(() => {
         pkg,
         methodCount: (f.methods || []).length,
         color: pkgColor.get(pkg),
+        role: roleFor(`c:${f.id}`),
         analyzed: !!(f.description && f.description.trim()),
         version: f.version ?? 1,
       },
@@ -289,10 +327,12 @@ const layout = computed(() => {
     if (skipped.length) console.debug('[java-edges] nicht gezeichnete Kanten:', skipped)
   }
 
-  return { nodes, edges }
+  return { nodes, edges, externalRefsHidden: externalRefs.size }
 })
 
 const nodes = computed(() => layout.value.nodes)
+// Anzahl referenzierter, aber nicht geladener Klassen (fuer den Legenden-Hinweis).
+const externalRefsHidden = computed(() => layout.value.externalRefsHidden)
 // Reine Projektion: das pure `layout` bleibt unberuehrt; nur hier wird die aktuell „aufleuchtende"
 // Call-Edge (highlightedCall aus dem Code-Tab) markiert -> Glow-Klasse + Edge-Highlight-Farbe.
 const edges = computed(() => {
@@ -547,20 +587,29 @@ watch(
       @pane-click="clearHighlights"
       @connect="onConnect"
     >
-      <!-- Custom Node: kompaktes Card-Design, Farbe nach Package -->
+      <!-- Custom Node: kompaktes Card-Design, Akzentfarbe nach ROLLE (Streifen/Badge/Ring);
+           Package steckt nur noch im kleinen .vf-pkgdot vor dem Package-Text. -->
       <template #node-klass="{ data }">
         <div
           class="vf-card"
-          :class="{ 'vf-card--selected': selectedId === data.fileId }"
+          :class="[`vf-role-${data.role}`, { 'vf-card--selected': selectedId === data.fileId }]"
           :style="{ '--pkg': data.color }"
         >
           <Handle type="target" :position="Position.Top" class="vf-handle" />
           <span class="vf-strip" />
           <div class="vf-body">
             <div class="vf-name">
+              <Icon
+                :icon="ROLE_META[data.role].icon"
+                class="vf-role-glyph"
+                :title="`${ROLE_META[data.role].label} — ${ROLE_META[data.role].hint}`"
+                :aria-label="ROLE_META[data.role].label"
+              />
               <Icon v-if="data.analyzed" icon="lucide:sparkles" class="vf-ai" title="AI-analyzed" />{{ data.className }}
             </div>
-            <div class="vf-pkg">{{ data.pkg }}</div>
+            <div class="vf-pkg">
+              <span class="vf-pkgdot" :title="data.pkg" />{{ data.pkg }}
+            </div>
           </div>
           <span
             class="vf-version"
@@ -593,6 +642,14 @@ watch(
 
     <!-- Legende -->
     <div v-if="files.length" class="absolute right-3 top-3 flex flex-col gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]/90 px-3 py-2 text-xs shadow-sm backdrop-blur">
+      <div class="legend-head">Nodes · role</div>
+      <div v-for="role in ROLE_ORDER" :key="role" class="flex items-center gap-2">
+        <span class="legend-node-swatch" :style="{ background: `var(--color-role-${role})` }" />
+        <Icon :icon="ROLE_META[role].icon" class="h-3.5 w-3.5" :style="{ color: `var(--color-role-${role})` }" />
+        <span class="text-[var(--color-text-muted)]">{{ ROLE_META[role].legend }}</span>
+      </div>
+
+      <div class="legend-head mt-1">Edges</div>
       <div class="flex items-center gap-2">
         <span class="h-0.5 w-4 rounded" style="background: var(--color-accent)" />
         <span class="text-[var(--color-text-muted)]">calls · clickable</span>
@@ -621,6 +678,12 @@ watch(
         <span class="legend-version">v2</span>
         <span class="text-[var(--color-text-muted)]">version · history</span>
       </div>
+
+      <!-- One-sided Kanten sind bereits ausgeblendet (nur geladene Klassen sind Knoten) – hier sichtbar machen. -->
+      <div v-if="externalRefsHidden" class="legend-note">
+        <Icon icon="lucide:info" class="h-3.5 w-3.5 shrink-0" />
+        <span>{{ externalRefsHidden }} external {{ externalRefsHidden === 1 ? 'class' : 'classes' }} hidden (not loaded)</span>
+      </div>
     </div>
 
     <!-- Edge-Detail-Modal: Ansicht Definition -> Nutzung; löscht Kanten pro Methode (ESC schliesst) -->
@@ -647,6 +710,9 @@ watch(
 @reference "../../assets/style.css";
 
 .vf-card {
+  /* Karten-Akzent = ROLLE im Abhaengigkeitsnetz (Streifen, Badge, Ring). Package steckt nur noch
+     im kleinen .vf-pkgdot. --role wird per .vf-role-<role>-Klasse gesetzt (Default: isoliert). */
+  --role: var(--color-role-isolated);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -655,22 +721,56 @@ watch(
   border-radius: 12px;
   border: 1px solid var(--color-border);
   background: var(--color-surface-2);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--pkg) 22%, transparent);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--role) 22%, transparent);
   cursor: pointer;
-  transition: box-shadow 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
+  transition: box-shadow 0.15s ease, transform 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
 }
 .vf-card:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px color-mix(in srgb, var(--pkg) 32%, transparent);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--role) 32%, transparent);
 }
 .vf-card--selected {
-  border-color: var(--pkg);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pkg) 35%, transparent), 0 6px 16px color-mix(in srgb, var(--pkg) 30%, transparent);
+  border-color: var(--role);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--role) 35%, transparent), 0 6px 16px color-mix(in srgb, var(--role) 30%, transparent);
+}
+/* Rollen-Farbe (Tokens in assets/style.css, theme-faehig). */
+.vf-role-provider { --role: var(--color-role-provider); }
+.vf-role-consumer { --role: var(--color-role-consumer); }
+.vf-role-hub { --role: var(--color-role-hub); }
+.vf-role-isolated { --role: var(--color-role-isolated); }
+/* Isolierte Knoten treten optisch zurueck (gedaempft), damit Provider/Hubs hervorstechen. */
+.vf-role-isolated {
+  opacity: 0.72;
+}
+.vf-role-isolated:hover {
+  opacity: 1;
 }
 .vf-strip {
   width: 4px;
   align-self: stretch;
   border-radius: 12px 0 0 12px;
+  background: var(--role);
+}
+/* Isolierter Knoten: Streifen als Hinweis „keine Verbindung" gestrichelt statt voll. */
+.vf-role-isolated .vf-strip {
+  background: repeating-linear-gradient(var(--role) 0 3px, transparent 3px 6px);
+}
+/* Rollen-Glyph vor dem Klassennamen (Icon in Rollenfarbe). */
+.vf-role-glyph {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  color: var(--role);
+}
+/* Kleiner Package-Punkt vor dem Package-Text (Package-Identitaet, sekundaer). Inline-block, damit
+   das text-overflow:ellipsis des Package-Texts erhalten bleibt. */
+.vf-pkgdot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 5px;
+  border-radius: 999px;
+  vertical-align: middle;
   background: var(--pkg);
 }
 .vf-body {
@@ -711,7 +811,7 @@ watch(
   font-size: 11px;
   font-weight: 700;
   color: #fff;
-  background: var(--pkg);
+  background: var(--role);
 }
 /* Versions-Chip (Changelog): sekundaer/outlined -> klar abgesetzt von der gefuellten
    Methoden-Pille. Ab v2 in Akzentfarbe, um „hat Historie" hervorzuheben. */
@@ -730,6 +830,33 @@ watch(
   color: var(--color-accent);
   border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
   background: var(--color-accent-soft);
+}
+/* Legenden-Abschnittsueberschrift (Nodes / Edges) – dezent, damit die laengere Legende scanbar bleibt. */
+.legend-head {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  opacity: 0.75;
+}
+/* Farb-Swatch fuer die Rollen-Eintraege (Rechteck in Rollenfarbe). */
+.legend-node-swatch {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border-radius: 3px;
+}
+/* Hinweis auf ausgeblendete, nicht geladene Klassen. */
+.legend-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: 11px;
 }
 /* Legenden-Swatch fuer den Versions-Chip (spiegelt .vf-version--multi). */
 .legend-version {
