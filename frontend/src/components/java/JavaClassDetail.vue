@@ -38,7 +38,6 @@ const error = ref('')
 const tab = ref('doc') // 'doc' | 'source'
 const sourceEditor = ref(null) // JavaCodeEditor im Quellcode-Tab (fuer highlightLine)
 const openMethod = ref(null)
-const collapseBlanks = ref(false) // manueller Toggle: interne Leerzeilen im Methodenrumpf entfernen
 const fullBusy = ref(false) // waehrend des Einreihens der Voll-Analyse
 const notice = ref('')
 const creating = ref(false)
@@ -138,9 +137,10 @@ function signature(m) {
   const params = (m.parameters || []).map((p) => `${p.type} ${p.name}`.trim()).join(', ')
   return `${m.return_type || 'void'} ${m.method_name}(${params})`
 }
-// Methodenrumpf-HTML aufbereiten (deklarationsfrei, Leerzeilen getrimmt; `collapseBlanks` reaktiv).
-function displayBody(m) {
-  return processMethodBody(m.body_html, { collapseBlank: collapseBlanks.value })
+// Code-Block einer Methode aufbereiten: Signatur als erste Zeile, deklarationsfreier Rumpf,
+// interne Leerzeilen IMMER entfernt (kein Toggle mehr).
+function displayMethodBlock(m) {
+  return processMethodBody(m.body_html, { collapseBlank: true, signature: signature(m) })
 }
 function methodStatus(m) {
   if (queueProgress.value && queueProgress.value.status === 'running' && !m.summary_html) return 'pending'
@@ -327,21 +327,7 @@ async function removeFile() {
           </section>
 
           <!-- Methoden -->
-          <div class="mb-1.5 flex items-center justify-between gap-2">
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Methods ({{ methodCount }})</h3>
-            <button
-              v-if="methodCount"
-              type="button"
-              class="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2 py-1 text-[11px] font-medium transition hover:bg-[var(--color-surface-offset)]"
-              :class="collapseBlanks ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'"
-              :aria-pressed="collapseBlanks"
-              :title="collapseBlanks ? 'Show blank lines in the method body again' : 'Remove blank lines from the method body'"
-              @click="collapseBlanks = !collapseBlanks"
-            >
-              <Icon :icon="collapseBlanks ? 'lucide:unfold-vertical' : 'lucide:fold-vertical'" class="h-3.5 w-3.5" />
-              Blank lines
-            </button>
-          </div>
+          <h3 class="mb-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Methods ({{ methodCount }})</h3>
           <ul class="space-y-1.5">
             <li v-for="m in file.methods" :key="m.id" class="overflow-hidden rounded-lg border border-[var(--color-border)]">
               <button
@@ -364,9 +350,9 @@ async function removeFile() {
               </button>
 
               <div v-show="openMethod === m.id" class="border-t border-[var(--color-border)] px-3 py-2">
-                <!-- 1) Java-Code-Block: nur der Rumpf (deklarationsfrei), immer dunkel (Editor-Optik),
-                        fuehrende/abschliessende Leerzeilen entfernt; Toggle blendet interne Leerzeilen aus. -->
-                <div v-if="m.body_html" class="method-code code-dark mb-2" v-html="displayBody(m)" />
+                <!-- 1) Java-Code-Block: Signatur als erste Zeile + deklarationsfreier Rumpf, immer
+                        dunkel (Editor-Optik), Leerzeilen (fuehrend/abschliessend + intern) entfernt. -->
+                <div v-if="m.body_html" class="method-code code-dark mb-2" v-html="displayMethodBlock(m)" />
 
                 <!-- 2) KI-Analyse / Zusammenfassung -->
                 <div v-if="m.summary_html" class="prose prose-sm max-w-none dark:prose-invert" v-html="m.summary_html" />
@@ -439,6 +425,13 @@ async function removeFile() {
    globale .shiki-Default; Dual-Theme-Farben kommen weiterhin aus den inline --shiki-*-Variablen. */
 .method-code :deep(.shiki) {
   @apply p-3 text-xs leading-relaxed;
+}
+
+/* Vorangestellte Signaturzeile (plain, ohne Shiki-Token-Farben) als bewusster Snippet-Kopf:
+   volle Textfarbe + fett hebt sie vom farbig gehighlighteten Rumpf ab (Dual-Theme via Palette-Var). */
+.method-code :deep(.sig-line) {
+  @apply font-semibold;
+  color: var(--color-text);
 }
 
 /* Status-Badges auf Palette-Basis (warme Tints via color-mix). */
