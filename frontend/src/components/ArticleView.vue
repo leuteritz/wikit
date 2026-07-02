@@ -84,26 +84,26 @@ watch(() => props.article?.id, () => nextTick(enhanceCodeBlocks))
 
 <template>
   <article>
-    <header class="mb-6 border-b border-slate-200 pb-6 dark:border-slate-800">
+    <header class="mb-6 border-b border-[var(--color-border)] pb-6">
       <div class="mb-3 flex flex-wrap items-center gap-2">
         <CategoryBadge :category="article.category" />
-        <span class="text-xs text-slate-400">Updated {{ fmtDate(article.updated_at) }}</span>
+        <span class="text-xs text-[var(--color-text-muted)]">Updated {{ fmtDate(article.updated_at) }}</span>
       </div>
-      <h1 class="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">{{ article.title }}</h1>
-      <p v-if="article.summary" class="mt-2 text-lg text-slate-500 dark:text-slate-400">{{ article.summary }}</p>
+      <h1 class="text-3xl font-bold tracking-tight text-[var(--color-text)]">{{ article.title }}</h1>
+      <p v-if="article.summary" class="mt-2 text-lg text-[var(--color-text-muted)]">{{ article.summary }}</p>
 
       <div class="mt-4 flex flex-wrap items-center gap-2">
         <span
           v-for="tag in article.tags"
           :key="tag"
-          class="rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+          class="rounded-md bg-[var(--color-accent-soft)] px-2 py-0.5 font-mono text-xs text-[var(--color-accent)]"
         >#{{ tag }}</span>
       </div>
 
       <div class="mt-5 flex gap-2">
         <button
           type="button"
-          class="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-1.5 text-sm font-medium text-rose-600 transition hover:bg-rose-50 dark:border-rose-500/30 dark:text-rose-400 dark:hover:bg-rose-500/10"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-danger)] transition hover:bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)]"
           @click="$emit('delete', article)"
         >
           <Icon icon="lucide:trash-2" class="h-4 w-4" />
@@ -114,26 +114,26 @@ watch(() => props.article?.id, () => nextTick(enhanceCodeBlocks))
 
     <div
       ref="bodyEl"
-      class="article-body prose prose-slate max-w-none dark:prose-invert prose-headings:scroll-mt-20 prose-a:text-[var(--color-accent)]"
+      class="article-body prose max-w-none dark:prose-invert prose-headings:scroll-mt-20 prose-a:text-[var(--color-accent)]"
       v-html="article.content_html"
     />
 
     <!-- Zusammenhänge -->
     <section
       v-if="article.relations && (article.relations.outgoing.length || article.relations.incoming.length)"
-      class="mt-10 border-t border-slate-200 pt-6 dark:border-slate-800"
+      class="mt-10 border-t border-[var(--color-border)] pt-6"
     >
-      <h2 class="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-400">Relations</h2>
+      <h2 class="mb-4 font-mono text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">Relations</h2>
       <div class="grid gap-3 sm:grid-cols-2">
         <RouterLink
           v-for="rel in [...article.relations.outgoing, ...article.relations.incoming]"
           :key="rel.id"
           :to="`/article/${rel.slug}`"
-          class="group flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition hover:border-[var(--color-accent)] hover:shadow-sm dark:border-slate-800 dark:bg-slate-900"
+          class="group flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 transition hover:border-[var(--color-accent)]"
         >
           <span class="rounded-md bg-[var(--color-accent-soft)] px-2 py-1 text-[11px] font-medium text-[var(--color-accent)]">{{ rel.relation_type }}</span>
-          <span class="min-w-0 flex-1 truncate text-sm font-medium text-slate-700 group-hover:text-[var(--color-accent)] dark:text-slate-200">{{ rel.title }}</span>
-          <Icon icon="lucide:arrow-right" class="h-4 w-4 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-[var(--color-accent)]" />
+          <span class="min-w-0 flex-1 truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-accent)]">{{ rel.title }}</span>
+          <Icon icon="lucide:arrow-right" class="h-4 w-4 text-[var(--color-text-muted)] transition group-hover:translate-x-0.5 group-hover:text-[var(--color-accent)]" />
         </RouterLink>
       </div>
     </section>

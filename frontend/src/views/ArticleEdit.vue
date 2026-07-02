@@ -118,13 +118,13 @@ async function removeRelation(id) {
 </script>
 
 <template>
-  <div class="flex h-[calc(100vh-3.5rem)] flex-col px-5 py-5">
+  <div class="flex h-full flex-col px-5 py-5">
     <div class="mb-4 flex shrink-0 items-center justify-between gap-4">
-      <h1 class="text-xl font-bold text-slate-900 dark:text-white">
+      <h1 class="font-mono text-xl font-semibold text-[var(--color-text)]">
         {{ isEdit ? 'Edit article' : 'New article' }}
       </h1>
       <div class="flex items-center gap-2">
-        <button type="button" class="rounded-lg px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" @click="router.back()">Cancel</button>
+        <button type="button" class="rounded-lg px-3 py-1.5 text-sm text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)]" @click="router.back()">Cancel</button>
         <button
           type="button"
           class="rounded-lg bg-[var(--color-accent)] px-4 py-1.5 text-sm font-semibold text-[var(--color-accent-contrast)] transition hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
@@ -134,7 +134,7 @@ async function removeRelation(id) {
       </div>
     </div>
 
-    <p v-if="error" class="mb-3 shrink-0 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-600 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-400">{{ error }}</p>
+    <p v-if="error" class="mb-3 shrink-0 rounded-lg px-3 py-2 text-sm text-[var(--color-danger)]" style="background-color: color-mix(in srgb, var(--color-danger) 12%, transparent)">{{ error }}</p>
 
     <!-- Metadaten -->
     <div class="mb-3 grid shrink-0 grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
@@ -143,7 +143,7 @@ async function removeRelation(id) {
         <option value="">— Category —</option>
         <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.icon }} {{ c.name }}</option>
       </select>
-      <button type="button" class="input cursor-pointer text-left text-slate-500 hover:text-[var(--color-accent)]" @click="createCategory">+ New category</button>
+      <button type="button" class="input cursor-pointer text-left text-[var(--color-text-muted)] hover:text-[var(--color-accent)]" @click="createCategory">+ New category</button>
       <input v-model="form.summary" placeholder="Summary" class="input md:col-span-2" />
       <input v-model="form.tagsInput" placeholder="Tags (comma-separated)" class="input md:col-span-2" />
     </div>
@@ -154,13 +154,13 @@ async function removeRelation(id) {
     </div>
 
     <!-- Relationen (nur bei vorhandenem Artikel) -->
-    <details v-if="isEdit" class="mt-3 shrink-0 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
-      <summary class="cursor-pointer text-sm font-semibold text-slate-700 dark:text-slate-200">Relations ({{ relations.outgoing.length }})</summary>
+    <details v-if="isEdit" class="mt-3 shrink-0 rounded-xl border border-[var(--color-border)] p-3">
+      <summary class="cursor-pointer text-sm font-semibold text-[var(--color-text)]">Relations ({{ relations.outgoing.length }})</summary>
       <div class="mt-3 space-y-2">
         <div v-for="rel in relations.outgoing" :key="rel.id" class="flex items-center gap-2 text-sm">
           <span class="rounded bg-[var(--color-accent-soft)] px-2 py-0.5 text-xs text-[var(--color-accent)]">{{ rel.relation_type }}</span>
-          <span class="flex-1 text-slate-700 dark:text-slate-300">{{ rel.title }}</span>
-          <button type="button" class="grid h-6 w-6 place-items-center rounded text-rose-500 hover:text-rose-600" title="Remove" @click="removeRelation(rel.id)"><Icon icon="lucide:x" class="h-4 w-4" /></button>
+          <span class="flex-1 text-[var(--color-text)]">{{ rel.title }}</span>
+          <button type="button" class="grid h-6 w-6 place-items-center rounded text-[var(--color-danger)] transition hover:bg-[var(--color-surface-offset)]" title="Remove" @click="removeRelation(rel.id)"><Icon icon="lucide:x" class="h-4 w-4" /></button>
         </div>
 
         <div class="flex flex-wrap items-center gap-2 pt-2">
@@ -173,7 +173,7 @@ async function removeRelation(id) {
             <option v-for="t in RELATION_TYPES" :key="t" :value="t" />
           </datalist>
           <input v-model="newRel.label" class="input w-40" placeholder="Label (optional)" />
-          <button type="button" class="rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 dark:bg-slate-700" @click="addRelation">Add</button>
+          <button type="button" class="rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-contrast)] transition hover:bg-[var(--color-accent-hover)]" @click="addRelation">Add</button>
         </div>
       </div>
     </details>
@@ -183,6 +183,6 @@ async function removeRelation(id) {
 <style scoped>
 @reference "../assets/style.css";
 .input {
-  @apply rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100;
+  @apply rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)];
 }
 </style>

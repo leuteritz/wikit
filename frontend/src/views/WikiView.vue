@@ -1,6 +1,6 @@
 <script setup>
-// Wiki-Index: ersetzt die fruehere permanente Sidebar. Artikel nach Kategorie gruppiert,
-// mit Inline-Filter. Gruppierungslogik analog AppSidebar.vue (useArticles als Store).
+// Wiki-Index: Artikel nach Kategorie gruppiert, mit Inline-Filter. Gruppierungslogik
+// wie zuvor (useArticles als Store) – nur die Darstellung folgt dem neuen Design.
 import { ref, computed, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useArticles } from '../composables/useArticles.js'
@@ -22,7 +22,10 @@ const filtered = computed(() => {
   )
 })
 
-// Artikel nach Kategorie gruppieren (inkl. "Ohne Kategorie") – wie in AppSidebar.vue.
+// Kategorie-Farbe: durch die Zusatz-Hues rotieren (deterministisch per Index).
+const CAT_COLORS = ['var(--color-thistle)', 'var(--color-accent)', 'var(--color-lavender)', 'var(--color-cyan)']
+
+// Artikel nach Kategorie gruppieren (inkl. "Uncategorized") – wie in der bisherigen Logik.
 const groups = computed(() => {
   const byCat = new Map()
   for (const c of categories.value) byCat.set(c.id, { category: c, items: [] })
@@ -35,21 +38,25 @@ const groups = computed(() => {
   if (uncategorized.length) {
     result.push({ category: { id: 0, name: 'Uncategorized', icon: null }, items: uncategorized })
   }
-  return result
+  return result.map((g, i) => ({ ...g, color: CAT_COLORS[i % CAT_COLORS.length] }))
 })
 </script>
 
 <template>
-  <div class="mx-auto max-w-5xl px-5 py-10">
+  <div class="mx-auto w-full max-w-5xl px-6 py-9 sm:px-8">
     <!-- Kopf -->
     <div class="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Wiki</h1>
-        <p class="text-sm text-slate-500 dark:text-slate-400">{{ articles.length }} articles in {{ categories.length }} categories.</p>
+        <p class="mb-2 font-mono text-[10px] font-semibold tracking-[0.16em] text-[var(--color-text-muted)]">KNOWLEDGE BASE</p>
+        <h1 class="font-mono text-3xl font-semibold tracking-tight text-[var(--color-text)]">Wiki</h1>
+        <p class="mt-2 text-[13px] text-[var(--color-text-muted)]">
+          <span class="font-mono font-semibold text-[var(--color-text)]">{{ articles.length }}</span> articles ·
+          <span class="font-mono font-semibold text-[var(--color-text)]">{{ categories.length }}</span> categories
+        </p>
       </div>
       <RouterLink
         to="/new"
-        class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-[var(--color-accent-contrast)] transition hover:bg-[var(--color-accent-hover)]"
+        class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-4 py-2.5 text-[12.5px] font-semibold text-[var(--color-accent-contrast)] transition hover:bg-[var(--color-accent-hover)]"
       >
         <Icon icon="lucide:plus" class="h-4 w-4" />
         New article
@@ -57,45 +64,53 @@ const groups = computed(() => {
     </div>
 
     <!-- Filter -->
-    <div class="mb-6 flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 dark:border-slate-700 dark:bg-slate-900">
-      <Icon icon="lucide:search" class="h-4 w-4 shrink-0 text-slate-400" />
+    <div class="mb-7 flex items-center gap-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3.5">
+      <Icon icon="lucide:search" class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
       <input
         v-model="filter"
         type="text"
-        placeholder="Filter articles…"
-        class="w-full bg-transparent py-2.5 text-sm text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-100"
+        placeholder="filter articles, tags…"
+        class="w-full bg-transparent py-2.5 font-mono text-[13px] text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
       />
+      <span class="shrink-0 font-mono text-[10px] text-[var(--color-text-muted)]">{{ filtered.length }} results</span>
     </div>
 
-    <p v-if="loading" class="text-sm text-slate-400">Loading…</p>
+    <p v-if="loading" class="text-sm text-[var(--color-text-muted)]">Loading…</p>
 
     <!-- Gruppen -->
-    <div v-else class="space-y-8">
+    <div v-else class="flex flex-col gap-8">
       <section v-for="group in groups" :key="group.category.id">
-        <h2 class="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-          <Icon v-if="!group.category.icon" icon="lucide:folder" class="h-4 w-4" />
-          <span v-else>{{ group.category.icon }}</span>
-          <span>{{ group.category.name }}</span>
-          <span class="text-[10px] text-slate-400">{{ group.items.length }}</span>
+        <h2 class="mb-3.5 flex items-center gap-2.5">
+          <span class="h-2 w-2 rounded-[2px]" :style="{ background: group.color }" />
+          <span class="font-mono text-xs font-semibold uppercase tracking-[0.1em] text-[var(--color-text)]">{{ group.category.name }}</span>
+          <span class="rounded-full border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--color-text-muted)]">{{ group.items.length }}</span>
+          <span class="h-px flex-1 bg-[var(--color-border)]" />
         </h2>
-        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div class="grid gap-3" style="grid-template-columns: repeat(auto-fill, minmax(258px, 1fr))">
           <RouterLink
             v-for="a in group.items"
             :key="a.id"
             :to="`/article/${a.slug}`"
-            class="group rounded-xl border border-slate-200 bg-white p-4 transition hover:border-[var(--color-accent)] hover:shadow-sm dark:border-slate-800 dark:bg-slate-900"
+            class="group flex flex-col gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 transition hover:-translate-y-0.5 hover:border-[var(--color-accent)]"
           >
-            <div class="truncate font-semibold text-slate-800 group-hover:text-[var(--color-accent)] dark:text-slate-100">{{ a.title }}</div>
-            <p v-if="a.summary" class="mt-1 line-clamp-2 text-sm text-slate-500 dark:text-slate-400">{{ a.summary }}</p>
-            <div v-if="a.tags?.length" class="mt-2 flex flex-wrap gap-1">
-              <span v-for="t in a.tags.slice(0, 4)" :key="t" class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500 dark:bg-slate-800 dark:text-slate-400">#{{ t }}</span>
-            </div>
+            <span class="text-sm font-semibold leading-snug text-[var(--color-text)]">{{ a.title }}</span>
+            <span v-if="a.summary" class="line-clamp-2 text-xs leading-relaxed text-[var(--color-text-muted)]">{{ a.summary }}</span>
+            <span v-if="a.tags?.length" class="mt-0.5 flex flex-wrap gap-1.5">
+              <span
+                v-for="t in a.tags.slice(0, 4)"
+                :key="t"
+                class="rounded bg-[var(--color-accent-soft)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--color-accent)]"
+              >#{{ t }}</span>
+            </span>
           </RouterLink>
         </div>
       </section>
 
-      <p v-if="!groups.length" class="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-400 dark:border-slate-800">
-        No articles found.
+      <p
+        v-if="!groups.length"
+        class="rounded-lg border border-dashed border-[var(--color-border)] px-4 py-11 text-center font-mono text-[13px] text-[var(--color-text-muted)]"
+      >
+        no articles match “{{ filter }}”.
       </p>
     </div>
   </div>

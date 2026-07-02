@@ -117,26 +117,26 @@ function flatIndex(groupKey, i) {
   <Transition name="fade">
     <div
       v-if="open"
-      class="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/40 px-4 pt-[12vh] backdrop-blur-sm"
+      class="fixed inset-0 z-50 flex items-start justify-center bg-black/40 px-4 pt-[12vh] backdrop-blur-sm"
       @click.self="emit('close')"
     >
-      <div class="w-full max-w-xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-        <div class="flex items-center gap-3 border-b border-slate-100 px-4 dark:border-slate-800">
-          <Icon icon="lucide:search" class="h-5 w-5 shrink-0 text-slate-400" />
+      <div class="w-full max-w-xl overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-surface-2)] shadow-2xl">
+        <div class="flex items-center gap-3 border-b border-[var(--color-border)] px-4">
+          <Icon icon="lucide:search" class="h-5 w-5 shrink-0 text-[var(--color-accent)]" />
           <input
             ref="inputEl"
             v-model="query"
             type="text"
             placeholder="Search articles, tags, code…"
-            class="w-full bg-transparent py-3.5 text-sm text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-100"
+            class="w-full bg-transparent py-3.5 text-sm text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
             @keydown="onKeydown"
           />
-          <kbd class="hidden rounded border border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-400 sm:block dark:border-slate-700">ESC</kbd>
+          <kbd class="hidden rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--color-text-muted)] sm:block">ESC</kbd>
         </div>
 
         <div v-if="flatItems.length" class="max-h-[50vh] overflow-y-auto py-2">
           <div v-for="group in groups" :key="group.key">
-            <div class="flex items-center gap-1.5 px-4 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+            <div class="flex items-center gap-1.5 px-4 pb-1 pt-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
               <Icon v-if="group.key === 'java_file'" icon="lucide:code-2" class="h-3 w-3" />
               {{ group.label }}
             </div>
@@ -147,13 +147,16 @@ function flatIndex(groupKey, i) {
                   v-if="group.key === 'article'"
                   type="button"
                   class="flex w-full items-center gap-3 px-4 py-2.5 text-left transition"
-                  :class="flatIndex('article', i) === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-slate-50 dark:hover:bg-slate-800'"
+                  :class="flatIndex('article', i) === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-surface-offset)]'"
                   @mouseenter="active = flatIndex('article', i)"
                   @click="go({ kind: 'article', item })"
                 >
+                  <span class="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+                    <Icon icon="lucide:file-text" class="h-4 w-4" />
+                  </span>
                   <div class="min-w-0 flex-1">
-                    <div class="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{{ item.title }}</div>
-                    <div class="truncate text-xs text-slate-500 dark:text-slate-400">{{ item.summary }}</div>
+                    <div class="truncate text-sm font-medium text-[var(--color-text)]">{{ item.title }}</div>
+                    <div class="truncate text-xs text-[var(--color-text-muted)]">{{ item.summary }}</div>
                   </div>
                   <CategoryBadge :category="item.category" size="xs" />
                 </button>
@@ -163,7 +166,7 @@ function flatIndex(groupKey, i) {
                   v-else-if="item.type === 'java_entity'"
                   type="button"
                   class="flex w-full items-start gap-3 px-4 py-2.5 text-left transition"
-                  :class="flatIndex('java_file', i) === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-slate-50 dark:hover:bg-slate-800'"
+                  :class="flatIndex('java_file', i) === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-surface-offset)]'"
                   @mouseenter="active = flatIndex('java_file', i)"
                   @click="go({ kind: 'java_file', item })"
                 >
@@ -172,12 +175,12 @@ function flatIndex(groupKey, i) {
                   </span>
                   <div class="min-w-0 flex-1">
                     <div class="flex items-center gap-2">
-                      <span class="truncate font-mono text-sm font-medium text-slate-800 dark:text-slate-100">{{ item.name }}()</span>
+                      <span class="truncate font-mono text-sm font-medium text-[var(--color-text)]">{{ item.name }}()</span>
                       <span class="shrink-0 rounded bg-[var(--color-accent-soft)] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[var(--color-accent)]">method</span>
                     </div>
-                    <div class="mt-0.5 flex items-center gap-1.5 truncate text-xs text-slate-500 dark:text-slate-400">
+                    <div class="mt-0.5 flex items-center gap-1.5 truncate text-xs text-[var(--color-text-muted)]">
                       <span class="truncate">{{ item.className }}</span>
-                      <span class="text-slate-300 dark:text-slate-600">·</span>
+                      <span class="text-[var(--color-border-strong)]">·</span>
                       <code class="truncate font-mono text-[11px] text-[var(--color-text-muted)]">{{ item.signature }}</code>
                     </div>
                   </div>
@@ -188,7 +191,7 @@ function flatIndex(groupKey, i) {
                   v-else
                   type="button"
                   class="flex w-full items-start gap-3 px-4 py-2.5 text-left transition"
-                  :class="flatIndex('java_file', i) === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-slate-50 dark:hover:bg-slate-800'"
+                  :class="flatIndex('java_file', i) === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-surface-offset)]'"
                   @mouseenter="active = flatIndex('java_file', i)"
                   @click="go({ kind: 'java_file', item })"
                 >
@@ -197,18 +200,18 @@ function flatIndex(groupKey, i) {
                   </span>
                   <div class="min-w-0 flex-1">
                     <div class="flex items-center gap-2">
-                      <span class="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{{ item.name }}</span>
+                      <span class="truncate text-sm font-medium text-[var(--color-text)]">{{ item.name }}</span>
                       <span class="shrink-0 rounded bg-[var(--color-accent-soft)] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[var(--color-accent)]">&lt;/&gt; Code</span>
                     </div>
                     <code v-if="item.snippet" class="search-snippet mt-1 block truncate rounded bg-[var(--color-surface-offset)] px-1.5 py-1 font-mono text-[11px] text-[var(--color-text-muted)]" v-html="renderSnippet(item.snippet)" />
-                    <div v-if="item.package" class="mt-0.5 truncate font-mono text-[10px] text-slate-400 dark:text-slate-500">{{ item.package }}</div>
+                    <div v-if="item.package" class="mt-0.5 truncate font-mono text-[10px] text-[var(--color-text-muted)]">{{ item.package }}</div>
                   </div>
                 </button>
               </li>
             </ul>
           </div>
         </div>
-        <div v-else class="px-4 py-10 text-center text-sm text-slate-400">
+        <div v-else class="px-4 py-10 text-center text-sm text-[var(--color-text-muted)]">
           <template v-if="query.trim()">No results for “{{ query }}”.</template>
           <template v-else>Type to search articles and code…</template>
         </div>

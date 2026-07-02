@@ -41,9 +41,9 @@ async function onDelete(a) {
 
 <template>
   <div class="px-5 py-8">
-    <div v-if="loading" class="mx-auto max-w-3xl text-sm text-slate-400">Loading…</div>
+    <div v-if="loading" class="mx-auto max-w-3xl text-sm text-[var(--color-text-muted)]">Loading…</div>
     <div v-else-if="error" class="mx-auto max-w-3xl">
-      <p class="rounded-xl border border-rose-200 bg-rose-50 p-4 text-rose-600 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-400">
+      <p class="rounded-xl p-4 text-[var(--color-danger)]" style="background-color: color-mix(in srgb, var(--color-danger) 12%, transparent)">
         {{ error }}
       </p>
     </div>
@@ -54,7 +54,7 @@ async function onDelete(a) {
         <ArticleView :article="article" @delete="onDelete" />
       </div>
       <aside class="hidden w-56 shrink-0 xl:block">
-        <div class="sticky top-20">
+        <div class="sticky top-6">
           <TableOfContents :toc="article.toc" />
         </div>
       </aside>

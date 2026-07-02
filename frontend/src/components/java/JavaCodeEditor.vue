@@ -313,7 +313,7 @@ onMounted(() => {
     themeComp.of(themeExtension()),
     EditorView.theme({
       '&': { height: '100%' },
-      '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '13px', lineHeight: '1.6' },
+      '.cm-scroller': { fontFamily: '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '13px', lineHeight: '1.6' },
       '.cm-content': { padding: '12px 0' },
     }),
   ]

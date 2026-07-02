@@ -4,66 +4,91 @@
 /* Klassenbasierter Dark-Mode (statt prefers-color-scheme) -> per Toggle steuerbar. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Schrift: IBM Plex offline gebundelt (s. main.js). Ueber @theme, damit Tailwinds
+   font-sans/font-mono-Utilities + der Base-Font auf IBM Plex laufen. */
+@theme {
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+
 /* --- Design-Tokens (klassenbasierter Dark-Mode) ---------------------------- *
- * Palette (5 Quellfarben, sonst nichts):
- *   cerulean #4281a4 · tropical-teal #48a9a6 · dust-grey #e4dfda
- *   soft-fawn #d4b483 · lobster-pink #c1666b
- * Primaer/Akzent: cerulean (+ teal als Erfolg). Light-Surfaces aus aufgehelltem
- * dust-grey (kein reines Weiss), Dark-Surfaces aus stark abgedunkeltem cerulean
- * (kein reines Schwarz). soft-fawn = Warnings/Gold, lobster-pink = Errors.
+ * Palette „Wikit Redesign" (warmes IBM-Plex-System, Beige/Taupe):
+ *   accent (olive/taupe) #857e61 · thistle #b3819c · lavender #7d7bad · cyan #3f93a0
+ *   beige #9a8574 · success #5b957a · warning #a9824c · danger #b06b76.
+ * Light-Surfaces aus warmem Off-White (kein reines Weiss), Dark-Surfaces aus fast
+ * schwarzem Warmbraun (kein reines Schwarz). Zusatz-Hues (thistle/lavender/cyan)
+ * fuer Kategorien + Package-Faerbung im Graph.
  * Komponenten referenzieren diese Tokens via Tailwind-Arbitrary-Values,
  * z. B. bg-[var(--color-accent)] / text-[var(--color-accent)].                */
 :root {
   color-scheme: light dark;
 
-  --color-accent: #4281a4;          /* Cerulean */
-  --color-accent-hover: #356a87;    /* dunkleres Cerulean */
-  --color-accent-soft: #e6eef3;     /* dezenter Akzent-Hintergrund (Badges/aktiv) */
-  --color-accent-contrast: #ffffff; /* Text auf vollflaechigem Akzent-Button */
+  --color-accent: #857e61;          /* Olive/Taupe – Primaer/Akzent */
+  --color-accent-hover: #6c6650;    /* dunkler fuer Hover */
+  --color-accent-soft: #e7e3d3;     /* dezenter Akzent-Hintergrund (Badges/aktiv) */
+  --color-accent-contrast: #fbfaf6; /* Text auf vollflaechigem Akzent-Button */
 
-  --color-surface: #ece8e2;         /* Seite (warmes Off-White aus dust-grey) */
-  --color-surface-2: #f7f5f1;       /* hellere Card-Flaeche */
-  --color-surface-offset: #e2ddd5;  /* dritte Tiefenstufe (Wells/Inputs/Code) */
-  --color-border: #cdc6bd;          /* warmes Grau (dust-grey abgedunkelt) */
-  --color-text: #2b3138;            /* warmes Anthrazit */
-  --color-text-muted: #837b71;      /* gedaempftes Warmgrau */
+  --color-surface: #f3f1ea;         /* Seite (warmes Off-White) */
+  --color-surface-2: #fbfaf6;       /* hellere Card-Flaeche */
+  --color-surface-offset: #e6e3d6;  /* Wells/Inputs (dritte Tiefenstufe) */
+  --color-surface-2b: #eceada;      /* Panel-Insets / Graph-Canvas (design --surface-2) */
+  --color-border: #dcd7c8;          /* warme Trennlinie */
+  --color-border-strong: #c7c0ac;   /* kraeftigerer Rahmen (Inputs/Modals) */
+  --color-text: #26251d;            /* warmes Fast-Schwarz */
+  --color-text-muted: #7d7666;      /* gedaempftes Warmgrau */
 
-  --color-success: #48a9a6;         /* Tropical Teal */
-  --color-warning: #d4b483;         /* Soft Fawn */
-  --color-danger: #c1666b;          /* Lobster Pink */
+  --color-success: #5b957a;         /* gedaempftes Gruen */
+  --color-warning: #a9824c;         /* warmes Gold/Ocker */
+  --color-danger: #b06b76;          /* gedaempftes Rosen-Rot */
 
-  --color-edge-highlight: #e08a1e;  /* warmes Gold: „aufleuchtende" Call-Edge + passender Code-Token */
+  /* Zusatz-Hues (Kategorien + Package-Faerbung im Graph). */
+  --color-thistle: #b3819c;
+  --color-thistle-soft: #f0e4ea;
+  --color-lavender: #7d7bad;
+  --color-lavender-soft: #e7e6f2;
+  --color-cyan: #3f93a0;
+  --color-cyan-soft: #dcf4f7;
+  --color-beige: #9a8574;
 
-  /* Knoten-Rollen im Java-Graph (Farbe = Rolle im Abhaengigkeitsnetz). Hue-getrennt von den
-     Kantenfarben (Accent/Gold/Violett/Grau) und der Package-Palette, damit sich Rolle und
-     Package nicht optisch beissen. */
-  --color-role-provider: #2e9e6a;   /* Gruen: Quelle/Provider – wird genutzt, nutzt selbst nichts */
-  --color-role-consumer: #6366e6;   /* Indigo: Anwender/Consumer – nutzt andere, ungenutzt */
-  --color-role-hub: var(--color-accent); /* Akzent: Hub/Gemischt – zentral, beides */
-  --color-role-isolated: var(--color-text-muted); /* Grau: isoliert, keine Verbindung */
+  --color-edge-highlight: #b8862f;  /* warmes Gold: „aufleuchtende" Call-Edge + passender Code-Token */
+
+  /* Knoten-Rollen im Java-Graph (Farbe = Rolle im Abhaengigkeitsnetz). Aus den harmonisierten
+     Palette-Tokens abgeleitet, damit sich Rolle und Package nicht optisch beissen. */
+  --color-role-provider: var(--color-success);   /* Provider – wird genutzt, nutzt selbst nichts */
+  --color-role-consumer: var(--color-lavender);  /* Consumer – nutzt andere, ungenutzt */
+  --color-role-hub: var(--color-accent);         /* Hub/Gemischt – zentral, beides */
+  --color-role-isolated: var(--color-text-muted);/* isoliert, keine Verbindung */
 }
 html.dark {
-  --color-accent: #7fb4d0;          /* aufgehelltes Cerulean (Kontrast auf dunkel) */
-  --color-accent-hover: #9cc6dc;
-  --color-accent-soft: rgba(127, 180, 208, 0.14);
-  --color-accent-contrast: #14222b;
+  --color-accent: #c4ba8f;          /* aufgehellter Taupe (Kontrast auf dunkel) */
+  --color-accent-hover: #d6cda4;
+  --color-accent-soft: rgba(196, 186, 143, 0.13);
+  --color-accent-contrast: #17160f;
 
-  --color-surface: #16242e;         /* Seite (stark abgedunkeltes Cerulean) */
-  --color-surface-2: #1e303c;       /* Card-Flaeche */
-  --color-surface-offset: #24394a;  /* dritte Tiefenstufe */
-  --color-border: rgba(127, 180, 208, 0.20);
-  --color-text: #e4dfda;            /* Dust Grey als heller Bodytext */
-  --color-text-muted: #93a4ae;
+  --color-surface: #17160f;         /* Seite (fast schwarzes Warmbraun) */
+  --color-surface-2: #211f16;       /* Card-Flaeche */
+  --color-surface-offset: #302c20;  /* Wells/Inputs */
+  --color-surface-2b: #2a271c;      /* Panel-Insets / Graph-Canvas */
+  --color-border: #3a3527;
+  --color-border-strong: #4b4534;
+  --color-text: #e7e4d6;            /* heller Bodytext */
+  --color-text-muted: #9c937f;
 
-  --color-success: #5fbfbb;
-  --color-warning: #e0c191;
-  --color-danger: #d68389;
+  --color-success: #7bc0a2;
+  --color-warning: #d0a869;
+  --color-danger: #d68d97;
 
-  --color-edge-highlight: #ffb13d;  /* kraeftiger auf dunklem Grund */
+  --color-thistle: #d9aec5;
+  --color-thistle-soft: rgba(217, 174, 197, 0.13);
+  --color-lavender: #a9a7dd;
+  --color-lavender-soft: rgba(169, 167, 221, 0.13);
+  --color-cyan: #7fc6d0;
+  --color-cyan-soft: rgba(127, 198, 208, 0.13);
+  --color-beige: #c3ae9c;
 
-  --color-role-provider: #54c48f;   /* aufgehelltes Gruen (Kontrast auf dunkel) */
-  --color-role-consumer: #8b8ef0;   /* aufgehelltes Indigo */
-  /* hub/isolated erben aus den bereits theme-faehigen Accent/Muted-Tokens */
+  --color-edge-highlight: #e0b45e;  /* kraeftiger auf dunklem Grund */
+
+  /* role provider/consumer/hub/isolated erben reaktiv aus den theme-faehigen Tokens oben */
 }
 
 html, body, #app {
@@ -71,6 +96,7 @@ html, body, #app {
 }
 body {
   @apply antialiased;
+  font-family: var(--font-sans);
   background-color: var(--color-surface);
   color: var(--color-text);
 }
@@ -299,6 +325,35 @@ html.dark {
 .shiki .vh-token.vh-active.vh-9  { background-color: var(--vh-9)  !important; }
 .shiki .vh-token.vh-active.vh-10 { background-color: var(--vh-10) !important; }
 .shiki .vh-token.vh-active.vh-11 { background-color: var(--vh-11) !important; }
+
+/* --- Wiederverwendbare Status-Badges (global; harmonisiert mit der Palette) -------------- *
+ * Nur Hintergrund-Tint + Textfarbe; Layout (Padding/Radius/Font) kommt aus den Utilities am
+ * Element. JavaClassDetail besitzt scoped Varianten mit gleichen Namen – die gewinnen dort per
+ * hoeherer Spezifitaet, sonst greifen diese globalen. */
+.badge-accent {
+  background-color: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+.badge-success {
+  background-color: color-mix(in srgb, var(--color-success) 16%, transparent);
+  color: var(--color-success);
+}
+.badge-warning {
+  background-color: color-mix(in srgb, var(--color-warning) 18%, transparent);
+  color: var(--color-warning);
+}
+.badge-danger {
+  background-color: color-mix(in srgb, var(--color-danger) 16%, transparent);
+  color: var(--color-danger);
+}
+.badge-lavender {
+  background-color: var(--color-lavender-soft);
+  color: var(--color-lavender);
+}
+.badge-muted {
+  background-color: var(--color-surface-offset);
+  color: var(--color-text-muted);
+}
 
 /* Dezente Scrollbars */
 * {

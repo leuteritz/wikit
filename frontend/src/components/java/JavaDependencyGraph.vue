@@ -55,12 +55,12 @@ function clearHighlights() {
 // Custom-Edge-Typ registrieren.
 const edgeTypes = { managed: ManagedEdge }
 
-// Genau drei Package-Farben, rotierend nach Package-Index.
-const PKG_COLORS = ['#4281a4', '#48a9a6', '#d4b483']
+// Package-Farben (Zusatz-Hues der neuen Palette), rotierend nach Package-Index.
+const PKG_COLORS = ['#b3819c', '#7d7bad', '#3f93a0', '#9a8574'] // thistle · lavender · cyan · beige
 const NODE_W = 208
 const NODE_H = 66
-const REVIEW_COLOR = '#d4a017'
-const USES_COLOR = '#a07cc5' // Struktur-/Typ-Bezug (uses): violett, gestrichelt, ohne Label
+const REVIEW_COLOR = '#b8862f' // warmes Gold (uncertain / „Please review")
+const USES_COLOR = '#9a7fb0' // Struktur-/Typ-Bezug (uses): gedaempftes Lavendel, gestrichelt, ohne Label
 const DEBUG_EDGES = true // Debug (F12): loggt geladene Klassen + nicht gezeichnete Server-Kanten
 
 // Rollen-Metadaten (Node-Glyph + Legende). Die FARBE kommt ueber die CSS-Klasse `vf-role-<role>`
@@ -363,7 +363,7 @@ const edges = computed(() => {
   })
 })
 
-const dotColor = computed(() => (theme.value === 'dark' ? '#33485a' : '#cdc6bd'))
+const dotColor = computed(() => (theme.value === 'dark' ? '#3a3527' : '#dcd7c8'))
 
 function onNodeClick({ node }) {
   // Klick in den Graph (Node) -> transiente Code-Tab-Highlights verwerfen (Spec: „Node ohne Kante").
@@ -659,7 +659,7 @@ watch(
         <span class="text-[var(--color-text-muted)]">manual edge</span>
       </div>
       <div class="flex items-center gap-2">
-        <span class="h-0.5 w-4 rounded" style="background: #d4a017" />
+        <span class="h-0.5 w-4 rounded" style="background: #b8862f" />
         <span class="text-[var(--color-text-muted)]">uncertain · “Please review”</span>
       </div>
       <div class="flex items-center gap-2">
@@ -667,7 +667,7 @@ watch(
         <span class="text-[var(--color-text-muted)]">imported by</span>
       </div>
       <div class="flex items-center gap-2">
-        <span class="h-0.5 w-4 rounded" style="background: #a07cc5; border-top: 1px dashed" />
+        <span class="h-0.5 w-4 rounded" style="background: #9a7fb0; border-top: 1px dashed" />
         <span class="text-[var(--color-text-muted)]">uses type (variable/new)</span>
       </div>
       <div class="flex items-center gap-2">

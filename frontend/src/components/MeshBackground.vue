@@ -22,7 +22,7 @@ let W = 0
 let H = 0
 let dpr = 1
 let nodes = []
-let rgb = { r: 66, g: 129, b: 164 } // Fallback = Cerulean #4281a4
+let rgb = { r: 133, g: 126, b: 97 } // Fallback = Taupe/Accent #857e61
 
 const reduce =
   typeof window !== 'undefined' && window.matchMedia

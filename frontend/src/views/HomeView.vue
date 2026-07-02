@@ -76,11 +76,11 @@ function openClass(id) {
 </script>
 
 <template>
-  <div class="landing relative min-h-[calc(100vh-3.5rem)] overflow-hidden">
+  <div class="landing relative min-h-full overflow-hidden">
     <!-- Hintergrund: animiertes Constellation-Netz (Canvas, eigene Komponente) -->
     <MeshBackground />
 
-    <div class="mx-auto grid max-w-6xl items-center gap-10 px-5 py-12 lg:min-h-[calc(100vh-3.5rem)] lg:grid-cols-[1.3fr_1fr] lg:gap-14 lg:py-0">
+    <div class="mx-auto grid max-w-6xl items-center gap-10 px-5 py-12 lg:min-h-full lg:grid-cols-[1.3fr_1fr] lg:gap-14 lg:py-0">
       <!-- ===== Links: Primaeraktion ===== -->
       <section class="reveal min-w-0">
         <p class="mb-3 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
@@ -88,9 +88,9 @@ function openClass(id) {
           Local code intelligence · no cloud, no login
         </p>
 
-        <h1 class="flex items-center gap-3 text-3xl font-bold tracking-tight text-[var(--color-text)] sm:text-4xl">
+        <h1 class="flex items-center gap-3 font-mono text-4xl font-semibold tracking-tight text-[var(--color-text)] sm:text-5xl">
           <Icon :icon="WIKI_ICON" class="shrink-0 text-[var(--color-accent)]" />
-          {{ WIKI_TITLE }}
+          <span class="text-[var(--color-accent)]">{{ WIKI_TITLE }}</span><span class="blink font-normal text-[var(--color-accent)]">_</span>
         </h1>
         <p class="mt-3 max-w-xl text-[15px] leading-relaxed text-[var(--color-text-muted)]">
           A self-hosted knowledge base for developers: author notes in
@@ -332,8 +332,24 @@ function openClass(id) {
   }
 }
 
+/* Blinkender Cursor hinter dem Titel (Terminal-Optik). */
+.blink {
+  animation: blink 1.1s step-end infinite;
+}
+@keyframes blink {
+  0%,
+  55% {
+    opacity: 1;
+  }
+  56%,
+  100% {
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .reveal {
+  .reveal,
+  .blink {
     animation: none;
   }
 }

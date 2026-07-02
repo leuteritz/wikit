@@ -154,7 +154,7 @@ function fmtDur(ms) {
         v-model="userContext"
         spellcheck="false"
         placeholder="e.g. Windchill background, module purpose… – fed into every AI prompt."
-        class="mb-4 h-20 w-full resize-y rounded-xl border border-[var(--color-border)] bg-white p-3 text-sm text-slate-700 outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)] dark:bg-slate-900 dark:text-slate-200"
+        class="mb-4 h-20 w-full resize-y rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
       />
 
       <!-- Fortschritt -->
@@ -165,19 +165,19 @@ function fmtDur(ms) {
             {{ runningLabel }}
             <span class="tabular-nums font-normal text-[var(--color-text-muted)]">{{ fmtDur(analysis.stepElapsedMs.value) }}</span>
           </span>
-          <span class="tabular-nums text-slate-500 dark:text-slate-400">{{ completed }}/{{ steps }}</span>
+          <span class="tabular-nums text-[var(--color-text-muted)]">{{ completed }}/{{ steps }}</span>
         </div>
         <div class="h-2 w-full overflow-hidden rounded-full bg-[var(--color-accent-soft)]">
           <div class="h-full rounded-full bg-[var(--color-accent)] transition-all duration-300" :style="{ width: percent + '%' }" />
         </div>
-        <div class="mt-1.5 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+        <div class="mt-1.5 flex items-center justify-between text-[11px] text-[var(--color-text-muted)]">
           <span class="tabular-nums">
             Total {{ fmtDur(analysis.totalElapsedMs.value) }}
             <span v-if="completed < steps"> · ~{{ fmtDur(analysis.etaMs.value) }} left</span>
           </span>
           <button
             type="button"
-            class="inline-flex items-center gap-1 rounded-md border border-rose-200 px-2 py-0.5 text-[11px] font-medium text-rose-600 transition hover:bg-rose-50 disabled:opacity-50 dark:border-rose-500/30 dark:text-rose-400 dark:hover:bg-rose-500/10"
+            class="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-danger)] transition hover:bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)] disabled:opacity-50"
             :disabled="analysis.cancelling.value"
             @click="analysis.cancel(articleId)"
           >
@@ -189,7 +189,7 @@ function fmtDur(ms) {
         <div class="mt-2 flex flex-wrap items-center gap-1">
           <span
             class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
-            :class="classState === 'done' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : classState === 'running' ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'"
+            :class="classState === 'done' ? 'badge-success' : classState === 'running' ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' : 'badge-muted'"
           >
             <Icon v-if="classState === 'done'" icon="lucide:check" class="h-3 w-3" /><Icon v-else-if="classState === 'running'" icon="lucide:loader-2" class="h-3 w-3 animate-spin" />
             Class
@@ -198,48 +198,48 @@ function fmtDur(ms) {
             v-for="(m, i) in methods"
             :key="m.id"
             class="inline-flex h-5 min-w-[20px] items-center justify-center rounded-md px-1 text-[10px] font-medium"
-            :class="methodState(i, m) === 'done' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : methodState(i, m) === 'running' ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'"
+            :class="methodState(i, m) === 'done' ? 'badge-success' : methodState(i, m) === 'running' ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' : 'badge-muted'"
             :title="m.method_name"
           >{{ i + 1 }}</span>
         </div>
       </div>
 
       <!-- Stall-Watchdog: keine Antwort vom Server -->
-      <div v-if="analysis.stalled.value" class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+      <div v-if="analysis.stalled.value" class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg px-3 py-2 text-xs text-[var(--color-warning)]" style="background-color: color-mix(in srgb, var(--color-warning) 12%, transparent)">
         <span class="flex-1">No response from the server – the local AI may be stuck. The local AI on the Pi is slow (about 30–90 s per step).</span>
         <button
           v-if="analysis.running.value"
           type="button"
-          class="rounded-md border border-amber-300 px-2 py-0.5 font-medium hover:bg-amber-100 dark:border-amber-500/40 dark:hover:bg-amber-500/15"
+          class="rounded-md border border-[var(--color-border-strong)] px-2 py-0.5 font-medium transition hover:bg-[color-mix(in_srgb,var(--color-warning)_18%,transparent)]"
           :disabled="analysis.cancelling.value"
           @click="analysis.cancel(articleId)"
         >Cancel</button>
         <button
           type="button"
-          class="rounded-md border border-amber-300 px-2 py-0.5 font-medium hover:bg-amber-100 dark:border-amber-500/40 dark:hover:bg-amber-500/15"
+          class="rounded-md border border-[var(--color-border-strong)] px-2 py-0.5 font-medium transition hover:bg-[color-mix(in_srgb,var(--color-warning)_18%,transparent)]"
           @click="startAnalysis"
         >Restart</button>
       </div>
 
-      <p v-if="analysis.error.value" class="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-600 dark:bg-rose-500/10 dark:text-rose-400">{{ analysis.error.value }}</p>
-      <p v-if="notice" class="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">{{ notice }}</p>
+      <p v-if="analysis.error.value" class="mb-3 rounded-lg px-3 py-2 text-xs text-[var(--color-danger)]" style="background-color: color-mix(in srgb, var(--color-danger) 12%, transparent)">{{ analysis.error.value }}</p>
+      <p v-if="notice" class="mb-3 rounded-lg px-3 py-2 text-xs text-[var(--color-warning)]" style="background-color: color-mix(in srgb, var(--color-warning) 12%, transparent)">{{ notice }}</p>
 
       <!-- Leerzustand -->
-      <div v-if="!hasContent && !analysis.running.value" class="rounded-lg border border-dashed border-[var(--color-border)] px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-400">
+      <div v-if="!hasContent && !analysis.running.value" class="rounded-lg border border-dashed border-[var(--color-border)] px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">
         <p>Start the AI analysis to generate class and method descriptions – they appear here one by one.</p>
-        <p class="mt-1.5 text-xs text-slate-400 dark:text-slate-500">Note: The local AI runs on the Pi and is slow – expect about 30–90 s per step.</p>
+        <p class="mt-1.5 text-xs text-[var(--color-text-muted)]">Note: The local AI runs on the Pi and is slow – expect about 30–90 s per step.</p>
       </div>
 
       <!-- Klassenbeschreibung -->
       <div v-if="descriptionHtml" class="mb-6">
         <div
-          class="prose prose-slate max-w-none rounded-xl bg-white px-4 py-3 dark:prose-invert dark:bg-slate-900/60"
+          class="prose prose-sm max-w-none rounded-xl bg-[var(--color-surface-2)] px-4 py-3 dark:prose-invert"
           v-html="descriptionHtml"
         />
         <span
           v-if="classAiGenerated !== null"
           class="mt-1.5 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
-          :class="classAiGenerated ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'"
+          :class="classAiGenerated ? 'badge-success' : 'badge-warning'"
         ><Icon :icon="classAiGenerated ? 'lucide:check' : 'lucide:alert-triangle'" class="h-3 w-3" />{{ classAiGenerated ? 'AI text generated' : 'Fallback: existing description' }}</span>
       </div>
 
@@ -248,9 +248,9 @@ function fmtDur(ms) {
         <li
           v-for="(m, i) in methods"
           :key="m.id"
-          class="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/60"
+          class="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]"
         >
-          <div class="flex items-center gap-2 border-b border-slate-100 px-3 py-2 dark:border-slate-800">
+          <div class="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2">
             <button
               type="button"
               class="group flex min-w-0 flex-1 items-center gap-1.5 text-left"
@@ -259,20 +259,20 @@ function fmtDur(ms) {
               @click="reRun(m)"
             >
               <span class="truncate font-mono text-sm font-semibold text-[var(--color-accent)] group-hover:underline disabled:no-underline">{{ m.method_name }}</span>
-              <Icon v-if="methodState(i, m) !== 'running'" icon="lucide:refresh-cw" class="h-3.5 w-3.5 shrink-0 text-slate-300 transition group-hover:text-[var(--color-accent)]" />
+              <Icon v-if="methodState(i, m) !== 'running'" icon="lucide:refresh-cw" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)] transition group-hover:text-[var(--color-accent)]" />
             </button>
             <span
               v-if="m.ai_generated === false"
-              class="shrink-0 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
+              class="badge-warning shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
               title="Ollama returned no text – showing Javadoc as fallback"
             >Fallback: Javadoc</span>
             <span
               v-else-if="m.ai_generated === true"
-              class="shrink-0 rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+              class="badge-success shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
               title="AI text generated"
             >AI text</span>
             <Icon v-if="methodState(i, m) === 'running'" icon="lucide:loader-2" class="h-4 w-4 shrink-0 animate-spin text-[var(--color-accent)]" />
-            <Icon v-else-if="methodState(i, m) === 'done'" icon="lucide:check" class="h-4 w-4 shrink-0 text-emerald-500" title="analyzed" />
+            <Icon v-else-if="methodState(i, m) === 'done'" icon="lucide:check" class="h-4 w-4 shrink-0 text-[var(--color-success)]" title="analyzed" />
           </div>
 
           <!-- Signatur (Shiki java, server-gerendert) -->
@@ -281,10 +281,10 @@ function fmtDur(ms) {
           <!-- KI-Beschreibung -->
           <div
             v-if="m.summary_html"
-            class="prose prose-sm prose-slate max-w-none px-3 pb-3 dark:prose-invert"
+            class="prose prose-sm max-w-none px-3 pb-3 dark:prose-invert"
             v-html="m.summary_html"
           />
-          <p v-else class="px-3 pb-3 text-sm italic text-slate-400">No AI description yet – click the method name to generate.</p>
+          <p v-else class="px-3 pb-3 text-sm italic text-[var(--color-text-muted)]">No AI description yet – click the method name to generate.</p>
         </li>
       </ul>
     </div>
