@@ -162,7 +162,7 @@ watch(theme, () => {
 </script>
 
 <template>
-  <div class="pointer-events-none absolute inset-0 -z-10 overflow-hidden" aria-hidden="true">
+  <div class="pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden="true">
     <canvas ref="canvas" class="mesh-canvas h-full w-full"></canvas>
   </div>
 </template>
@@ -170,6 +170,6 @@ watch(theme, () => {
 <style scoped>
 .mesh-canvas {
   display: block;
-  opacity: 0.22; /* etwas praesenter, aber weiterhin Hintergrund-Textur */
+  opacity: 0.4; /* praesenter auf der warmen Palette (muted Taupe auf Beige), aber weiterhin Textur */
 }
 </style>

@@ -80,7 +80,7 @@ function openClass(id) {
     <!-- Hintergrund: animiertes Constellation-Netz (Canvas, eigene Komponente) -->
     <MeshBackground />
 
-    <div class="mx-auto grid max-w-6xl items-center gap-10 px-5 py-12 lg:min-h-full lg:grid-cols-[1.3fr_1fr] lg:gap-14 lg:py-0">
+    <div class="relative z-10 mx-auto grid max-w-6xl items-center gap-10 px-5 py-12 lg:min-h-full lg:grid-cols-[1.3fr_1fr] lg:gap-14 lg:py-0">
       <!-- ===== Links: Primaeraktion ===== -->
       <section class="reveal min-w-0">
         <p class="mb-3 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
