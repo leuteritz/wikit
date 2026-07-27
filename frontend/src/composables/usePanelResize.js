@@ -12,12 +12,15 @@
 import { reactive, ref, computed, onMounted, onUnmounted } from 'vue'
 
 const MIN = 10 // kein Panel < 10 % (untere Klemmgrenze fuer ALLE Panels)
-// fr-Gewichte (Summe 100). Die linke Klassen-Spalte startet bewusst auf der Minimal-Breite
-// (left == MIN): reine Liste mit Ellipsis, der Nutzer kann sie nur breiter ziehen. Der Platz
-// geht an Graph (Mitte) und das Doku-/Code-Panel (rechts).
-const DEFAULTS = { left: MIN, center: 60, right: 30 }
+// fr-Gewichte (Summe 100). Die linke Klassen-Spalte bekommt genug Breite, dass ein typischer
+// Klassenname ohne Ellipsis lesbar bleibt (~18 % ≈ 300 px bei 1920) – schmaler war sie faktisch
+// nur eine Spalte abgeschnittener Namen. Der restliche Platz geht an Graph (Mitte) und das
+// Doku-/Code-Panel (rechts).
+const DEFAULTS = { left: 18, center: 52, right: 30 }
 const RESIZER_PX = 8 // Breite eines Divider-Tracks (einzige Quelle: CSS-Template + px-Umrechnung)
-const STORAGE_KEY = 'wikit:code-panel-widths'
+// v2: Key bewusst gebumpt, damit die alte 10-%-Voreinstellung nicht als "gespeicherte Wahl"
+// weiterlebt. Wer die Spalten selbst gezogen hat, stellt sie einmalig neu ein.
+const STORAGE_KEY = 'wikit:code-panel-widths:v2'
 
 // Drei endliche Zahlen mit Summe ~100? -> als gespeicherte Aufteilung akzeptieren.
 function isValidTriple(v) {

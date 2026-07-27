@@ -371,7 +371,7 @@ async function removeFile() {
 </script>
 
 <template>
-  <aside class="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)]">
+  <aside class="flex h-full w-full flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]">
     <!-- Header -->
     <header class="flex items-start gap-3 border-b border-[var(--color-border)] px-4 py-3">
       <div class="min-w-0 flex-1">
@@ -388,7 +388,7 @@ async function removeFile() {
             class="rounded-md px-1.5 py-0.5 text-[10px] font-medium"
             :class="summarizedCount === methodCount && methodCount > 0 ? 'badge-success' : 'badge-accent'"
           >
-            KI {{ summarizedCount }}/{{ methodCount }}
+            AI {{ summarizedCount }}/{{ methodCount }}
           </span>
           <span
             v-if="queueProgress && queueProgress.status === 'running'"

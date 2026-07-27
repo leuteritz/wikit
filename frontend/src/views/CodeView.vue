@@ -1,5 +1,7 @@
 <script setup>
-// Code-Analyse-Sektion: 3-Spalten-Layout (Package-Tree / Graph / Detail-Panel).
+// Code-Analyse-Sektion: schlanke Command-Bar + 3-Spalten-Arbeitsflaeche.
+//  Command-Bar: Titel + Live-Metriken links, Aktionen rechts (Primaer "Add code",
+//               AI-Queue-Chip, Overflow-Menue fuer selten genutzte/destruktive Aktionen).
 //  Spalte 1: Suche + Package-Baum aller geladenen Klassen (Datei-Explorer-Optik)
 //  Spalte 2: Klassen-Abhaengigkeitsgraph (Vue Flow + dagre)
 //  Spalte 3: vollstaendige Klassen-Doku + KI-Zusammenfassungen
@@ -38,7 +40,6 @@ const inputMode = ref('paste') // 'paste' = Editor | 'file' = .java-Datei(en) ho
 const selectedFileId = ref(null)
 const activeTargetLine = ref(null) // Ziel-Quellzeile fuer das Detail-Panel (Such-Sprung)
 const activeTargetEndLine = ref(null) // Ziel-End-Zeile -> markiert den gesamten Methodenbereich
-const queueNotice = ref('')
 const search = ref('')
 const showNew = ref(false)
 const collapsed = reactive({}) // packagePfad -> true (eingeklappt)
@@ -46,13 +47,33 @@ const pendingDelete = ref(null)
 const deleting = ref(false)
 const pendingConflicts = ref(null) // FQCN-Liste vorhandener Klassen -> Ueberschreiben-Dialog
 const confirming = ref(false)
-const analyzingAll = ref(false) // Spinner fuer "Alle analysieren"
+const analyzingAll = ref(false) // Spinner fuer "Run AI"
 const pendingReset = ref(false) // Komplett-Reset-Dialog offen?
 const resetting = ref(false) // Spinner waehrend des Komplett-Resets
 const queueOpen = ref(false) // KI-Queue-Modal offen?
+const menuOpen = ref(false) // Overflow-Menue der Command-Bar
 
-// Kompakte Queue-Anzeige im Header (loest den frueheren Queues-Tab ab). Liest den geteilten
-// useJavaQueue-State; das Polling laeuft bereits ueber ensurePolling() (onMounted).
+// --- Fluechtige Rueckmeldungen als Toast (unten rechts) ------------------------------------
+// Frueher schoben diese Meldungen als Banner das gesamte Grid nach unten. Als schwebender
+// Toast bleibt die Arbeitsflaeche geometrisch stabil; er verschwindet von selbst.
+const notice = ref(null) // { text, kind: 'info' | 'error' }
+let noticeTimer = null
+function setNotice(text, kind = 'info') {
+  clearTimeout(noticeTimer)
+  if (!text) {
+    notice.value = null
+    return
+  }
+  notice.value = { text, kind }
+  noticeTimer = setTimeout(() => (notice.value = null), 8000)
+}
+function dismissNotice() {
+  clearTimeout(noticeTimer)
+  notice.value = null
+}
+
+// Kompakte Queue-Anzeige in der Command-Bar. Liest den geteilten useJavaQueue-State;
+// das Polling laeuft bereits ueber ensurePolling() (onMounted).
 const finishedQueueCount = computed(() => allJobs.value.filter((j) => isFinishedStatus(j.status)).length)
 const runningQueueJob = computed(() => allJobs.value.find((j) => j.status === 'running') || null)
 const queuedQueueCount = computed(() => allJobs.value.filter((j) => j.status === 'queued').length)
@@ -83,19 +104,30 @@ watch(lastFileId, (v) => {
   if (v != null) consumeHandoff()
 })
 
+// ESC schliesst das Overflow-Menue (Modals bringen ihre eigenen Handler mit).
+function onKeydown(e) {
+  if (e.key === 'Escape' && menuOpen.value) menuOpen.value = false
+}
+
 let releasePolling = null
 onMounted(async () => {
   releasePolling = ensurePolling()
+  window.addEventListener('keydown', onKeydown)
   await fetchFiles()
   consumeHandoff()
   // Beim ersten Laden noch nichts vorhanden -> Neu-Panel aufklappen.
   if (!files.value.length) showNew.value = true
 })
-onUnmounted(() => releasePolling?.())
+onUnmounted(() => {
+  releasePolling?.()
+  window.removeEventListener('keydown', onKeydown)
+  clearTimeout(noticeTimer)
+})
 
-// --- Statistik (Header-Tags) ---
+// --- Metriken (Command-Bar) ---
 const classCount = computed(() => files.value.length)
 const packageCount = computed(() => new Set(files.value.map((f) => f.package || '(default)')).size)
+const analyzedCount = computed(() => files.value.filter((f) => f.description).length)
 
 // --- Package-Baum (gefiltert) -> flache Zeilenliste fuer iteratives Rendern ---
 const filteredFiles = computed(() => filterClasses(files.value, search.value))
@@ -136,38 +168,34 @@ function hl(name) {
   return parts
 }
 
-// Live-Fortschritt der Queue fuer die aktuell gewaehlte Klasse (Banner unter der Kopfzeile).
-const selectedProgress = computed(() =>
-  selectedFileId.value ? progressFor(selectedFileId.value) : null,
-)
-
 // Alle Auto-Call-Edges serverseitig neu berechnen + persistieren. Der Graph rendert aus dem
 // geteilten useJavaGraph()-edges-Ref und aktualisiert sich nach recomputeEdges() automatisch.
 async function onRecomputeEdges() {
-  queueNotice.value = ''
+  menuOpen.value = false
   try {
     const res = await recomputeEdges()
-    queueNotice.value = `${res?.count ?? 0} edge(s) recomputed.`
+    setNotice(`${res?.count ?? 0} edge(s) recomputed.`)
   } catch (e) {
-    queueNotice.value = e.message
+    setNotice(e.message, 'error')
   }
 }
 
 // Alle noch nicht KI-analysierten Klassen als atomare Einheit (Methoden -> Klasse) einreihen –
 // topologisch sortiert (Abhaengigkeiten zuerst). Live-Fortschritt zeigt die Queue-Anzeige; hier
-// nur kurzes Inline-Feedback.
+// nur kurzes Toast-Feedback.
 async function analyzeAll() {
   if (analyzingAll.value) return
   analyzingAll.value = true
-  queueNotice.value = ''
   try {
     const res = await enqueueAllUnanalyzed({ userContext: userContext.value })
     const c = res?.queuedClasses ?? 0
-    queueNotice.value = c
-      ? `Queued: ${c} class(es) for full analysis (methods → summary).`
-      : 'Everything already analyzed – nothing to queue.'
+    setNotice(
+      c
+        ? `Queued: ${c} class(es) for full analysis (methods → summary).`
+        : 'Everything already analyzed – nothing to queue.',
+    )
   } catch (e) {
-    queueNotice.value = e.message
+    setNotice(e.message, 'error')
   } finally {
     analyzingAll.value = false
   }
@@ -191,9 +219,10 @@ function finishBatch(res) {
     for (const f of res.saved) enqueueClass(f, { userContext: userContext.value })
   }
   const parts = []
+  if (res.saved?.length) parts.push(`${res.saved.length} class(es) analyzed.`)
   if (res.overwritten?.length) parts.push(`${res.overwritten.length} overwritten.`)
   if (res.warnings?.length) parts.push(...res.warnings)
-  queueNotice.value = parts.join(' ')
+  setNotice(parts.join(' '), res.warnings?.length ? 'error' : 'info')
   source.value = ''
   filename.value = ''
   showNew.value = false
@@ -201,7 +230,6 @@ function finishBatch(res) {
 
 async function analyze() {
   if (!source.value.trim()) return
-  queueNotice.value = ''
   try {
     const res = await analyzeBatch(source.value)
     // DB-Duplikate -> erst nachfragen, dann ggf. mit overwrite erneut senden.
@@ -211,7 +239,7 @@ async function analyze() {
     }
     finishBatch(res)
   } catch {
-    // Fehler steht in `error` (Composable) und wird im Template angezeigt.
+    // Fehler steht in `error` (Composable) und wird im Modal angezeigt.
   }
 }
 
@@ -257,7 +285,7 @@ async function confirmDelete() {
     if (selectedFileId.value === file.id) selectedFileId.value = null
     pendingDelete.value = null
   } catch (e) {
-    queueNotice.value = e.message
+    setNotice(e.message, 'error')
   } finally {
     deleting.value = false
   }
@@ -269,6 +297,7 @@ async function onDetailClose(payload) {
 
 // --- Komplett-Reset: alle Klassen + Kanten + Queue dauerhaft entfernen ---
 function askReset() {
+  menuOpen.value = false
   pendingReset.value = true
 }
 function cancelReset() {
@@ -289,122 +318,151 @@ async function confirmReset() {
     source.value = ''
     filename.value = ''
     search.value = ''
-    queueNotice.value = ''
+    dismissNotice()
     pendingDelete.value = null
     pendingConflicts.value = null
     for (const k of Object.keys(collapsed)) delete collapsed[k]
     showNew.value = true // Neu-Panel einladend wieder aufklappen
     pendingReset.value = false
   } catch (e) {
-    queueNotice.value = e.message
+    setNotice(e.message, 'error')
   } finally {
     resetting.value = false
   }
+}
+
+function onResetPanels() {
+  menuOpen.value = false
+  resetPanels()
 }
 </script>
 
 <template>
   <div class="flex h-full flex-col text-[var(--color-text)]">
-    <!-- Kopfzeile -->
-    <div class="shrink-0 px-5 pb-3 pt-5">
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div class="min-w-0 flex-1">
-          <p class="mb-2 font-mono text-[10px] font-semibold tracking-[0.16em] text-[var(--color-text-muted)]">STATIC ANALYSIS</p>
-          <h1 class="font-mono text-2xl font-semibold tracking-tight text-[var(--color-text)]">Code Analysis</h1>
-          <div class="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
-            <span
-              v-for="lang in LANGUAGES"
-              :key="lang.id"
-              class="inline-flex items-center gap-1 rounded-md bg-[var(--color-accent-soft)] px-2 py-0.5 font-semibold text-[var(--color-accent)]"
-            >
-              <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />{{ lang.label }}
-            </span>
-            <span class="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-0.5 font-medium text-[var(--color-text-muted)]">
-              {{ classCount }} class(es)
-            </span>
-            <span class="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-0.5 font-medium text-[var(--color-text-muted)]">
-              {{ packageCount }} package(s)
-            </span>
-          </div>
+    <!-- ── Command-Bar: eine Zeile, damit die Arbeitsflaeche darunter den Raum bekommt ── -->
+    <header class="shrink-0 border-b border-[var(--color-border)] px-5 py-2.5">
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div class="flex min-w-0 items-center gap-2.5">
+          <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+            <Icon icon="lucide:git-fork" class="h-[18px] w-[18px]" />
+          </span>
+          <h1 class="truncate font-mono text-[15px] font-semibold tracking-tight">Code Analysis</h1>
+        </div>
 
-          <!-- Globale Aktionen: einheitliche Button-Reihe (1 Icon + 1 Wort), links ausgerichtet.
-               Gleicher Stil/Form, nur die Akzentfarbe unterscheidet die Aktionen. -->
-          <div v-if="files.length" class="action-bar mt-2.5 flex flex-wrap items-center gap-2">
+        <!-- Live-Metriken: monospace + gedaempft. Zahlen tragen die Information, nicht die Farbe. -->
+        <div v-if="files.length" class="hidden items-center gap-2.5 font-mono text-[11px] text-[var(--color-text-muted)] md:flex">
+          <span v-for="lang in LANGUAGES" :key="lang.id" class="inline-flex items-center gap-1.5">
+            <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />{{ lang.label }}
+          </span>
+          <span class="opacity-40">·</span>
+          <span><b class="font-semibold tabular-nums text-[var(--color-text)]">{{ classCount }}</b> classes</span>
+          <span class="opacity-40">·</span>
+          <span><b class="font-semibold tabular-nums text-[var(--color-text)]">{{ packageCount }}</b> packages</span>
+          <span class="opacity-40">·</span>
+          <span class="inline-flex items-center gap-1">
+            <Icon icon="lucide:sparkles" class="h-3 w-3 text-[var(--color-accent)]" />
+            <b class="font-semibold tabular-nums text-[var(--color-text)]">{{ analyzedCount }}</b>/{{ classCount }} analyzed
+          </span>
+        </div>
+
+        <div class="ml-auto flex items-center gap-2">
+          <!-- AI-Queue: Chip mit Live-Status; nur bei Aktivitaet farbig, sonst dezent. -->
+          <button
+            type="button"
+            class="action-btn inline-flex h-9 items-center gap-2 rounded-lg border px-2.5 text-[13px] font-medium transition"
+            :class="runningQueueJob || queuedQueueCount
+              ? 'border-[color-mix(in_srgb,var(--color-lavender)_40%,transparent)] bg-[var(--color-lavender-soft)] text-[var(--color-lavender)]'
+              : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]'"
+            :title="runningQueueJob ? `Analyzing ${runningQueueJob.className}` : 'Open the AI analysis queue'"
+            @click="queueOpen = true"
+          >
+            <Icon
+              :icon="runningQueueJob ? 'lucide:loader-2' : 'lucide:list-checks'"
+              class="h-4 w-4 shrink-0"
+              :class="runningQueueJob ? 'animate-spin' : ''"
+            />
+            <span class="hidden sm:inline">AI Queue</span>
+            <span v-if="runningQueueJob" class="inline-flex min-w-0 items-center gap-1.5 font-mono text-[11px]">
+              <span class="max-w-[10rem] truncate opacity-90">{{ runningQueueJob.className }}</span>
+              <span class="shrink-0 tabular-nums opacity-70">{{ runningQueueJob.done }}/{{ runningQueueJob.total }}</span>
+            </span>
+            <span v-else-if="queuedQueueCount" class="rounded-full bg-[color-mix(in_srgb,var(--color-lavender)_22%,transparent)] px-1.5 font-mono text-[11px] tabular-nums">
+              {{ queuedQueueCount }}
+            </span>
+            <span v-else-if="finishedQueueCount" class="font-mono text-[11px] tabular-nums opacity-70">{{ finishedQueueCount }}</span>
+          </button>
+
+          <!-- KI-Sammellauf ueber alle noch nicht analysierten Klassen. -->
+          <button
+            v-if="files.length"
+            type="button"
+            class="action-btn inline-flex h-9 items-center gap-1.5 rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_35%,transparent)] bg-[var(--color-accent-soft)] px-2.5 text-[13px] font-semibold text-[var(--color-accent)] transition hover:bg-[color-mix(in_srgb,var(--color-accent)_22%,transparent)] disabled:cursor-not-allowed disabled:opacity-50"
+            :disabled="analyzingAll"
+            title="Queue every not-yet-analyzed class and method for AI analysis"
+            @click="analyzeAll"
+          >
+            <Icon
+              :icon="analyzingAll ? 'lucide:loader-2' : 'lucide:sparkles'"
+              class="h-4 w-4"
+              :class="analyzingAll ? 'animate-spin' : ''"
+            />
+            <span class="hidden sm:inline">{{ analyzingAll ? 'Queueing…' : 'Run AI' }}</span>
+          </button>
+
+          <!-- Primaeraktion: neue Quellen einlesen. -->
+          <button
+            type="button"
+            class="action-btn inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 text-[13px] font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)]"
+            title="Parse new .java sources"
+            @click="showNew = true"
+          >
+            <Icon icon="lucide:plus" class="h-4 w-4" />
+            Add code
+          </button>
+
+          <!-- Overflow: selten genutzt + destruktiv, damit die Bar ruhig bleibt. -->
+          <div class="relative">
             <button
               type="button"
-              class="action-btn inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] text-[var(--color-accent)] hover:bg-[color-mix(in_srgb,var(--color-accent)_20%,transparent)]"
-              :disabled="analyzingAll"
-              title="Queue every not-yet-analyzed class and method for AI analysis"
-              @click="analyzeAll"
+              class="action-btn grid h-9 w-9 place-items-center rounded-lg border border-[var(--color-border)] text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+              :class="menuOpen ? 'bg-[var(--color-surface-offset)] text-[var(--color-text)]' : ''"
+              title="More actions"
+              aria-label="More actions"
+              :aria-expanded="menuOpen"
+              @click="menuOpen = !menuOpen"
             >
-              <Icon
-                :icon="analyzingAll ? 'lucide:loader-2' : 'lucide:sparkles'"
-                class="h-4 w-4"
-                :class="analyzingAll ? 'animate-spin' : ''"
-              />
-              {{ analyzingAll ? 'Analyzing…' : 'Analyze' }}
+              <Icon icon="lucide:more-horizontal" class="h-4 w-4" />
             </button>
-            <button
-              type="button"
-              class="action-btn inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 bg-[color-mix(in_srgb,var(--color-success)_12%,transparent)] text-[var(--color-success)] hover:bg-[color-mix(in_srgb,var(--color-success)_20%,transparent)]"
-              :disabled="recomputing"
-              title="Recompute all class relationships (edges) – useful after bulk imports"
-              @click="onRecomputeEdges"
-            >
-              <Icon :icon="recomputing ? 'lucide:loader-2' : 'lucide:git-branch'" class="h-4 w-4" :class="recomputing ? 'animate-spin' : ''" />
-              Simulate
-            </button>
-            <button
-              type="button"
-              class="action-btn inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)] text-[var(--color-danger)] hover:bg-[color-mix(in_srgb,var(--color-danger)_20%,transparent)]"
-              :disabled="resetting"
-              title="Permanently remove all analyzed classes, edges and AI summaries"
-              @click="askReset"
-            >
-              <Icon icon="lucide:trash-2" class="h-4 w-4" />
-              Reset
-            </button>
-            <button
-              type="button"
-              class="action-btn inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 bg-[color-mix(in_srgb,var(--color-text-muted)_10%,transparent)] text-[var(--color-text-muted)] hover:bg-[color-mix(in_srgb,var(--color-text-muted)_18%,transparent)]"
-              :disabled="!isWide || !panelsDirty"
-              title="Restore the column widths to the default layout"
-              @click="resetPanels"
-            >
-              <Icon icon="lucide:layout-grid" class="h-4 w-4" />
-              Layout
-            </button>
-            <!-- KI-Queue im selben Action-Button-Stil (loest den frueheren Queues-Tab ab) -> oeffnet
-                 das Queue-Modal. Violett (wie die AI-Badges im Modal) hebt es von den 4 Buttons ab.
-                 Einzeilig, gleiche Hoehe; nur bei Aktivitaet breiter dank Inline-Status. -->
-            <button
-              type="button"
-              class="action-btn inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition bg-[color-mix(in_srgb,var(--color-lavender)_14%,transparent)] text-[var(--color-lavender)] hover:bg-[color-mix(in_srgb,var(--color-lavender)_22%,transparent)]"
-              :title="runningQueueJob ? `Analyzing ${runningQueueJob.className}` : 'Open the AI analysis queue'"
-              @click="queueOpen = true"
-            >
-              <Icon
-                :icon="runningQueueJob ? 'lucide:loader-2' : 'lucide:list-checks'"
-                class="h-4 w-4 shrink-0"
-                :class="runningQueueJob ? 'animate-spin' : ''"
-              />
-              AI Queue
-              <!-- Inline-Live-Status: nur bei Bedarf -> Button wird breiter, nie hoeher. -->
-              <span v-if="runningQueueJob" class="inline-flex min-w-0 items-center gap-1.5 font-medium opacity-90">
-                <span class="opacity-60">·</span>
-                <span class="max-w-[12rem] truncate">{{ runningQueueJob.className }}</span>
-                <span class="shrink-0 tabular-nums opacity-80">{{ runningQueueJob.done }}/{{ runningQueueJob.total }}</span>
-              </span>
-              <span v-else-if="queuedQueueCount" class="font-medium opacity-90"><span class="opacity-60">·</span> {{ queuedQueueCount }} queued</span>
-              <span v-else-if="finishedQueueCount" class="font-medium opacity-90"><span class="opacity-60">·</span> {{ finishedQueueCount }} done</span>
-            </button>
+            <!-- Klick-ausserhalb faengt ein transparenter Backdrop ab (kein globaler Listener). -->
+            <div v-if="menuOpen" class="fixed inset-0 z-40" @click="menuOpen = false" />
+            <Transition name="pop">
+              <div
+                v-if="menuOpen"
+                class="absolute right-0 top-11 z-50 w-60 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1 shadow-xl"
+              >
+                <button type="button" class="menu-item" :disabled="recomputing || !files.length" @click="onRecomputeEdges">
+                  <Icon :icon="recomputing ? 'lucide:loader-2' : 'lucide:git-branch'" class="h-4 w-4 shrink-0" :class="recomputing ? 'animate-spin' : ''" />
+                  <span class="flex-1 text-left">Recompute edges</span>
+                </button>
+                <button type="button" class="menu-item" :disabled="!isWide || !panelsDirty" @click="onResetPanels">
+                  <Icon icon="lucide:layout-grid" class="h-4 w-4 shrink-0" />
+                  <span class="flex-1 text-left">Reset layout</span>
+                </button>
+                <div class="my-1 h-px bg-[var(--color-border)]" />
+                <button type="button" class="menu-item menu-item--danger" :disabled="resetting || !files.length" @click="askReset">
+                  <Icon icon="lucide:trash-2" class="h-4 w-4 shrink-0" />
+                  <span class="flex-1 text-left">Delete all data</span>
+                </button>
+              </div>
+            </Transition>
           </div>
         </div>
       </div>
+    </header>
 
-      <!-- Neu-Analyse als Modal (ausgeloest vom prominenten Sidebar-Button). -->
-      <Teleport to="body">
-        <Transition name="modal">
+    <!-- Neu-Analyse als Modal (ausgeloest vom Primaerbutton der Command-Bar). -->
+    <Teleport to="body">
+      <Transition name="modal">
         <div
           v-if="showNew"
           class="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 backdrop-blur-sm"
@@ -428,145 +486,117 @@ async function confirmReset() {
                 <Icon icon="lucide:x" class="h-5 w-5" />
               </button>
             </div>
-          <div class="grid gap-3 lg:grid-cols-[1fr_280px]">
-            <div class="min-w-0">
-              <div class="mb-2 flex items-center justify-between gap-2">
-                <!-- Eingabemodus: Code einfuegen vs. .java-Datei(en) hochladen (beide fuellen `source`). -->
-                <div class="inline-flex rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-0.5 text-xs">
-                  <button
-                    type="button"
-                    class="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium transition"
-                    :class="inputMode === 'paste' ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] shadow-sm' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
-                    @click="inputMode = 'paste'"
+            <div class="grid gap-3 lg:grid-cols-[1fr_280px]">
+              <div class="min-w-0">
+                <div class="mb-2 flex items-center justify-between gap-2">
+                  <!-- Eingabemodus: Code einfuegen vs. .java-Datei(en) hochladen (beide fuellen `source`). -->
+                  <div class="inline-flex rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-0.5 text-xs">
+                    <button
+                      type="button"
+                      class="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium transition"
+                      :class="inputMode === 'paste' ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] shadow-sm' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
+                      @click="inputMode = 'paste'"
+                    >
+                      <Icon icon="lucide:code-2" class="h-3.5 w-3.5" />
+                      Paste code
+                    </button>
+                    <button
+                      type="button"
+                      class="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium transition"
+                      :class="inputMode === 'file' ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] shadow-sm' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
+                      @click="inputMode = 'file'"
+                    >
+                      <Icon icon="lucide:upload" class="h-3.5 w-3.5" />
+                      Upload file
+                    </button>
+                  </div>
+                  <label
+                    v-if="inputMode === 'file'"
+                    class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)]"
                   >
-                    <Icon icon="lucide:code-2" class="h-3.5 w-3.5" />
-                    Paste code
-                  </button>
-                  <button
-                    type="button"
-                    class="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium transition"
-                    :class="inputMode === 'file' ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] shadow-sm' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
-                    @click="inputMode = 'file'"
-                  >
-                    <Icon icon="lucide:upload" class="h-3.5 w-3.5" />
-                    Upload file
-                  </button>
+                    <Icon icon="lucide:file-code" class="h-3.5 w-3.5" />
+                    <span v-if="filename" class="max-w-[10rem] truncate">{{ filename }}</span>
+                    <span v-else>Choose .java file(s)</span>
+                    <input type="file" accept=".java" multiple class="hidden" @change="onFile" />
+                  </label>
                 </div>
-                <label
-                  v-if="inputMode === 'file'"
-                  class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)]"
-                >
-                  <Icon icon="lucide:file-code" class="h-3.5 w-3.5" />
-                  <span v-if="filename" class="max-w-[10rem] truncate">{{ filename }}</span>
-                  <span v-else>Choose .java file(s)</span>
-                  <input type="file" accept=".java" multiple class="hidden" @change="onFile" />
+                <div class="h-44">
+                  <JavaCodeEditor v-model="source" />
+                </div>
+                <!-- Live-Vorschau der erkannten Klassen (Name · Package), bevor gespeichert wird. -->
+                <div v-if="detectedClasses.length" class="mt-2 flex flex-wrap items-center gap-1.5">
+                  <span class="text-[11px] font-medium text-[var(--color-text-muted)]">
+                    {{ detectedClasses.length }} class(es) detected:
+                  </span>
+                  <span
+                    v-for="c in detectedClasses"
+                    :key="(c.package || '') + '.' + c.class_name"
+                    class="inline-flex items-center gap-1 rounded-md bg-[var(--color-accent-soft)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-accent)]"
+                    :title="c.package ? c.package + '.' + c.class_name : c.class_name"
+                  >
+                    <Icon icon="lucide:box" class="h-3 w-3 shrink-0" />
+                    <span class="font-mono"><span v-if="c.package" class="opacity-70">{{ c.package }}·</span>{{ c.class_name }}</span>
+                  </span>
+                </div>
+              </div>
+              <div class="flex flex-col">
+                <label class="mb-2 block">
+                  <span class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Project context (optional)</span>
+                  <textarea
+                    v-model="userContext"
+                    spellcheck="false"
+                    rows="4"
+                    placeholder="e.g. Windchill background, module purpose… – fed into every AI prompt."
+                    class="w-full resize-y rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-xs text-[var(--color-text)] outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
+                  />
                 </label>
-              </div>
-              <div class="h-44">
-                <JavaCodeEditor v-model="source" />
-              </div>
-              <!-- Live-Vorschau der erkannten Klassen (Name · Package), bevor gespeichert wird. -->
-              <div v-if="detectedClasses.length" class="mt-2 flex flex-wrap items-center gap-1.5">
-                <span class="text-[11px] font-medium text-[var(--color-text-muted)]">
-                  {{ detectedClasses.length }} class(es) detected:
-                </span>
-                <span
-                  v-for="c in detectedClasses"
-                  :key="(c.package || '') + '.' + c.class_name"
-                  class="inline-flex items-center gap-1 rounded-md bg-[var(--color-accent-soft)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-accent)]"
-                  :title="c.package ? c.package + '.' + c.class_name : c.class_name"
+                <p v-if="error" class="mb-2 text-xs text-[var(--color-danger)]">{{ error }}</p>
+                <button
+                  type="button"
+                  class="mt-auto inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
+                  :disabled="analyzing || !source.trim()"
+                  @click="analyze"
                 >
-                  <Icon icon="lucide:box" class="h-3 w-3 shrink-0" />
-                  <span class="font-mono"><span v-if="c.package" class="opacity-70">{{ c.package }}·</span>{{ c.class_name }}</span>
-                </span>
+                  <Icon v-if="analyzing" icon="lucide:loader-2" class="h-4 w-4 animate-spin" />
+                  {{ analyzing ? 'Analyzing…' : 'Analyze' }}
+                </button>
               </div>
             </div>
-            <div class="flex flex-col">
-              <label class="mb-2 block">
-                <span class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Project context (optional)</span>
-                <textarea
-                  v-model="userContext"
-                  spellcheck="false"
-                  rows="4"
-                  placeholder="e.g. Windchill background, module purpose… – fed into every AI prompt."
-                  class="w-full resize-y rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-xs text-[var(--color-text)] outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
-                />
-              </label>
-              <p v-if="error" class="mb-2 text-xs text-[var(--color-danger)]">{{ error }}</p>
-              <button
-                type="button"
-                class="mt-auto inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
-                :disabled="analyzing || !source.trim()"
-                @click="analyze"
-              >
-                <Icon v-if="analyzing" icon="lucide:loader-2" class="h-4 w-4 animate-spin" />
-                {{ analyzing ? 'Analyzing…' : 'Analyze' }}
-              </button>
-            </div>
-          </div>
           </section>
         </div>
-        </Transition>
-      </Teleport>
-
-      <!-- Nicht-blockierendes Live-Banner fuer die gewaehlte Klasse -->
-      <p v-if="queueNotice" class="mt-3 rounded-lg bg-[var(--color-surface-offset)] px-3 py-2 text-xs text-[var(--color-text-muted)]">{{ queueNotice }}</p>
-      <div
-        v-if="selectedProgress && (selectedProgress.status === 'running' || selectedProgress.status === 'queued')"
-        class="mt-3 flex items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-accent-soft)] px-3 py-2 text-sm text-[var(--color-accent)]"
-      >
-        <Icon icon="lucide:loader-2" class="h-4 w-4 shrink-0 animate-spin" />
-        <span class="min-w-0 flex-1 truncate">
-          Generating summary
-          <template v-if="selectedProgress.current"> for <code class="font-mono">{{ selectedProgress.current.name }}()</code></template>
-          …
-        </span>
-        <span v-if="selectedProgress.total > 1" class="shrink-0 tabular-nums opacity-80">{{ selectedProgress.done }}/{{ selectedProgress.total }}</span>
-      </div>
-      <p
-        v-else-if="selectedProgress && selectedProgress.ollamaUnavailable"
-        class="mt-3 rounded-lg px-3 py-2 text-xs text-[var(--color-warning)]"
-        style="background-color: color-mix(in srgb, var(--color-warning) 15%, transparent)"
-      >
-        Ollama was unreachable – the existing Javadoc/fallback text was used.
-      </p>
-    </div>
+      </Transition>
+    </Teleport>
 
     <!-- 3-Spalten-Layout (ab lg per Drag verschiebbar; darunter einspaltig gestapelt). -->
     <div
-      class="grid min-h-0 flex-1 px-5 pb-5"
+      class="grid min-h-0 flex-1 p-4"
       :class="isWide ? '' : 'grid-cols-1 gap-4'"
       :style="isWide ? { gridTemplateColumns: gridTemplate } : null"
     >
       <!-- Spalte 1: Suche + Package-Tree -->
-      <section class="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)]">
-        <div class="shrink-0 space-y-2 border-b border-[var(--color-border)] p-2">
-          <!-- Prominenter Einstieg: neue .java-Quellen analysieren (oeffnet das Modal). -->
-          <button
-            type="button"
-            class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--color-accent)] px-3 py-2 text-sm font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)]"
-            @click="showNew = true"
-          >
-            <Icon icon="lucide:plus" class="h-4 w-4" />
-            Analyze code
-          </button>
+      <section class="flex min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]">
+        <div class="shrink-0 border-b border-[var(--color-border)] p-2">
           <div class="relative">
             <Icon icon="lucide:search" class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]" />
             <input
               v-model="search"
               type="text"
-              placeholder="Search classes…"
+              placeholder="Filter classes…"
               class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 pl-8 pr-7 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
             />
             <button
               v-if="search"
               type="button"
-              class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+              class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
+              title="Clear filter"
               @click="search = ''"
             >
               <Icon icon="lucide:x" class="h-3.5 w-3.5" />
             </button>
           </div>
+          <p v-if="searching" class="mt-1.5 px-1 font-mono text-[10px] text-[var(--color-text-muted)]">
+            {{ filteredFiles.length }} of {{ classCount }} match
+          </p>
         </div>
 
         <ul class="min-h-0 flex-1 overflow-y-auto p-1.5">
@@ -575,37 +605,54 @@ async function confirmReset() {
             <button
               v-if="row.kind === 'folder'"
               type="button"
-              class="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)]"
-              :style="{ paddingLeft: row.depth * 12 + 6 + 'px' }"
+              class="tree-row group/f flex w-full items-center gap-1.5 rounded-md py-1 pl-1 pr-2 text-left text-[11px] font-semibold text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
               @click="toggleFolder(row.fullPath)"
             >
-              <Icon icon="lucide:chevron-down" class="h-3 w-3 shrink-0 transition-transform" :class="row.open ? '' : '-rotate-90'" />
-              <span class="min-w-0 flex-1 truncate font-mono normal-case tracking-normal">{{ row.label }}</span>
-              <span class="shrink-0 text-[10px] tabular-nums opacity-70">{{ row.count }}</span>
+              <span v-for="d in row.depth" :key="d" class="tree-guide" />
+              <Icon icon="lucide:chevron-down" class="h-3 w-3 shrink-0 opacity-70 transition-transform" :class="row.open ? '' : '-rotate-90'" />
+              <Icon icon="lucide:package" class="h-3.5 w-3.5 shrink-0 opacity-70" />
+              <span class="min-w-0 flex-1 truncate font-mono">{{ row.label }}</span>
+              <span class="shrink-0 font-mono text-[10px] tabular-nums opacity-60">{{ row.count }}</span>
             </button>
 
             <!-- Klasse -->
             <div v-else class="group relative">
               <button
                 type="button"
-                class="flex w-full items-center gap-2 rounded-md py-1.5 pr-8 text-left transition"
-                :style="{ paddingLeft: row.depth * 12 + 10 + 'px' }"
-                :class="selectedFileId === row.file.id ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-surface-offset)]'"
+                class="tree-row flex w-full items-center gap-1.5 rounded-md py-1.5 pl-1 pr-8 text-left transition"
+                :class="selectedFileId === row.file.id
+                  ? 'is-selected bg-[var(--color-accent-soft)] text-[var(--color-accent)]'
+                  : 'hover:bg-[var(--color-surface-offset)]'"
                 @click="selectFile(row.file.id)"
               >
-                <Icon icon="lucide:braces" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
-                <span class="min-w-0 flex-1 truncate text-sm">
-                  <Icon v-if="row.file.description" icon="lucide:sparkles" class="mr-0.5 inline-block h-3.5 w-3.5 align-text-bottom text-[var(--color-accent)]" title="AI-analyzed" /><template v-for="(p, i) in hl(row.file.class_name)" :key="i"><mark v-if="p.m" class="rounded-sm bg-transparent px-0 font-semibold text-[var(--color-accent)]">{{ p.t }}</mark><template v-else>{{ p.t }}</template></template>
+                <span v-for="d in row.depth" :key="d" class="tree-guide" />
+                <Icon
+                  icon="lucide:braces"
+                  class="h-3.5 w-3.5 shrink-0"
+                  :class="selectedFileId === row.file.id ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'"
+                />
+                <span class="min-w-0 flex-1 truncate text-[13px]" :class="selectedFileId === row.file.id ? 'font-semibold' : ''">
+                  <template v-for="(p, i) in hl(row.file.class_name)" :key="i"><mark v-if="p.m" class="rounded-sm bg-transparent px-0 font-semibold text-[var(--color-accent)]">{{ p.t }}</mark><template v-else>{{ p.t }}</template></template>
                 </span>
+                <!-- Status rechts: laufende Queue schlaegt den ruhenden AI-Punkt. -->
                 <span
                   v-if="progressFor(row.file.id)"
-                  class="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold transition group-hover:opacity-0"
-                  :class="progressFor(row.file.id).status === 'running'
-                    ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]'
-                    : 'text-[var(--color-success)]'"
-                  style="background-color: color-mix(in srgb, var(--color-success) 14%, transparent)"
+                  class="shrink-0 rounded-full px-1.5 font-mono text-[10px] font-semibold tabular-nums transition group-hover:opacity-0"
+                  :class="progressFor(row.file.id).status === 'running' ? 'badge-accent' : 'badge-success'"
                 >
                   {{ progressFor(row.file.id).done }}/{{ progressFor(row.file.id).total }}
+                </span>
+                <Icon
+                  v-else-if="row.file.description"
+                  icon="lucide:sparkles"
+                  class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)] transition group-hover:opacity-0"
+                  title="AI-analyzed"
+                />
+                <span
+                  v-if="row.file.methods?.length"
+                  class="shrink-0 font-mono text-[10px] tabular-nums text-[var(--color-text-muted)] opacity-60 transition group-hover:opacity-0"
+                >
+                  {{ row.file.methods.length }}
                 </span>
               </button>
               <button
@@ -619,8 +666,25 @@ async function confirmReset() {
               </button>
             </div>
           </li>
-          <li v-if="!rows.length" class="px-3 py-6 text-center text-xs text-[var(--color-text-muted)]">
-            {{ searching ? 'No results.' : 'No classes analyzed yet.' }}
+
+          <!-- Leerzustand: getrennt fuer "nichts geladen" und "Filter ohne Treffer". -->
+          <li v-if="!rows.length" class="px-3 py-10 text-center">
+            <template v-if="searching">
+              <Icon icon="lucide:search" class="mx-auto mb-2 h-6 w-6 text-[var(--color-text-muted)] opacity-40" />
+              <p class="text-xs text-[var(--color-text-muted)]">No class matches “{{ search }}”.</p>
+            </template>
+            <template v-else>
+              <Icon icon="lucide:braces" class="mx-auto mb-2 h-6 w-6 text-[var(--color-text-muted)] opacity-40" />
+              <p class="mb-3 text-xs text-[var(--color-text-muted)]">No classes analyzed yet.</p>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--color-accent)] transition hover:bg-[var(--color-surface-offset)]"
+                @click="showNew = true"
+              >
+                <Icon icon="lucide:plus" class="h-3.5 w-3.5" />
+                Add code
+              </button>
+            </template>
           </li>
         </ul>
       </section>
@@ -668,12 +732,50 @@ async function confirmReset() {
         />
         <div
           v-else
-          class="grid h-full place-items-center rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)]/50 px-6 text-center text-sm text-[var(--color-text-muted)]"
+          class="grid h-full place-items-center rounded-xl border border-dashed border-[var(--color-border)] px-6 text-center"
         >
-          Select a class to inspect – from the list or as a node in the graph.
+          <div class="max-w-[15rem]">
+            <span class="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-xl bg-[var(--color-surface-offset)] text-[var(--color-text-muted)]">
+              <Icon icon="lucide:mouse-pointer-click" class="h-5 w-5" />
+            </span>
+            <p class="mb-1 text-sm font-semibold text-[var(--color-text)]">No class selected</p>
+            <p class="text-xs leading-relaxed text-[var(--color-text-muted)]">
+              Pick one from the list or click a node in the graph to see its methods, AI summaries and source.
+            </p>
+          </div>
         </div>
       </div>
     </div>
+
+    <!-- Toast (unten rechts): kurze Rueckmeldungen, ohne das Grid zu verschieben. -->
+    <Teleport to="body">
+      <Transition name="toast">
+        <div
+          v-if="notice"
+          class="fixed bottom-5 right-5 z-[70] flex max-w-sm items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-[13px] shadow-xl backdrop-blur"
+          :class="notice.kind === 'error'
+            ? 'border-[color-mix(in_srgb,var(--color-danger)_40%,transparent)] bg-[color-mix(in_srgb,var(--color-danger)_14%,var(--color-surface-2))] text-[var(--color-danger)]'
+            : 'border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text)]'"
+          role="status"
+        >
+          <Icon
+            :icon="notice.kind === 'error' ? 'lucide:alert-triangle' : 'lucide:check-circle'"
+            class="mt-px h-4 w-4 shrink-0"
+            :class="notice.kind === 'error' ? '' : 'text-[var(--color-success)]'"
+          />
+          <span class="min-w-0 flex-1">{{ notice.text }}</span>
+          <button
+            type="button"
+            class="-mr-1 shrink-0 rounded p-0.5 opacity-60 transition hover:opacity-100"
+            title="Dismiss"
+            aria-label="Dismiss"
+            @click="dismissNotice"
+          >
+            <Icon icon="lucide:x" class="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- Drag-Overlay: erzwingt col-resize global und haelt mousemove vom Vue-Flow-Canvas fern. -->
     <div v-if="isDragging" class="fixed inset-0 z-[60] cursor-col-resize select-none" />
@@ -830,7 +932,7 @@ async function confirmReset() {
       </div>
     </Teleport>
 
-    <!-- KI-Queue-Modal (breit/langgezogen): aus der Header-Anzeige geoeffnet. -->
+    <!-- KI-Queue-Modal (breit/langgezogen): aus der Command-Bar geoeffnet. -->
     <JavaQueueModal :open="queueOpen" @close="queueOpen = false" @select="onQueueSelect" />
   </div>
 </template>
@@ -855,6 +957,61 @@ async function confirmReset() {
 .modal-leave-to section {
   opacity: 0;
   transform: translateY(-8px) scale(0.98);
+}
+
+/* Overflow-Menue: kurzes Aufklappen aus der Button-Kante. */
+.pop-enter-active,
+.pop-leave-active {
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  transform-origin: top right;
+}
+.pop-enter-from,
+.pop-leave-to {
+  opacity: 0;
+  transform: scale(0.96) translateY(-4px);
+}
+
+/* Toast: schiebt sich von rechts ein. */
+.toast-enter-active,
+.toast-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateX(12px);
+}
+
+/* Eintraege des Overflow-Menues (gleiche Geometrie, Farbe unterscheidet nur die Gefahr). */
+.menu-item {
+  @apply flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition;
+  color: var(--color-text);
+}
+.menu-item:hover:not(:disabled) {
+  background: var(--color-surface-offset);
+}
+.menu-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.menu-item--danger {
+  color: var(--color-danger);
+}
+.menu-item--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+}
+
+/* --- Package-Baum: Einrueckung ueber echte Fuehrungslinien statt padding-left ---------- *
+ * Jede Ebene rendert einen 12px-Spacer mit linker Haarlinie – dadurch ist die Hierarchie
+ * auch bei langen, abgeschnittenen Namen ablesbar. */
+.tree-guide {
+  flex: 0 0 12px;
+  align-self: stretch;
+  border-left: 1px solid var(--color-border);
+  margin-left: 5px;
+}
+.tree-row.is-selected .tree-guide {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
 }
 
 /* --- Resizer-Divider zwischen den drei Panels ---------------------------- *
@@ -902,7 +1059,7 @@ async function confirmReset() {
 
 /* Klick-Feedback der Aktions-Buttons: gedrueckt 0.96, federt in 150ms auf 1.0 zurueck. */
 .action-btn {
-  transition: transform 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+  transition: transform 0.15s ease, background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 .action-btn:not(:disabled):active {
   transform: scale(0.96);

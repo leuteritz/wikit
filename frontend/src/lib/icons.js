@@ -60,6 +60,9 @@ import gitFork from '@iconify-icons/lucide/git-fork'
 import arrowUpFromLine from '@iconify-icons/lucide/arrow-up-from-line'
 import unlink from '@iconify-icons/lucide/unlink'
 import layoutGrid from '@iconify-icons/lucide/layout-grid'
+import moreHorizontal from '@iconify-icons/lucide/more-horizontal'
+import packageIcon from '@iconify-icons/lucide/package'
+import mousePointerClick from '@iconify-icons/lucide/mouse-pointer-click'
 
 // --- Phosphor (Duotone, fuer das Brand-Logo) ---
 import phBooksDuotone from '@iconify-icons/ph/books-duotone'
@@ -114,6 +117,9 @@ const ICONS = {
   'lucide:arrow-up-from-line': arrowUpFromLine,
   'lucide:unlink': unlink,
   'lucide:layout-grid': layoutGrid,
+  'lucide:more-horizontal': moreHorizontal,
+  'lucide:package': packageIcon,
+  'lucide:mouse-pointer-click': mousePointerClick,
   'ph:books-duotone': phBooksDuotone,
 }
 
