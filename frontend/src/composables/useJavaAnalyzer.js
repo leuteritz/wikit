@@ -39,7 +39,6 @@ export function useJavaAnalyzer() {
   return {
     ...toRefs(state),
     fetchFiles,
-    fetchGraph: () => api.getJavaGraph(),
     getFile: (id) => api.getJavaFile(id),
     // Versionsverlauf (Changelog) einer Klasse + Quelltext einer einzelnen Version (on-demand).
     getFileVersions: (id) => api.getJavaFileVersions(id),
@@ -93,7 +92,6 @@ export function useJavaAnalyzer() {
       state.error = ''
     },
     summarizeMethod: (id, data) => api.summarizeJavaMethod(id, data),
-    summarizeClass: (id, data) => api.summarizeJavaClass(id, data),
     linkArticle: (id, articleId) => api.linkJavaArticle(id, { article_id: articleId }),
   }
 }

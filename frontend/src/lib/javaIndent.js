@@ -12,7 +12,7 @@
 // Anteil nicht-leerer Zeilen mit fuehrendem Whitespace. Liegt er unter dem Schwellwert, gilt die
 // Quelle als "flach" (praktisch ohne Einzug) und wird neu eingerueckt; sonst 1:1 belassen
 // (bereits gut formatierter Paste soll nicht umformatiert werden).
-export function looksFlat(src, threshold = 0.15) {
+function looksFlat(src, threshold = 0.15) {
   const lines = String(src || '').split('\n')
   let nonEmpty = 0
   let indented = 0

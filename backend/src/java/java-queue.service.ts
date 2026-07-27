@@ -3,8 +3,10 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { interval, map, merge, Observable, Subject } from 'rxjs';
 import { DataSource } from 'typeorm';
 import { FtsService } from '../database/fts.service';
+import { safeJson } from '../common/json.util';
 import { MarkdownService } from '../common/markdown.service';
 import { OllamaService } from '../common/ollama.service';
+import { buildPromptContext } from '../common/prompt-context.util';
 import { SerializerService } from '../common/serializer.service';
 import { JavaFile } from '../entities/java-file.entity';
 import { JavaMethod } from '../entities/java-method.entity';
@@ -96,14 +98,6 @@ export class JavaQueueService {
     private readonly fts: FtsService,
     private readonly serializer: SerializerService,
   ) {}
-
-  private safeJson(str: any, fallback: any): any {
-    try {
-      return JSON.parse(str);
-    } catch {
-      return fallback;
-    }
-  }
 
   private key(fileId: number): string {
     return String(fileId);
@@ -353,8 +347,9 @@ export class JavaQueueService {
   }
 
   // RAG-Kontext: Nutzer-Kontext + Wissen aus frueheren Analysen (java_fts). Die eigene Datei wird
-  // ausgeschlossen, damit sich eine Klasse nicht selbst als "Wissen" zitiert. Muster portiert aus
-  // analysis/analysis.service.ts (buildContext), hier um Abhaengigkeitsnamen in der Query erweitert.
+  // ausgeschlossen, damit sich eine Klasse nicht selbst als "Wissen" zitiert. Hier wird nur die
+  // FTS-Query gebaut (inkl. Abhaengigkeitsnamen); das Zusammensetzen des Prompt-Texts uebernimmt
+  // buildPromptContext (gemeinsam mit analysis/analysis.service.ts).
   private async buildKnowledgeContext(
     file: JavaFile,
     methods: JavaMethod[],
@@ -369,14 +364,7 @@ export class JavaQueueService {
       .filter(Boolean);
     const query = [file.class_name, ...depNames, ...methods.map((m) => m.method_name)].join(' ');
     const known = await this.fts.searchJava(query, 4, file.id);
-
-    const parts: string[] = [];
-    const uc = (userContext || '').trim();
-    if (uc) parts.push(uc);
-    if (known.length) {
-      parts.push('Bekanntes Wissen aus frueheren Analysen:\n' + known.map((k) => `- ${k}`).join('\n'));
-    }
-    return parts.join('\n\n');
+    return buildPromptContext(userContext, known);
   }
 
   // Fuehrt die komplette Analyse einer Klasse aus: erst alle (ggf. nur unanalysierten) Methoden,
@@ -423,7 +411,7 @@ export class JavaQueueService {
           const summary = await this.ollama.generateMethodDescription(
             {
               className: file.class_name,
-              method: { ...m, parameters: this.safeJson(m.parameters, []) },
+              method: { ...m, parameters: safeJson(m.parameters, []) },
               context,
             },
             controller.signal,

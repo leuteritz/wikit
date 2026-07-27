@@ -6,7 +6,7 @@
 // Datenhaltung via useJavaAnalyzer (Dateien/CRUD) + useJavaQueue (KI-Queue, Polling).
 import { ref, reactive, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
-import { useJavaQueue } from '../composables/useJavaQueue.js'
+import { useJavaQueue, isFinishedStatus } from '../composables/useJavaQueue.js'
 import { useJavaGraph } from '../composables/useJavaGraph.js'
 import { buildPackageTree, countClasses, filterClasses, LANGUAGES } from '../composables/useCodeAnalysis.js'
 import { usePanelResize } from '../composables/usePanelResize.js'
@@ -53,8 +53,7 @@ const queueOpen = ref(false) // KI-Queue-Modal offen?
 
 // Kompakte Queue-Anzeige im Header (loest den frueheren Queues-Tab ab). Liest den geteilten
 // useJavaQueue-State; das Polling laeuft bereits ueber ensurePolling() (onMounted).
-const FINISHED = ['done', 'done-with-errors', 'failed', 'cancelled']
-const finishedQueueCount = computed(() => allJobs.value.filter((j) => FINISHED.includes(j.status)).length)
+const finishedQueueCount = computed(() => allJobs.value.filter((j) => isFinishedStatus(j.status)).length)
 const runningQueueJob = computed(() => allJobs.value.find((j) => j.status === 'running') || null)
 const queuedQueueCount = computed(() => allJobs.value.filter((j) => j.status === 'queued').length)
 

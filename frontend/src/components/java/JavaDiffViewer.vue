@@ -4,24 +4,20 @@
 // Zusaetzlich eine zeilenweise Decoration nach Diff-Praefix: `+` gruen, `-` rot, Header/@@ gedaempft.
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { EditorView, lineNumbers, Decoration } from '@codemirror/view'
-import { EditorState, Compartment, StateField } from '@codemirror/state'
+import { EditorState, StateField } from '@codemirror/state'
 import { java } from '@codemirror/lang-java'
-import { syntaxHighlighting, defaultHighlightStyle, indentUnit } from '@codemirror/language'
-import { oneDark } from '@codemirror/theme-one-dark'
-import { useTheme } from '../../composables/useTheme.js'
+import { indentUnit } from '@codemirror/language'
+import { useCodeMirrorTheme } from '../../composables/useCodeMirrorTheme.js'
 
 const props = defineProps({
   diff: { type: String, default: '' },
 })
 
-const { theme } = useTheme()
+// Dark/Light-Umschaltung zentral (identisch in JavaCodeEditor/MarkdownEditor).
+const { themeComp, themeExtension, bindTheme } = useCodeMirrorTheme()
 const editorParent = ref(null)
-const themeComp = new Compartment()
 let view = null
-
-function themeExtension() {
-  return theme.value === 'dark' ? oneDark : syntaxHighlighting(defaultHighlightStyle)
-}
+bindTheme(() => view)
 
 // Zeilenweise Diff-Decoration aus dem Dokument aufbauen: `+`-Zeilen gruen, `-`-Zeilen rot,
 // Datei-/Hunk-Header (---/+++/@@/Index:/diff) gedaempft. Reihenfolge der Checks beachten:
@@ -91,10 +87,6 @@ watch(
     }
   },
 )
-
-watch(theme, () => {
-  view?.dispatch({ effects: themeComp.reconfigure(themeExtension()) })
-})
 
 onBeforeUnmount(() => {
   view?.destroy()

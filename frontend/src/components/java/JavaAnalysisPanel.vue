@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { useJavaAnalysis } from '../../composables/useJavaAnalysis.js'
 import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
 import { Icon } from '../../lib/icons.js'
+import { formatDateTime as fmtDate, formatDuration as fmtDur } from '../../lib/format.js'
 
 const props = defineProps({
   file: { type: Object, required: true },
@@ -98,18 +99,6 @@ async function reRun(m) {
   }
 }
 
-function fmtDate(s) {
-  if (!s) return ''
-  const d = new Date(s)
-  return isNaN(d) ? '' : d.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
-
-// Dauer als mm:ss.
-function fmtDur(ms) {
-  const s = Math.max(0, Math.round((ms || 0) / 1000))
-  const m = Math.floor(s / 60)
-  return `${m}:${String(s % 60).padStart(2, '0')}`
-}
 </script>
 
 <template>

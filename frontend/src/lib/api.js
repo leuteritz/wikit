@@ -25,10 +25,8 @@ export const api = {
   listCategories: () => http('GET', '/categories'),
   createCategory: (data) => http('POST', '/categories', data),
 
-  listTags: () => http('GET', '/tags'),
   search: (q) => http('GET', `/search?q=${encodeURIComponent(q)}`),
 
-  getGraph: () => http('GET', '/relations'),
   createRelation: (data) => http('POST', '/relations', data),
   deleteRelation: (id) => http('DELETE', `/relations/${id}`),
 
@@ -39,7 +37,6 @@ export const api = {
   listJavaFiles: () => http('GET', '/java/files'),
   getJavaFile: (id) => http('GET', `/java/files/${id}`),
   getJavaFileByArticle: (articleId) => http('GET', `/java/files/by-article/${articleId}`),
-  getJavaGraph: () => http('GET', '/java/graph'),
   // Shiki-gehighlightetes Quellcode-Snippet einer Methode (Graph-Edge-Panel).
   getJavaMethodSnippet: (fileId, methodName) =>
     http('GET', `/java/method-snippet?fileId=${encodeURIComponent(fileId)}&methodName=${encodeURIComponent(methodName)}`),
@@ -60,7 +57,6 @@ export const api = {
   recomputeJavaEdges: () => http('POST', '/java/edges/recompute'),
 
   summarizeJavaMethod: (id, data) => http('POST', `/java/methods/${id}/summarize`, data),
-  summarizeJavaClass: (id, data) => http('POST', `/java/files/${id}/summarize-class`, data),
   linkJavaArticle: (id, data) => http('PUT', `/java/files/${id}`, data),
 
   // Backend-gehaltene KI-Generierungs-Queue (HTTP-Polling, kein SSE). Der Zustand lebt im
@@ -70,7 +66,6 @@ export const api = {
   // Alle noch nicht analysierten Klassen gesammelt (topologisch) einreihen.
   analyzeAllJava: (data) => http('POST', '/java/queues/analyze-all', data),
   listJavaQueues: () => http('GET', '/java/queues'),
-  getJavaQueue: (id) => http('GET', `/java/queues/${id}`),
   // Queue-Jobs abbrechen: einzeln (fileId), alle, oder nur die abgeschlossenen ("als gelesen").
   cancelJavaQueue: (fileId) => http('DELETE', `/java/queues/${fileId}`),
   cancelAllJavaQueues: () => http('DELETE', '/java/queues'),

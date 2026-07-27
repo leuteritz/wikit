@@ -16,6 +16,12 @@ import { api } from '../lib/api.js'
 
 const POLL_MS = 3000
 
+// Endzustaende eines Queue-Jobs (Server-Vokabular aus java-queue.service.ts `DONE_STATES`).
+// Einzige Quelle im Frontend: `markAllRead` hier, die Header-Zaehler in CodeView und die
+// Sortierung/Icons im JavaQueueModal lasen die Liste vorher jeweils aus einer eigenen Kopie.
+const FINISHED_STATES = ['done', 'done-with-errors', 'failed', 'cancelled']
+export const isFinishedStatus = (status) => FINISHED_STATES.includes(status)
+
 // Vollstaendige Job-Liste vom Backend (fuer die Queue-Anzeige + das Queue-Modal im Code-View).
 const allJobs = ref([])
 // Schnellzugriff fileId -> Job (1:1, da pro Klasse genau ein Job existiert).
@@ -187,9 +193,8 @@ async function cancelAllJobs() {
 // bleiben in der DB; nur die transienten Queue-Eintraege verschwinden. Optimistisch lokal filtern.
 async function markAllRead() {
   await api.clearFinishedJavaQueues()
-  const done = ['done', 'done-with-errors', 'failed', 'cancelled']
-  allJobs.value = allJobs.value.filter((j) => !done.includes(j.status))
-  for (const k of Object.keys(byFile)) if (done.includes(byFile[k].status)) delete byFile[k]
+  allJobs.value = allJobs.value.filter((j) => !isFinishedStatus(j.status))
+  for (const k of Object.keys(byFile)) if (isFinishedStatus(byFile[k].status)) delete byFile[k]
 }
 
 export function useJavaQueue() {

@@ -12,9 +12,10 @@ import { useArticles } from '../../composables/useArticles.js'
 import JavaCodeEditor from './JavaCodeEditor.vue'
 import JavaDiffViewer from './JavaDiffViewer.vue'
 import { processMethodBody } from '../../lib/javaCode.js'
-import { parseParamNames, markParamOccurrences } from '../../lib/javaParams.js'
+import { parseParamNames, markParamOccurrences, toggleParamHighlight as onParamClick } from '../../lib/javaParams.js'
 import { reindentJava } from '../../lib/javaIndent.js'
 import { copyToClipboard } from '../../lib/clipboard.js'
+import { parseTimestamp as parseTs, formatRelative } from '../../lib/format.js'
 import { api } from '../../lib/api.js'
 import { Icon } from '../../lib/icons.js'
 
@@ -86,30 +87,6 @@ async function toggleSource(v) {
     delete next[v.id]
     openSources.value = next
   }
-}
-
-// SQLite datetime('now') liefert UTC ohne Zeitzone -> als UTC interpretieren.
-function parseTs(ts) {
-  if (!ts) return null
-  const iso = /Z|[+-]\d\d:?\d\d$/.test(ts) ? ts : ts.replace(' ', 'T') + 'Z'
-  const d = new Date(iso)
-  return isNaN(d) ? null : d
-}
-
-// Kompakte Relativzeit (kein date-Helper im Repo). Fallback auf lokale Datums-/Zeitangabe.
-function formatRelative(ts) {
-  const then = parseTs(ts)
-  if (!then) return ts || ''
-  const diff = Math.round((Date.now() - then.getTime()) / 1000)
-  if (diff < 45) return 'just now'
-  if (diff < 90) return 'a minute ago'
-  const mins = Math.round(diff / 60)
-  if (mins < 60) return `${mins} minutes ago`
-  const hrs = Math.round(mins / 60)
-  if (hrs < 24) return `${hrs} hour${hrs === 1 ? '' : 's'} ago`
-  const days = Math.round(hrs / 24)
-  if (days < 30) return `${days} day${days === 1 ? '' : 's'} ago`
-  return then.toLocaleString()
 }
 
 // Zustand der KI-Aenderungs-Zusammenfassung: 'ready' | 'initial' | 'generating' | 'unavailable'.
@@ -277,23 +254,8 @@ onBeforeUnmount(clearHighlights)
 
 // --- Farbige Parameter im Doku-Tab (java-param, wie im Edge-Panel) -------------
 // Jeder Parameter bekommt eine eigene SCHRIFTFARBE (`.java-param-c{0..5}`, in `markParamOccurrences`
-// gesetzt), kein Hintergrund im Ruhezustand. Ein Klick auf eine Variable markiert ALLE Vorkommen
-// dieser Variable im Block mit `.java-param-active` (Hintergrund-Tint aus der eigenen Farbe).
-// Single-Active-Toggle – identisch zu `JavaEdgeDetailPanel.onParamClick`. Reines DOM auf dem
-// v-html-Container (`e.currentTarget` = Block-Scope).
-function onParamClick(e) {
-  const scope = e.currentTarget
-  if (!scope) return
-  const hit = e.target.closest?.('.java-param')
-  const active = scope.querySelector('.java-param-active')?.dataset.var || null
-  scope.querySelectorAll('.java-param-active').forEach((el) => el.classList.remove('java-param-active'))
-  if (hit && hit.dataset.var && hit.dataset.var !== active) {
-    const v = hit.dataset.var
-    scope.querySelectorAll('.java-param').forEach((el) => {
-      if (el.dataset.var === v) el.classList.add('java-param-active')
-    })
-  }
-}
+// gesetzt), kein Hintergrund im Ruhezustand. Der Klick-Handler (`onParamClick`) kommt aus
+// lib/javaParams.js und wird mit dem Edge-Panel geteilt.
 
 const typeBadge = computed(() => ({
   class: 'badge-accent',

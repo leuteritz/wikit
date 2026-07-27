@@ -1,5 +1,6 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { FtsService } from '../database/fts.service';
+import { safeJson } from '../common/json.util';
 import { SerializerService } from '../common/serializer.service';
 
 // Serverseitige FTS5-Volltextsuche mit Snippet-Highlights.
@@ -10,14 +11,6 @@ export class SearchController {
     private readonly fts: FtsService,
     private readonly serializer: SerializerService,
   ) {}
-
-  private safeJson(str: any, fallback: any): any {
-    try {
-      return JSON.parse(str);
-    } catch {
-      return fallback;
-    }
-  }
 
   @Get()
   async search(@Query('q') q?: string): Promise<any[]> {
@@ -52,7 +45,7 @@ export class SearchController {
       signature: this.serializer.buildSignature({
         return_type: r.return_type,
         method_name: r.method_name,
-        parameters: this.safeJson(r.parameters, []),
+        parameters: safeJson(r.parameters, []),
       }),
     }));
 

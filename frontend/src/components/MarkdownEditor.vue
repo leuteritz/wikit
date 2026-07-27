@@ -1,27 +1,22 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue'
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view'
-import { EditorState, Compartment } from '@codemirror/state'
+import { EditorState } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { markdown } from '@codemirror/lang-markdown'
-import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
-import { oneDark } from '@codemirror/theme-one-dark'
 import { renderClientMarkdown } from '../lib/clientMarkdown.js'
-import { useTheme } from '../composables/useTheme.js'
+import { useCodeMirrorTheme } from '../composables/useCodeMirrorTheme.js'
 
 const props = defineProps({ modelValue: { type: String, default: '' } })
 const emit = defineEmits(['update:modelValue'])
 
-const { theme } = useTheme()
+// Dark/Light-Umschaltung zentral (identisch in JavaCodeEditor/JavaDiffViewer).
+const { themeComp, themeExtension, bindTheme } = useCodeMirrorTheme()
 const editorParent = ref(null)
-const themeComp = new Compartment()
 let view = null
 
 const previewHtml = computed(() => renderClientMarkdown(props.modelValue))
-
-function themeExtension() {
-  return theme.value === 'dark' ? oneDark : syntaxHighlighting(defaultHighlightStyle)
-}
+bindTheme(() => view)
 
 onMounted(() => {
   const state = EditorState.create({
@@ -52,11 +47,6 @@ watch(() => props.modelValue, (val) => {
   if (view && val !== view.state.doc.toString()) {
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: val } })
   }
-})
-
-// Editor-Theme dem App-Theme folgen lassen.
-watch(theme, () => {
-  view?.dispatch({ effects: themeComp.reconfigure(themeExtension()) })
 })
 
 onBeforeUnmount(() => view?.destroy())

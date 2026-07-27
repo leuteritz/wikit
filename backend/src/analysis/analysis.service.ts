@@ -2,8 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { FtsService } from '../database/fts.service';
+import { safeJson } from '../common/json.util';
 import { MarkdownService } from '../common/markdown.service';
 import { OllamaService } from '../common/ollama.service';
+import { buildPromptContext } from '../common/prompt-context.util';
 import { JavaFile } from '../entities/java-file.entity';
 import { JavaMethod } from '../entities/java-method.entity';
 import { AnalysisQueue } from './analysis.queue';
@@ -22,14 +24,6 @@ export class AnalysisService {
     private readonly fts: FtsService,
     private readonly queue: AnalysisQueue,
   ) {}
-
-  private safeJson(str: any, fallback: any): any {
-    try {
-      return JSON.parse(str);
-    } catch {
-      return fallback;
-    }
-  }
 
   // Sendet waehrend eines langsamen (auf dem Pi ~40s+) Ollama-Calls periodisch ein
   // Lebenszeichen mit der server-gemessenen Schritt-Laufzeit. Der Single-Worker garantiert,
@@ -81,7 +75,7 @@ export class AnalysisService {
     // Kontext = Nutzer-Kontext (Windchill o. ae.) + Wissen aus frueheren Analysen (Java-FTS).
     const query = [file.class_name, ...methods.map((m) => m.method_name)].join(' ');
     const known = await this.fts.searchJava(query, 4);
-    const context = this.buildContext(userContext, file.id, known);
+    const context = buildPromptContext(userContext, known);
 
     const jobs: Array<(signal: AbortSignal) => Promise<void>> = [];
 
@@ -134,7 +128,7 @@ export class AnalysisService {
               this.ollama.generateMethodDescription(
                 {
                   className: file.class_name,
-                  method: { ...m, parameters: this.safeJson(m.parameters, []) },
+                  method: { ...m, parameters: safeJson(m.parameters, []) },
                   context,
                 },
                 signal,
@@ -170,15 +164,5 @@ export class AnalysisService {
 
     this.queue.enqueue(articleId, jobs);
     return { queued: true, total };
-  }
-
-  private buildContext(userContext: string | undefined, _fileId: number, known: string[]): string {
-    const parts: string[] = [];
-    const uc = (userContext || '').trim();
-    if (uc) parts.push(uc);
-    if (known.length) {
-      parts.push('Bekanntes Wissen aus frueheren Analysen:\n' + known.map((k) => `- ${k}`).join('\n'));
-    }
-    return parts.join('\n\n');
   }
 }

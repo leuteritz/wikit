@@ -3,12 +3,11 @@
 // v-model-Pattern; das Theme folgt dem App-Theme (oneDark / defaultHighlightStyle).
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { EditorView, keymap, lineNumbers, highlightActiveLine, placeholder as cmPlaceholder, Decoration } from '@codemirror/view'
-import { EditorState, Compartment, StateEffect, StateField } from '@codemirror/state'
+import { EditorState, StateEffect, StateField } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { java } from '@codemirror/lang-java'
-import { syntaxHighlighting, defaultHighlightStyle, indentUnit } from '@codemirror/language'
-import { oneDark } from '@codemirror/theme-one-dark'
-import { useTheme } from '../../composables/useTheme.js'
+import { indentUnit } from '@codemirror/language'
+import { useCodeMirrorTheme } from '../../composables/useCodeMirrorTheme.js'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -31,15 +30,12 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue', 'method-click', 'clear-call', 'def-click', 'clear-def'])
 
-const { theme } = useTheme()
+// Dark/Light-Umschaltung zentral (identisch in JavaDiffViewer/MarkdownEditor).
+const { themeComp, themeExtension, bindTheme } = useCodeMirrorTheme()
 const editorParent = ref(null)
-const themeComp = new Compartment()
 let view = null
 let glowTimer = null
-
-function themeExtension() {
-  return theme.value === 'dark' ? oneDark : syntaxHighlighting(defaultHighlightStyle)
-}
+bindTheme(() => view)
 
 // --- Zeilen-Highlight (Such-Sprung / Edge-Panel-Navigation) -------------------
 // StateEffects setzen/loeschen eine Line-Decoration; ein StateField haelt sie. So kann
@@ -353,10 +349,6 @@ watch(() => props.activeCall, (name) => applyActiveCall(name))
 
 // Reaktive Source-Methoden-Block-Markierung: folgt props.activeDefRange (Setzen/Wechseln/Loeschen).
 watch(() => props.activeDefRange, (range) => applyActiveDefRange(range))
-
-watch(theme, () => {
-  view?.dispatch({ effects: themeComp.reconfigure(themeExtension()) })
-})
 
 onBeforeUnmount(() => {
   clearTimeout(glowTimer)

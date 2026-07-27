@@ -7,7 +7,8 @@
 // Aufgaben:
 //  - aus einer Methodensignatur die Parameter-Bezeichner extrahieren (Generics-sicher),
 //  - im aufbereiteten Shiki-HTML jedes wort-genaue Vorkommen eines Parameters mit
-//    <span class="java-param" data-var="<name>"> umschliessen (fuer Faerbung + Klick-Markierung).
+//    <span class="java-param" data-var="<name>"> umschliessen (fuer Faerbung + Klick-Markierung),
+//  - den Klick-Handler dazu bereitstellen (`toggleParamHighlight`).
 
 // Letzten Identifier aus einem Parameter-Fragment ziehen (z. B. "final String name" -> "name",
 // "int[] xs" -> "xs", "String... names" -> "names").
@@ -102,5 +103,24 @@ export function markParamOccurrences(html, names) {
     return root.outerHTML
   } catch {
     return html
+  }
+}
+
+// Klick auf eine Parametervariable: alle Vorkommen IN DIESEM Block hervorheben. Erneuter Klick auf
+// dieselbe Variable hebt die Markierung auf, eine andere schaltet um (Single-Active-Toggle).
+// Reines DOM auf dem v-html-Container -> `e.currentTarget` ist der Block-Scope. Als `@click`
+// direkt verwendbar; genutzt von JavaClassDetail (Doku-Tab) UND JavaEdgeDetailPanel, wo die
+// identische Funktion vorher zweimal stand.
+export function toggleParamHighlight(e) {
+  const scope = e.currentTarget
+  if (!scope) return
+  const hit = e.target.closest?.('.java-param')
+  const active = scope.querySelector('.java-param-active')?.dataset.var || null
+  scope.querySelectorAll('.java-param-active').forEach((el) => el.classList.remove('java-param-active'))
+  if (hit && hit.dataset.var && hit.dataset.var !== active) {
+    const v = hit.dataset.var
+    scope.querySelectorAll('.java-param').forEach((el) => {
+      if (el.dataset.var === v) el.classList.add('java-param-active')
+    })
   }
 }

@@ -3,6 +3,7 @@ import { ref, watch, nextTick, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import CategoryBadge from './CategoryBadge.vue'
 import { Icon } from '../lib/icons.js'
+import { formatDateTime as fmtDate } from '../lib/format.js'
 import { isHighlightableVar, varColorClass } from '../lib/varHighlight.js'
 
 const props = defineProps({
@@ -11,13 +12,6 @@ const props = defineProps({
 defineEmits(['delete'])
 
 const bodyEl = ref(null)
-
-function fmtDate(s) {
-  if (!s) return ''
-  return new Date(s.replace(' ', 'T') + 'Z').toLocaleString('en-GB', {
-    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  })
-}
 
 // Copy-Buttons + Variablen-Highlighting an die (serverseitig gerenderten) Code-Bloecke haengen.
 function enhanceCodeBlocks() {

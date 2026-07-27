@@ -3,6 +3,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, IsNull } from 'typeorm';
 import { createPatch, structuredPatch } from 'diff';
 import { FtsService } from '../database/fts.service';
+import { safeJson } from '../common/json.util';
 import { MarkdownService } from '../common/markdown.service';
 import { OllamaService } from '../common/ollama.service';
 import { SerializerService } from '../common/serializer.service';
@@ -26,14 +27,6 @@ export class JavaService {
     private readonly markdown: MarkdownService,
     private readonly fts: FtsService,
   ) {}
-
-  private safeJson(str: any, fallback: any): any {
-    try {
-      return JSON.parse(str);
-    } catch {
-      return fallback;
-    }
-  }
 
   // Datei analysieren: parsen + speichern (ohne KI -> Graph erscheint sofort).
   async analyze(body: any): Promise<any> {
@@ -407,8 +400,8 @@ export class JavaService {
       throw new NotFoundException(`Methode "${methodName}" in ${file.class_name} nicht gefunden`);
     }
 
-    const parameters = this.safeJson(method.parameters, []);
-    const modifiers = this.safeJson(method.modifiers, []);
+    const parameters = safeJson(method.parameters, []);
+    const modifiers = safeJson(method.modifiers, []);
     const signature = this.serializer.buildSignature({ ...method, parameters, modifiers });
     // Interface-/abstract-Methoden haben keinen Body -> dann die Signatur als Snippet zeigen.
     const hasBody = !!(method.body && method.body.trim());
@@ -471,7 +464,7 @@ export class JavaService {
 
     const summary = await this.ollama.generateMethodDescription({
       className: file?.class_name || '',
-      method: { ...method, parameters: this.safeJson(method.parameters, []) },
+      method: { ...method, parameters: safeJson(method.parameters, []) },
       context: body?.userContext,
     });
 
@@ -489,7 +482,7 @@ export class JavaService {
 
     const updated = await this.ds.getRepository(JavaMethod).findOne({ where: { id } });
     return {
-      method: { ...updated, parameters: this.safeJson(updated!.parameters, []) },
+      method: { ...updated, parameters: safeJson(updated!.parameters, []) },
       summary_html: summaryHtml,
       ollama_unavailable: ollamaUnavailable,
     };

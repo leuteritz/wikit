@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { safeJson } from './json.util';
 import { MarkdownService } from './markdown.service';
 import { Article } from '../entities/article.entity';
 import { ArticleTag } from '../entities/article-tag.entity';
@@ -34,14 +35,6 @@ export class SerializerService {
     const mods = (m.modifiers || []).join(' ');
     // Modifier (falls vorhanden) der Signatur voranstellen: `public static String getId(...)`.
     return `${mods} ${m.return_type || 'void'} ${m.method_name}(${params})`.trim();
-  }
-
-  private safeJson(str: any, fallback: any): any {
-    try {
-      return JSON.parse(str);
-    } catch {
-      return fallback;
-    }
   }
 
   async tagsForArticle(articleId: number): Promise<string[]> {
@@ -108,7 +101,7 @@ export class SerializerService {
     if (withContent) {
       out.content = row.content;
       out.content_html = row.content_html;
-      out.toc = this.safeJson(row.toc, []);
+      out.toc = safeJson(row.toc, []);
       out.relations = await this.relationsForArticle(row.id);
     }
     return out;
@@ -141,8 +134,8 @@ export class SerializerService {
     // damit das Frontend kein Highlighter-Bundle laedt (Architekturprinzip).
     const methods = await Promise.all(
       methodRows.map(async (m) => {
-        const parameters = this.safeJson(m.parameters, []);
-        const modifiers = this.safeJson(m.modifiers, []);
+        const parameters = safeJson(m.parameters, []);
+        const modifiers = safeJson(m.modifiers, []);
         const { html: signatureHtml } = await this.markdown.renderMarkdown(
           '```java\n' + this.buildSignature({ ...m, parameters, modifiers }) + '\n```',
         );

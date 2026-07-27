@@ -5,10 +5,10 @@
 // markiert ALLE Vorkommen im selben Block in genau dieser Farbe (Toggle, mehrere gleichzeitig).
 // KEIN zweiter Highlighter: die Shiki-Token-Spans bleiben, wir setzen nur zusaetzliche Klassen.
 
-export const PALETTE_SIZE = 12
+const PALETTE_SIZE = 12
 
 // Java-Keywords + primitive Typen + Literale -> NICHT als Variable behandeln.
-export const JAVA_KEYWORDS = new Set([
+const JAVA_KEYWORDS = new Set([
   'abstract', 'assert', 'boolean', 'break', 'byte', 'case', 'catch', 'char', 'class', 'const',
   'continue', 'default', 'do', 'double', 'else', 'enum', 'extends', 'final', 'finally', 'float',
   'for', 'goto', 'if', 'implements', 'import', 'instanceof', 'int', 'interface', 'long', 'native',
@@ -20,7 +20,7 @@ export const JAVA_KEYWORDS = new Set([
 const IDENT_RE = /^[A-Za-z_$][\w$]*$/
 
 // djb2-Hash -> Palettenindex. Gleicher Name ⇒ gleiche Farbe (deterministisch, theme-stabil).
-export function hashIndex(name) {
+function hashIndex(name) {
   let h = 5381
   for (let i = 0; i < name.length; i++) h = ((h << 5) + h + name.charCodeAt(i)) | 0
   return Math.abs(h) % PALETTE_SIZE

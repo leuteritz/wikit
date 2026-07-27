@@ -7,7 +7,7 @@
 // Layout: langgezogenes Querformat. Links die sortierte Jobliste (abgeschlossen -> aktiv ->
 // wartend), rechts grossflaechig das Live-Terminal des laufenden Jobs.
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { useJavaQueue } from '../../composables/useJavaQueue.js'
+import { useJavaQueue, isFinishedStatus as isFinished } from '../../composables/useJavaQueue.js'
 import { Icon } from '../../lib/icons.js'
 
 const props = defineProps({
@@ -21,11 +21,6 @@ const { allJobs, liveByKey, cancelJob, cancelAllJobs, markAllRead } = useJavaQue
 function openClass(j) {
   if (j.fileId == null) return
   emit('select', j.fileId)
-}
-
-const FINISHED = ['done', 'done-with-errors', 'failed', 'cancelled']
-function isFinished(s) {
-  return FINISHED.includes(s)
 }
 
 // Eine sortierte Liste: abgeschlossen (neueste finishedAt zuerst) -> laufend -> wartend (neueste

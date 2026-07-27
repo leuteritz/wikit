@@ -1,15 +1,7 @@
-// Sammelexport aller Entities fuer TypeOrmModule.forRoot/forFeature.
-export { Category } from './category.entity';
-export { Article } from './article.entity';
-export { Tag } from './tag.entity';
-export { ArticleTag } from './article-tag.entity';
-export { Relation } from './relation.entity';
-export { JavaFile } from './java-file.entity';
-export { JavaMethod } from './java-method.entity';
-export { JavaDependency } from './java-dependency.entity';
-export { JavaEdge } from './java-edge.entity';
-export { JavaFileVersion } from './java-file-version.entity';
-
+// Sammelliste aller Entities fuer TypeOrmModule.forRoot/forFeature (app.module + common.module).
+// BEWUSST nur `ALL_ENTITIES`: die Entity-Klassen selbst werden ueberall direkt aus ihrer Datei
+// importiert (`../entities/java-file.entity`). Die frueheren Re-Exports hier waren ein zweiter,
+// von niemandem genutzter Importpfad fuer dieselben Klassen.
 import { Category } from './category.entity';
 import { Article } from './article.entity';
 import { Tag } from './tag.entity';

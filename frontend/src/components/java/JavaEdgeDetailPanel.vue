@@ -12,7 +12,7 @@ import { computed, watch, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../../lib/api.js'
 import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
-import { parseParamNames, markParamOccurrences } from '../../lib/javaParams.js'
+import { parseParamNames, markParamOccurrences, toggleParamHighlight as onParamClick } from '../../lib/javaParams.js'
 import { copyToClipboard } from '../../lib/clipboard.js'
 import { Icon } from '../../lib/icons.js'
 
@@ -251,23 +251,6 @@ async function copyCode(key, text) {
 onUnmounted(() => {
   if (copyTimer) clearTimeout(copyTimer)
 })
-
-// Klick auf eine Parametervariable: alle Vorkommen IN DIESEM Block (= aktuelle Methode bzw.
-// Fenster) hervorheben. Erneuter Klick auf dieselbe Variable hebt die Markierung auf; eine andere
-// Variable schaltet um. Reines DOM auf dem v-html-Container (e.currentTarget = Block-Scope).
-function onParamClick(e) {
-  const scope = e.currentTarget
-  if (!scope) return
-  const hit = e.target.closest?.('.java-param')
-  const active = scope.querySelector('.java-param-active')?.dataset.var || null
-  scope.querySelectorAll('.java-param-active').forEach((el) => el.classList.remove('java-param-active'))
-  if (hit && hit.dataset.var && hit.dataset.var !== active) {
-    const v = hit.dataset.var
-    scope.querySelectorAll('.java-param').forEach((el) => {
-      if (el.dataset.var === v) el.classList.add('java-param-active')
-    })
-  }
-}
 
 // Hand-off zu CodeView: Datei vorwaehlen + (optional) Zeile hervorheben, Panel schliessen.
 // `endLine` gesetzt -> CodeView markiert den gesamten Methodenbereich (line..endLine) statt nur
