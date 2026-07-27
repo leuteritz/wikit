@@ -423,14 +423,11 @@ const edges = computed(() => {
   })
 })
 
-// Canvas-Raster in zwei Ebenen (Millimeterpapier-Prinzip): feine Punkte als Nahstruktur, grobe
-// Linien alle 5 Punkte als Orientierung beim Pannen. Beide bewegen sich mit dem Viewport, die
-// Lichtstimmung (CSS-Gradienten auf .vf-canvas) bleibt statisch -> dezenter Tiefeneindruck.
-// Feste rgba-Werte statt color-mix: die Farbe landet als SVG-Attribut, nicht als CSS-Property.
-const gridDotColor = computed(() => (theme.value === 'dark' ? 'rgba(196,186,143,0.16)' : 'rgba(133,126,97,0.22)'))
-// Die groben Linien sollen beim Pannen Orientierung geben, aber im Stillstand fast verschwinden –
-// darueber liegt die Grenze zwischen „Tiefe" und „Karopapier".
-const gridLineColor = computed(() => (theme.value === 'dark' ? 'rgba(196,186,143,0.04)' : 'rgba(133,126,97,0.055)'))
+// Canvas-Raster: ein einzelnes Linienraster, das mit dem Viewport wandert und beim Pannen
+// Orientierung gibt. Deckkraft so gewaehlt, dass es als Gefuege lesbar bleibt, ohne mit den
+// Knoten zu konkurrieren. Feste rgba-Werte statt color-mix: die Farbe landet als SVG-Attribut,
+// nicht als CSS-Property.
+const gridLineColor = computed(() => (theme.value === 'dark' ? 'rgba(196,186,143,0.065)' : 'rgba(133,126,97,0.09)'))
 
 function onNodeClick({ node }) {
   // Klick in den Graph (Node) -> transiente Code-Tab-Highlights verwerfen (Spec: „Node ohne Kante").
@@ -648,7 +645,7 @@ watch(
 
 <template>
   <div
-    class="vf-canvas relative h-full w-full overflow-hidden rounded-xl border border-[var(--color-border)]"
+    class="relative h-full w-full overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]"
   >
     <div v-if="!files.length" class="absolute inset-0 grid place-items-center px-6 text-center">
       <div class="max-w-xs">
@@ -713,9 +710,7 @@ watch(
         </div>
       </template>
 
-      <!-- Grobes Linienraster zuerst (liegt hinten), feine Punkte darueber. -->
-      <Background id="graph-grid-coarse" variant="lines" :gap="132" :line-width="1" :color="gridLineColor" />
-      <Background id="graph-grid-fine" variant="dots" :gap="22" :size="1.4" :color="gridDotColor" />
+      <Background variant="lines" :gap="110" :line-width="1" :color="gridLineColor" />
     </VueFlow>
 
     <!-- Canvas-Chrome unten: Werkzeuge links, Legende rechts. Beide schweben am unteren Rand,
@@ -939,55 +934,6 @@ watch(
   border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
   background: var(--color-accent-soft);
 }
-/* --- Canvas-Lichtstimmung ------------------------------------------------- *
- * Der Graph-Bereich ist die groesste zusammenhaengende Flaeche der Ansicht; als reine
- * Einheitsfarbe wirkt er wie ein Loch. Drei sehr schwache Ebenen geben ihm Tiefe, ohne mit
- * den Knoten zu konkurrieren – bewusst STATISCH (bewegt sich nicht mit dem Viewport), damit
- * sie als Raumlicht gelesen wird und nicht als Inhalt:
- *   1. warmer Akzent-Schimmer oben links (Lichtquelle)
- *   2. kuehler Cyan-Hauch unten rechts (Gegenlicht, bricht die Monochromie)
- *   3. weiche Vignette – laesst die Knoten in der Mitte schweben
- * Deckkraft absichtlich im 4–8-%-Bereich: sichtbar als Stimmung, nie als Muster. */
-.vf-canvas {
-  background-color: var(--color-surface);
-  background-image:
-    radial-gradient(
-      1100px 620px at 12% -12%,
-      color-mix(in srgb, var(--color-accent) 12%, transparent),
-      transparent 62%
-    ),
-    radial-gradient(
-      880px 520px at 104% 112%,
-      color-mix(in srgb, var(--color-cyan) 9%, transparent),
-      transparent 60%
-    ),
-    radial-gradient(
-      130% 110% at 50% 45%,
-      transparent 50%,
-      color-mix(in srgb, var(--color-text) 9%, transparent) 100%
-    );
-}
-/* Im Dark-Mode traegt der warme Schimmer weniger -> minimal kraeftiger, Vignette dagegen
-   zurueckhaltender (dunkle Raender wuerden sonst zu einer harten Kante zulaufen). */
-html.dark .vf-canvas {
-  background-image:
-    radial-gradient(
-      1100px 620px at 12% -12%,
-      color-mix(in srgb, var(--color-accent) 11%, transparent),
-      transparent 62%
-    ),
-    radial-gradient(
-      880px 520px at 104% 112%,
-      color-mix(in srgb, var(--color-cyan) 9%, transparent),
-      transparent 60%
-    ),
-    radial-gradient(
-      130% 110% at 50% 45%,
-      transparent 55%,
-      rgb(0 0 0 / 0.22) 100%
-    );
-}
-
 /* --- Schwebendes Canvas-Chrome (Werkzeuge + Legende) ---------------------- *
  * Eine gemeinsame „Dock"-Optik: abgerundete Glas-Pille am unteren Canvas-Rand. */
 .vf-dock {
