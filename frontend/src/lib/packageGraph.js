@@ -28,9 +28,14 @@ export function commonPackagePrefix(files) {
   if (!lists.length) return ''
   const first = lists[0]
   let depth = 0
-  while (depth < first.length - 1) {
+  // Bis zum echten gemeinsamen Praefix laufen. Eine Klasse, die GENAU im Praefix liegt, geht
+  // dabei nicht verloren: buildPackageLevel zeigt sie als direkten Klassenknoten dieser Ebene.
+  // (Frueher stoppte die Schleife eine Ebene frueher – lagen Klassen direkt in `com.acme` und
+  // weitere in `com.acme.billing`, war der Praefix `com` und die Startebene bestand aus einem
+  // einzigen Knoten `acme`: ein Klick ohne jede Information.)
+  while (depth < first.length) {
     const seg = first[depth]
-    if (!lists.every((l) => l.length > depth + 1 && l[depth] === seg)) break
+    if (!lists.every((l) => l.length > depth && l[depth] === seg)) break
     depth++
   }
   return first.slice(0, depth).join('.')
@@ -116,6 +121,11 @@ export function buildPackageLevel({ files = [], classEdges = [], basePath = '' }
       internalByKey.set(a, (internalByKey.get(a) || 0) + 1)
       continue
     }
+    // Klasse -> Klasse NICHT aggregieren: liegen beide Enden als echte Klassenknoten auf dieser
+    // Ebene, zeichnet der regulaere Kantenpfad diese Verbindung bereits – und zwar mit der
+    // besseren Information (Methodennamen, klickbar). Eine zusaetzliche Aggregatkante daneben
+    // waere dieselbe Beziehung ein zweites Mal, nur aermer beschriftet.
+    if (a.startsWith('c:') && b.startsWith('c:')) continue
     const k = `${a}->${b}`
     const cur = groupEdges.get(k)
     if (cur) cur.count++

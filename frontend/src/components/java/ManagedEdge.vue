@@ -92,9 +92,10 @@ const d = computed(() => props.data || {})
     <div
       class="me-label me-label--agg"
       :style="{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }"
-      :title="`${d.count} class relation(s) – open a package to see them`"
+      :title="`${d.count} class-to-class relation(s) bundled here – open a package to see them individually`"
     >
-      <span class="me-method me-count"><Icon icon="lucide:arrow-right" class="me-ic" />{{ d.count }}</span>
+      <!-- „N links" statt eines nackten Pfeils: die Zahl allein liess offen, WAS gezaehlt wird. -->
+      <span class="me-method me-count"><Icon icon="lucide:git-fork" class="me-ic" />{{ d.count }} links</span>
     </div>
   </EdgeLabelRenderer>
 
