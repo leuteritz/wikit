@@ -83,8 +83,16 @@ const PACKAGE_MODE_FROM = 150
 // 30 s Layout+Render und blockieren dabei alles. Darueber wird abgeschnitten (sichtbar
 // angeschrieben) bzw. der Klassen-Umschalter gesperrt.
 const CLASS_RENDER_LIMIT = 400
-const REVIEW_COLOR = '#b8862f' // warmes Gold (uncertain / „Please review")
-const USES_COLOR = '#9a7fb0' // Struktur-/Typ-Bezug (uses): gedaempftes Lavendel, gestrichelt, ohne Label
+// --- Kanten-Vokabular ---------------------------------------------------------------------
+// Jeder Kantentyp bekommt eine EIGENE Farbe UND ein eigenes Strichmuster. Die doppelte Codierung
+// ist Absicht: bei Farbfehlsichtigkeit, im Ausdruck und beim starken Herauszoomen traegt das
+// Muster die Unterscheidung weiter. Alle Farben kommen aus den Palette-Tokens (theme-faehig) –
+// vorher standen hier feste Hex-Werte, die im Dark-Mode neben den Tokens lagen.
+const CALL_COLOR = 'var(--color-accent)' // Methodenaufruf – der Hauptfall
+const REVIEW_COLOR = 'var(--color-warning)' // unsicher erkannt („Please review")
+const USES_COLOR = 'var(--color-cyan)' // Struktur-/Typ-Bezug (Feld, Parameter, new X())
+const IMPORT_COLOR = 'var(--color-text-muted)' // nur importiert, kein erkannter Zugriff
+const AGG_COLOR = 'var(--color-thistle)' // gebuendelte Package-Beziehungen (andere Ebene)
 const DEBUG_EDGES = true // Debug (F12): loggt geladene Klassen + nicht gezeichnete Server-Kanten
 
 // Rollen-Metadaten (Node-Glyph + Legende). Die FARBE kommt ueber die CSS-Klasse `vf-role-<role>`
@@ -360,7 +368,8 @@ const layout = computed(() => {
         markerEnd: { type: MarkerType.ArrowClosed, color: USES_COLOR },
         data: {
           kind: 'uses',
-          edgeStyle: { stroke: USES_COLOR, strokeWidth: 1.5, strokeDasharray: '4 3', cursor: 'default' },
+          // Kurz gestrichelt – deutlich anders als der Punktraster der Import-Kante.
+          edgeStyle: { stroke: USES_COLOR, strokeWidth: 1.6, strokeDasharray: '5 3', cursor: 'default' },
         },
       })
       continue
@@ -384,7 +393,7 @@ const layout = computed(() => {
     const single = methods.length === 1
     const allManual = methods.every((m) => m.isManual)
     const needsReview = methods.some((m) => m.needsReview)
-    const stroke = needsReview ? REVIEW_COLOR : 'var(--color-accent)'
+    const stroke = needsReview ? REVIEW_COLOR : CALL_COLOR
     edges.push({
       id: `call:${definerFile.id}-${callerFile.id}`,
       source: `c:${definerFile.id}`,
@@ -434,10 +443,17 @@ const layout = computed(() => {
         source: `c:${target.id}`,
         target: `c:${f.id}`,
         type: 'managed',
-        markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--color-text-muted)' },
+        markerEnd: { type: MarkerType.ArrowClosed, color: IMPORT_COLOR },
         data: {
           kind: 'import',
-          edgeStyle: { stroke: 'var(--color-text-muted)', strokeWidth: 1.5, strokeDasharray: '5 4' },
+          // Punktraster statt Striche: die schwaechste Aussage bekommt auch die leiseste Linie.
+          edgeStyle: {
+            stroke: IMPORT_COLOR,
+            strokeWidth: 1.4,
+            strokeDasharray: '1 5',
+            strokeLinecap: 'round',
+            opacity: 0.75,
+          },
         },
       })
     }
@@ -454,11 +470,12 @@ const layout = computed(() => {
         source: ge.source,
         target: ge.target,
         type: 'managed',
-        markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--color-accent)' },
+        markerEnd: { type: MarkerType.ArrowClosed, color: AGG_COLOR },
         data: {
           kind: 'aggregate',
           count: ge.count,
-          edgeStyle: { stroke: 'var(--color-accent)', strokeWidth: width, opacity: 0.85, cursor: 'default' },
+          // Eigene Farbe, weil es eine ANDERE EBENE ist: hier steht ein Knoten fuer viele Klassen.
+          edgeStyle: { stroke: AGG_COLOR, strokeWidth: width, opacity: 0.9, cursor: 'default' },
         },
       })
     }
@@ -1141,27 +1158,43 @@ watch(
             <span>{{ ROLE_META[role].legend }}</span>
           </div>
 
-          <div class="legend-head mt-1.5">Edges</div>
+          <!-- Package-Knoten gibt es erst ab der aggregierten Ebene -> nur dort erklaeren. -->
+          <div v-if="packageMode" class="legend-row">
+            <span class="legend-node-swatch" style="background: var(--color-thistle)" />
+            <Icon icon="lucide:folder" class="h-3.5 w-3.5 shrink-0" style="color: var(--color-thistle)" />
+            <span>Package · click to open</span>
+          </div>
+
+          <div class="legend-head mt-1.5">Edges · what connects them</div>
           <div class="legend-row">
             <span class="legend-line" style="background: var(--color-accent)" />
-            <span>calls · clickable</span>
+            <span><b>Calls</b> a method — click for the code</span>
           </div>
           <div class="legend-row">
-            <span class="legend-line legend-line--dashed" style="color: var(--color-accent)" />
-            <span>manual edge</span>
+            <span class="legend-line legend-line--longdash" style="color: var(--color-accent)" />
+            <span><b>Manual</b> link you drew yourself</span>
           </div>
           <div class="legend-row">
-            <span class="legend-line" style="background: #b8862f" />
-            <span>uncertain · “Please review”</span>
+            <span class="legend-line" style="background: var(--color-warning)" />
+            <span><b>Uncertain</b> match — “Please review”</span>
           </div>
           <div class="legend-row">
-            <span class="legend-line legend-line--dashed" style="color: var(--color-text-muted)" />
-            <span>imported by</span>
+            <span class="legend-line legend-line--dashed" style="color: var(--color-cyan)" />
+            <span><b>Uses</b> the type — field, parameter, <code>new X()</code></span>
           </div>
           <div class="legend-row">
-            <span class="legend-line legend-line--dashed" style="color: #9a7fb0" />
-            <span>uses type (variable/new)</span>
+            <span class="legend-line legend-line--dotted" style="color: var(--color-text-muted)" />
+            <span><b>Imports</b> only — no access found</span>
           </div>
+          <div v-if="packageMode" class="legend-row">
+            <span class="legend-line legend-line--thick" style="background: var(--color-thistle)" />
+            <span><b>Bundle</b> of class relations between packages</span>
+          </div>
+          <div class="legend-row">
+            <span class="legend-line legend-line--lit" style="background: var(--color-edge-highlight)" />
+            <span><b>Highlighted</b> from a click in the source code</span>
+          </div>
+          <p class="legend-hint">Arrows point from the definition to the class using it.</p>
 
           <div class="legend-head mt-1.5">Badges</div>
           <div class="legend-row">
@@ -1619,10 +1652,46 @@ watch(
   height: 2px;
   border-radius: 999px;
 }
+/* Die Muster spiegeln exakt die Kanten im Canvas – die Legende ist sonst eine huebsche Luege. */
 .legend-line--dashed {
   height: 0;
   background: none;
   border-top: 2px dashed currentColor;
+}
+.legend-line--longdash {
+  height: 0;
+  background: none;
+  border-top: 2px dashed currentColor;
+  /* laengere Striche = manuelle Kante (6 4 im Canvas) */
+  border-image: repeating-linear-gradient(to right, currentColor 0 6px, transparent 6px 10px) 2;
+}
+.legend-line--dotted {
+  height: 0;
+  background: none;
+  border-top: 2px dotted currentColor;
+  opacity: 0.8;
+}
+.legend-line--thick {
+  height: 4px;
+}
+.legend-line--lit {
+  height: 3px;
+  box-shadow: 0 0 6px color-mix(in srgb, var(--color-edge-highlight) 70%, transparent);
+}
+.legend-hint {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--color-border);
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+.legend-row code {
+  border-radius: 3px;
+  background: var(--color-surface-offset);
+  padding: 0 3px;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 10px;
 }
 /* Legenden-Abschnittsueberschrift (Nodes / Edges) – dezent, damit die laengere Legende scanbar bleibt. */
 .legend-head {

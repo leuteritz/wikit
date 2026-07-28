@@ -183,11 +183,14 @@ const d = computed(() => props.data || {})
   border-style: dashed;
 }
 /* Aggregat-Label: reine Zahl, nicht klickbar -> Cursor + Hover-Affordanz zuruecknehmen. */
+/* Aggregat-Label traegt die Farbe seiner Kante -> Linie und Beschriftung sind als EINE Aussage
+   lesbar, und der Unterschied zur Call-Kante (Akzent) bleibt auch beim Ueberfliegen bestehen. */
 .me-label--agg {
   cursor: default;
+  border-color: color-mix(in srgb, var(--color-thistle) 45%, var(--color-border));
+  color: var(--color-thistle);
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
-  opacity: 0.9;
 }
 .me-label--review {
   border-color: color-mix(in srgb, #d4a017 60%, var(--color-border));
