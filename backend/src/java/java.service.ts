@@ -14,6 +14,22 @@ import { JavaFile } from '../entities/java-file.entity';
 import { JavaFileVersion } from '../entities/java-file-version.entity';
 import { JavaMethod } from '../entities/java-method.entity';
 
+// java-parser (chevrotain) wirft bei einem Syntaxfehler eine mehrere Kilobyte lange Meldung
+// ("Expecting: one of these possible Token sequences: 1. … 157. …"). Fuer die UI bleibt davon
+// nur die Fundstelle uebrig – der Rest ist fuer den Nutzer wertlos.
+function shortParseMessage(message: string): string {
+  const msg = String(message || '').trim();
+  const pos = /line:\s*(\d+),\s*column:\s*(\d+)/.exec(msg);
+  if (pos) return `Syntaxfehler in Zeile ${pos[1]}, Spalte ${pos[2]}`;
+  return msg.split('\n')[0].slice(0, 200);
+}
+
+// Uebersprungenen Abschnitt benennen: Typname aus dem Chunk raten + Fundstelle des Fehlers.
+function describeChunkError(chunk: string, message: string): string {
+  const name = /\b(?:class|interface|enum|record)\s+([A-Za-z_$][\w$]*)/.exec(chunk)?.[1];
+  return `Skipped ${name ? `"${name}"` : 'one section'} – ${shortParseMessage(message)}.`;
+}
+
 // Java-Code-Analyse: parsen (rein JS), speichern, Graph liefern, KI-Summaries on-demand.
 // Muster wie ArticlesService: erst async arbeiten, DANN in einer ds.transaction() schreiben.
 @Injectable()
@@ -38,7 +54,7 @@ export class JavaService {
     try {
       parsed = parseJava(source);
     } catch (e: any) {
-      throw new BadRequestException(`Parsen fehlgeschlagen: ${e.message}`);
+      throw new BadRequestException(`Parsen fehlgeschlagen: ${shortParseMessage(e.message)}`);
     }
 
     const cls = parsed.primary;
@@ -108,6 +124,7 @@ export class JavaService {
     // 1) In eigenstaendige Klassen-Chunks zerlegen + je Chunk parsen (nur Top-Level-Typ).
     const chunks = splitJavaSources(source);
     const warnings: string[] = [];
+    const parseErrors: string[] = []; // Chunks, die nicht geparst werden konnten
     const seen = new Set<string>(); // FQCN -> bereits im Paste vorgekommen
     const items: Array<{ fqcn: string; pkg: string | null; cls: any; imports: string[]; chunk: string }> = [];
 
@@ -117,7 +134,10 @@ export class JavaService {
       try {
         parsed = parseJava(chunk);
       } catch (e: any) {
-        throw new BadRequestException(`Parsen fehlgeschlagen: ${e.message}`);
+        // Ein einzelner unlesbarer Abschnitt darf einen Paste mit hunderten Klassen nicht
+        // komplett scheitern lassen -> ueberspringen und am Ende gesammelt melden.
+        parseErrors.push(describeChunkError(chunk, e?.message));
+        continue;
       }
       const cls = parsed.primary; // genau ein Top-Level-Typ pro Chunk (Splitter)
       const pkg = parsed.package || null;
@@ -130,7 +150,20 @@ export class JavaService {
       items.push({ fqcn, pkg, cls, imports: parsed.imports, chunk });
     }
 
-    if (!items.length) throw new BadRequestException('Keine Klasse/Interface/Enum im Quelltext gefunden');
+    // Uebersprungene Abschnitte als Warnung sichtbar machen (gedeckelt, damit ein kaputter
+    // Massen-Paste nicht hunderte Zeilen Toast erzeugt).
+    if (parseErrors.length) {
+      warnings.push(...parseErrors.slice(0, 5));
+      if (parseErrors.length > 5) warnings.push(`… and ${parseErrors.length - 5} more section(s) skipped.`);
+    }
+
+    if (!items.length) {
+      throw new BadRequestException(
+        parseErrors.length
+          ? `Parsen fehlgeschlagen – kein Abschnitt war lesbar. ${parseErrors[0]}`
+          : 'Keine Klasse/Interface/Enum im Quelltext gefunden',
+      );
+    }
 
     // 2) DB-Duplikate (class_name + package) ermitteln.
     const repo = this.ds.getRepository(JavaFile);

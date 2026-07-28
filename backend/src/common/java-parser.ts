@@ -359,110 +359,217 @@ function skipLiteral(text: string, i: number, quote: string): number {
   return n;
 }
 
-// Index der letzten `package`/`import`-Anweisung (deren Ende) -> alles davor ist der
-// gemeinsame Header (fuehrende Kommentare + package + imports) einer Compilation-Unit.
-function headerEndIndex(unit: string): number {
-  let end = 0;
-  const re = /^[ \t]*(?:package|import)\b[^;]*;/gm;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(unit)) !== null) end = m.index + m[0].length;
-  return end;
-}
-
-// Eine Compilation-Unit (genau ein Header) in je einen Chunk pro Top-Level-Typ zerlegen.
-// Brace-zaehlend, Strings/Chars/Kommentare werden uebersprungen. Jeder Chunk = Header +
-// genau ein Top-Level-Typ (inkl. dessen geschachtelter Typen) -> einzeln parsebar.
-function splitTopLevelTypes(unit: string): string[] {
-  const header = unit.slice(0, headerEndIndex(unit));
-  const bodies: string[] = [];
-  let i = headerEndIndex(unit);
-  const n = unit.length;
-
+// Ende einer `package`/`import`-Anweisung ab `i` (Index NACH dem `;`). Kommentare zwischen
+// Schluesselwort und Semikolon sind erlaubt und werden mitgenommen.
+function statementEnd(text: string, i: number): number {
+  const n = text.length;
   while (i < n) {
-    while (i < n && /\s/.test(unit[i])) i++; // fuehrende Leerzeichen vor dem Typ
-    if (i >= n) break;
-    const declStart = i;
-    let depth = 0;
-    let opened = false;
-    let bodyEnd = n;
-    while (i < n) {
-      const c = unit[i];
-      const c2 = unit[i + 1];
-      if (c === '/' && c2 === '/') {
-        const e = unit.indexOf('\n', i);
-        i = e === -1 ? n : e;
-        continue;
-      }
-      if (c === '/' && c2 === '*') {
-        const e = unit.indexOf('*/', i + 2);
-        i = e === -1 ? n : e + 2;
-        continue;
-      }
-      if (c === '"' || c === "'") {
-        i = skipLiteral(unit, i, c);
-        continue;
-      }
-      if (c === '{') {
-        depth++;
-        opened = true;
-        i++;
-        continue;
-      }
-      if (c === '}') {
-        depth--;
-        i++;
-        if (opened && depth === 0) {
-          bodyEnd = i;
-          break;
-        }
-        continue;
-      }
-      i++;
+    const c = text[i];
+    const c2 = text[i + 1];
+    if (c === '/' && c2 === '/') {
+      const e = text.indexOf('\n', i);
+      i = e === -1 ? n : e;
+      continue;
     }
-    bodies.push(unit.slice(declStart, bodyEnd));
-    if (!opened) break; // kein `{` mehr gefunden -> Rest war Schlussfragment
-    i = bodyEnd;
+    if (c === '/' && c2 === '*') {
+      const e = text.indexOf('*/', i + 2);
+      i = e === -1 ? n : e + 2;
+      continue;
+    }
+    if (c === ';') return i + 1;
+    i++;
   }
-
-  if (bodies.length <= 1) return [unit];
-  return bodies.map((b) => `${header}\n${b}\n`);
+  return n;
 }
 
-// Roh-Paste (einzelne oder mehrere zusammengefuegte .java-Quellen) in eigenstaendige,
-// je einzeln parsebare Klassen-Chunks zerlegen. Zwei Stufen:
-//   1) An `package`-Deklarationen in Compilation-Units schneiden (mehrere Dateien in einem
-//      Paste haben je ein eigenes `package`).
-//   2) Innerhalb jeder Unit die Top-Level-Typen brace-zaehlend trennen.
-// Bewusst regex-/scan-basiert (kein CST): der Splitter muss vor dem eigentlichen parseJava
-// laufen, das pro Chunk separat aufgerufen wird.
+// Annotation ab `@` ueberspringen: (qualifizierter) Name + optionale, balancierte Argumente.
+// Zwingend noetig, weil Array-Werte wie `@SuppressWarnings({ "a", "b" })` GESCHWEIFTE Klammern
+// enthalten – ohne dieses Ueberspringen wuerde die Body-Zaehlung des Typs dort starten und
+// sofort wieder enden, d. h. der Typ waere nach seiner Annotation "zu Ende".
+// `@interface` ist unkritisch: dort folgt keine Klammer, der Scan laeuft normal weiter.
+function skipAnnotation(text: string, i: number): number {
+  const n = text.length;
+  i++; // '@'
+  while (i < n && /\s/.test(text[i])) i++;
+  while (i < n && /[A-Za-z0-9_$.]/.test(text[i])) i++;
+  let j = i;
+  while (j < n && /\s/.test(text[j])) j++;
+  if (j >= n || text[j] !== '(') return i;
+  let depth = 0;
+  while (j < n) {
+    const c = text[j];
+    const c2 = text[j + 1];
+    if (c === '/' && c2 === '/') {
+      const e = text.indexOf('\n', j);
+      j = e === -1 ? n : e;
+      continue;
+    }
+    if (c === '/' && c2 === '*') {
+      const e = text.indexOf('*/', j + 2);
+      j = e === -1 ? n : e + 2;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      j = skipLiteral(text, j, c);
+      continue;
+    }
+    if (c === '(') {
+      depth++;
+      j++;
+      continue;
+    }
+    if (c === ')') {
+      depth--;
+      j++;
+      if (depth <= 0) return j;
+      continue;
+    }
+    j++;
+  }
+  return n;
+}
+
+// Ende eines Top-Level-Typs ab `i` (Index NACH der schliessenden Klammer). Brace-zaehlend;
+// Strings/Chars/Kommentare/Annotationen werden uebersprungen. `opened` meldet, ob ueberhaupt
+// ein Body gefunden wurde – sonst war der Rest ein Fragment.
+function typeBodyEnd(text: string, i: number): { end: number; opened: boolean } {
+  const n = text.length;
+  let depth = 0;
+  let opened = false;
+  while (i < n) {
+    const c = text[i];
+    const c2 = text[i + 1];
+    if (c === '/' && c2 === '/') {
+      const e = text.indexOf('\n', i);
+      i = e === -1 ? n : e;
+      continue;
+    }
+    if (c === '/' && c2 === '*') {
+      const e = text.indexOf('*/', i + 2);
+      i = e === -1 ? n : e + 2;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      i = skipLiteral(text, i, c);
+      continue;
+    }
+    if (c === '@') {
+      i = skipAnnotation(text, i);
+      continue;
+    }
+    if (c === '{') {
+      depth++;
+      opened = true;
+      i++;
+      continue;
+    }
+    if (c === '}') {
+      depth--;
+      i++;
+      if (opened && depth <= 0) return { end: i, opened: true };
+      continue;
+    }
+    i++;
+  }
+  return { end: n, opened };
+}
+
+// Roh-Paste (eine Datei ODER mehrere aneinandergehaengte .java-Quellen) in eigenstaendige,
+// je einzeln parsebare Chunks zerlegen.
+//
+// Ein Paste entsteht in der Praxis per `cat *.java > all.txt`: mehrere Compilation-Units
+// hintereinander, jede mit eigenem package/import-Header – manchmal ganz OHNE `package`
+// (default package), manchmal mit Trenn-Kommentaren dazwischen. Deshalb EIN linearer
+// Top-Level-Scan statt Regex-Schnitten:
+//   - `package`/`import` pflegen den laufenden Header. Kommt eine solche Anweisung, NACHDEM
+//     bereits ein Typ ausgegeben wurde, beginnt eine neue Unit -> Header wird zurueckgesetzt.
+//   - Jede Typ-Deklaration wird brace-zaehlend gelesen und als Chunk `Header + Typ` ausgegeben.
+// Dadurch enthaelt jeder Chunk genau ein `package`, genau die Imports seiner Datei und genau
+// einen Top-Level-Typ. Genau daran ist die frueher rein regex-basierte Trennung gescheitert:
+// sie nahm die LETZTE import-Zeile des gesamten Pastes als Header-Ende und schob dadurch
+// fremden Code in den Header.
 export function splitJavaSources(source: string): string[] {
   const text = String(source || '').replace(/\r\n/g, '\n');
-
-  // 1) Compilation-Units an `package`-Zeilen (Zeilenanfang, opt. Einrueckung).
-  const pkgRe = /^[ \t]*package\b[^;]*;/gm;
-  const starts: number[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = pkgRe.exec(text)) !== null) starts.push(m.index);
-
-  let units: string[];
-  if (starts.length <= 1) {
-    units = [text];
-  } else {
-    units = [];
-    for (let k = 0; k < starts.length; k++) {
-      const start = k === 0 ? 0 : starts[k]; // Text vor dem 1. package bleibt bei Unit 0
-      const end = k + 1 < starts.length ? starts[k + 1] : text.length;
-      units.push(text.slice(start, end));
-    }
-  }
-
+  const n = text.length;
   const chunks: string[] = [];
-  for (const unit of units) {
-    if (!unit.trim()) continue;
-    for (const chunk of splitTopLevelTypes(unit)) {
-      if (chunk.trim()) chunks.push(chunk);
+
+  let pkg = ''; // aktuelle package-Anweisung (inkl. ';')
+  let imports: string[] = []; // Imports der aktuellen Unit
+  let emitted = false; // in dieser Unit schon ein Typ ausgegeben?
+  let segStart = -1; // Beginn des aktuellen Typ-Segments (inkl. Javadoc/Annotationen)
+  let i = 0;
+
+  const header = () => {
+    const parts: string[] = [];
+    if (pkg) parts.push(pkg, '');
+    if (imports.length) parts.push(...imports, '');
+    return parts.join('\n');
+  };
+
+  while (i < n) {
+    const c = text[i];
+    const c2 = text[i + 1];
+
+    if (c === ' ' || c === '\t' || c === '\n' || c === '\r' || c === '\f') {
+      i++;
+      continue;
     }
+    // Kommentare eroeffnen ein Segment (Javadoc/Lizenzkopf gehoert zum folgenden Typ),
+    // beenden es aber nicht – eine nachfolgende package/import-Anweisung verwirft es wieder.
+    if (c === '/' && c2 === '/') {
+      if (segStart < 0) segStart = i;
+      const e = text.indexOf('\n', i);
+      i = e === -1 ? n : e;
+      continue;
+    }
+    if (c === '/' && c2 === '*') {
+      if (segStart < 0) segStart = i;
+      const e = text.indexOf('*/', i + 2);
+      i = e === -1 ? n : e + 2;
+      continue;
+    }
+    if (c === ';') {
+      // Vereinzeltes Semikolon auf Top-Level (in Java erlaubt) -> ignorieren.
+      i++;
+      continue;
+    }
+
+    // Schluesselwort am Wortanfang pruefen: package/import pflegen den Header.
+    if (/[A-Za-z_$]/.test(c)) {
+      let j = i + 1;
+      while (j < n && /[A-Za-z0-9_$]/.test(text[j])) j++;
+      const word = text.slice(i, j);
+      if (word === 'package' || word === 'import') {
+        if (emitted) {
+          // Header-Anweisung nach einem Typ -> naechste Datei im Paste.
+          pkg = '';
+          imports = [];
+          emitted = false;
+        }
+        const end = statementEnd(text, j);
+        const stmt = text.slice(i, end).trim();
+        if (word === 'package') pkg = stmt;
+        else imports.push(stmt);
+        i = end;
+        segStart = -1;
+        continue;
+      }
+    }
+
+    // Alles andere leitet eine Typ-Deklaration ein (Modifier, Annotation, `class`, …).
+    if (segStart < 0) segStart = i;
+    const { end, opened } = typeBodyEnd(text, i);
+    const body = text.slice(segStart, end).trim();
+    if (body) chunks.push(`${header()}${body}\n`);
+    if (!opened) break; // Fragment ohne Body -> Rest ist kein Typ mehr
+    emitted = true;
+    segStart = -1;
+    i = end;
   }
+
+  // Genau ein Typ im Paste -> Originaltext zurueckgeben (erhaelt Lizenzkopf/Kommentare vor
+  // dem `package`, die im rekonstruierten Header keinen Platz haetten).
+  if (chunks.length <= 1) return [text];
   return chunks;
 }
 
