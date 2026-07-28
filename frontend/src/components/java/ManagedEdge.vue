@@ -17,6 +17,7 @@ import { computed, ref } from 'vue'
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from '@vue-flow/core'
 import { Icon } from '../../lib/icons.js'
 import { useJavaGraph } from '../../composables/useJavaGraph.js'
+import { useRootScale } from '../../composables/useRootScale.js'
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -31,8 +32,12 @@ const props = defineProps({
   selected: { type: Boolean, default: false },
 })
 
+const { scale: rootScale } = useRootScale()
+
+// Basiswerte bei 16px-Root – beide haengen an der Root-Schriftgroesse, weil das Label mit ihr
+// waechst: bei festem Versatz wuerden gestapelte Labels auf einem 2K-Schirm uebereinanderlaufen.
 const SPREAD = 26 // px horizontaler Abstand zwischen parallelen Linien
-const LABEL_STEP = 18 // px vertikaler Versatz gestapelter Labels
+const LABEL_STEP = 20 // px vertikaler Versatz gestapelter Labels
 
 // Symmetrisch um die Mitte verteilen: jeder Index erhaelt einen eindeutigen Offset.
 const spread = (step) => {
@@ -40,8 +45,8 @@ const spread = (step) => {
   const index = props.data?.parallelIndex || 0
   return count > 1 ? (index - (count - 1) / 2) * step : 0
 }
-const fanOffset = computed(() => spread(SPREAD))
-const labelStagger = computed(() => spread(LABEL_STEP))
+const fanOffset = computed(() => spread(SPREAD * rootScale.value))
+const labelStagger = computed(() => spread(LABEL_STEP * rootScale.value))
 
 // Inline-Loesch-Bestaetigung direkt am Label (nur Einzelkante). Bei einem Buendel uebernimmt
 // das Detail-Panel das gezielte Loeschen pro Methode.
@@ -193,12 +198,15 @@ const pathStyle = computed(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  max-width: 220px;
+  /* rem statt px: waechst mit der Root-Schriftgroesse mit, wie das Label selbst. */
+  max-width: 15rem;
   padding: 2px 6px;
   border-radius: 6px;
   border: 1px solid var(--color-border);
   background: var(--color-surface-2);
-  font-size: 0.625rem;
+  /* Das Label sagt, WELCHE Methode aufgerufen wird – die eigentliche Aussage der Kante. Zu klein
+     gesetzt ist sie beim Ueberfliegen wertlos, deshalb bewusst ueber der frueheren Micro-Groesse. */
+  font-size: 0.6875rem;
   font-weight: 600;
   line-height: 1.4;
   color: var(--color-accent);
@@ -231,8 +239,8 @@ const pathStyle = computed(() => {
 /* Kleiner Pfeil als Affordanz „hier geht es weiter" – erscheint erst beim Hover, damit das Label
    im Ruhezustand nur die Zahl zeigt. */
 .me-agg-go {
-  width: 11px;
-  height: 11px;
+  width: 12px;
+  height: 12px;
   margin-left: -1px;
   opacity: 0;
   transition: opacity 0.15s ease;
@@ -269,8 +277,8 @@ const pathStyle = computed(() => {
   font-weight: 700;
 }
 .me-ic {
-  width: 12px;
-  height: 12px;
+  width: 13px;
+  height: 13px;
   flex-shrink: 0;
 }
 .me-ic--manual {
@@ -282,7 +290,7 @@ const pathStyle = computed(() => {
   gap: 2px;
   padding: 0 4px;
   border-radius: 999px;
-  font-size: 0.5625rem;
+  font-size: 0.625rem;
   font-weight: 700;
   color: #fff;
   background: #d4a017;

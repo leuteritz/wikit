@@ -95,10 +95,10 @@ const PKG_COLORS = ['var(--color-thistle)', 'var(--color-lavender)', 'var(--colo
 // BASISWERTE bei 16px-Root. Vue Flow rechnet in px, die Karten selbst sind in rem gesetzt und
 // wachsen mit der Root-Schriftgroesse -> beides muss denselben Faktor sehen, sonst laeuft der
 // Klassenname aus der Box. `rootScale` liefert ihn reaktiv (s. composables/useRootScale.js).
-const NODE_W = 228
-const NODE_H = 66
-const PKG_W = 232
-const PKG_H = 88
+const NODE_W = 250
+const NODE_H = 74
+const PKG_W = 248
+const PKG_H = 96
 // Ab dieser Klassenzahl startet der Graph auf Package-Ebene statt mit einem Knoten je Klasse.
 // Darunter aendert sich nichts: kleine Projekte sollen weiter direkt ihre Klassen sehen.
 const PACKAGE_MODE_FROM = 150
@@ -469,7 +469,7 @@ const layout = computed(() => {
           sourceId: `c:${definerFile.id}`,
           targetId: `c:${callerFile.id}`,
           // Kurz gestrichelt – deutlich anders als der Punktraster der Import-Kante.
-          edgeStyle: { stroke: USES_COLOR, strokeWidth: 1.6, strokeDasharray: '5 3', cursor: 'default' },
+          edgeStyle: { stroke: USES_COLOR, strokeWidth: 1.9, strokeDasharray: '5 3', cursor: 'default' },
         },
       })
       continue
@@ -517,7 +517,7 @@ const layout = computed(() => {
         toFileId: definerFile.id,
         edgeStyle: {
           stroke,
-          strokeWidth: 2,
+          strokeWidth: 2.4,
           strokeDasharray: allManual ? '6 4' : undefined,
           cursor: 'pointer',
         },
@@ -556,7 +556,7 @@ const layout = computed(() => {
           // Punktraster statt Striche: die schwaechste Aussage bekommt auch die leiseste Linie.
           edgeStyle: {
             stroke: IMPORT_COLOR,
-            strokeWidth: 1.4,
+            strokeWidth: 1.7,
             strokeDasharray: '1 5',
             strokeLinecap: 'round',
             opacity: 0.75,
@@ -571,7 +571,7 @@ const layout = computed(() => {
   //     ein Buendel aus 400 Kanten nicht 40x dicker wirkt als eines aus 10.
   if (packageMode.value) {
     for (const ge of level.value.groupEdges) {
-      const width = Math.min(6, 1.4 + Math.log2(ge.count + 1) * 0.8)
+      const width = Math.min(7, 1.8 + Math.log2(ge.count + 1) * 0.9)
       rolePairs.push({ source: ge.source, target: ge.target })
       edges.push({
         id: `agg:${ge.id}`,
@@ -855,11 +855,13 @@ watch(
     // Ebene – sonst laege die gesuchte Klasse irgendwo im Raster und man muesste sie suchen.
     const focusId = pendingFocusNode.value
     const hasFocus = focusId && nodes.value.some((n) => n.id === focusId)
-    // maxZoom 1: einzelne Knoten sollen nicht auf Plakatgroesse aufgeblasen werden.
+    // maxZoom deckelt, damit einzelne Knoten nicht auf Plakatgroesse aufgeblasen werden – aber
+    // nicht mehr bei exakt 1: ein Graph aus wenigen Klassen liess damit den halben Canvas leer,
+    // waehrend die Karten unnoetig klein blieben.
     const fit = () =>
       hasFocus
-        ? fitView({ nodes: [{ id: focusId }], padding: 1.6, maxZoom: 1.1, duration: 300 })
-        : fitView({ padding: 0.18, maxZoom: 1, duration: 200 })
+        ? fitView({ nodes: [{ id: focusId }], padding: 1.6, maxZoom: 1.25, duration: 300 })
+        : fitView({ padding: 0.18, maxZoom: 1.15, duration: 200 })
     if (hasFocus) pendingFocusNode.value = null
     requestAnimationFrame(fit)
     // Zweiter Anlauf: fitView rechnet mit den GEMESSENEN Knotengroessen. Werden viele Knoten auf
@@ -1625,7 +1627,7 @@ watch(
   gap: 10px;
   /* in rem, damit die Karte mit der Root-Schriftgroesse waechst – PKG_W im Skript ist derselbe
      Wert und wird dort mit `rootScale` multipliziert. Beide muessen zusammen bleiben. */
-  width: 14.5rem;
+  width: 15.5rem;
   padding: 0 12px 0 0;
   border-radius: 14px;
   border: 1px solid color-mix(in srgb, var(--role) 42%, var(--color-border));
@@ -1656,15 +1658,15 @@ watch(
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
   /* Bewusst groesser als der Klassenname: auf dieser Ebene wird oft herausgezoomt (viele
      Packages), und der Name ist das Einzige, was dann noch lesbar sein muss. */
-  font-size: 0.9375rem;
+  font-size: 1.0625rem;
   font-weight: 700;
   color: var(--color-text);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .vf-pkgicon {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
   color: var(--role);
 }
@@ -1674,7 +1676,7 @@ watch(
   align-items: center;
   gap: 8px;
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   color: var(--color-text-muted);
 }
 .vf-pkgstat b {
@@ -1687,8 +1689,8 @@ watch(
   gap: 2px;
 }
 .vf-pkgic {
-  width: 10px;
-  height: 10px;
+  width: 11px;
+  height: 11px;
 }
 .vf-pkgbar {
   height: 3px;
@@ -1821,7 +1823,7 @@ watch(
   align-items: center;
   gap: 8px;
   /* rem: waechst mit der Root-Schriftgroesse (Gegenstueck zu NODE_W * rootScale im Skript). */
-  width: 13rem;
+  width: 14.25rem;
   padding: 8px 10px 8px 0;
   border-radius: 12px;
   border: 1px solid var(--color-border);
@@ -1877,8 +1879,8 @@ watch(
 .vf-type {
   display: grid;
   place-items: center;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
   border-radius: 5px;
   border: 1px solid color-mix(in srgb, var(--type) 32%, transparent);
@@ -1886,8 +1888,8 @@ watch(
   color: var(--type);
 }
 .vf-type svg {
-  width: 10px;
-  height: 10px;
+  width: 11px;
+  height: 11px;
 }
 /* `class` ist der Normalfall: nur das Glyph, kein Chip. In einer Codebasis aus 500 Klassen waeren
    500 identische Kaestchen reines Rauschen – so bleibt der Rahmen dem Besonderen vorbehalten. */
@@ -1897,15 +1899,15 @@ watch(
   opacity: 0.75;
 }
 .vf-type--plain svg {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
 }
 /* Kleiner Package-Punkt vor dem Package-Text (Package-Identitaet, sekundaer). Inline-block, damit
    das text-overflow:ellipsis des Package-Texts erhalten bleibt. */
 .vf-pkgdot {
   display: inline-block;
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   margin-right: 5px;
   border-radius: 999px;
   vertical-align: middle;
@@ -1922,14 +1924,16 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.8125rem;
+  /* Der Klassenname ist die wichtigste Information der Karte und muss auch dann noch lesbar sein,
+     wenn fitView() bei vielen Knoten herauszoomt -> bewusst kraeftiger als die uebrige Karte. */
+  font-size: 0.9375rem;
   font-weight: 700;
   color: var(--color-text);
 }
 .vf-ai {
   flex-shrink: 0;
-  width: 13px;
-  height: 13px;
+  width: 15px;
+  height: 15px;
   color: var(--color-accent);
 }
 .vf-pkg {
@@ -1937,7 +1941,7 @@ watch(
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   color: var(--color-text-muted);
 }
 /* Rollen-Badge: Glyph + Methodenzahl in EINER Pille (Achse 1). Rolle und Umfang gehoeren
@@ -1949,7 +1953,7 @@ watch(
   flex-shrink: 0;
   padding: 1px 7px 1px 5px;
   border-radius: 999px;
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   /* NICHT hart #fff: im Dark-Mode sind die Rollenfarben aufgehellt, weisser Text darauf ist
@@ -1958,8 +1962,8 @@ watch(
   background: var(--role);
 }
 .vf-badge-ic {
-  width: 11px;
-  height: 11px;
+  width: 12px;
+  height: 12px;
   flex-shrink: 0;
   opacity: 0.9;
 }
@@ -1969,7 +1973,7 @@ watch(
   flex-shrink: 0;
   padding: 1px 6px;
   border-radius: 999px;
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--color-text-muted);
@@ -2249,7 +2253,7 @@ watch(
   background: color-mix(in srgb, var(--color-surface-2) 90%, transparent);
   padding: 2px 4px 2px 8px;
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--color-text-muted);
   backdrop-filter: blur(4px);
@@ -2262,8 +2266,8 @@ watch(
 /* Folder-Glyph statt Punkt: die Zone gehoert damit sichtbar zur selben Kategorie wie der
    Package-Knoten der aggregierten Ebene – Farbe bleibt die des jeweiligen Packages. */
 .vf-zoneic {
-  width: 12px;
-  height: 12px;
+  width: 13px;
+  height: 13px;
   flex-shrink: 0;
   color: var(--pkg);
 }
@@ -2277,7 +2281,7 @@ watch(
   border-radius: 999px;
   background: var(--color-surface-offset);
   padding: 0 6px;
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;
 }
 
