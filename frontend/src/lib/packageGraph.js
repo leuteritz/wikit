@@ -148,6 +148,10 @@ export function buildPackageLevel({ files = [], classEdges = [], basePath = '' }
     directFiles,
     groupEdges: [...groupEdges.values()],
     externalByKey,
+    // fileId -> Ebenen-Schluessel. Wird gebraucht, um eine AGGREGATKANTE wieder aufzuloesen:
+    // „welche Klassenbeziehungen stecken in diesem Buendel?" laesst sich nur beantworten, wenn
+    // man von jeder Klasse weiss, unter welchem Knoten dieser Ebene sie zusammengefasst wurde.
+    keyByFileId,
   }
 }
 

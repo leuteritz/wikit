@@ -116,11 +116,13 @@ const pathStyle = computed(() => {
       class="me-label me-label--agg"
       :class="{ 'me-label--dim': dimmed }"
       :style="{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }"
-      :title="`${d.count} class-to-class relation(s) bundled here – open a package to see them individually`"
+      :title="`${d.count} class-to-class relation(s) bundled here — click to list them`"
+      @click.stop="d.onOpen && d.onOpen(d, $event)"
     >
       <!-- Ausgeschrieben: die Zahl allein liess offen, WAS gezaehlt wird, und „links" laesst sich
            im deutschen Lesefluss als Richtungsangabe missverstehen. -->
       <span class="me-method me-count"><Icon icon="lucide:git-fork" class="me-ic" />{{ d.count }} class relations</span>
+      <Icon icon="lucide:chevron-right" class="me-ic me-agg-go" />
     </div>
   </EdgeLabelRenderer>
 
@@ -217,11 +219,26 @@ const pathStyle = computed(() => {
 /* Aggregat-Label traegt die Farbe seiner Kante -> Linie und Beschriftung sind als EINE Aussage
    lesbar, und der Unterschied zur Call-Kante (Akzent) bleibt auch beim Ueberfliegen bestehen. */
 .me-label--agg {
-  cursor: default;
   border-color: color-mix(in srgb, var(--color-thistle) 45%, var(--color-border));
   color: var(--color-thistle);
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
+}
+.me-label--agg:hover {
+  border-color: var(--color-thistle);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-thistle) 30%, transparent);
+}
+/* Kleiner Pfeil als Affordanz „hier geht es weiter" – erscheint erst beim Hover, damit das Label
+   im Ruhezustand nur die Zahl zeigt. */
+.me-agg-go {
+  width: 11px;
+  height: 11px;
+  margin-left: -1px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.me-label--agg:hover .me-agg-go {
+  opacity: 0.8;
 }
 .me-label--review {
   border-color: color-mix(in srgb, #d4a017 60%, var(--color-border));

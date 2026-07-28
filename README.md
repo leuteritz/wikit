@@ -88,7 +88,9 @@ Open the **Java Analyzer** from the top bar:
    out every category. Classes are laid out **grouped by package**: every package gets its own zone,
    and the zones themselves are stacked along the direction of the dependencies. Click a zone label
    to focus that package, toggle the grouping and the edge kinds in the toolbar, and hover a class
-   to fade out everything that is not connected to it.
+   to fade out everything that is not connected to it. Large code bases start one level up, with a
+   node per package: there, a bundled edge (“17 class relations”) opens the list of pairs behind it,
+   and each pair with a detected call leads straight to the calling code.
 3. **Export.** Turn a class into a normal Markdown article — from then on it is in the sidebar and
    **full-text searchable** (FTS5) like any other note.
 

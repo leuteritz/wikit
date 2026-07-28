@@ -28,6 +28,7 @@ import { Icon } from '../../lib/icons.js'
 import { buildPackageLevel, commonPackagePrefix, breadcrumbFor } from '../../lib/packageGraph.js'
 import { layoutFlat, layoutClustered } from '../../lib/graphLayout.js'
 import JavaEdgeDetailPanel from './JavaEdgeDetailPanel.vue'
+import JavaBundlePanel from './JavaBundlePanel.vue'
 import ManualEdgePanel from './ManualEdgePanel.vue'
 import ManagedEdge from './ManagedEdge.vue'
 
@@ -579,7 +580,9 @@ const layout = computed(() => {
           sourceId: ge.source,
           targetId: ge.target,
           // Eigene Farbe, weil es eine ANDERE EBENE ist: hier steht ein Knoten fuer viele Klassen.
-          edgeStyle: { stroke: AGG_COLOR, strokeWidth: width, opacity: 0.9, cursor: 'default' },
+          edgeStyle: { stroke: AGG_COLOR, strokeWidth: width, opacity: 0.9, cursor: 'pointer' },
+          // Klick loest das Buendel in seine einzelnen Klassenbeziehungen auf.
+          onOpen: openBundlePanel,
         },
       })
     }
@@ -978,8 +981,107 @@ async function openEdgePanel(d) {
   }
 }
 
+// --- Aggregatkante aufloesen ("N class relations") --------------------------------------------
+// Eine Kante zwischen zwei Package-Knoten steht fuer viele Klassenbeziehungen. Ohne Aufloesung
+// bleibt sie eine Zahl, die man nicht pruefen kann. Der Klick listet deshalb genau die Paare auf,
+// die darin stecken – und von dort fuehrt ein weiterer Klick auf die Aufrufstelle im Code.
+const activeBundle = ref(null) // { fromLabel, toLabel, relations: [...] }
+
+// Ebenen-Schluessel (`p:<path>` | `c:<id>`) lesbar machen: der Pfad relativ zum offenen Ausschnitt.
+function labelForKey(key) {
+  if (!key) return ''
+  if (key.startsWith('c:')) return filesById.value.get(Number(key.slice(2)))?.class_name || key
+  const path = key.slice(2)
+  const base = basePath.value
+  if (base && path.startsWith(base + '.')) return path.slice(base.length + 1)
+  return path
+}
+
+// Alle Klassenbeziehungen zwischen zwei Ebenen-Knoten, gruppiert nach Klassenpaar. Richtung wie
+// im Graph: `provider` definiert, `consumer` nutzt. Die Kanten kommen aus derselben Quelle wie
+// im Layout (serverEdges + Import-Fallback), damit die Liste die gezeichnete Zahl exakt trifft.
+function relationsBetween(sourceKey, targetKey) {
+  const keyOf = level.value.keyByFileId || new Map()
+  const files = props.files || []
+  const byName = new Map(files.map((f) => [f.class_name, f]))
+  const groups = new Map()
+  const add = (provider, consumer, kind, method) => {
+    const k = `${provider.id}->${consumer.id}`
+    let g = groups.get(k)
+    if (!g) {
+      g = { key: k, provider, consumer, kind, methods: [] }
+      groups.set(k, g)
+    }
+    // Ein Paar kann mehrere Kantenarten haben – die staerkste Aussage gewinnt fuer das Badge.
+    if (kind === 'call' || (kind === 'uses' && g.kind === 'import')) g.kind = kind
+    if (method) g.methods.push(method)
+  }
+
+  for (const e of serverEdges.value || []) {
+    const consumer = byName.get(e.source_class)
+    const provider = byName.get(e.target_class)
+    if (!consumer || !provider || consumer.id === provider.id) continue
+    if (keyOf.get(provider.id) !== sourceKey || keyOf.get(consumer.id) !== targetKey) continue
+    add(provider, consumer, e.kind || 'call', e.kind === 'uses' ? null : { edgeId: e.id, method: e.method_name, isManual: !!e.is_manual })
+  }
+  // Import-Fallback: nur fuer Paare, die noch gar keine Beziehung haben (wie im Graph).
+  for (const f of files) {
+    for (const dep of f.dependencies || []) {
+      const provider = byName.get(simpleName(dep))
+      if (!provider || provider.id === f.id) continue
+      if (keyOf.get(provider.id) !== sourceKey || keyOf.get(f.id) !== targetKey) continue
+      if (groups.has(`${provider.id}->${f.id}`)) continue
+      add(provider, f, 'import', null)
+    }
+  }
+
+  const rank = { call: 0, uses: 1, import: 2 }
+  return [...groups.values()].sort(
+    (a, b) =>
+      rank[a.kind] - rank[b.kind] ||
+      a.provider.class_name.localeCompare(b.provider.class_name) ||
+      a.consumer.class_name.localeCompare(b.consumer.class_name),
+  )
+}
+
+function openBundlePanel(d) {
+  if (!d || d.kind !== 'aggregate') return
+  const relations = relationsBetween(d.sourceId, d.targetId)
+  activeBundle.value = {
+    fromLabel: labelForKey(d.sourceId),
+    toLabel: labelForKey(d.targetId),
+    fromIsClass: String(d.sourceId).startsWith('c:'),
+    toIsClass: String(d.targetId).startsWith('c:'),
+    count: d.count,
+    relations,
+  }
+}
+function closeBundlePanel() {
+  activeBundle.value = null
+}
+// Zeile ohne Codestelle (Import/Typbezug): zur Klasse springen. Das Panel schliesst dabei – es
+// wuerde sonst genau die Detailspalte verdecken, in der die gewaehlte Klasse erscheint.
+function onBundleSelect(fileId) {
+  closeBundlePanel()
+  emit('select', fileId)
+}
+// Aus der Liste heraus zur Aufrufstelle: dieselbe Funktion wie beim Klick auf eine Call-Kante,
+// also derselbe Code-Auszug – nur eben ohne dass man erst ins Package hineinzoomen muss.
+function openRelationCode(rel) {
+  if (!rel?.methods?.length) return
+  openEdgePanel({
+    kind: 'call',
+    fromFileId: rel.consumer.id, // Aufrufer
+    toFileId: rel.provider.id, // Definition
+    methods: rel.methods,
+    isManual: rel.methods.every((m) => m.isManual),
+  })
+}
+
 function onEdgeClick({ edge }) {
-  openEdgePanel(edge?.data)
+  const d = edge?.data
+  if (d?.kind === 'aggregate') return openBundlePanel(d)
+  openEdgePanel(d)
 }
 function closeEdgePanel() {
   activeEdge.value = null
@@ -1414,7 +1516,7 @@ watch(
           </div>
           <div v-if="packageMode" class="legend-row">
             <span class="legend-line legend-line--thick" style="background: var(--color-thistle)" />
-            <span><b>Bundle</b> of class relations between packages</span>
+            <span><b>Bundle</b> of class relations — click to list them</span>
           </div>
           <div class="legend-row">
             <span class="legend-line legend-line--lit" style="background: var(--color-edge-highlight)" />
@@ -1457,6 +1559,17 @@ watch(
         <Icon icon="lucide:chevron-down" class="h-3.5 w-3.5 opacity-60 transition-transform" :class="legendOpen ? '' : 'rotate-180'" />
       </button>
     </div>
+
+    <!-- Slide-over: eine Aggregatkante („N class relations") in ihre Klassenpaare auflösen.
+         MUSS vor dem Edge-Detail-Modal stehen: beide teleportieren an <body>, und die
+         Template-Reihenfolge entscheidet, was oben liegt – der Code-Auszug gehört über die Liste. -->
+    <JavaBundlePanel
+      :visible="!!activeBundle"
+      :bundle="activeBundle"
+      @close="closeBundlePanel"
+      @open="openRelationCode"
+      @select="onBundleSelect"
+    />
 
     <!-- Edge-Detail-Modal: Ansicht Definition -> Nutzung; löscht Kanten pro Methode (ESC schliesst) -->
     <JavaEdgeDetailPanel
