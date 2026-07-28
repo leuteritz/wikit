@@ -61,7 +61,7 @@ function isActive(to) {
         </span>
         <span class="hidden min-w-0 flex-col leading-tight lg:flex">
           <span class="truncate font-mono text-[15px] font-semibold tracking-tight text-[var(--color-text)]">{{ WIKI_TITLE }}</span>
-          <span class="font-mono text-[9px] font-medium tracking-[0.14em] text-[var(--color-text-muted)]">v{{ WIKI_VERSION }} · LOCAL</span>
+          <span class="font-mono text-[11px] font-medium tracking-[0.1em] text-[var(--color-text-muted)]">v{{ WIKI_VERSION }} · LOCAL</span>
         </span>
       </RouterLink>
 
