@@ -64,6 +64,8 @@ export const api = {
   // queue-class = atomare Analyse-Einheit der Klasse (Methoden -> Klasse). Body: { userContext?, force? }.
   queueJavaClass: (id, data) => http('POST', `/java/files/${id}/queue-class`, data),
   // Alle noch nicht analysierten Klassen gesammelt (topologisch) einreihen.
+  // Fortschritt eines laufenden analyze-batch (SSE). EventSource ist kein fetch -> nur die URL.
+  javaAnalyzeProgressUrl: (jobId) => `${BASE}/java/analyze-progress/${encodeURIComponent(jobId)}`,
   analyzeAllJava: (data) => http('POST', '/java/queues/analyze-all', data),
   // Bulk nach einem Paste: genau diese fileIds einreihen – EIN Request statt einem je Klasse.
   queueJavaBatch: (fileIds, data) => http('POST', '/java/queues/batch', { fileIds, ...data }),

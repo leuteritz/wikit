@@ -2,12 +2,14 @@ import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Patc
 import { Observable } from 'rxjs';
 import { JavaService } from './java.service';
 import { JavaQueueService } from './java-queue.service';
+import { JavaBatchProgressService } from './java-batch-progress.service';
 
 @Controller('java')
 export class JavaController {
   constructor(
     private readonly svc: JavaService,
     private readonly queue: JavaQueueService,
+    private readonly batchProgress: JavaBatchProgressService,
   ) {}
 
   @Post('analyze')
@@ -69,6 +71,14 @@ export class JavaController {
   @Get('method-snippet')
   methodSnippet(@Query('fileId') fileId: string, @Query('methodName') methodName: string) {
     return this.svc.getMethodSnippet(fileId, methodName);
+  }
+
+  // Fortschritt eines laufenden analyze-batch (SSE). Der Client erzeugt die jobId, oeffnet damit
+  // diesen Stream und schickt sie im analyze-batch-Body mit. Statische Route -> vor keiner
+  // parametrisierten Route in Konflikt, `:jobId` ist hier der einzige Parameter.
+  @Sse('analyze-progress/:jobId')
+  analyzeProgress(@Param('jobId') jobId: string): Observable<{ data: unknown }> {
+    return this.batchProgress.stream(jobId);
   }
 
   // --- KI-Generierungs-Queue (Backend-Zustand, HTTP-Polling) ---------------

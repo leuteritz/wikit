@@ -13,6 +13,14 @@ import { JavaEdge } from '../entities/java-edge.entity';
 import { JavaFile } from '../entities/java-file.entity';
 import { JavaFileVersion } from '../entities/java-file-version.entity';
 import { JavaMethod } from '../entities/java-method.entity';
+import { JavaBatchProgressService } from './java-batch-progress.service';
+
+// parseJava() ist synchron (chevrotain). Eine Schleife ueber tausende Chunks blockiert den
+// Event-Loop komplett – der Fortschritts-Stream kaeme erst NACH getaner Arbeit beim Client an
+// und der Server waere solange fuer jede andere Anfrage tot. Alle YIELD_EVERY Chunks wird die
+// Kontrolle deshalb kurz abgegeben.
+const YIELD_EVERY = 25;
+const breathe = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 // SQLite bricht bei sehr grossen Mehrzeilen-Inserts mit "Expression tree is too large
 // (maximum depth 1000)" ab: TypeORM laedt die eingefuegten Zeilen anschliessend per SELECT mit
@@ -53,6 +61,7 @@ export class JavaService {
     private readonly ollama: OllamaService,
     private readonly markdown: MarkdownService,
     private readonly fts: FtsService,
+    private readonly progress: JavaBatchProgressService,
   ) {}
 
   // Datei analysieren: parsen + speichern (ohne KI -> Graph erscheint sofort).
@@ -132,14 +141,25 @@ export class JavaService {
     const overwrite = b.overwrite === true;
     if (!source.trim()) throw new BadRequestException('Quellcode ist erforderlich');
 
+    // Optionale Job-Id des Clients: nur dann wird Fortschritt gestreamt (SSE).
+    const jobId: string | null = typeof b.jobId === 'string' && b.jobId ? b.jobId : null;
+
     // 1) In eigenstaendige Klassen-Chunks zerlegen + je Chunk parsen (nur Top-Level-Typ).
+    this.progress.emit(jobId, { phase: 'split', done: 0, total: 0 });
     const chunks = splitJavaSources(source);
+    this.progress.emit(jobId, { phase: 'parse', done: 0, total: chunks.length });
     const warnings: string[] = [];
     const parseErrors: string[] = []; // Chunks, die nicht geparst werden konnten
     const seen = new Set<string>(); // FQCN -> bereits im Paste vorgekommen
     const items: Array<{ fqcn: string; pkg: string | null; cls: any; imports: string[]; chunk: string }> = [];
 
+    let parsedCount = 0;
     for (const chunk of chunks) {
+      parsedCount++;
+      if (parsedCount % YIELD_EVERY === 0) {
+        this.progress.emit(jobId, { phase: 'parse', done: parsedCount, total: chunks.length });
+        await breathe();
+      }
       if (!chunk.trim()) continue;
       let parsed;
       try {
@@ -179,7 +199,13 @@ export class JavaService {
     // 2) DB-Duplikate (class_name + package) ermitteln.
     const repo = this.ds.getRepository(JavaFile);
     const existingByFqcn = new Map<string, JavaFile>();
+    this.progress.emit(jobId, { phase: 'check', done: 0, total: items.length });
+    let checked = 0;
     for (const it of items) {
+      if (++checked % YIELD_EVERY === 0) {
+        this.progress.emit(jobId, { phase: 'check', done: checked, total: items.length });
+        await breathe();
+      }
       const existing = await repo.findOne({
         where: { class_name: it.cls.class_name, pkg: it.pkg ?? IsNull() },
       });
@@ -228,6 +254,10 @@ export class JavaService {
     const savedIds: number[] = [];
     const overwritten: string[] = [];
     const changedVersions: Array<{ versionId: number; className: string; diff: string }> = [];
+    // Ab hier blockiert better-sqlite3 den Thread bis zum Commit: einmal melden, einmal den
+    // Loop atmen lassen – danach traegt die Anzeige im Client die Phase ueber die Zeit weiter.
+    this.progress.emit(jobId, { phase: 'save', done: 0, total: plans.length });
+    await breathe();
     await this.ds.transaction(async (manager) => {
       for (const plan of plans) {
         const { it, existing } = plan;
@@ -300,6 +330,8 @@ export class JavaService {
     const saved = await this.serializer.serializeJavaFileList(
       savedIds.map((id) => byId.get(id)).filter(Boolean),
     );
+
+    this.progress.emit(jobId, { phase: 'done', done: saved.length, total: saved.length });
 
     return {
       saved,

@@ -60,17 +60,50 @@ export function useJavaAnalyzer() {
     // Mehrere Klassen aus einem Roh-Paste analysieren. Liefert das Backend needsConfirm
     // (DB-Duplikate, kein overwrite), wird die Dateiliste NICHT aktualisiert -> der Aufrufer
     // zeigt den Confirm-Dialog und ruft erneut mit { overwrite: true } auf.
-    async analyzeBatch(source, { overwrite = false } = {}) {
+    //
+    // `onProgress` schaltet den Live-Fortschritt ein: Der Client erzeugt eine jobId, oeffnet damit
+    // den SSE-Stream und schickt sie mit. Ein Paste ueber 150.000 Zeilen laeuft sonst als eine
+    // einzige, stumme Anfrage – der Nutzer sieht minutenlang nur einen Spinner.
+    // Der Stream ist eine reine Zugabe: faellt er aus (Proxy, alter Server), laeuft die Analyse
+    // unveraendert weiter, nur eben ohne Detailfortschritt.
+    async analyzeBatch(source, { overwrite = false, onProgress = null } = {}) {
       state.analyzing = true
       state.error = ''
+      let es = null
+      let jobId = null
+      if (onProgress) {
+        jobId = `b${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+        try {
+          es = new EventSource(api.javaAnalyzeProgressUrl(jobId))
+          es.onmessage = (ev) => {
+            try {
+              const msg = JSON.parse(ev.data)
+              if (msg && msg.phase !== 'heartbeat') onProgress(msg)
+            } catch {
+              /* unlesbares Event ignorieren */
+            }
+          }
+          es.onerror = () => {}
+          // Kurz warten, bis die Verbindung wirklich offen ist – sonst gehen die ersten
+          // Ereignisse (split/parse-Start) verloren.
+          await new Promise((resolve) => {
+            const done = () => resolve()
+            es.addEventListener('open', done, { once: true })
+            setTimeout(done, 400)
+          })
+        } catch {
+          es = null
+        }
+      }
       try {
-        const result = await api.analyzeJavaBatch({ source, overwrite })
+        const result = await api.analyzeJavaBatch({ source, overwrite, jobId })
         if (!result.needsConfirm) await fetchFiles()
         return result
       } catch (e) {
         state.error = e.message
         throw e
       } finally {
+        es?.close()
         state.analyzing = false
       }
     },

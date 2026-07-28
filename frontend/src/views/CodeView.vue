@@ -19,7 +19,7 @@ import JavaQueueModal from '../components/java/JavaQueueModal.vue'
 import JavaDetectedClasses from '../components/java/JavaDetectedClasses.vue'
 import { Icon } from '../lib/icons.js'
 import { detectJavaClasses } from '../lib/javaDetect.js'
-import { formatEta } from '../lib/format.js'
+import { formatEta, formatDuration } from '../lib/format.js'
 
 const { files, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFileId, lastTargetLine, lastTargetEndLine, deleteFile, resetAll } =
   useJavaAnalyzer()
@@ -185,6 +185,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
   clearTimeout(noticeTimer)
   clearTimeout(detectTimer)
+  clearInterval(elapsedTimer)
 })
 
 // --- Metriken (Command-Bar) ---
@@ -311,10 +312,89 @@ function finishBatch(res) {
   showNew.value = false
 }
 
+// --- Fortschritt des Parse-/Speicher-Laufs ---------------------------------------------------
+// Ein Paste mit 150.000 Zeilen ist EIN Request, der je nach Maschine zehn Sekunden bis Minuten
+// laeuft. Der Server meldet seine Phasen per SSE; hier werden sie zu einer Gesamtquote verrechnet.
+// Die Gewichte sind gemessene Anteile (Parsen dominiert), keine Schaetzung ins Blaue.
+// Gewichte = gemessene Zeitanteile eines 5000-Klassen-Laufs (Parsen ~6 s, Schreiben + Kanten ~9 s).
+const PHASES = [
+  { key: 'split', label: 'Splitting sources', weight: 0.03 },
+  { key: 'parse', label: 'Parsing classes', weight: 0.42 },
+  { key: 'check', label: 'Checking duplicates', weight: 0.1 },
+  { key: 'save', label: 'Writing to database', weight: 0.33 },
+  { key: 'edges', label: 'Computing call edges', weight: 0.12 },
+]
+const progress = ref(null) // { phase, done, total }
+const elapsedMs = ref(0)
+const phaseStartedAt = ref(0)
+let elapsedTimer = null
+let runStartedAt = 0
+
+// Fortschrittsereignis uebernehmen und den Phasenwechsel stempeln (fuer die Zeit-Interpolation
+// in Phasen, die keinen Zaehler liefern koennen).
+function onRunProgress(ev) {
+  if (!ev) return
+  if (ev.phase !== progress.value?.phase) phaseStartedAt.value = Date.now()
+  progress.value = ev
+}
+
+function startRunClock() {
+  runStartedAt = Date.now()
+  phaseStartedAt.value = runStartedAt
+  elapsedMs.value = 0
+  clearInterval(elapsedTimer)
+  // 250 ms: fluessig genug fuer eine Sekundenanzeige, ohne unnoetige Renders.
+  elapsedTimer = setInterval(() => (elapsedMs.value = Date.now() - runStartedAt), 250)
+}
+function stopRunClock() {
+  clearInterval(elapsedTimer)
+  elapsedTimer = null
+  progress.value = null
+}
+
+const phaseIndex = computed(() => {
+  const i = PHASES.findIndex((p) => p.key === progress.value?.phase)
+  return i === -1 ? (progress.value?.phase === 'done' ? PHASES.length : 0) : i
+})
+// Anteil erledigter Phasen + Bruchteil der laufenden.
+//
+// Die Schreibphase kann keinen Zaehler liefern: better-sqlite3 arbeitet synchron, waehrend der
+// Transaktion kommt vom Server nichts. Statt den Ring dort minutenlang einfrieren zu lassen,
+// naehert er sich in solchen Phasen ZEITBASIERT dem Phasenende (asymptotisch, erreicht es nie) –
+// die Anzeige bleibt lebendig, ohne einen Fortschritt zu behaupten, der schon erreicht waere.
+const PHASE_TAU_MS = 9000
+const runPercent = computed(() => {
+  const p = progress.value
+  if (!p) return 0
+  if (p.phase === 'done') return 100
+  let acc = 0
+  for (let i = 0; i < phaseIndex.value; i++) acc += PHASES[i].weight
+  const cur = PHASES[phaseIndex.value]
+  if (cur) {
+    // `now` aus dem tickenden elapsedMs ableiten – so ist die Interpolation reaktiv.
+    const now = runStartedAt + elapsedMs.value
+    // Zeitkurve laeuft IMMER mit (deckelt bei 90 % der Phase, erreicht sie also nie von selbst);
+    // meldet der Server einen weiteren Zaehlerstand, gewinnt der.
+    const byTime = (1 - Math.exp(-Math.max(0, now - phaseStartedAt.value) / PHASE_TAU_MS)) * 0.9
+    const byCount = p.total ? Math.min(1, (p.done || 0) / p.total) : 0
+    acc += cur.weight * Math.max(0, Math.min(1, Math.max(byTime, byCount)))
+  }
+  return Math.max(1, Math.min(99, Math.round(acc * 100)))
+})
+// Restzeit aus der bisher gemessenen Rate. Erst ab etwas Fortschritt, sonst schwankt sie wild.
+const runRemainingMs = computed(() => {
+  const pct = runPercent.value
+  if (pct < 5 || pct >= 100 || elapsedMs.value < 1500) return null
+  return Math.round((elapsedMs.value / pct) * (100 - pct))
+})
+const runPhaseLabel = computed(() => PHASES[phaseIndex.value]?.label || 'Finishing up')
+
 async function analyze() {
   if (!source.value.trim()) return
+  startRunClock()
+  progress.value = { phase: 'split', done: 0, total: 0 }
   try {
-    const res = await analyzeBatch(source.value)
+    const res = await analyzeBatch(source.value, { onProgress: onRunProgress })
     // DB-Duplikate -> erst nachfragen, dann ggf. mit overwrite erneut senden.
     if (res.needsConfirm) {
       pendingConflicts.value = res.conflicts
@@ -323,19 +403,27 @@ async function analyze() {
     finishBatch(res)
   } catch {
     // Fehler steht in `error` (Composable) und wird im Modal angezeigt.
+  } finally {
+    stopRunClock()
   }
 }
 
 async function confirmOverwrite() {
   confirming.value = true
+  pendingConflicts.value = null // Dialog schliessen -> der Fortschritt im Modal wird sichtbar
+  startRunClock()
+  progress.value = { phase: 'split', done: 0, total: 0 }
   try {
-    const res = await analyzeBatch(source.value, { overwrite: true })
-    pendingConflicts.value = null
+    const res = await analyzeBatch(source.value, {
+      overwrite: true,
+      onProgress: onRunProgress,
+    })
     finishBatch(res)
   } catch {
     // Fehler steht in `error` (Composable).
   } finally {
     confirming.value = false
+    stopRunClock()
   }
 }
 function cancelOverwrite() {
@@ -606,8 +694,83 @@ function onResetPanels() {
               </button>
             </header>
 
+            <!-- Laufender Durchgang: der Editor weicht der Fortschrittsanzeige. Bei 150.000 Zeilen
+                 laeuft dieser eine Request minutenlang – „wie weit" und „wie lange noch" sind dann
+                 die einzigen Fragen, die zaehlen. -->
+            <div v-if="analyzing && progress" class="flex min-h-0 flex-1 flex-col items-center justify-center gap-6 p-8">
+              <!-- Ring: Gesamtquote aus den gewichteten Server-Phasen. -->
+              <div class="relative grid h-44 w-44 shrink-0 place-items-center">
+                <svg class="h-44 w-44 -rotate-90" viewBox="0 0 120 120">
+                  <circle cx="60" cy="60" r="54" fill="none" stroke="var(--color-surface-offset)" stroke-width="8" />
+                  <circle
+                    cx="60"
+                    cy="60"
+                    r="54"
+                    fill="none"
+                    stroke="var(--color-accent)"
+                    stroke-width="8"
+                    stroke-linecap="round"
+                    :stroke-dasharray="339.29"
+                    :stroke-dashoffset="339.29 * (1 - runPercent / 100)"
+                    style="transition: stroke-dashoffset 0.4s ease"
+                  />
+                </svg>
+                <div class="absolute grid place-items-center">
+                  <span class="font-mono text-3xl font-bold tabular-nums text-[var(--color-text)]">{{ runPercent }}<span class="text-lg text-[var(--color-text-muted)]">%</span></span>
+                  <!-- Zaehler nur, solange er auch zaehlt: die Schreibphase kann keinen liefern
+                       (synchrone Transaktion), ein stehendes „0/5.000" waere irrefuehrend. -->
+                  <span v-if="progress.total && progress.done" class="mt-0.5 font-mono text-[11px] tabular-nums text-[var(--color-text-muted)]">
+                    {{ nf.format(progress.done) }}/{{ nf.format(progress.total) }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="text-center">
+                <p class="text-sm font-semibold text-[var(--color-text)]">{{ runPhaseLabel }}</p>
+                <p class="mt-1 text-xs text-[var(--color-text-muted)]">Keep this dialog open – the graph appears as soon as it finishes.</p>
+              </div>
+
+              <!-- Phasenkette: zeigt, was schon durch ist und was noch kommt. -->
+              <div class="flex flex-wrap items-center justify-center gap-x-2 gap-y-2">
+                <template v-for="(p, i) in PHASES" :key="p.key">
+                  <span v-if="i" class="h-px w-4 bg-[var(--color-border)]" />
+                  <span
+                    class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition"
+                    :class="i < phaseIndex
+                      ? 'border-[color-mix(in_srgb,var(--color-success)_40%,transparent)] bg-[color-mix(in_srgb,var(--color-success)_12%,transparent)] text-[var(--color-success)]'
+                      : i === phaseIndex
+                        ? 'border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]'
+                        : 'border-[var(--color-border)] text-[var(--color-text-muted)] opacity-60'"
+                  >
+                    <Icon
+                      v-if="i < phaseIndex"
+                      icon="lucide:check"
+                      class="h-3 w-3"
+                    />
+                    <Icon v-else-if="i === phaseIndex" icon="lucide:loader-2" class="h-3 w-3 animate-spin" />
+                    <span v-else class="h-1 w-1 rounded-full bg-current" />
+                    {{ p.label }}
+                  </span>
+                </template>
+              </div>
+
+              <!-- Die zwei Zeiten: verstrichen und geschaetzte Restzeit. -->
+              <div class="flex items-stretch gap-3">
+                <div class="min-w-[8.5rem] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 text-center">
+                  <div class="font-mono text-xl font-semibold tabular-nums text-[var(--color-text)]">{{ formatDuration(elapsedMs) }}</div>
+                  <div class="mt-1 text-[10px] font-medium uppercase tracking-wide text-[var(--color-text-muted)]">elapsed</div>
+                </div>
+                <div class="min-w-[8.5rem] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 text-center">
+                  <div class="font-mono text-xl font-semibold tabular-nums text-[var(--color-text)]">
+                    {{ runRemainingMs != null ? formatDuration(runRemainingMs) : '–:––' }}
+                  </div>
+                  <div class="mt-1 text-[10px] font-medium uppercase tracking-wide text-[var(--color-text-muted)]">remaining</div>
+                </div>
+              </div>
+            </div>
+
             <!-- Arbeitsflaeche: ab lg zweispaltig und in sich scrollend, darunter gestapelt. -->
-            <div class="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_300px] lg:overflow-hidden">
+            <div v-else class="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_300px] lg:overflow-hidden">
               <div class="flex min-h-0 min-w-0 flex-col gap-2">
                 <label
                   v-if="inputMode === 'file'"
