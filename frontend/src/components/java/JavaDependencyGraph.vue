@@ -1065,6 +1065,22 @@ function onBundleSelect(fileId) {
   closeBundlePanel()
   emit('select', fileId)
 }
+
+// Aufrufstellen einer einzelnen Beziehung ermitteln – dieselbe Rechnung wie fuer das
+// Edge-Detail-Modal, nur ohne es zu oeffnen. Das Bundle-Panel zeigt den Code damit INLINE; die
+// Methodenruempfe kommen aus dem gemeinsamen `methodCache` (die Dateiliste traegt sie nicht).
+// Wird als Funktions-Prop hineingereicht: dieselbe Bauweise wie `data.onOpen` an den Kanten.
+async function loadRelationDetail(rel) {
+  const callerFile = filesById.value.get(rel?.consumer?.id)
+  const definerFile = filesById.value.get(rel?.provider?.id)
+  if (!callerFile || !definerFile) return null
+  const [callerMethods, definerMethods] = await Promise.all([methodsOf(callerFile.id), methodsOf(definerFile.id)])
+  return computeCallEdgeData(
+    { ...callerFile, methods: callerMethods },
+    { ...definerFile, methods: definerMethods },
+    rel.methods || [],
+  )
+}
 // Aus der Liste heraus zur Aufrufstelle: dieselbe Funktion wie beim Klick auf eine Call-Kante,
 // also derselbe Code-Auszug – nur eben ohne dass man erst ins Package hineinzoomen muss.
 function openRelationCode(rel) {
@@ -1566,6 +1582,7 @@ watch(
     <JavaBundlePanel
       :visible="!!activeBundle"
       :bundle="activeBundle"
+      :load-detail="loadRelationDetail"
       @close="closeBundlePanel"
       @open="openRelationCode"
       @select="onBundleSelect"

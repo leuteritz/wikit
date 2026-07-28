@@ -5,7 +5,11 @@
 // Shiki-CSS-Variablen (`--shiki-light`/`--shiki-dark`), die an den `.line`-Spans haengen und beim
 // Verschieben der Knoten erhalten bleiben.
 //
-// Aufgaben:
+// `addLineNumbers` (ganze Methode mit Gutter) und `buildCallWindow` (fokussiertes Fenster um eine
+// Aufrufzeile) lagen frueher in JavaEdgeDetailPanel. Sie stehen jetzt hier, weil sie ein ZWEITER
+// Konsument braucht (JavaBundlePanel) – zwei Kopien wuerden zwangslaeufig auseinanderlaufen.
+//
+// Aufgaben von processMethodBody:
 //  - eine evtl. vorangestellte Deklarationszeile (mit Modifiern) defensiv abschneiden,
 //  - fuehrende/abschliessende Leerzeilen IMMER entfernen,
 //  - optional (collapseBlank) ALLE Leerzeilen entfernen,
@@ -17,6 +21,98 @@ const DECL_RE = /^\s*(public|private|protected|static|final|abstract|synchronize
 
 function isBlank(el) {
   return el.textContent.trim() === ''
+}
+
+// Anzahl Kontext-Nicht-Leerzeilen je Seite der Aufrufzeile (buildCallWindow).
+const CONTEXT_LINES = 3
+
+// Server-gerendertes Shiki-HTML mit Gutter-Zeilennummern versehen: pro `.line` das
+// `data-line`-Attribut (startLine + i) setzen, das die CSS-Gutter-Regel (`::before`) anzeigt.
+// Reines DOM-Post-Processing – kein zweiter Highlighter (Farben bleiben aus Shiki-CSS-Variablen).
+export function addLineNumbers(html, startLine) {
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const root = doc.querySelector('.shiki')
+    if (!root) return html
+    const base = startLine != null ? startLine : 1
+    // Pro Zeile die ECHTE Quellzeilennummer (base + i) merken und Leerzeilen verwerfen -> der
+    // kombinierte Block ist leerzeilenfrei, die data-line-Nummern bleiben korrekt (Luecken = ok).
+    const kept = [...root.querySelectorAll('.line')]
+      .map((el, i) => ({ el, line: base + i }))
+      .filter(({ el }) => !isBlank(el))
+    if (!kept.length) return html
+    // Frisches <code> mit den gehaltenen Zeilen – die `.line` werden (wie in `buildCallWindow`)
+    // OHNE `\n`-Textnodes direkt aneinandergehaengt: im Original-`<pre>` (white-space: pre) wuerde
+    // jedes `\n` als zusaetzliche Leerzeile rendern -> doppelter Zeilenabstand. Der Zeilenumbruch
+    // kommt aus `.edge-code .line { display:block }`. Das `<pre>` (inkl. Shiki-Inline-Style mit
+    // --shiki-*-Variablen) bleibt erhalten -> Hintergrund + Einrueckung stimmen.
+    const code = doc.createElement('code')
+    kept.forEach(({ el, line }) => {
+      el.setAttribute('data-line', String(line))
+      code.appendChild(el)
+    })
+    const oldCode = root.querySelector('code')
+    if (oldCode) oldCode.replaceWith(code)
+    else {
+      root.innerHTML = ''
+      root.appendChild(code)
+    }
+    return root.outerHTML
+  } catch {
+    return html
+  }
+}
+
+// Aus dem (server-gerenderten) Shiki-HTML des ganzen Aufrufer-Rumpfs ein fokussiertes Fenster um
+// `siteLine` schneiden: pro `.line` die Quellzeile (data-line = base + i) bestimmen, Leerzeilen
+// (whitespace-only) ueberspringen und je 3 Nicht-Leerzeilen vor/nach der Aufrufzeile behalten. Die
+// Aufrufzeile bekommt `line-highlight`. Reines DOM-Post-Processing – kein zweiter Highlighter, die
+// Farben kommen weiter aus den Shiki-CSS-Variablen.
+export function buildCallWindow(html, bodyStartLine, siteLine) {
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const root = doc.querySelector('.shiki')
+    if (!root) return html
+    const base = bodyStartLine != null ? bodyStartLine : 1
+    const allLines = [...root.querySelectorAll('.line')]
+    // Nur Nicht-Leerzeilen, je mit ihrer Quellzeilennummer.
+    const kept = allLines.map((el, i) => ({ el, line: base + i })).filter(({ el }) => !isBlank(el))
+    if (!kept.length) return html
+    // Index der Aufrufzeile in der gefilterten Liste (oder naechstgelegene).
+    let hit = kept.findIndex((k) => k.line === siteLine)
+    if (hit === -1) {
+      let best = Infinity
+      kept.forEach((k, idx) => {
+        const d = Math.abs(k.line - siteLine)
+        if (d < best) {
+          best = d
+          hit = idx
+        }
+      })
+    }
+    const from = Math.max(0, hit - CONTEXT_LINES)
+    const to = Math.min(kept.length - 1, hit + CONTEXT_LINES)
+    const code = doc.createElement('code')
+    for (let i = from; i <= to; i++) {
+      const { el, line } = kept[i]
+      el.setAttribute('data-line', String(line))
+      if (i === hit) el.classList.add('line-highlight')
+      else el.classList.remove('line-highlight')
+      code.appendChild(el)
+    }
+    // <pre> (nicht <div>): bewahrt die fuehrende Einrueckung (white-space: pre) – gleiche
+    // Element-Art wie die Quelle-Sektion. Doppelte Zeilenabstaende drohen nicht, da die `.line`
+    // ohne `\n`-Textnodes angehaengt werden und per `.line { display:block }` umbrechen.
+    const shell = doc.createElement('pre')
+    shell.className = 'shiki'
+    // Shiki-Inline-Style (--shiki-*-Variablen, insb. --shiki-dark-bg) vom Original-Root uebernehmen,
+    // sonst fehlt dem neuen Wrapper der Hintergrund und der blaue Eltern-BG scheint durch.
+    shell.setAttribute('style', root.getAttribute('style') || '')
+    shell.appendChild(code)
+    return shell.outerHTML
+  } catch {
+    return html
+  }
 }
 
 export function processMethodBody(html, { collapseBlank = false, signatureHtml = '' } = {}) {

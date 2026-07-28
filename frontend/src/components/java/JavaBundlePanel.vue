@@ -6,29 +6,60 @@
 // erst in beide Packages hineinzoomen und die Kanten selbst suchen. Dieses Panel zeigt die Paare
 // direkt, gruppiert nach Klassenpaar und sortiert nach Aussagekraft (Aufruf > Typbezug > Import).
 //
-// Der zweite Klick fuehrt weiter: Paare mit erkannten Methodenaufrufen oeffnen das bestehende
-// Edge-Detail-Panel MIT der Aufrufstelle im Code (`open`), alle anderen springen wenigstens zur
-// Klasse (`select`) – fuer einen reinen Import gibt es keine Codestelle, die man zeigen koennte.
+// Jede Zeile klappt auf und zeigt DEN CODE: die definierte Methode und darunter jede Stelle, an
+// der sie aufgerufen wird (Aufrufzeile hervorgehoben). Dazu je ein Satz in einfacher Sprache, was
+// die Beziehung ueberhaupt bedeutet – das Panel ist die Stelle, an der jemand den Graphen zum
+// ersten Mal versteht, nicht die Stelle fuer Fachjargon.
 //
-// Reines UI: Datenbeschaffung und Panel-Wechsel liegen im Parent (JavaDependencyGraph).
+// Der Code kommt server-gerendert (Shiki) ueber `api.getJavaMethodSnippet` und wird mit den
+// geteilten Helfern aus lib/javaCode.js aufbereitet – identisch zum Edge-Detail-Modal, kein
+// zweiter Highlighter im Client. Die Aufrufstellen selbst rechnet der Parent (`loadDetail`).
 import { ref, computed, watch, onUnmounted } from 'vue'
+import { api } from '../../lib/api.js'
+import { addLineNumbers, buildCallWindow } from '../../lib/javaCode.js'
 import { Icon } from '../../lib/icons.js'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
   // { fromLabel, toLabel, fromIsClass, toIsClass, count, relations: [{ key, provider, consumer, kind, methods }] }
   bundle: { type: Object, default: null },
+  // async (rel) => computeCallEdgeData(...) – liefert Methoden-Signaturen + Aufrufstellen.
+  loadDetail: { type: Function, default: null },
 })
 const emit = defineEmits(['close', 'open', 'select'])
 
 const query = ref('')
+const expanded = ref(new Set())
+// rel.key -> { loading, error, defs: [...], usages: [...], moreDefs, moreUsages }
+const details = ref({})
 
-// Kantenart -> Beschriftung/Farbe. Spiegelt exakt das Vokabular des Graphen; eine eigene
-// Benennung an dieser Stelle waere eine zweite Sprache fuer dieselbe Sache.
+// Wieviel wird INLINE gezeigt? Darueber hinaus verweist die Zeile auf das volle Detail-Modal.
+// Ohne Deckel wuerde eine Beziehung mit 20 Methoden das Panel zu einer endlosen Codewand machen.
+const MAX_DEFS = 2
+const MAX_CALLERS = 2
+const MAX_SITES = 2
+
+// Kantenart -> Beschriftung, Farbe und ein Satz Klartext. Spiegelt das Vokabular des Graphen;
+// eine eigene Benennung an dieser Stelle waere eine zweite Sprache fuer dieselbe Sache.
 const KIND_META = {
-  call: { label: 'calls', color: 'var(--color-accent)', icon: 'lucide:arrow-right' },
-  uses: { label: 'uses type', color: 'var(--color-cyan)', icon: 'lucide:box' },
-  import: { label: 'imports', color: 'var(--color-text-muted)', icon: 'lucide:link' },
+  call: {
+    label: 'calls',
+    color: 'var(--color-accent)',
+    explain: (r, m) =>
+      `${r.consumer.class_name} calls ${m} on ${r.provider.class_name}. That is a real dependency: change the method and ${r.consumer.class_name} has to follow.`,
+  },
+  uses: {
+    label: 'uses type',
+    color: 'var(--color-cyan)',
+    explain: (r) =>
+      `${r.consumer.class_name} works with the type ${r.provider.class_name} — as a field, a parameter, a return type or a new ${r.provider.class_name}(). No method call was detected.`,
+  },
+  import: {
+    label: 'imports',
+    color: 'var(--color-text-muted)',
+    explain: (r) =>
+      `${r.consumer.class_name} only imports ${r.provider.class_name}. Nothing in the code uses it — often a leftover import.`,
+  },
 }
 
 const relations = computed(() => props.bundle?.relations || [])
@@ -50,10 +81,97 @@ const tally = computed(() => {
 })
 
 const methodsOf = (r) => (r.methods || []).filter((m) => m && m.method)
+const explainFor = (r) => {
+  const names = methodsOf(r).map((m) => `${m.method}()`)
+  const list = names.length > 2 ? `${names.slice(0, 2).join(', ')} and ${names.length - 2} more` : names.join(' and ')
+  return KIND_META[r.kind].explain(r, list || 'a method')
+}
 
-function pick(r) {
-  if (methodsOf(r).length) emit('open', r)
-  else emit('select', r.provider.id)
+// --- Code nachladen (lazy, einmal je Beziehung) ----------------------------------------------
+async function fetchDetail(rel) {
+  if (details.value[rel.key] || !props.loadDetail) return
+  details.value = { ...details.value, [rel.key]: { loading: true } }
+  try {
+    const data = (await props.loadDetail(rel)) || {}
+    const wanted = (data.methods || []).slice(0, MAX_DEFS)
+
+    // 1) Definitionen: die aufgerufene Methode im Original.
+    const defs = []
+    for (const m of wanted) {
+      try {
+        const snip = await api.getJavaMethodSnippet(rel.provider.id, m.name)
+        defs.push({
+          name: m.name,
+          signature: m.signature || snip.signature,
+          filename: snip.filename,
+          startLine: snip.startLine,
+          html: addLineNumbers(snip.combinedHtml ?? snip.html, snip.startLine),
+        })
+      } catch (e) {
+        defs.push({ name: m.name, signature: m.signature, error: e.message })
+      }
+    }
+
+    // 2) Aufrufstellen, gruppiert nach aufrufender Methode.
+    const byCaller = new Map()
+    for (const s of data.callSites || []) {
+      if (!byCaller.has(s.callerMethod)) byCaller.set(s.callerMethod, [])
+      byCaller.get(s.callerMethod).push(s)
+    }
+    const callerList = [...byCaller.entries()].slice(0, MAX_CALLERS)
+    const usages = []
+    for (const [callerMethod, sites] of callerList) {
+      try {
+        const snip = await api.getJavaMethodSnippet(rel.consumer.id, callerMethod)
+        const base = sites[0]?.bodyStartLine ?? snip.startLine ?? null
+        // Mehrere Treffer in DERSELBEN Zeile (z. B. `a.run(); b.run();`) ergeben denselben
+        // Ausschnitt – zweimal identischer Code untereinander sieht nach einem Fehler aus.
+        // Eine Zeile = ein Block, die betroffenen Methodennamen werden gesammelt.
+        const byLine = new Map()
+        for (const s of sites) {
+          const cur = byLine.get(s.line)
+          if (cur) {
+            if (!cur.callees.includes(s.calleeMethod)) cur.callees.push(s.calleeMethod)
+          } else {
+            byLine.set(s.line, { line: s.line, lineExact: s.lineExact, callees: [s.calleeMethod] })
+          }
+        }
+        const uniq = [...byLine.values()]
+        usages.push({
+          callerMethod,
+          filename: snip.filename,
+          sites: uniq.slice(0, MAX_SITES).map((s) => ({ ...s, html: buildCallWindow(snip.html, base, s.line) })),
+          moreSites: Math.max(0, uniq.length - MAX_SITES),
+        })
+      } catch (e) {
+        usages.push({ callerMethod, error: e.message, sites: [] })
+      }
+    }
+
+    details.value = {
+      ...details.value,
+      [rel.key]: {
+        loading: false,
+        defs,
+        usages,
+        moreDefs: Math.max(0, (data.methods || []).length - wanted.length),
+        moreUsages: Math.max(0, byCaller.size - callerList.length),
+        siteCount: (data.callSites || []).length,
+      },
+    }
+  } catch (e) {
+    details.value = { ...details.value, [rel.key]: { loading: false, error: e.message } }
+  }
+}
+
+function toggle(rel) {
+  const next = new Set(expanded.value)
+  if (next.has(rel.key)) next.delete(rel.key)
+  else {
+    next.add(rel.key)
+    if (methodsOf(rel).length) fetchDetail(rel)
+  }
+  expanded.value = next
 }
 
 function close() {
@@ -68,6 +186,11 @@ watch(
     if (vis) window.addEventListener('keydown', onKeydown)
     else window.removeEventListener('keydown', onKeydown)
     query.value = ''
+    expanded.value = new Set()
+    details.value = {}
+    // Die erste Beziehung gleich aufklappen: das Panel soll Code ZEIGEN, nicht erst anbieten.
+    const first = relations.value.find((r) => methodsOf(r).length) || relations.value[0]
+    if (vis && first) toggle(first)
   },
 )
 onUnmounted(() => window.removeEventListener('keydown', onKeydown))
@@ -86,7 +209,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         <div class="slideover-backdrop absolute inset-0 bg-black/30 backdrop-blur-[2px]" @click="close" />
 
         <aside
-          class="slideover-panel absolute right-0 top-0 flex h-full w-[min(94vw,30rem)] flex-col border-l border-[var(--color-border)] bg-[var(--color-surface-2)] shadow-2xl"
+          class="slideover-panel absolute right-0 top-0 flex h-full w-[min(96vw,40rem)] flex-col border-l border-[var(--color-border)] bg-[var(--color-surface-2)] shadow-2xl"
         >
           <header class="shrink-0 border-b border-[var(--color-border)] px-4 py-3">
             <div class="flex items-center justify-between gap-3">
@@ -117,6 +240,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                 <span class="truncate">{{ bundle.toLabel }}</span>
               </span>
             </div>
+
             <!-- Bilanz als Label/Wert-Paare statt als Satz: „1 relations" oder „8 with a method
                  calls" waere sonst kaum grammatisch sauber zu bekommen. -->
             <div class="mt-2 flex flex-wrap items-center gap-1.5">
@@ -125,7 +249,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               <span v-if="tally.import" class="tally" style="--k: var(--color-text-muted)">import-only <b>{{ tally.import }}</b></span>
               <span class="tally tally--total">total <b>{{ relations.length }}</b></span>
             </div>
-            <p class="mt-1.5 text-[11px] text-[var(--color-text-muted)]">Arrows read “defines → uses”.</p>
+
+            <!-- Einordnung fuer alle, die den Graphen zum ersten Mal sehen. -->
+            <p class="bp-intro">
+              This one edge stands for every connection between the two boxes above. Each row below is
+              <b>one class using another</b> — the left class defines something, the right class uses it.
+              Open a row to see the exact lines of code.
+            </p>
 
             <label v-if="relations.length > 8" class="mt-2 flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5">
               <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
@@ -143,16 +273,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               Nothing matches “{{ query }}”.
             </p>
 
-            <ul v-else class="flex flex-col gap-1.5">
-              <li v-for="r in filtered" :key="r.key">
-                <button
-                  type="button"
-                  class="rel-row"
-                  :class="{ 'rel-row--code': methodsOf(r).length }"
-                  :style="{ '--kind': KIND_META[r.kind].color }"
-                  :title="methodsOf(r).length ? 'Show the calling code' : 'Open this class — no call site to show'"
-                  @click="pick(r)"
-                >
+            <ul v-else class="flex flex-col gap-2">
+              <li v-for="r in filtered" :key="r.key" class="rel-card" :style="{ '--kind': KIND_META[r.kind].color }">
+                <!-- Kopfzeile: immer sichtbar, klappt den Code auf/zu. -->
+                <button type="button" class="rel-row" :aria-expanded="expanded.has(r.key)" @click="toggle(r)">
                   <span class="rel-kind">{{ KIND_META[r.kind].label }}</span>
                   <span class="rel-pair">
                     <span class="rel-class">{{ r.provider.class_name }}</span>
@@ -164,16 +288,110 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                     <span v-if="methodsOf(r).length > 3" class="rel-more">+{{ methodsOf(r).length - 3 }}</span>
                   </span>
                   <Icon
-                    :icon="methodsOf(r).length ? 'lucide:code-2' : 'lucide:arrow-right'"
+                    icon="lucide:chevron-down"
                     class="rel-go h-4 w-4 shrink-0"
+                    :class="{ 'rotate-180': expanded.has(r.key) }"
                   />
                 </button>
+
+                <!-- Aufgeklappt: Klartext + Code. -->
+                <div v-if="expanded.has(r.key)" class="rel-body">
+                  <p class="rel-explain">{{ explainFor(r) }}</p>
+
+                  <!-- Kein Aufruf im Code -> es gibt auch keine Stelle zu zeigen. Ehrlich sagen. -->
+                  <template v-if="!methodsOf(r).length">
+                    <p class="rel-note">
+                      <Icon icon="lucide:info" class="h-3.5 w-3.5 shrink-0" />
+                      No call site to show — this relation comes from the type or the import, not from a method call.
+                    </p>
+                    <div class="rel-actions">
+                      <button type="button" class="rel-btn" @click="emit('select', r.provider.id)">
+                        <Icon icon="lucide:file-code" class="h-3.5 w-3.5" />
+                        Open {{ r.provider.class_name }}
+                      </button>
+                    </div>
+                  </template>
+
+                  <template v-else>
+                    <p v-if="details[r.key]?.loading" class="rel-note">
+                      <Icon icon="lucide:loader-2" class="h-3.5 w-3.5 shrink-0 animate-spin" />
+                      Loading the code…
+                    </p>
+                    <p v-else-if="details[r.key]?.error" class="rel-note rel-note--warn">
+                      <Icon icon="lucide:alert-triangle" class="h-3.5 w-3.5 shrink-0" />
+                      {{ details[r.key].error }}
+                    </p>
+
+                    <template v-else-if="details[r.key]">
+                      <!-- 1 · Definition -->
+                      <div v-for="d in details[r.key].defs" :key="`d-${d.name}`" class="rel-block">
+                        <div class="rel-block-head">
+                          <span class="rel-step">1</span>
+                          <span class="rel-block-title">
+                            Defined in <b>{{ r.provider.class_name }}</b>
+                          </span>
+                          <span v-if="d.filename" class="rel-loc">{{ d.filename }}<template v-if="d.startLine"> · L{{ d.startLine }}</template></span>
+                        </div>
+                        <div v-if="d.html" class="edge-code" v-html="d.html" />
+                        <p v-else class="rel-note">{{ d.error || 'No source available.' }}</p>
+                      </div>
+                      <p v-if="details[r.key].moreDefs" class="rel-note">
+                        +{{ details[r.key].moreDefs }} more method<template v-if="details[r.key].moreDefs !== 1">s</template> — open the full details below.
+                      </p>
+
+                      <!-- 2 · Aufrufstellen -->
+                      <div v-for="u in details[r.key].usages" :key="`u-${u.callerMethod}`" class="rel-block">
+                        <div class="rel-block-head">
+                          <span class="rel-step">2</span>
+                          <span class="rel-block-title">
+                            Used in <b>{{ r.consumer.class_name }}.{{ u.callerMethod }}()</b>
+                          </span>
+                          <span v-if="u.filename" class="rel-loc">{{ u.filename }}</span>
+                        </div>
+                        <div v-for="(s, i) in u.sites" :key="i" class="rel-site">
+                          <div class="edge-usage-code" v-html="s.html" />
+                          <p class="rel-caption">
+                            Line {{ s.line }}<template v-if="!s.lineExact"> (approx.)</template> — the highlighted line is where
+                            <template v-for="(c, ci) in s.callees" :key="c">
+                              <template v-if="ci"> and </template><code>{{ c }}()</code>
+                            </template>
+                            <template v-if="s.callees.length > 1"> are</template><template v-else> is</template> called.
+                          </p>
+                        </div>
+                        <p v-if="u.moreSites" class="rel-note">+{{ u.moreSites }} more call site<template v-if="u.moreSites !== 1">s</template> in this method.</p>
+                        <p v-if="u.error" class="rel-note rel-note--warn">{{ u.error }}</p>
+                      </div>
+                      <p v-if="details[r.key].moreUsages" class="rel-note">
+                        +{{ details[r.key].moreUsages }} more calling method<template v-if="details[r.key].moreUsages !== 1">s</template> — open the full details below.
+                      </p>
+                      <p v-if="!details[r.key].usages.length" class="rel-note">
+                        <Icon icon="lucide:info" class="h-3.5 w-3.5 shrink-0" />
+                        The edge is recorded, but no call could be located in the source — it may be a manual link.
+                      </p>
+
+                      <div class="rel-actions">
+                        <button type="button" class="rel-btn rel-btn--primary" @click="emit('open', r)">
+                          <Icon icon="lucide:code-2" class="h-3.5 w-3.5" />
+                          Full details
+                        </button>
+                        <button type="button" class="rel-btn" @click="emit('select', r.provider.id)">
+                          <Icon icon="lucide:file-code" class="h-3.5 w-3.5" />
+                          Open {{ r.provider.class_name }}
+                        </button>
+                        <button type="button" class="rel-btn" @click="emit('select', r.consumer.id)">
+                          <Icon icon="lucide:file-code" class="h-3.5 w-3.5" />
+                          Open {{ r.consumer.class_name }}
+                        </button>
+                      </div>
+                    </template>
+                  </template>
+                </div>
               </li>
             </ul>
           </div>
 
           <footer class="shrink-0 border-t border-[var(--color-border)] px-4 py-2.5 text-[11px] text-[var(--color-text-muted)]">
-            Rows with methods open the calling code — the rest jump to the class.
+            Arrows read “defines → uses”. Open a row for the code, “Full details” for every call site.
           </footer>
         </aside>
       </div>
@@ -220,30 +438,41 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   border-style: dashed;
   background: none;
 }
+/* Einordnung fuer Erstleser – bewusst ganze Saetze, nicht noch mehr Fachbegriffe. */
+.bp-intro {
+  margin-top: 8px;
+  border-radius: 8px;
+  background: var(--color-surface);
+  padding: 7px 9px;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--color-text-muted);
+}
+.bp-intro b {
+  color: var(--color-text);
+}
 
-/* Eine Zeile = ein Klassenpaar. Der farbige Balken links traegt die Kantenart, damit sich die
-   Liste in derselben Sprache liest wie der Graph. */
+/* Eine Karte = ein Klassenpaar (Kopfzeile + aufklappbarer Codeteil). Der farbige Balken links
+   traegt die Kantenart, damit sich die Liste in derselben Sprache liest wie der Graph. */
+.rel-card {
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--kind);
+  background: var(--color-surface);
+}
 .rel-row {
   display: grid;
   width: 100%;
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 4px 8px;
-  border-radius: 10px;
-  border: 1px solid var(--color-border);
-  border-left: 3px solid var(--kind);
-  background: var(--color-surface);
   padding: 7px 9px;
   text-align: left;
-  transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+  transition: background 0.15s ease;
 }
 .rel-row:hover {
-  border-color: color-mix(in srgb, var(--kind) 60%, var(--color-border));
-  border-left-color: var(--kind);
   background: var(--color-surface-2);
-}
-.rel-row:active {
-  transform: translateY(1px);
 }
 .rel-kind {
   grid-column: 1;
@@ -294,15 +523,118 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   grid-column: 3;
   grid-row: 1 / span 2;
   color: var(--color-text-muted);
-  opacity: 0.5;
-  transition: opacity 0.15s ease, color 0.15s ease;
+  opacity: 0.6;
+  transition: transform 0.2s ease, opacity 0.15s ease;
 }
 .rel-row:hover .rel-go {
   opacity: 1;
-  color: var(--kind);
 }
-/* Zeilen mit Code dahinter duerfen sich staerker anfuehlen als reine Sprungmarken. */
-.rel-row--code {
-  cursor: pointer;
+
+/* --- Aufgeklappter Teil ------------------------------------------------------------------- */
+.rel-body {
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  padding: 9px;
+}
+/* Der Satz, der die Beziehung in Alltagssprache erklaert. */
+.rel-explain {
+  border-radius: 8px;
+  border-left: 2px solid var(--kind);
+  background: color-mix(in srgb, var(--kind) 7%, transparent);
+  padding: 6px 9px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--color-text);
+}
+.rel-block {
+  margin-top: 10px;
+}
+.rel-block-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+.rel-block-title b {
+  color: var(--color-text);
+}
+/* Schrittnummer: macht die Leserichtung „erst Definition, dann Aufruf" explizit. */
+.rel-step {
+  display: grid;
+  height: 16px;
+  width: 16px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--color-surface-offset);
+  font-size: 9px;
+  font-weight: 800;
+  color: var(--color-text-muted);
+}
+.rel-loc {
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 10px;
+  opacity: 0.85;
+}
+.rel-site + .rel-site {
+  margin-top: 8px;
+}
+/* Bildunterschrift unter einem Codefenster – sagt, was die markierte Zeile bedeutet. */
+.rel-caption {
+  margin-top: 3px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+.rel-caption code {
+  border-radius: 3px;
+  background: var(--color-surface-offset);
+  padding: 0 3px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.rel-note {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+.rel-note--warn {
+  color: var(--color-warning);
+}
+.rel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.rel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.rel-btn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+.rel-btn--primary {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
 }
 </style>
