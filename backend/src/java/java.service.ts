@@ -14,6 +14,17 @@ import { JavaFile } from '../entities/java-file.entity';
 import { JavaFileVersion } from '../entities/java-file-version.entity';
 import { JavaMethod } from '../entities/java-method.entity';
 
+// SQLite bricht bei sehr grossen Mehrzeilen-Inserts mit "Expression tree is too large
+// (maximum depth 1000)" ab: TypeORM laedt die eingefuegten Zeilen anschliessend per SELECT mit
+// einer OR-Kette ueber ALLE Zeilen zurueck, und diese Kette ist der zu tiefe Ausdruck. Eine
+// Codebasis mit einigen tausend Klassen erzeugt zehntausende Auto-Kanten – deshalb blockweise.
+const INSERT_CHUNK = 200;
+async function insertChunked(repo: { insert: (rows: any[]) => Promise<any> }, rows: any[]): Promise<void> {
+  for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
+    await repo.insert(rows.slice(i, i + INSERT_CHUNK));
+  }
+}
+
 // java-parser (chevrotain) wirft bei einem Syntaxfehler eine mehrere Kilobyte lange Meldung
 // ("Expecting: one of these possible Token sequences: 1. … 157. …"). Fuer die UI bleibt davon
 // nur die Fundstelle uebrig – der Rest ist fuer den Nutzer wertlos.
@@ -283,8 +294,11 @@ export class JavaService {
     // Reihenfolge wie savedIds beibehalten (find() sortiert nicht garantiert).
     const savedRows = await repo.find({ where: { id: In(savedIds) } });
     const byId = new Map(savedRows.map((r) => [r.id, r]));
-    const saved = await Promise.all(
-      savedIds.map((id) => this.serializer.serializeJavaFile(byId.get(id), { withSource: true })),
+    // Listenform statt Detailform: der Client nutzt aus `saved` nur id + Anzahl. Die Detailform
+    // wuerde jede gespeicherte Klasse samt Shiki-Rendering aller Methoden zurueckgeben – bei einem
+    // Paste mit hunderten Klassen ist das ein Vielfaches der Antwortgroesse ohne jeden Nutzen.
+    const saved = await this.serializer.serializeJavaFileList(
+      savedIds.map((id) => byId.get(id)).filter(Boolean),
     );
 
     return {
@@ -395,8 +409,11 @@ export class JavaService {
 
   // Liste aller analysierten Dateien (ohne raw_source). COLLATE NOCASE -> Raw-SQL.
   async listFiles(): Promise<any[]> {
-    const rows = await this.ds.query('SELECT * FROM java_files ORDER BY class_name COLLATE NOCASE');
-    return Promise.all(rows.map((r: any) => this.serializer.serializeJavaFile(r)));
+    const rows = await this.ds.query(
+      `SELECT id, article_id, filename, package, class_name, class_type, description, generated_at, created_at
+       FROM java_files ORDER BY class_name COLLATE NOCASE`,
+    );
+    return this.serializer.serializeJavaFileList(rows);
   }
 
   // Globaler Abhaengigkeitsgraph (Knoten = Klassen, Kanten = interne Imports).
@@ -752,7 +769,7 @@ export class JavaService {
         is_manual: 0,
         dismissed: 0,
       }));
-    if (toInsert.length) await repo.insert(toInsert);
+    if (toInsert.length) await insertChunked(repo, toInsert);
 
     // --- Debug-Log (docker logs wikit-backend): zeigt, was berechnet/gefiltert/eingefuegt wurde ---
     const byKind = computed.reduce<Record<string, number>>((acc, e) => {

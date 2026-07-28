@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, In } from 'typeorm';
 import { safeJson } from './json.util';
 import { MarkdownService } from './markdown.service';
 import { Article } from '../entities/article.entity';
@@ -105,6 +105,73 @@ export class SerializerService {
       out.relations = await this.relationsForArticle(row.id);
     }
     return out;
+  }
+
+// Listen-Serialisierung (GET /java/files): bewusst NICHT serializeJavaFile() je Zeile.
+  //
+  // Die Detailform rendert pro Methode drei Shiki-Bloecke (Signatur, KI-Text, Rumpf) und stellt
+  // pro Datei mehrere Einzelqueries. Bei einer Codebasis mit 5000 Klassen sind das zehntausende
+  // Renderings und Queries -> die Liste braucht ~9 s und ~23 MB, obwohl Baum und Graph davon nur
+  // Struktur brauchen. Hier deshalb: ein Satz Bulk-Queries, kein Markdown/Shiki, keine
+  // Methodenruempfe. Wer den Rumpf braucht (Edge-Panel, Detailansicht), holt die Datei einzeln.
+  async serializeJavaFileList(rows: any[]): Promise<any[]> {
+    if (!rows.length) return [];
+    const ids = rows.map((r) => r.id);
+
+    // Methodenzahl je Datei.
+    const methodCounts = new Map<number, number>();
+    for (const r of await this.ds.query(
+      `SELECT file_id, COUNT(*) AS n FROM java_methods GROUP BY file_id`,
+    )) {
+      methodCounts.set(Number(r.file_id), Number(r.n));
+    }
+
+    // Abhaengigkeiten je Datei (Import-Kanten des Graphen).
+    const depsByFile = new Map<number, string[]>();
+    for (const d of await this.ds.query(
+      `SELECT from_file_id, to_class_name FROM java_dependencies ORDER BY to_class_name`,
+    )) {
+      const list = depsByFile.get(Number(d.from_file_id)) || [];
+      list.push(d.to_class_name);
+      depsByFile.set(Number(d.from_file_id), list);
+    }
+
+    // Aktuelle Versionsnummer je Datei (Fallback 1 fuer Altbestand ohne Versionszeilen).
+    const versionByFile = new Map<number, number>();
+    for (const v of await this.ds.query(
+      `SELECT java_file_id, MAX(version_number) AS v FROM java_file_versions GROUP BY java_file_id`,
+    )) {
+      versionByFile.set(Number(v.java_file_id), Number(v.v) || 1);
+    }
+
+    // Artikel-Slugs nur fuer verknuepfte Dateien.
+    const articleIds = [...new Set(rows.map((r) => r.article_id).filter((id) => id != null))];
+    const slugById = new Map<number, string>();
+    if (articleIds.length) {
+      const arts = await this.ds
+        .getRepository(Article)
+        .find({ where: { id: In(articleIds) }, select: { id: true, slug: true } });
+      for (const a of arts) slugById.set(a.id, a.slug);
+    }
+
+    return rows.map((row) => {
+      const pkg = row.pkg !== undefined ? row.pkg : row.package;
+      return {
+        id: row.id,
+        article_id: row.article_id ?? null,
+        article_slug: row.article_id != null ? (slugById.get(row.article_id) ?? null) : null,
+        filename: row.filename,
+        package: pkg,
+        class_name: row.class_name,
+        class_type: row.class_type,
+        description: row.description ?? null,
+        generated_at: row.generated_at ?? null,
+        created_at: row.created_at,
+        version: versionByFile.get(row.id) ?? 1,
+        method_count: methodCounts.get(row.id) ?? 0,
+        dependencies: depsByFile.get(row.id) ?? [],
+      };
+    });
   }
 
   // Wandelt eine java_files-Zeile (Entity ODER Raw-Row) ins API-Format.

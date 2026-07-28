@@ -197,9 +197,21 @@ const filteredFiles = computed(() => filterClasses(files.value, search.value))
 const tree = computed(() => buildPackageTree(filteredFiles.value))
 const searching = computed(() => search.value.trim().length > 0)
 
+// Ab dieser Klassenzahl ist der Baum standardmaessig EINGEKLAPPT (nur die oberste Ebene offen).
+// Bei einer grossen Codebasis waeren es sonst tausende offene Zeilen – weder lesbar noch billig
+// zu rendern. Ein manuelles Auf-/Zuklappen (collapsed[path]) schlaegt den Default immer.
+const AUTO_COLLAPSE_FROM = 150
+const denseTree = computed(() => files.value.length >= AUTO_COLLAPSE_FROM)
+
+function folderOpen(node, depth) {
+  if (searching.value) return true
+  if (node.fullPath in collapsed) return !collapsed[node.fullPath]
+  return !denseTree.value || depth === 0
+}
+
 function flatten(nodes, depth, out) {
   for (const n of nodes) {
-    const open = searching.value ? true : !collapsed[n.fullPath]
+    const open = folderOpen(n, depth)
     out.push({ kind: 'folder', id: n.id, label: n.label, fullPath: n.fullPath, depth, count: countClasses(n), open })
     if (open) {
       flatten(n.children, depth + 1, out)
@@ -210,8 +222,11 @@ function flatten(nodes, depth, out) {
 }
 const rows = computed(() => flatten(tree.value, 0, []))
 
-function toggleFolder(path) {
-  collapsed[path] = !collapsed[path]
+// `open` kommt aus der gerenderten Zeile: der Default haengt von der Groesse der Codebasis ab
+// (s. folderOpen), ein blosses Invertieren von collapsed[path] wuerde beim ersten Klick auf einen
+// per Default geschlossenen Ordner ins Leere laufen.
+function toggleFolder(path, open) {
+  collapsed[path] = open
 }
 
 // Treffer-Hervorhebung (Substring, ohne v-html).
@@ -701,7 +716,7 @@ function onResetPanels() {
               v-if="row.kind === 'folder'"
               type="button"
               class="tree-row group/f flex w-full items-center gap-1.5 rounded-md py-1 pl-1 pr-2 text-left text-[11px] font-semibold text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
-              @click="toggleFolder(row.fullPath)"
+              @click="toggleFolder(row.fullPath, row.open)"
             >
               <span v-for="d in row.depth" :key="d" class="tree-guide" />
               <Icon icon="lucide:chevron-down" class="h-3 w-3 shrink-0 opacity-70 transition-transform" :class="row.open ? '' : '-rotate-90'" />
@@ -744,10 +759,10 @@ function onResetPanels() {
                   title="AI-analyzed"
                 />
                 <span
-                  v-if="row.file.methods?.length"
+                  v-if="row.file.method_count"
                   class="shrink-0 font-mono text-[10px] tabular-nums text-[var(--color-text-muted)] opacity-60 transition group-hover:opacity-0"
                 >
-                  {{ row.file.methods.length }}
+                  {{ row.file.method_count }}
                 </span>
               </button>
               <button

@@ -24,7 +24,9 @@ import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 import { useTheme } from '../../composables/useTheme.js'
 import { useJavaGraph } from '../../composables/useJavaGraph.js'
+import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
 import { Icon } from '../../lib/icons.js'
+import { buildPackageLevel, commonPackagePrefix, breadcrumbFor } from '../../lib/packageGraph.js'
 import JavaEdgeDetailPanel from './JavaEdgeDetailPanel.vue'
 import ManualEdgePanel from './ManualEdgePanel.vue'
 import ManagedEdge from './ManagedEdge.vue'
@@ -44,6 +46,8 @@ const { fitView, zoomIn, zoomOut, setViewport } = useVueFlow()
 //   * deleteEdge im Backend: manuelle Kante hart löschen, Auto-Kante als Tombstone (dismissed=1)
 //     merken -> falsch erkannte Auto-Kanten kehren bei „Kanten neu simulieren" nicht zurück.
 const { edges: serverEdges, fetchEdges, createEdge, deleteEdge, highlightedCall, clearHighlightedCall, highlightedDef, clearHighlightedDef } = useJavaGraph()
+// Detailabruf einer einzelnen Klasse (Methodenruempfe fuers Edge-Panel) – die Liste traegt sie nicht.
+const { getFile } = useJavaAnalyzer()
 
 // Beide Code-Tab-Highlights (Consumer ausgehend / Source eingehend) gemeinsam loeschen -> jeder
 // Graph-Klick (Node/Pane) raeumt einen evtl. stehenden Zustand vollstaendig auf.
@@ -59,6 +63,15 @@ const edgeTypes = { managed: ManagedEdge }
 const PKG_COLORS = ['#b3819c', '#7d7bad', '#3f93a0', '#9a8574'] // thistle · lavender · cyan · beige
 const NODE_W = 208
 const NODE_H = 66
+const PKG_W = 232
+const PKG_H = 88
+// Ab dieser Klassenzahl startet der Graph auf Package-Ebene statt mit einem Knoten je Klasse.
+// Darunter aendert sich nichts: kleine Projekte sollen weiter direkt ihre Klassen sehen.
+const PACKAGE_MODE_FROM = 150
+// Mehr Klassenknoten zeichnet der Graph nicht auf einmal. Gemessen: 5000 Knoten brauchen ueber
+// 30 s Layout+Render und blockieren dabei alles. Darueber wird abgeschnitten (sichtbar
+// angeschrieben) bzw. der Klassen-Umschalter gesperrt.
+const CLASS_RENDER_LIMIT = 400
 const REVIEW_COLOR = '#b8862f' // warmes Gold (uncertain / „Please review")
 const USES_COLOR = '#9a7fb0' // Struktur-/Typ-Bezug (uses): gedaempftes Lavendel, gestrichelt, ohne Label
 const DEBUG_EDGES = true // Debug (F12): loggt geladene Klassen + nicht gezeichnete Server-Kanten
@@ -114,8 +127,109 @@ watch(
   () => fetchEdges(),
 )
 
-const layout = computed(() => {
+// --- Ebenen-Navigation (Package -> … -> Klassen) ------------------------------------------
+// Bei einer grossen Codebasis ist ein Knoten je Klasse unlesbar. Der Graph zeigt dann die
+// Packages als Aggregatknoten; ein Klick steigt eine Ebene ab, bis die Klassen erreicht sind.
+// `zoomPath` = aktuell geoeffneter Pfad, `showClasses` = manuelles Aufklappen dieser Ebene.
+const zoomPath = ref(null) // null -> noch nicht gesetzt, faellt auf rootPath zurueck
+const showClasses = ref(false)
+
+// Startpfad = laengster gemeinsamer Package-Praefix. Liegt alles unter com.acme, waere die
+// oberste Ebene sonst ein einziger Knoten "com".
+const rootPath = computed(() => commonPackagePrefix(props.files || []))
+const basePath = computed(() => (zoomPath.value == null ? rootPath.value : zoomPath.value))
+
+// Alle Klassenkanten (unabhaengig von der Sichtbarkeit) fuer die Aggregation: gleiche Richtung
+// wie im Graph, also fromId = Definition/Provider, toId = Nutzung/Consumer.
+const allClassEdges = computed(() => {
   const files = props.files || []
+  const byName = new Map()
+  for (const f of files) byName.set(f.class_name, f)
+  const out = []
+  const pairs = new Set()
+  for (const e of serverEdges.value || []) {
+    const caller = byName.get(e.source_class)
+    const definer = byName.get(e.target_class)
+    if (!caller || !definer || caller.id === definer.id) continue
+    out.push({ fromId: definer.id, toId: caller.id, kind: e.kind || 'call' })
+    pairs.add(`${definer.id}->${caller.id}`)
+  }
+  for (const f of files) {
+    for (const dep of f.dependencies || []) {
+      const target = byName.get(simpleName(dep))
+      if (!target || target.id === f.id) continue
+      const key = `${target.id}->${f.id}`
+      if (pairs.has(key)) continue
+      pairs.add(key)
+      out.push({ fromId: target.id, toId: f.id, kind: 'import' })
+    }
+  }
+  return out
+})
+
+const level = computed(() =>
+  buildPackageLevel({ files: props.files || [], classEdges: allClassEdges.value, basePath: basePath.value }),
+)
+
+// Package-Ebene nur, solange sie ueberhaupt etwas aggregiert: viele Klassen, echte Sub-Packages,
+// und der Nutzer hat sie nicht manuell aufgeklappt.
+const packageMode = computed(
+  () => (props.files || []).length >= PACKAGE_MODE_FROM && level.value.groups.length > 0 && !showClasses.value,
+)
+
+// Welche Klassen werden als Klassenknoten gezeichnet? Auf Package-Ebene nur die, die direkt im
+// geoeffneten Pfad liegen; sonst alles unterhalb des Pfads (bzw. alles, wenn kein Pfad gesetzt).
+const scopedFiles = computed(() => {
+  const files = props.files || []
+  const base = basePath.value
+  if (!base) return files
+  return files.filter((f) => f.package === base || String(f.package || '').startsWith(base + '.'))
+})
+const visibleFiles = computed(() => {
+  if (packageMode.value) return level.value.directFiles
+  // Harte Obergrenze: Vue Flow + dagre brauchen fuer tausende Knoten zig Sekunden und blockieren
+  // dabei den Hauptthread. Lieber ehrlich abschneiden und es anschreiben, als die Oberflaeche
+  // einfrieren zu lassen – der Weg zur vollstaendigen Sicht ist das Aufklappen eines Packages.
+  const list = scopedFiles.value
+  return list.length > CLASS_RENDER_LIMIT ? list.slice(0, CLASS_RENDER_LIMIT) : list
+})
+// Wieviele Klassen des Ausschnitts werden gerade NICHT gezeichnet?
+const truncatedClasses = computed(() =>
+  packageMode.value ? 0 : Math.max(0, scopedFiles.value.length - visibleFiles.value.length),
+)
+
+const breadcrumb = computed(() => breadcrumbFor(basePath.value, rootPath.value))
+// Wieviele Klassen stecken im aktuell geoeffneten Ausschnitt (fuer die Kopfzeile)?
+const scopeClassCount = computed(() => {
+  const base = basePath.value
+  const files = props.files || []
+  if (!base) return files.length
+  return files.filter((f) => f.package === base || String(f.package || '').startsWith(base + '.')).length
+})
+
+function drillTo(path) {
+  zoomPath.value = path
+  showClasses.value = false
+}
+function drillUp() {
+  const base = basePath.value
+  if (!base || base === rootPath.value) return
+  const parent = base.includes('.') ? base.slice(0, base.lastIndexOf('.')) : ''
+  drillTo(parent.length >= rootPath.value.length ? parent : rootPath.value)
+}
+
+// Das Einpassen nach einem Ebenenwechsel uebernimmt der Geometrie-Watcher weiter unten: er hoert
+// auf die tatsaechlichen Knotenpositionen und feuert damit erst, wenn das neue Layout steht. Ein
+// zweiter fitView()-Aufruf hier wuerde ihm mit der alten Geometrie zuvorkommen.
+
+// Neue/geloeschte Klassen koennen den gemeinsamen Praefix verschieben -> Pfad zuruecksetzen,
+// wenn er nicht mehr existiert.
+watch(rootPath, (root) => {
+  if (zoomPath.value != null && !String(zoomPath.value).startsWith(root)) zoomPath.value = null
+})
+
+const layout = computed(() => {
+  const files = visibleFiles.value
   const known = new Map() // class_name -> file
   for (const f of files) known.set(f.class_name, f)
 
@@ -263,6 +377,27 @@ const layout = computed(() => {
     }
   }
 
+  // 2b) Aggregierte Kanten zwischen den Package-Knoten dieser Ebene. Ein Label mit der Anzahl der
+  //     zusammengefassten Klassenbeziehungen; die Strichstaerke waechst logarithmisch mit, damit
+  //     ein Buendel aus 400 Kanten nicht 40x dicker wirkt als eines aus 10.
+  if (packageMode.value) {
+    for (const ge of level.value.groupEdges) {
+      const width = Math.min(6, 1.4 + Math.log2(ge.count + 1) * 0.8)
+      edges.push({
+        id: `agg:${ge.id}`,
+        source: ge.source,
+        target: ge.target,
+        type: 'managed',
+        markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--color-accent)' },
+        data: {
+          kind: 'aggregate',
+          count: ge.count,
+          edgeStyle: { stroke: 'var(--color-accent)', strokeWidth: width, opacity: 0.85, cursor: 'default' },
+        },
+      })
+    }
+  }
+
   // Parallele Kanten desselben (UNGEORDNETEN) Knotenpaars indizieren -> ManagedEdge faechert
   // sie per Versatz auf und staffelt die Labels. ALLE Kanten zaehlen mit (Call + Import, beide
   // Richtungen ueber den sortierten Key), sonst koennen Call vs. Import oder A->B/B->A
@@ -311,9 +446,22 @@ const layout = computed(() => {
   }
 
   const g = new dagre.graphlib.Graph()
-  g.setGraph({ rankdir: 'TB', nodesep: 90, ranksep: 110, marginx: 24, marginy: 24 })
+  // Package-Ebene kompakter stapeln: dort zaehlen wenige, grosse Knoten – mit dem Klassen-Abstand
+  // wuerde eine Kette aus 8 Packages so hoch, dass fitView() sie auf Briefmarkengroesse zoomt.
+  g.setGraph({
+    rankdir: 'TB',
+    nodesep: packageMode.value ? 120 : 90,
+    ranksep: packageMode.value ? 70 : 110,
+    marginx: 24,
+    marginy: 24,
+  })
   g.setDefaultEdgeLabel(() => ({}))
   const orphans = []
+  const pkgGroups = packageMode.value ? level.value.groups : []
+  for (const grp of pkgGroups) {
+    if (degree.get(grp.id)) g.setNode(grp.id, { width: PKG_W, height: PKG_H })
+    else orphans.push(grp.id)
+  }
   for (const f of files) {
     const id = `c:${f.id}`
     if (degree.get(id)) g.setNode(id, { width: NODE_W, height: NODE_H })
@@ -346,6 +494,32 @@ const layout = computed(() => {
     })
   }
 
+  // Package-Knoten dieser Ebene (nur im Package-Modus). Sie tragen die Bilanz ihres Teilbaums:
+  // Klassen, KI-Fortschritt, Zahl der Sub-Packages und die nach aussen laufenden Beziehungen.
+  const pkgNodes = pkgGroups.map((grp) => {
+    const nd = g.hasNode(grp.id) ? g.node(grp.id) : orphanPos.get(grp.id)
+    return {
+      id: grp.id,
+      type: 'pkg',
+      position: {
+        x: (Number.isFinite(nd?.x) ? nd.x : 0) - PKG_W / 2,
+        y: (Number.isFinite(nd?.y) ? nd.y : 0) - PKG_H / 2,
+      },
+      data: {
+        path: grp.path,
+        label: grp.label,
+        classCount: grp.classCount,
+        analyzedCount: grp.analyzedCount,
+        methodCount: grp.methodCount,
+        childCount: grp.childCount,
+        hasChildren: grp.hasChildren,
+        internal: grp.internal,
+        external: grp.external,
+        color: pkgColor.get(grp.path) || PKG_COLORS[grp.label.length % PKG_COLORS.length],
+      },
+    }
+  })
+
   const nodes = files.map((f) => {
     const pkg = f.package || '(default)'
     const id = `c:${f.id}`
@@ -364,7 +538,7 @@ const layout = computed(() => {
         fileId: f.id,
         className: f.class_name,
         pkg,
-        methodCount: (f.methods || []).length,
+        methodCount: f.method_count ?? (f.methods || []).length,
         color: pkgColor.get(pkg),
         role: roleFor(id),
         analyzed: !!(f.description && f.description.trim()),
@@ -387,7 +561,7 @@ const layout = computed(() => {
     if (skipped.length) console.debug('[java-edges] nicht gezeichnete Kanten:', skipped)
   }
 
-  return { nodes, edges, externalRefsHidden: externalRefs.size }
+  return { nodes: [...pkgNodes, ...nodes], edges, externalRefsHidden: externalRefs.size }
 })
 
 const nodes = computed(() => layout.value.nodes)
@@ -432,6 +606,12 @@ const gridLineColor = computed(() => (theme.value === 'dark' ? 'rgba(196,186,143
 function onNodeClick({ node }) {
   // Klick in den Graph (Node) -> transiente Code-Tab-Highlights verwerfen (Spec: „Node ohne Kante").
   clearHighlights()
+  // Package-Knoten: eine Ebene tiefer. Hat er keine Sub-Packages mehr, zeigt die naechste Ebene
+  // direkt die Klassen dieses Packages.
+  if (node?.type === 'pkg' && node?.data?.path) {
+    drillTo(node.data.path)
+    return
+  }
   if (node?.data?.fileId != null) emit('select', node.data.fileId)
 }
 function resetView() {
@@ -449,8 +629,16 @@ watch(
   async (sig) => {
     if (!sig) return
     await nextTick()
+    // Ein nextTick reicht NICHT: Vue Flow uebernimmt die neuen Knoten erst in seinem eigenen
+    // Render-Durchlauf. Ohne das zusaetzliche Frame rechnet fitView() beim Ebenenwechsel noch mit
+    // der alten Geometrie – der neue Ausschnitt haengt dann halb ausserhalb des Canvas.
     // maxZoom 1: einzelne Knoten sollen nicht auf Plakatgroesse aufgeblasen werden.
-    fitView({ padding: 0.18, maxZoom: 1, duration: 200 })
+    const fit = () => fitView({ padding: 0.18, maxZoom: 1, duration: 200 })
+    requestAnimationFrame(fit)
+    // Zweiter Anlauf: fitView rechnet mit den GEMESSENEN Knotengroessen. Werden viele Knoten auf
+    // einmal ausgetauscht (Ebenenwechsel: 8 Packages -> 125 Klassen), sind die neuen im ersten
+    // Frame noch nicht vermessen und der Ausschnitt bliebe halb ausserhalb des Canvas.
+    setTimeout(fit, 280)
   },
 )
 
@@ -459,6 +647,8 @@ watch(
 // (rein zur Anzeige; die Existenz der Kante kommt aus dem Backend). Manuelle Kanten haben
 // keinen verifizierbaren Quellcode -> oeffnen das Panel nicht.
 const activeEdge = ref(null)
+// Laeuft, waehrend die Methodenruempfe fuer das Edge-Panel nachgeladen werden (s. methodsOf).
+const edgePanelLoading = ref(false)
 
 // Baut die Panel-Daten fuer eine (ggf. gebuendelte) Call-Kante. `methods` = Array von
 // { edgeId, method, isManual } -> Aufrufstellen werden ueber ALLE Methoden gesammelt; das Panel
@@ -521,7 +711,24 @@ function computeCallEdgeData(callerFile, definerFile, methods, edgeMeta = {}) {
 // Gemeinsame Oeffnen-Logik fuer beide Pfade: Klick auf den SVG-Pfad (@edge-click) UND Klick auf
 // das Kanten-Label (data.onOpen in ManagedEdge). In try/catch gekapselt, damit ein Fehler im
 // Browser-Log sichtbar wird statt lautlos zu scheitern.
-function openEdgePanel(d) {
+// Methoden-Detail (inkl. Ruempfe) einer Klasse holen und merken. Die Dateiliste traegt die
+// Ruempfe NICHT mehr mit: bei 5000 Klassen waere das ein zweistelliger MB-Betrag beim Laden der
+// Seite – gebraucht werden sie aber nur hier, beim Klick auf eine Kante.
+const methodCache = new Map() // fileId -> methods[]
+async function methodsOf(fileId) {
+  if (methodCache.has(fileId)) return methodCache.get(fileId)
+  const full = await getFile(fileId)
+  const list = full?.methods || []
+  methodCache.set(fileId, list)
+  return list
+}
+// Dateiliste aenderte sich (neue Analyse/Loeschen) -> gecachte Ruempfe koennen veraltet sein.
+watch(
+  () => (props.files || []).map((f) => `${f.id}:${f.version ?? 1}`).join(','),
+  () => methodCache.clear(),
+)
+
+async function openEdgePanel(d) {
   try {
     // Auto- UND manuelle Call-Kanten oeffnen das Modal (manuelle haben ggf. keine verifizierten
     // Aufrufstellen -> der Verwendung-Abschnitt zeigt dann einen leeren Zustand).
@@ -539,9 +746,21 @@ function openEdgePanel(d) {
       console.warn('[JavaGraph] Edge-Panel: Klasse(n) nicht in der Dateiliste gefunden', d)
       return
     }
-    activeEdge.value = computeCallEdgeData(callerFile, definerFile, methodList, {
-      isManual: d.isManual,
-    })
+    edgePanelLoading.value = true
+    try {
+      const [callerMethods, definerMethods] = await Promise.all([
+        methodsOf(d.fromFileId),
+        methodsOf(d.toFileId),
+      ])
+      activeEdge.value = computeCallEdgeData(
+        { ...callerFile, methods: callerMethods },
+        { ...definerFile, methods: definerMethods },
+        methodList,
+        { isManual: d.isManual },
+      )
+    } finally {
+      edgePanelLoading.value = false
+    }
   } catch (e) {
     console.warn('[JavaGraph] Edge-Panel konnte nicht geöffnet werden', d, e)
   }
@@ -710,8 +929,84 @@ watch(
         </div>
       </template>
 
+      <!-- Package-Knoten: Aggregat eines ganzen Teilbaums. Klick = eine Ebene tiefer. -->
+      <template #node-pkg="{ data }">
+        <div class="vf-pkgcard" :style="{ '--pkg': data.color }" :title="`${data.path} — click to open`">
+          <Handle type="target" :position="Position.Top" class="vf-handle" />
+          <span class="vf-strip" />
+          <div class="vf-pkgbody">
+            <div class="vf-pkgname">
+              <Icon :icon="data.hasChildren ? 'lucide:folder' : 'lucide:package'" class="vf-pkgicon" />
+              {{ data.label }}
+            </div>
+            <div class="vf-pkgmeta">
+              <span class="vf-pkgstat"><b>{{ data.classCount }}</b> classes</span>
+              <span v-if="data.childCount" class="vf-pkgstat"><b>{{ data.childCount }}</b> sub</span>
+              <span v-if="data.external" class="vf-pkgstat vf-pkgstat--ext" title="Relations leaving this package">
+                <Icon icon="lucide:arrow-up-from-line" class="vf-pkgic" />{{ data.external }}
+              </span>
+            </div>
+            <!-- KI-Fortschritt des Teilbaums: schmaler Balken, damit man sieht, wo noch Arbeit liegt. -->
+            <div class="vf-pkgbar" :title="`${data.analyzedCount}/${data.classCount} analyzed`">
+              <span :style="{ width: (data.classCount ? (data.analyzedCount / data.classCount) * 100 : 0) + '%' }" />
+            </div>
+          </div>
+          <Handle type="source" :position="Position.Bottom" class="vf-handle" />
+        </div>
+      </template>
+
       <Background variant="lines" :gap="110" :line-width="1" :color="gridLineColor" />
     </VueFlow>
+
+    <!-- Ebenen-Navigation: nur relevant, wenn ueberhaupt aggregiert wird. Der Pfad ist klickbar,
+         rechts steht, was der aktuelle Ausschnitt umfasst. -->
+    <div v-if="files.length && (level.groups.length || basePath)" class="vf-breadcrumb">
+      <button
+        type="button"
+        class="vf-crumb-up"
+        :disabled="!basePath || basePath === rootPath"
+        title="One level up"
+        @click="drillUp"
+      >
+        <Icon icon="lucide:chevron-left" class="h-3.5 w-3.5" />
+      </button>
+      <div class="vf-crumbs">
+        <template v-for="(c, i) in breadcrumb" :key="c.path || 'root'">
+          <Icon v-if="i" icon="lucide:chevron-right" class="vf-crumb-sep" />
+          <button
+            type="button"
+            class="vf-crumb"
+            :class="{ 'vf-crumb--active': c.path === basePath }"
+            :disabled="c.path === basePath"
+            @click="drillTo(c.path)"
+          >
+            {{ c.label }}
+          </button>
+        </template>
+      </div>
+      <span class="vf-crumb-count">{{ scopeClassCount }} classes</span>
+      <!-- Abgeschnittener Ausschnitt: nie stillschweigend – sonst liest man einen unvollstaendigen
+           Graphen als vollstaendig. -->
+      <span v-if="truncatedClasses" class="vf-crumb-warn" :title="`Only the first ${CLASS_RENDER_LIMIT} classes are drawn – open a package for the full picture`">
+        <Icon icon="lucide:alert-triangle" class="h-3 w-3" />
+        {{ truncatedClasses }} hidden
+      </span>
+      <button
+        v-if="level.groups.length"
+        type="button"
+        class="vf-crumb-toggle"
+        :disabled="!showClasses && scopeClassCount > CLASS_RENDER_LIMIT"
+        :title="showClasses
+          ? 'Group by package'
+          : scopeClassCount > CLASS_RENDER_LIMIT
+            ? `Too many classes here (${scopeClassCount}) – open a package first`
+            : 'Show all classes in this scope'"
+        @click="showClasses = !showClasses"
+      >
+        <Icon :icon="showClasses ? 'lucide:package' : 'lucide:braces'" class="h-3.5 w-3.5" />
+        {{ showClasses ? 'Packages' : 'Classes' }}
+      </button>
+    </div>
 
     <!-- Canvas-Chrome unten: Werkzeuge links, Legende rechts. Beide schweben am unteren Rand,
          damit die obere Canvas-Haelfte (wo dagre die Wurzelknoten setzt) frei bleibt. -->
@@ -811,6 +1106,202 @@ watch(
 
 <style scoped>
 @reference "../../assets/style.css";
+
+/* --- Package-Knoten (aggregierte Ebene) ------------------------------------------------
+   Bewusst groesser und ruhiger als die Klassenkarte: auf dieser Ebene zaehlen Name, Umfang
+   und KI-Fortschritt des Teilbaums, nicht Einzelheiten. Der Akzent ist die Package-Farbe. */
+.vf-pkgcard {
+  --role: var(--pkg, var(--color-accent));
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  width: 232px;
+  padding: 0 12px 0 0;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--role) 42%, var(--color-border));
+  background: var(--color-surface-2);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--role) 20%, transparent);
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
+}
+.vf-pkgcard:hover {
+  transform: translateY(-1px);
+  border-color: var(--role);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--role) 34%, transparent);
+}
+.vf-pkgbody {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  padding: 10px 0;
+}
+.vf-pkgname {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  /* Bewusst groesser als der Klassenname: auf dieser Ebene wird oft herausgezoomt (viele
+     Packages), und der Name ist das Einzige, was dann noch lesbar sein muss. */
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vf-pkgicon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--role);
+}
+.vf-pkgmeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+.vf-pkgstat b {
+  font-weight: 600;
+  color: var(--color-text);
+}
+.vf-pkgstat--ext {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.vf-pkgic {
+  width: 10px;
+  height: 10px;
+}
+.vf-pkgbar {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--color-surface-offset);
+}
+.vf-pkgbar > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-accent);
+}
+
+/* --- Ebenen-Navigation (Breadcrumb) ---------------------------------------------------- */
+.vf-breadcrumb {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 5;
+  display: flex;
+  max-width: calc(100% - 20px);
+  align-items: center;
+  gap: 6px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface-2) 92%, transparent);
+  padding: 4px 6px;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.08);
+}
+.vf-crumbs {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+}
+.vf-crumb {
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.vf-crumb:hover:not(:disabled) {
+  background: var(--color-surface-offset);
+  color: var(--color-text);
+}
+.vf-crumb--active {
+  font-weight: 600;
+  color: var(--color-text);
+}
+.vf-crumb-sep {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  opacity: 0.5;
+}
+.vf-crumb-up {
+  display: grid;
+  height: 22px;
+  width: 22px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--color-text-muted);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.vf-crumb-up:hover:not(:disabled) {
+  background: var(--color-surface-offset);
+  color: var(--color-text);
+}
+.vf-crumb-up:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.vf-crumb-count {
+  flex-shrink: 0;
+  border-left: 1px solid var(--color-border);
+  padding-left: 8px;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.vf-crumb-toggle {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.vf-crumb-toggle:hover:not(:disabled) {
+  background: var(--color-surface-offset);
+  color: var(--color-text);
+}
+.vf-crumb-toggle:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.vf-crumb-warn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 3px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
+  padding: 2px 6px;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--color-warning);
+  white-space: nowrap;
+}
 
 .vf-card {
   /* Karten-Akzent = ROLLE im Abhaengigkeitsnetz (Streifen, Badge, Ring). Package steckt nur noch

@@ -86,8 +86,20 @@ const d = computed(() => props.data || {})
 <template>
   <BaseEdge :id="id" :path="edgePath" :marker-end="markerEnd" :style="d.edgeStyle" />
 
+  <!-- Aggregierte Package-Kante: nur die Zahl der zusammengefassten Klassenbeziehungen. Keine
+       Aktionen – verwaltet wird immer auf Klassenebene, eine Ebene tiefer. -->
+  <EdgeLabelRenderer v-if="d.kind === 'aggregate'">
+    <div
+      class="me-label me-label--agg"
+      :style="{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }"
+      :title="`${d.count} class relation(s) – open a package to see them`"
+    >
+      <span class="me-method me-count"><Icon icon="lucide:arrow-right" class="me-ic" />{{ d.count }}</span>
+    </div>
+  </EdgeLabelRenderer>
+
   <!-- Import- und uses-Kanten haben kein Label (nur die Linie). -->
-  <EdgeLabelRenderer v-if="d.kind !== 'import' && d.kind !== 'uses'">
+  <EdgeLabelRenderer v-else-if="d.kind !== 'import' && d.kind !== 'uses'">
     <!-- Inline-Bestaetigung (Einzelkante): ersetzt das Label, bis bestaetigt/abgebrochen. -->
     <div
       v-if="confirming"
@@ -167,6 +179,13 @@ const d = computed(() => props.data || {})
 }
 .me-label--manual {
   border-style: dashed;
+}
+/* Aggregat-Label: reine Zahl, nicht klickbar -> Cursor + Hover-Affordanz zuruecknehmen. */
+.me-label--agg {
+  cursor: default;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.9;
 }
 .me-label--review {
   border-color: color-mix(in srgb, #d4a017 60%, var(--color-border));
