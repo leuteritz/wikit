@@ -71,6 +71,8 @@ const {
   clearHighlightedDef,
   hoveredNode,
   setHoveredNode,
+  hoveredEdge,
+  setHoveredEdge,
 } = useJavaGraph()
 // Detailabruf einer einzelnen Klasse (Methodenruempfe fuers Edge-Panel) – die Liste traegt sie nicht.
 const { getFile } = useJavaAnalyzer()
@@ -803,17 +805,35 @@ const neighbours = computed(() => {
 })
 function isDimmed(nodeId) {
   const h = hoveredNode.value
-  if (!h || h === nodeId) return false
-  return !neighbours.value.get(h)?.has(nodeId)
+  if (h) return h !== nodeId && !neighbours.value.get(h)?.has(nodeId)
+  // Hover auf einer KANTE: nur ihre beiden Endpunkte bleiben stehen. Schaerfer als beim
+  // Knoten-Hover (dort bleibt die ganze Nachbarschaft) – eine Kante ist genau eine Beziehung
+  // zwischen genau zwei Klassen, und das soll man auch so sehen.
+  const he = hoveredEdge.value
+  if (he) return he.sourceId !== nodeId && he.targetId !== nodeId
+  return false
+}
+// Endpunkt der gehoverten Kante -> Ring in DEREN Farbe (nicht in der Rollenfarbe): Linie, Label
+// und beide Karten tragen dieselbe Farbe und sind damit als eine Aussage lesbar.
+function edgeEndColor(nodeId) {
+  const he = hoveredEdge.value
+  if (!he || (he.sourceId !== nodeId && he.targetId !== nodeId)) return null
+  return he.color || 'var(--color-accent)'
 }
 function onNodeEnter({ node }) {
+  // Knoten schlaegt Kante: liegt die Maus auf einer Karte, ist die Karte gemeint. Ohne das
+  // Zuruecksetzen blieben beide Hervorhebungen gleichzeitig stehen und wuerden sich widersprechen.
+  setHoveredEdge(null)
   setHoveredNode(node?.id || null)
 }
 function onNodeLeave() {
   setHoveredNode(null)
 }
 // Modul-State: beim Verlassen des Code-Tabs koennte sonst ein gedimmter Graph zurueckbleiben.
-onUnmounted(() => setHoveredNode(null))
+onUnmounted(() => {
+  setHoveredNode(null)
+  setHoveredEdge(null)
+})
 
 function onNodeClick({ node }) {
   // Klick in den Graph (Node) -> transiente Code-Tab-Highlights verwerfen (Spec: „Node ohne Kante").
@@ -1259,9 +1279,10 @@ watch(
               'vf-card--match': data.isMatch,
               'vf-card--context': data.isContext,
               'vf-card--dim': isDimmed(`c:${data.fileId}`),
+              'vf-card--edge-end': !!edgeEndColor(`c:${data.fileId}`),
             },
           ]"
-          :style="{ '--pkg': data.color }"
+          :style="{ '--pkg': data.color, '--edge': edgeEndColor(`c:${data.fileId}`) }"
         >
           <Handle type="target" :position="Position.Top" class="vf-handle" />
           <span class="vf-strip" />
@@ -1305,8 +1326,11 @@ watch(
       <template #node-pkg="{ data }">
         <div
           class="vf-pkgcard"
-          :class="{ 'vf-card--dim': isDimmed(`p:${data.path}`) }"
-          :style="{ '--pkg': data.color }"
+          :class="{
+            'vf-card--dim': isDimmed(`p:${data.path}`),
+            'vf-card--edge-end': !!edgeEndColor(`p:${data.path}`),
+          }"
+          :style="{ '--pkg': data.color, '--edge': edgeEndColor(`p:${data.path}`) }"
           :title="`${data.path} — click to open`"
         >
           <Handle type="target" :position="Position.Top" class="vf-handle" />
@@ -2292,6 +2316,19 @@ watch(
 }
 .vf-card--dim:hover {
   opacity: 0.14;
+}
+/* Endpunkt der gehoverten Kante. Ring + Schein in der FARBE DER KANTE (nicht der Rolle): so
+   gehoeren Linie, Label und die zwei Karten sichtbar zusammen, und man liest in einem Blick,
+   welche beiden Klassen die Beziehung eigentlich verbindet. Der Ring liegt aussen (box-shadow),
+   veraendert also keine Kartengroesse – ein Aufklappen beim Hover wuerde das Layout verspringen
+   lassen und die Maus womoeglich gleich wieder aus der Kante schieben. */
+.vf-card--edge-end,
+.vf-pkgcard.vf-card--edge-end {
+  border-color: var(--edge);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--edge) 45%, transparent),
+    0 8px 22px color-mix(in srgb, var(--edge) 30%, transparent);
+  transform: translateY(-1px);
+  z-index: 1;
 }
 /* --- Legende: Kategorien --------------------------------------------------------------------
    Die Typ-Zeilen sind kurz (ein Wort) -> zweispaltig, sonst waere die Legende doppelt so hoch

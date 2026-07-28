@@ -92,13 +92,35 @@ const d = computed(() => props.data || {})
 // Zeigt die Maus auf einen Knoten, bleiben nur dessen eigene Kanten stehen; alles andere faellt
 // fast auf null. Der Zustand kommt aus dem Composable, NICHT ueber `data`: sonst muesste der
 // Parent bei jeder Mausbewegung saemtliche Kanten neu in den Vue-Flow-Store schreiben.
-const { hoveredNode } = useJavaGraph()
+const { hoveredNode, hoveredEdge, setHoveredEdge, clearHoveredEdge } = useJavaGraph()
+
+// --- Hover auf der KANTE ---------------------------------------------------------------------
+// Die Linie selbst ist 2 px schmal und damit kaum zu treffen. Darum liegt ein unsichtbarer,
+// breiter Pfad darueber, der nur die Maus einsammelt (`me-hit`) – dasselbe Muster, das Vue Flow
+// intern fuer seine Standardkanten nutzt.
+const edgeColor = computed(() => d.value.edgeStyle?.stroke || 'var(--color-accent)')
+const isHovered = computed(() => hoveredEdge.value?.id === props.id)
+
+function onEdgeEnter() {
+  setHoveredEdge({
+    id: props.id,
+    sourceId: d.value.sourceId,
+    targetId: d.value.targetId,
+    color: edgeColor.value,
+  })
+}
+function onEdgeLeave() {
+  clearHoveredEdge(props.id)
+}
+
 const dimmed = computed(() => {
   const h = hoveredNode.value
-  if (!h) return false
-  return d.value.sourceId !== h && d.value.targetId !== h
+  if (h) return d.value.sourceId !== h && d.value.targetId !== h
+  // Steht die Maus auf einer anderen Kante, tritt diese hier zurueck – sonst bliebe die
+  // hervorgehobene Beziehung in einem dichten Graphen genauso unlesbar wie vorher.
+  return !!hoveredEdge.value && !isHovered.value
 })
-const focused = computed(() => !!hoveredNode.value && !dimmed.value)
+const focused = computed(() => (!!hoveredNode.value || !!hoveredEdge.value) && !dimmed.value)
 
 // Die Kanten-Grundfarbe steht in data.edgeStyle; hier kommt nur der Fokus-Zustand darueber.
 const pathStyle = computed(() => {
@@ -106,6 +128,16 @@ const pathStyle = computed(() => {
   // sich weder eine Klasse noch ein scoped-Selektor zuverlaessig haengen laesst.
   const base = { transition: 'opacity 0.15s ease, stroke-width 0.15s ease', ...(d.value.edgeStyle || {}) }
   if (dimmed.value) return { ...base, opacity: 0.07 }
+  // Direkt gehoverte Kante: kraeftiger als der blosse Nachbarschafts-Fokus und mit Schein in der
+  // eigenen Farbe – sie ist das, was gerade gelesen wird, nicht nur „nicht gedaempft".
+  if (isHovered.value) {
+    return {
+      ...base,
+      opacity: 1,
+      strokeWidth: (base.strokeWidth || 2) + 1.4,
+      filter: `drop-shadow(0 0 6px ${edgeColor.value})`,
+    }
+  }
   if (focused.value) return { ...base, opacity: 1, strokeWidth: (base.strokeWidth || 2) + 0.7 }
   return base
 })
@@ -114,14 +146,35 @@ const pathStyle = computed(() => {
 <template>
   <BaseEdge :id="id" :path="edgePath" :marker-end="markerEnd" :style="pathStyle" />
 
+  <!-- Unsichtbare Trefferflaeche: macht die schmale Linie ueberhaupt erst hoverbar. `stroke` als
+       pointer-events -> nur der Strichverlauf faengt die Maus, nicht die umschlossene Flaeche. -->
+  <path
+    class="me-hit"
+    :d="edgePath"
+    fill="none"
+    stroke="transparent"
+    :stroke-width="20 * rootScale"
+    @mouseenter="onEdgeEnter"
+    @mouseleave="onEdgeLeave"
+  />
+
+  <!-- Laufender Punkt auf der gehoverten Kante: zeigt die RICHTUNG der Beziehung, die aus einer
+       ruhenden Linie mit Pfeilspitze allein nur schwer abzulesen ist. Nur EINE Kante ist je
+       gehovert -> genau eine Animation, unabhaengig von der Graph-Groesse. -->
+  <circle v-if="isHovered" class="me-flow" :r="3.5 * rootScale" :fill="edgeColor">
+    <animateMotion dur="1.4s" repeatCount="indefinite" :path="edgePath" />
+  </circle>
+
   <!-- Aggregierte Package-Kante: nur die Zahl der zusammengefassten Klassenbeziehungen. Keine
        Aktionen – verwaltet wird immer auf Klassenebene, eine Ebene tiefer. -->
   <EdgeLabelRenderer v-if="d.kind === 'aggregate'">
     <div
       class="me-label me-label--agg"
-      :class="{ 'me-label--dim': dimmed }"
-      :style="{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }"
+      :class="{ 'me-label--dim': dimmed, 'me-label--hot': isHovered }"
+      :style="{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`, '--edge': edgeColor }"
       :title="`${d.count} class-to-class relation(s) bundled here — click to list them`"
+      @mouseenter="onEdgeEnter"
+      @mouseleave="onEdgeLeave"
       @click.stop="d.onOpen && d.onOpen(d, $event)"
     >
       <!-- Ausgeschrieben: die Zahl allein liess offen, WAS gezaehlt wird, und „links" laesst sich
@@ -157,9 +210,12 @@ const pathStyle = computed(() => {
         'me-label--selected': selected,
         'me-label--lit': d.isHighlighted,
         'me-label--dim': dimmed,
+        'me-label--hot': isHovered,
       }"
-      :style="{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }"
+      :style="{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`, '--edge': edgeColor }"
       title="Show details"
+      @mouseenter="onEdgeEnter"
+      @mouseleave="onEdgeLeave"
       @click.stop="d.onOpen && d.onOpen(d, $event)"
     >
       <Icon v-if="d.isManual" icon="lucide:link" class="me-ic me-ic--manual" title="Manual edge" />
@@ -192,6 +248,22 @@ const pathStyle = computed(() => {
 @reference "../../assets/style.css";
 
 /* EdgeLabelRenderer-Overlay ist pointer-events:none -> Label muss Klicks wieder annehmen. */
+/* Trefferflaeche der Kante: unsichtbar, faengt aber die Maus auf dem gesamten Strichverlauf. */
+.me-hit {
+  pointer-events: stroke;
+  cursor: pointer;
+  fill: none;
+}
+/* Laufender Richtungspunkt – reine Dekoration, darf keine Klicks abfangen. */
+.me-flow {
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .me-flow {
+    display: none;
+  }
+}
+
 .me-label {
   position: absolute;
   pointer-events: all;
@@ -222,6 +294,16 @@ const pathStyle = computed(() => {
 }
 .me-label--manual {
   border-style: dashed;
+}
+/* Label der gehoverten Kante: uebernimmt deren Farbe und tritt vor. Der Rahmen ist dieselbe
+   Farbe, die auch die Linie und die Ringe an den beiden Endkarten tragen – daran haengt die
+   ganze Aussage zusammen. */
+.me-label--hot {
+  border-color: var(--edge);
+  color: var(--edge);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--edge) 28%, transparent), 0 4px 14px rgb(0 0 0 / 0.22);
+  transform-origin: center;
+  z-index: 2;
 }
 /* Aggregat-Label: reine Zahl, nicht klickbar -> Cursor + Hover-Affordanz zuruecknehmen. */
 /* Aggregat-Label traegt die Farbe seiner Kante -> Linie und Beschriftung sind als EINE Aussage

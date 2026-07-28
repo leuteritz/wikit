@@ -30,6 +30,13 @@ const highlightedDef = ref(null)
 // Vue Flow neu geschrieben werden (bei einigen hundert Kanten sichtbar traege).
 const hoveredNode = ref(null)
 
+// Gegenstueck fuer die KANTE unter der Maus: `{ id, sourceId, targetId, color }` | null.
+// Eine Kante ist eine Aussage ueber ZWEI Klassen – wer sie ansieht, will wissen, welche beiden.
+// Deshalb hebt der Graph beim Hover die Linie UND ihre beiden Endpunkte hervor und daempft den
+// Rest. Gleiche Begruendung wie bei hoveredNode fuer den geteilten Zustand statt Props: sonst
+// muesste bei jeder Mausbewegung der komplette Kanten-Store neu geschrieben werden.
+const hoveredEdge = ref(null)
+
 async function fetchEdges() {
   loading.value = true
   error.value = ''
@@ -129,6 +136,15 @@ export function useJavaGraph() {
     hoveredNode,
     setHoveredNode(nodeId) {
       hoveredNode.value = nodeId
+    },
+    hoveredEdge,
+    setHoveredEdge(payload) {
+      hoveredEdge.value = payload
+    },
+    // Nur loeschen, wenn wirklich noch DIESE Kante steht: beim Wandern von Kante A nach B feuert
+    // As `mouseleave` teils nach Bs `mouseenter` – ohne die Pruefung bliebe gar nichts markiert.
+    clearHoveredEdge(id) {
+      if (!id || hoveredEdge.value?.id === id) hoveredEdge.value = null
     },
     fetchEdges,
     recomputeEdges,
