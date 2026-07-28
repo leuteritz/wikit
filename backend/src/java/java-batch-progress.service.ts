@@ -13,8 +13,9 @@ import { EMPTY, Observable, Subject, interval, map, merge, of } from 'rxjs';
 // damit ein Client, der sich einen Tick zu spaet verbindet, sofort etwas sieht statt ins Leere.
 
 export interface BatchProgressEvent {
-  // split -> parse -> check -> save -> edges -> done | error
-  phase: 'split' | 'parse' | 'check' | 'save' | 'edges' | 'done' | 'error' | 'heartbeat';
+  // Analyse: split -> parse -> check -> save -> edges -> done
+  // Reset:   delete -> edges -> done
+  phase: 'split' | 'parse' | 'check' | 'save' | 'edges' | 'delete' | 'done' | 'error' | 'heartbeat';
   done?: number;
   total?: number;
   message?: string;

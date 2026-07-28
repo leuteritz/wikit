@@ -196,6 +196,14 @@ export class JavaController {
     return this.svc.summarizeClass(id, body);
   }
 
+  // Komplett-Reset (alle Klassen). Statische Route -> MUSS vor files/:id stehen, sonst faengt
+  // :id den Aufruf ab. Optionale jobId schaltet den Fortschritts-Stream ein.
+  @Delete('files')
+  @HttpCode(200)
+  resetAllFiles(@Query('jobId') jobId?: string) {
+    return this.svc.resetAllFiles(jobId || null);
+  }
+
   @Delete('files/:id')
   @HttpCode(204)
   deleteFile(@Param('id') id: string) {

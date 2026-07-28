@@ -627,6 +627,47 @@ export class JavaService {
   // Datei + Methoden + Dependencies loeschen (CASCADE ueber FK). Verknuepfter Artikel bleibt
   // bestehen (FK ist andersherum: article -> SET NULL). Der java_fts-Eintrag (rowid = id) wird
   // nicht per Trigger gepflegt -> hier explizit entfernen, sonst bleibt er verwaist.
+
+  // Komplett-Reset: ALLE analysierten Klassen entfernen.
+  //
+  // Frueher lief das als ein DELETE je Klasse ueber HTTP – und jeder einzelne Delete rechnete den
+  // kompletten Auto-Kanten-Graphen neu. Bei ein paar tausend Klassen ist das quadratisch und
+  // dauert entsprechend ewig. Hier: blockweise loeschen (damit ein Fortschritt ueberhaupt
+  // meldbar ist), Kanten EINMAL am Ende leeren – ohne Klassen kann keine Kante mehr gelten.
+  async resetAllFiles(jobId?: string | null): Promise<{ deleted: number }> {
+    const rows: Array<{ id: number }> = await this.ds.query('SELECT id FROM java_files');
+    const ids = rows.map((r) => Number(r.id));
+    const total = ids.length;
+    this.progress.emit(jobId, { phase: 'delete', done: 0, total });
+
+    const CHUNK = 250;
+    let done = 0;
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const slice = ids.slice(i, i + CHUNK);
+      await this.ds.transaction(async (manager) => {
+        const marks = slice.map(() => '?').join(',');
+        // FTS5 hat keine Fremdschluessel -> Indexzeilen explizit entfernen.
+        await manager.query(`DELETE FROM java_fts WHERE rowid IN (${marks})`, slice);
+        // java_methods / java_dependencies / java_file_versions haengen per ON DELETE CASCADE dran.
+        await manager.getRepository(JavaFile).delete(slice);
+      });
+      done += slice.length;
+      this.progress.emit(jobId, { phase: 'delete', done, total });
+      await breathe();
+    }
+
+    this.progress.emit(jobId, { phase: 'edges', done: total, total });
+    await this.ds.transaction(async (manager) => {
+      // Auch manuelle Kanten und Tombstones (dismissed=1) muessen weg: sonst unterdruecken sie
+      // spaeter die Neuberechnung, wenn dieselbe Klasse erneut eingelesen wird.
+      await manager.query('DELETE FROM java_edges');
+    });
+
+    this.progress.emit(jobId, { phase: 'done', done: total, total });
+    this.logger.log(`[java-reset] ${total} Klasse(n) entfernt`);
+    return { deleted: total };
+  }
+
   async deleteFile(idParam: string): Promise<void> {
     const id = Number(idParam);
     await this.ds.transaction(async (manager) => {

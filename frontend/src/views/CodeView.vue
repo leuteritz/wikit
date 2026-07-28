@@ -349,6 +349,11 @@ const PHASES = [
   { key: 'save', label: 'Writing to database', weight: 0.33 },
   { key: 'edges', label: 'Computing call edges', weight: 0.12 },
 ]
+// Der Komplett-Reset laeuft durch denselben Apparat, hat aber eigene Phasen.
+const RESET_PHASES = [
+  { key: 'delete', label: 'Removing classes', weight: 0.85 },
+  { key: 'edges', label: 'Clearing edges', weight: 0.15 },
+]
 const progress = ref(null) // { phase, done, total }
 const elapsedMs = ref(0)
 const phaseStartedAt = ref(0)
@@ -377,9 +382,12 @@ function stopRunClock() {
   progress.value = null
 }
 
+// Welche Phasenkette gerade gilt (Analyse oder Reset).
+const activePhases = computed(() => (resetting.value ? RESET_PHASES : PHASES))
 const phaseIndex = computed(() => {
-  const i = PHASES.findIndex((p) => p.key === progress.value?.phase)
-  return i === -1 ? (progress.value?.phase === 'done' ? PHASES.length : 0) : i
+  const list = activePhases.value
+  const i = list.findIndex((p) => p.key === progress.value?.phase)
+  return i === -1 ? (progress.value?.phase === 'done' ? list.length : 0) : i
 })
 // Anteil erledigter Phasen + Bruchteil der laufenden.
 //
@@ -393,8 +401,9 @@ const runPercent = computed(() => {
   if (!p) return 0
   if (p.phase === 'done') return 100
   let acc = 0
-  for (let i = 0; i < phaseIndex.value; i++) acc += PHASES[i].weight
-  const cur = PHASES[phaseIndex.value]
+  const list = activePhases.value
+  for (let i = 0; i < phaseIndex.value; i++) acc += list[i].weight
+  const cur = list[phaseIndex.value]
   if (cur) {
     // `now` aus dem tickenden elapsedMs ableiten – so ist die Interpolation reaktiv.
     const now = runStartedAt + elapsedMs.value
@@ -412,7 +421,7 @@ const runRemainingMs = computed(() => {
   if (pct < 5 || pct >= 100 || elapsedMs.value < 1500) return null
   return Math.round((elapsedMs.value / pct) * (100 - pct))
 })
-const runPhaseLabel = computed(() => PHASES[phaseIndex.value]?.label || 'Finishing up')
+const runPhaseLabel = computed(() => activePhases.value[phaseIndex.value]?.label || 'Finishing up')
 
 async function analyze() {
   if (!source.value.trim()) return
@@ -509,9 +518,13 @@ function cancelReset() {
 async function confirmReset() {
   if (resetting.value) return
   resetting.value = true
+  // Derselbe Fortschritts-Apparat wie beim Analysieren: bei tausenden Klassen dauert auch das
+  // Loeschen spuerbar, und ein stummer Dialog laesst offen, ob ueberhaupt etwas passiert.
+  startRunClock()
+  progress.value = { phase: 'delete', done: 0, total: classCount.value }
   try {
     await cancelAllJobs() // laufende/abgeschlossene KI-Jobs stoppen + leeren
-    await resetAll() // alle Klassen aus der DB loeschen, Dateiliste -> []
+    await resetAll({ onProgress: onRunProgress }) // alle Klassen aus der DB loeschen
     resetEdges() // Frontend-Kanten-Spiegel sofort leeren
     // Lokalen View-State auf "frisch geoeffnet" zuruecksetzen.
     selectedFileId.value = null
@@ -530,6 +543,7 @@ async function confirmReset() {
     setNotice(e.message, 'error')
   } finally {
     resetting.value = false
+    stopRunClock()
   }
 }
 
@@ -1218,11 +1232,40 @@ function onResetPanels() {
               <p class="text-xs text-[var(--color-text-muted)]">{{ classCount }} class(es) affected</p>
             </div>
           </div>
-          <p class="mb-4 text-sm text-[var(--color-text-muted)]">
+          <p v-if="!resetting" class="mb-4 text-sm text-[var(--color-text-muted)]">
             All analyzed classes, edges and AI summaries will be
             <span class="font-semibold text-[var(--color-text)]">permanently deleted</span>.
             Linked wiki articles are kept.
           </p>
+
+          <!-- Laufender Reset: derselbe Fortschritt wie beim Analysieren, nur kompakt – der
+               Dialog ist schmal, ein grosser Ring waere hier fehl am Platz. -->
+          <div v-else class="mb-4">
+            <div class="mb-1.5 flex items-baseline justify-between gap-2">
+              <span class="text-sm font-semibold text-[var(--color-text)]">{{ runPhaseLabel }}</span>
+              <span class="font-mono text-xs tabular-nums text-[var(--color-text-muted)]">{{ runPercent }}%</span>
+            </div>
+            <div class="h-2 w-full overflow-hidden rounded-full bg-[var(--color-surface-offset)]">
+              <div
+                class="h-full rounded-full bg-[var(--color-danger)] transition-[width] duration-300 ease-out"
+                :style="{ width: runPercent + '%' }"
+              />
+            </div>
+            <div class="mt-2 flex items-baseline justify-between gap-2 font-mono text-[11px] tabular-nums text-[var(--color-text-muted)]">
+              <span v-if="progress?.total">
+                <b class="font-semibold text-[var(--color-text)]">{{ nf.format(progress.done || 0) }}</b>/{{ nf.format(progress.total) }} removed
+              </span>
+              <span v-else>working…</span>
+              <span>
+                {{ formatDuration(elapsedMs) }}
+                <span class="opacity-50">elapsed</span>
+                <template v-if="runRemainingMs != null">
+                  <span class="opacity-40"> · </span>{{ formatDuration(runRemainingMs) }}<span class="opacity-50"> left</span>
+                </template>
+              </span>
+            </div>
+          </div>
+
           <div class="flex justify-end gap-2">
             <button
               type="button"

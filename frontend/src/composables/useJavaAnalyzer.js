@@ -111,18 +111,44 @@ export function useJavaAnalyzer() {
       await api.deleteJavaFile(id)
       await fetchFiles()
     },
-    // Komplett-Reset: ALLE analysierten Klassen dauerhaft aus der DB loeschen (inkl. Methoden/
-    // Dependencies via CASCADE; das Backend rechnet die Auto-Kanten je Delete neu). Sequentiell,
-    // nicht parallel -> vermeidet SQLITE_BUSY/Transaktions-Contention (N ist klein). Danach einmal
-    // refetchen (-> leere Liste). `userContext` bleibt BEWUSST erhalten: Session-/Projekt-
-    // Einstellung fuer KI-Prompts, keine Klassen-Metadaten.
-    async resetAll() {
-      for (const f of state.files) await api.deleteJavaFile(f.id)
-      await fetchFiles()
-      state.lastFileId = null
-      state.lastTargetLine = null
-      state.lastTargetEndLine = null
-      state.error = ''
+    // Komplett-Reset: ALLE analysierten Klassen dauerhaft aus der DB loeschen (Methoden/
+    // Dependencies/Versionen via CASCADE, Kanten einmal am Ende). EIN Request – frueher lief hier
+    // ein DELETE je Klasse, und jeder einzelne rechnete den gesamten Kantengraphen neu.
+    // `userContext` bleibt BEWUSST erhalten: Session-/Projekt-Einstellung fuer KI-Prompts.
+    async resetAll({ onProgress = null } = {}) {
+      let es = null
+      let jobId = null
+      if (onProgress) {
+        jobId = `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+        try {
+          es = new EventSource(api.javaAnalyzeProgressUrl(jobId))
+          es.onmessage = (ev) => {
+            try {
+              const msg = JSON.parse(ev.data)
+              if (msg && msg.phase !== 'heartbeat') onProgress(msg)
+            } catch {
+              /* unlesbares Event ignorieren */
+            }
+          }
+          es.onerror = () => {}
+          await new Promise((resolve) => {
+            es.addEventListener('open', resolve, { once: true })
+            setTimeout(resolve, 400)
+          })
+        } catch {
+          es = null
+        }
+      }
+      try {
+        await api.resetAllJavaFiles(jobId)
+        await fetchFiles()
+        state.lastFileId = null
+        state.lastTargetLine = null
+        state.lastTargetEndLine = null
+        state.error = ''
+      } finally {
+        es?.close()
+      }
     },
     summarizeMethod: (id, data) => api.summarizeJavaMethod(id, data),
     linkArticle: (id, articleId) => api.linkJavaArticle(id, { article_id: articleId }),
