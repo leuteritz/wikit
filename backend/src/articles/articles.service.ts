@@ -27,14 +27,14 @@ export class ArticlesService {
   // Voller Artikel inkl. gerendertem HTML, TOC und Relationen.
   async getBySlug(slug: string): Promise<any> {
     const row = await this.ds.getRepository(Article).findOne({ where: { slug } });
-    if (!row) throw new NotFoundException('Artikel nicht gefunden');
+    if (!row) throw new NotFoundException('Article not found');
     return this.serializer.serializeArticle(row);
   }
 
   async create(body: any): Promise<any> {
     const b = body || {};
     const { title, content = '', summary = '', category_id = null, tags = [] } = b;
-    if (!title || !title.trim()) throw new BadRequestException('Titel ist erforderlich');
+    if (!title || !title.trim()) throw new BadRequestException('A title is required');
 
     const slug = await this.uniqueSlug(b.slug || title);
     // Muster: erst async rendern, DANN Transaktion (innerhalb nur awaited DB-Calls).
@@ -64,7 +64,7 @@ export class ArticlesService {
     const id = Number(idParam);
     const b = body || {};
     const existing = await this.ds.getRepository(Article).findOne({ where: { id } });
-    if (!existing) throw new NotFoundException('Artikel nicht gefunden');
+    if (!existing) throw new NotFoundException('Article not found');
 
     const title = (b.title ?? existing.title).trim();
     const content = b.content ?? existing.content;

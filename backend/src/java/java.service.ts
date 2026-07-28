@@ -39,7 +39,7 @@ async function insertChunked(repo: { insert: (rows: any[]) => Promise<any> }, ro
 function shortParseMessage(message: string): string {
   const msg = String(message || '').trim();
   const pos = /line:\s*(\d+),\s*column:\s*(\d+)/.exec(msg);
-  if (pos) return `Syntaxfehler in Zeile ${pos[1]}, Spalte ${pos[2]}`;
+  if (pos) return `Syntax error at line ${pos[1]}, column ${pos[2]}`;
   return msg.split('\n')[0].slice(0, 200);
 }
 
@@ -68,13 +68,13 @@ export class JavaService {
   async analyze(body: any): Promise<any> {
     const b = body || {};
     const { source = '', filename = '' } = b;
-    if (!source.trim()) throw new BadRequestException('Quellcode ist erforderlich');
+    if (!source.trim()) throw new BadRequestException('Source code is required');
 
     let parsed;
     try {
       parsed = parseJava(source);
     } catch (e: any) {
-      throw new BadRequestException(`Parsen fehlgeschlagen: ${shortParseMessage(e.message)}`);
+      throw new BadRequestException(`Parsing failed: ${shortParseMessage(e.message)}`);
     }
 
     const cls = parsed.primary;
@@ -139,7 +139,7 @@ export class JavaService {
     const b = body || {};
     const source = (b.source ?? '').toString();
     const overwrite = b.overwrite === true;
-    if (!source.trim()) throw new BadRequestException('Quellcode ist erforderlich');
+    if (!source.trim()) throw new BadRequestException('Source code is required');
 
     // Optionale Job-Id des Clients: nur dann wird Fortschritt gestreamt (SSE).
     const jobId: string | null = typeof b.jobId === 'string' && b.jobId ? b.jobId : null;
@@ -174,7 +174,7 @@ export class JavaService {
       const pkg = parsed.package || null;
       const fqcn = (pkg ? pkg + '.' : '') + cls.class_name;
       if (seen.has(fqcn)) {
-        warnings.push(`Doppelte Klasse „${fqcn}" im Paste – nur das erste Vorkommen wurde übernommen.`);
+        warnings.push(`Duplicate class “${fqcn}” in the paste – only the first occurrence was kept.`);
         continue;
       }
       seen.add(fqcn);
@@ -191,8 +191,8 @@ export class JavaService {
     if (!items.length) {
       throw new BadRequestException(
         parseErrors.length
-          ? `Parsen fehlgeschlagen – kein Abschnitt war lesbar. ${parseErrors[0]}`
-          : 'Keine Klasse/Interface/Enum im Quelltext gefunden',
+          ? `Parsing failed – no section could be read. ${parseErrors[0]}`
+          : 'No class, interface or enum found in the source',
       );
     }
 
@@ -413,7 +413,7 @@ export class JavaService {
   async listVersions(idParam: string): Promise<any[]> {
     const id = Number(idParam);
     const file = await this.ds.getRepository(JavaFile).findOne({ where: { id }, select: { id: true } });
-    if (!file) throw new NotFoundException('Datei nicht gefunden');
+    if (!file) throw new NotFoundException('File not found');
     const rows = await this.ds.getRepository(JavaFileVersion).find({
       where: { java_file_id: id },
       order: { version_number: 'DESC' },
@@ -435,7 +435,7 @@ export class JavaService {
     const v = await this.ds.getRepository(JavaFileVersion).findOne({
       where: { id: versionId, java_file_id: id },
     });
-    if (!v) throw new NotFoundException('Version nicht gefunden');
+    if (!v) throw new NotFoundException('Version not found');
     return { source: v.source };
   }
 
@@ -456,7 +456,7 @@ export class JavaService {
   // Detail einer Datei inkl. Methoden, Dependencies und Quelltext.
   async getFile(idParam: string): Promise<any> {
     const row = await this.ds.getRepository(JavaFile).findOne({ where: { id: Number(idParam) } });
-    if (!row) throw new NotFoundException('Datei nicht gefunden');
+    if (!row) throw new NotFoundException('File not found');
     return this.serializer.serializeJavaFile(row, { withSource: true });
   }
 
@@ -467,11 +467,11 @@ export class JavaService {
     const fileId = Number(fileIdParam);
     const methodName = (methodNameParam || '').toString().trim();
     if (!fileId || !methodName) {
-      throw new BadRequestException('fileId und methodName sind erforderlich');
+      throw new BadRequestException('fileId and methodName are required');
     }
 
     const file = await this.ds.getRepository(JavaFile).findOne({ where: { id: fileId } });
-    if (!file) throw new NotFoundException('Datei nicht gefunden');
+    if (!file) throw new NotFoundException('File not found');
 
     // Overloads teilen sich den Namen -> erste Methode (ORDER BY id, wie ueberall im Serializer).
     const method = await this.ds.getRepository(JavaMethod).findOne({
@@ -479,7 +479,7 @@ export class JavaService {
       order: { id: 'ASC' },
     });
     if (!method) {
-      throw new NotFoundException(`Methode "${methodName}" in ${file.class_name} nicht gefunden`);
+      throw new NotFoundException(`Method "${methodName}" not found in ${file.class_name}`);
     }
 
     const parameters = safeJson(method.parameters, []);
@@ -539,7 +539,7 @@ export class JavaService {
   async summarize(idParam: string, body?: any): Promise<any> {
     const id = Number(idParam);
     const method = await this.ds.getRepository(JavaMethod).findOne({ where: { id } });
-    if (!method) throw new NotFoundException('Methode nicht gefunden');
+    if (!method) throw new NotFoundException('Method not found');
     const file = await this.ds
       .getRepository(JavaFile)
       .findOne({ where: { id: method.file_id }, select: { class_name: true } });
@@ -576,7 +576,7 @@ export class JavaService {
   async summarizeClass(idParam: string, body?: any): Promise<any> {
     const id = Number(idParam);
     const file = await this.ds.getRepository(JavaFile).findOne({ where: { id } });
-    if (!file) throw new NotFoundException('Datei nicht gefunden');
+    if (!file) throw new NotFoundException('File not found');
 
     const methods = await this.ds
       .getRepository(JavaMethod)
@@ -620,7 +620,7 @@ export class JavaService {
   async getFileByArticle(articleIdParam: string): Promise<any> {
     const articleId = Number(articleIdParam);
     const row = await this.ds.getRepository(JavaFile).findOne({ where: { article_id: articleId } });
-    if (!row) throw new NotFoundException('Keine Java-Klasse mit diesem Artikel verknuepft');
+    if (!row) throw new NotFoundException('No Java class is linked to this article');
     return this.serializer.serializeJavaFile(row, { withSource: true });
   }
 
@@ -693,7 +693,7 @@ export class JavaService {
   async linkArticle(idParam: string, body: any): Promise<any> {
     const id = Number(idParam);
     const row = await this.ds.getRepository(JavaFile).findOne({ where: { id } });
-    if (!row) throw new NotFoundException('Datei nicht gefunden');
+    if (!row) throw new NotFoundException('File not found');
     const articleId = body?.article_id ?? null;
 
     await this.ds.transaction(async (manager) => {
@@ -891,7 +891,7 @@ export class JavaService {
     const source = (body?.source ?? body?.source_class ?? '').toString().trim();
     const target = (body?.target ?? body?.target_class ?? '').toString().trim();
     const methodName = (body?.methodName ?? body?.method_name ?? '').toString().trim();
-    if (!source || !target) throw new BadRequestException('Quell- und Zielklasse sind erforderlich');
+    if (!source || !target) throw new BadRequestException('Source and target class are required');
 
     const repo = this.ds.getRepository(JavaEdge);
     const res = await repo.insert({
@@ -912,7 +912,7 @@ export class JavaService {
     const id = Number(idParam);
     const repo = this.ds.getRepository(JavaEdge);
     const row = await repo.findOne({ where: { id } });
-    if (!row) throw new NotFoundException('Kante nicht gefunden');
+    if (!row) throw new NotFoundException('Edge not found');
 
     const patch: Partial<JavaEdge> = {};
     if (body?.methodName !== undefined || body?.method_name !== undefined) {
@@ -920,12 +920,12 @@ export class JavaService {
     }
     if (body?.source !== undefined || body?.source_class !== undefined) {
       const s = (body.source ?? body.source_class ?? '').toString().trim();
-      if (!s) throw new BadRequestException('Quellklasse darf nicht leer sein');
+      if (!s) throw new BadRequestException('The source class must not be empty');
       patch.source_class = s;
     }
     if (body?.target !== undefined || body?.target_class !== undefined) {
       const t = (body.target ?? body.target_class ?? '').toString().trim();
-      if (!t) throw new BadRequestException('Zielklasse darf nicht leer sein');
+      if (!t) throw new BadRequestException('The target class must not be empty');
       patch.target_class = t;
     }
     // dismissed zuruecksetzen -> "Rueckgaengig" einer verworfenen Auto-Kante.
@@ -942,7 +942,7 @@ export class JavaService {
     const id = Number(idParam);
     const repo = this.ds.getRepository(JavaEdge);
     const row = await repo.findOne({ where: { id } });
-    if (!row) throw new NotFoundException('Kante nicht gefunden');
+    if (!row) throw new NotFoundException('Edge not found');
     if (row.is_manual) await repo.delete({ id });
     else await repo.update({ id }, { dismissed: 1 });
   }

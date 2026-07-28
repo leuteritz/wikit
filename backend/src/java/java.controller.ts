@@ -107,7 +107,7 @@ export class JavaController {
   @Get('queues/:id')
   getQueue(@Param('id') id: string) {
     const job = this.queue.get(Number(id));
-    if (!job) throw new NotFoundException('Keine Queue fuer diese Datei');
+    if (!job) throw new NotFoundException('No queue entry for this file');
     return job;
   }
 

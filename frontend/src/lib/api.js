@@ -1,15 +1,79 @@
 // Schmaler REST-Client. Alle Aufrufe gehen relativ an /api (Dev: Vite-Proxy, Prod: gleicher Host).
+import { useNotifications } from '../composables/useNotifications.js'
+
 const BASE = '/api'
 
-async function http(method, url, body) {
-  const res = await fetch(BASE + url, {
-    method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  })
+// Was der Statuscode fuer den Nutzer bedeutet. Die eigentliche Begruendung liefert das Backend
+// als `{ error: "…" }` (all-exceptions.filter.ts) – hier steht nur die Ueberschrift darueber,
+// damit „400" nicht das Erste ist, was jemand liest.
+const TITLES = {
+  400: 'Request rejected',
+  401: 'Not authorized',
+  403: 'Not allowed',
+  404: 'Not found',
+  409: 'Conflict',
+  413: 'Too large',
+  422: 'Request rejected',
+  500: 'Server error',
+  502: 'Server unreachable',
+  503: 'Server unavailable',
+  504: 'Server timed out',
+}
+const titleFor = (status) => TITLES[status] || (status >= 500 ? 'Server error' : 'Request failed')
+
+/**
+ * @param {string} method
+ * @param {string} url    Pfad unterhalb von /api
+ * @param {any}    body
+ * @param {{silent?: boolean}} opts  `silent` unterdrueckt den globalen Toast – nur fuer Aufrufe
+ *        setzen, deren Fehler an Ort und Stelle bereits sichtbar erklaert wird.
+ */
+async function http(method, url, body, opts = {}) {
+  const { push } = useNotifications()
+  const endpoint = `${method} ${BASE}${url}`
+  let res
+  try {
+    res = await fetch(BASE + url, {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    })
+  } catch (e) {
+    // fetch wirft nur, wenn die Anfrage gar nicht erst ankam: Server aus, Netz weg, DNS. Die
+    // Browser-Meldung dazu („Failed to fetch") sagt niemandem etwas – hier steht, was zu tun ist.
+    const err = new Error('Cannot reach the server. Is the backend running?')
+    err.status = 0
+    err.endpoint = endpoint
+    if (!opts.silent) {
+      push({
+        kind: 'error',
+        title: 'No connection',
+        message: err.message,
+        meta: endpoint,
+        detail: e?.message || String(e),
+      })
+    }
+    throw err
+  }
+
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }))
-    throw new Error(err.error || `HTTP ${res.status}`)
+    const payload = await res.json().catch(() => null)
+    // Backend-Meldung bevorzugen: sie nennt den konkreten Grund („Keine Klasse/Interface/Enum im
+    // Quelltext gefunden") statt nur die Statuszeile.
+    const reason = payload?.error || res.statusText || `HTTP ${res.status}`
+    const err = new Error(reason)
+    err.status = res.status
+    err.endpoint = endpoint
+    if (!opts.silent) {
+      push({
+        kind: 'error',
+        title: titleFor(res.status),
+        message: reason,
+        meta: `HTTP ${res.status} · ${endpoint}`,
+        detail: payload && !payload.error ? JSON.stringify(payload, null, 2) : '',
+      })
+    }
+    throw err
   }
   if (res.status === 204) return null
   return res.json()
@@ -71,10 +135,13 @@ export const api = {
   analyzeAllJava: (data) => http('POST', '/java/queues/analyze-all', data),
   // Bulk nach einem Paste: genau diese fileIds einreihen – EIN Request statt einem je Klasse.
   queueJavaBatch: (fileIds, data) => http('POST', '/java/queues/batch', { fileIds, ...data }),
-  listJavaQueues: () => http('GET', '/java/queues'),
+  // `silent`: laeuft im Hintergrund-Polling (alle 3 s). Ohne die Unterdrueckung wuerde ein
+  // ausgefallener Server im Minutentakt Fehlerkarten nachschieben – der Nutzer hat den Ausfall
+  // nach der ersten begriffen, und eine Meldung, die er nicht ausgeloest hat, ist Laerm.
+  listJavaQueues: () => http('GET', '/java/queues', null, { silent: true }),
   // Kompakte Bilanz (Zaehler + Restzeit) fuer das Dauer-Polling; die volle Liste holt nur, wer
   // sie anzeigt (Queue-Modal) – bei 1000 Jobs sind das ~390 KB pro Abruf.
-  getJavaQueueSummary: () => http('GET', '/java/queues/summary'),
+  getJavaQueueSummary: () => http('GET', '/java/queues/summary', null, { silent: true }),
   // Queue-Jobs abbrechen: einzeln (fileId), alle, oder nur die abgeschlossenen ("als gelesen").
   cancelJavaQueue: (fileId) => http('DELETE', `/java/queues/${fileId}`),
   cancelAllJavaQueues: () => http('DELETE', '/java/queues'),

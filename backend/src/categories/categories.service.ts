@@ -22,14 +22,14 @@ export class CategoriesService {
   async create(body: any): Promise<any> {
     const b = body || {};
     const { name, icon = '', sort_order = 0 } = b;
-    if (!name || !name.trim()) throw new BadRequestException('Name ist erforderlich');
+    if (!name || !name.trim()) throw new BadRequestException('A name is required');
     const slug = this.markdown.slugify(name);
     try {
       const res = await this.ds.getRepository(Category).insert({ name: name.trim(), slug, icon, sort_order });
       const id = res.identifiers[0].id as number;
       return this.ds.getRepository(Category).findOne({ where: { id } });
     } catch {
-      throw new ConflictException('Kategorie existiert bereits');
+      throw new ConflictException('This category already exists');
     }
   }
 
@@ -38,7 +38,7 @@ export class CategoriesService {
     const b = body || {};
     const repo = this.ds.getRepository(Category);
     const existing = await repo.findOne({ where: { id } });
-    if (!existing) throw new NotFoundException('Kategorie nicht gefunden');
+    if (!existing) throw new NotFoundException('Category not found');
     const name = (b.name ?? existing.name).trim();
     const icon = b.icon ?? existing.icon;
     const sort_order = b.sort_order ?? existing.sort_order;

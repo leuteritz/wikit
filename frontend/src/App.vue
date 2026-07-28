@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import SearchPalette from './components/SearchPalette.vue'
+import NotificationHost from './components/NotificationHost.vue'
 import { useArticles } from './composables/useArticles.js'
 import { useJavaAnalyzer } from './composables/useJavaAnalyzer.js'
 import { useTheme } from './composables/useTheme.js'
@@ -141,5 +142,9 @@ function isActive(to) {
     </main>
 
     <SearchPalette :open="searchOpen" @close="searchOpen = false" />
+
+    <!-- Globale Rueckmeldungen. Steht hier, damit sie auf JEDER Route erscheinen – ein Fehler
+         soll nicht davon abhaengen, welche Ansicht ihn ausgeloest hat. -->
+    <NotificationHost />
   </div>
 </template>

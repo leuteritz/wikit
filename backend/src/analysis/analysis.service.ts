@@ -60,7 +60,7 @@ export class AnalysisService {
 
     const file = await this.ds.getRepository(JavaFile).findOne({ where: { article_id: articleId } });
     if (!file) {
-      this.queue.emit(articleId, { type: 'error', message: 'Keine Java-Klasse mit diesem Artikel verknuepft.' });
+      this.queue.emit(articleId, { type: 'error', message: 'No Java class is linked to this article.' });
       this.queue.emit(articleId, { type: 'all_done', total: 0 });
       this.queue.complete(articleId);
       return { queued: false, total: 0 };

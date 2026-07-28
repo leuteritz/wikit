@@ -256,7 +256,7 @@ export class JavaQueueService {
   // `force` erzwingt das Neu-Generieren auch bereits analysierter Methoden.
   async enqueueClass(fileId: number, userContext?: string, force = false): Promise<any> {
     const file = await this.ds.getRepository(JavaFile).findOne({ where: { id: fileId } });
-    if (!file) throw new NotFoundException('Datei nicht gefunden');
+    if (!file) throw new NotFoundException('File not found');
 
     const key = this.key(fileId);
     const existing = this.jobs.get(key);
@@ -479,7 +479,7 @@ export class JavaQueueService {
       const file = await this.ds.getRepository(JavaFile).findOne({ where: { id: job.fileId } });
       if (!file) {
         job.status = 'failed';
-        job.error = 'Datei nicht gefunden';
+        job.error = 'File not found';
         return;
       }
       job.className = file.class_name;

@@ -12,6 +12,7 @@ import { useJavaQueue } from '../composables/useJavaQueue.js'
 import { useJavaGraph } from '../composables/useJavaGraph.js'
 import { buildPackageTree, countClasses, filterClasses, LANGUAGES } from '../composables/useCodeAnalysis.js'
 import { usePanelResize } from '../composables/usePanelResize.js'
+import { useNotifications } from '../composables/useNotifications.js'
 import JavaCodeEditor from '../components/java/JavaCodeEditor.vue'
 import JavaDependencyGraph from '../components/java/JavaDependencyGraph.vue'
 import JavaClassDetail from '../components/java/JavaClassDetail.vue'
@@ -26,6 +27,7 @@ const { files, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFile
 const { summary: queueSummary, enqueueMany, enqueueAllUnanalyzed, cancelJob, cancelAllJobs, progressFor, ensurePolling } =
   useJavaQueue()
 const { recomputeEdges, recomputing, resetEdges } = useJavaGraph()
+const { push, clearAll: clearNotifications } = useNotifications()
 // Verschiebbare Spaltenbreiten des 3-Spalten-Layouts (Drag-to-Resize + Reset).
 const {
   gridTemplate,
@@ -56,23 +58,13 @@ const resetting = ref(false) // Spinner waehrend des Komplett-Resets
 const queueOpen = ref(false) // KI-Queue-Modal offen?
 const menuOpen = ref(false) // Overflow-Menue der Command-Bar
 
-// --- Fluechtige Rueckmeldungen als Toast (unten rechts) ------------------------------------
-// Frueher schoben diese Meldungen als Banner das gesamte Grid nach unten. Als schwebender
-// Toast bleibt die Arbeitsflaeche geometrisch stabil; er verschwindet von selbst.
-const notice = ref(null) // { text, kind: 'info' | 'error' }
-let noticeTimer = null
+// --- Fluechtige Rueckmeldungen ---------------------------------------------------------------
+// Laufen ueber den GLOBALEN Toast-Stapel (useNotifications + NotificationHost in App.vue). Vorher
+// hatte diese Ansicht einen eigenen; damit blieb der Rest der App bei Fehlern stumm, und es gab
+// zwei Stellen, an denen dasselbe gebaut war.
 function setNotice(text, kind = 'info') {
-  clearTimeout(noticeTimer)
-  if (!text) {
-    notice.value = null
-    return
-  }
-  notice.value = { text, kind }
-  noticeTimer = setTimeout(() => (notice.value = null), 8000)
-}
-function dismissNotice() {
-  clearTimeout(noticeTimer)
-  notice.value = null
+  if (!text) return
+  push({ kind: kind === 'error' ? 'error' : 'success', message: text })
 }
 
 // Kompakte Queue-Anzeige in der Command-Bar. Quelle ist die Server-Bilanz (useJavaQueue.summary),
@@ -183,7 +175,6 @@ onMounted(async () => {
 onUnmounted(() => {
   releasePolling?.()
   window.removeEventListener('keydown', onKeydown)
-  clearTimeout(noticeTimer)
   clearTimeout(detectTimer)
   clearInterval(elapsedTimer)
 })
@@ -533,7 +524,7 @@ async function confirmReset() {
     source.value = ''
     filename.value = ''
     search.value = ''
-    dismissNotice()
+    clearNotifications()
     pendingDelete.value = null
     pendingConflicts.value = null
     for (const k of Object.keys(collapsed)) delete collapsed[k]
@@ -1075,35 +1066,7 @@ function onResetPanels() {
       </div>
     </div>
 
-    <!-- Toast (unten rechts): kurze Rueckmeldungen, ohne das Grid zu verschieben. -->
-    <Teleport to="body">
-      <Transition name="toast">
-        <div
-          v-if="notice"
-          class="fixed bottom-5 right-5 z-[70] flex max-w-sm items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-[0.8125rem] shadow-xl backdrop-blur"
-          :class="notice.kind === 'error'
-            ? 'border-[color-mix(in_srgb,var(--color-danger)_40%,transparent)] bg-[color-mix(in_srgb,var(--color-danger)_14%,var(--color-surface-2))] text-[var(--color-danger)]'
-            : 'border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text)]'"
-          role="status"
-        >
-          <Icon
-            :icon="notice.kind === 'error' ? 'lucide:alert-triangle' : 'lucide:check-circle'"
-            class="mt-px h-4 w-4 shrink-0"
-            :class="notice.kind === 'error' ? '' : 'text-[var(--color-success)]'"
-          />
-          <span class="min-w-0 flex-1">{{ notice.text }}</span>
-          <button
-            type="button"
-            class="-mr-1 shrink-0 rounded p-0.5 opacity-60 transition hover:opacity-100"
-            title="Dismiss"
-            aria-label="Dismiss"
-            @click="dismissNotice"
-          >
-            <Icon icon="lucide:x" class="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </Transition>
-    </Teleport>
+    <!-- Toasts rendert global NotificationHost (App.vue) – hier steht deshalb keiner mehr. -->
 
     <!-- Drag-Overlay: erzwingt col-resize global und haelt mousemove vom Vue-Flow-Canvas fern. -->
     <div v-if="isDragging" class="fixed inset-0 z-[60] cursor-col-resize select-none" />
@@ -1326,17 +1289,6 @@ function onResetPanels() {
 .pop-leave-to {
   opacity: 0;
   transform: scale(0.96) translateY(-4px);
-}
-
-/* Toast: schiebt sich von rechts ein. */
-.toast-enter-active,
-.toast-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-.toast-enter-from,
-.toast-leave-to {
-  opacity: 0;
-  transform: translateX(12px);
 }
 
 /* Tastenkappe fuer den Shortcut-Hinweis im Modal-Footer. */

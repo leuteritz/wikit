@@ -21,14 +21,14 @@ export class RelationsService {
   async create(body: any): Promise<any> {
     const b = body || {};
     const { source_id, target_id, relation_type = 'related', label = '' } = b;
-    if (!source_id || !target_id) throw new BadRequestException('source_id und target_id erforderlich');
-    if (source_id === target_id) throw new BadRequestException('Selbstbezug nicht erlaubt');
+    if (!source_id || !target_id) throw new BadRequestException('source_id and target_id are required');
+    if (source_id === target_id) throw new BadRequestException('An article cannot relate to itself');
     try {
       const res = await this.ds.getRepository(Relation).insert({ source_id, target_id, relation_type, label });
       const id = res.identifiers[0].id as number;
       return this.ds.getRepository(Relation).findOne({ where: { id } });
     } catch {
-      throw new ConflictException('Relation existiert bereits');
+      throw new ConflictException('This relation already exists');
     }
   }
 

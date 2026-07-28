@@ -335,7 +335,7 @@ export function parseJava(source: string): JavaParseResult {
     .filter((c) => c.class_name) as JavaClassInfo[];
 
   if (!classes.length) {
-    throw new Error('Keine Klasse/Interface/Enum im Quelltext gefunden');
+    throw new Error('No class, interface or enum found in the source');
   }
 
   return { package: pkg, imports, classes, primary: classes[0] };
