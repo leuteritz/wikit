@@ -83,9 +83,13 @@ function clearHighlights() {
 // Custom-Edge-Typ registrieren.
 const edgeTypes = { managed: ManagedEdge }
 
-// Package-Farben (Zusatz-Hues der neuen Palette), rotierend nach Package-Index.
-const PKG_COLORS = ['#b3819c', '#7d7bad', '#3f93a0', '#9a8574'] // thistle · lavender · cyan · beige
-const NODE_W = 208
+// Package-Farben, rotierend nach Package-Index. Als TOKENS, nicht als feste Hex-Werte: die
+// Zusatz-Hues haben im Dark-Mode eigene, aufgehellte Werte – hart notiert waeren Zonen und
+// Package-Punkte dort deutlich zu dunkel.
+const PKG_COLORS = ['var(--color-thistle)', 'var(--color-lavender)', 'var(--color-cyan)', 'var(--color-beige)']
+// Etwas breiter als frueher: die Karte traegt jetzt Typ-Chip UND Rollen-Badge, und der
+// Klassenname darf davon nicht abgeschnitten werden – er ist die wichtigste Information.
+const NODE_W = 228
 const NODE_H = 66
 const PKG_W = 232
 const PKG_H = 88
@@ -108,15 +112,42 @@ const IMPORT_COLOR = 'var(--color-text-muted)' // nur importiert, kein erkannter
 const AGG_COLOR = 'var(--color-thistle)' // gebuendelte Package-Beziehungen (andere Ebene)
 const DEBUG_EDGES = true // Debug (F12): loggt geladene Klassen + nicht gezeichnete Server-Kanten
 
-// Rollen-Metadaten (Node-Glyph + Legende). Die FARBE kommt ueber die CSS-Klasse `vf-role-<role>`
-// (s. <style> / --color-role-* Tokens), hier nur Icon + English-Labels.
+// --- Kategorien im Graph ---------------------------------------------------------------------
+// Jede Karte beantwortet zwei Fragen, und beide sollen ohne Nachdenken lesbar sein. Sie bekommen
+// deshalb GETRENNTE Slots und getrennte Farbfamilien (Tokens in assets/style.css):
+//   * ROLLE (wie haengt der Knoten im Netz?)  -> Streifen links, Ring, Methoden-Badge rechts
+//   * TYP   (was IST der Knoten?)             -> Chip vor dem Klassennamen
+// Dazu als dritte Ebene die GRUPPE (Package): Zone, Package-Knoten und Package-Punkt.
 const ROLE_META = {
-  provider: { icon: 'lucide:box', label: 'Source', hint: 'provides · used by others', legend: 'Source · provides' },
+  // Pfeile laufen im Graph von der Definition nach unten zur Nutzung – die Rollen-Glyphen
+  // folgen genau dieser Richtung, damit Icon und Bildaufbau dasselbe sagen.
+  provider: { icon: 'lucide:arrow-down', label: 'Source', hint: 'provides · used by others', legend: 'Source · provides' },
   consumer: { icon: 'lucide:arrow-up-from-line', label: 'Consumer', hint: 'uses other classes', legend: 'Consumer · uses' },
   hub: { icon: 'lucide:git-fork', label: 'Hub', hint: 'provides & uses', legend: 'Hub · both' },
   isolated: { icon: 'lucide:unlink', label: 'Isolated', hint: 'no connections', legend: 'Isolated · none' },
 }
 const ROLE_ORDER = ['provider', 'consumer', 'hub', 'isolated']
+
+// Java-Elementtyp (`java_files.class_type` – vom Parser gesetzt). `class` ist der Normalfall und
+// bleibt neutral; Interface/Enum/Annotation tragen Farbe, weil genau ihre Abweichung die
+// Information ist. `record` kennt der Parser (noch) nicht, ist aber vorbereitet.
+const TYPE_META = {
+  class: { icon: 'lucide:box', label: 'Class', color: 'var(--color-type-class)' },
+  interface: { icon: 'lucide:component', label: 'Interface', color: 'var(--color-type-interface)' },
+  enum: { icon: 'lucide:list', label: 'Enum', color: 'var(--color-type-enum)' },
+  annotation: { icon: 'lucide:at-sign', label: 'Annotation', color: 'var(--color-type-annotation)' },
+  record: { icon: 'lucide:braces', label: 'Record', color: 'var(--color-type-record)' },
+}
+const TYPE_ORDER = ['class', 'interface', 'enum', 'annotation']
+// Unbekannter/fehlender class_type faellt auf `class` zurueck – nie auf undefined, sonst rendert
+// die Karte ohne Glyph.
+const typeOf = (t) => (t && TYPE_META[t] ? t : 'class')
+// Legenden-Reihenfolge: die vier kanonischen Java-Typen immer (sie koennen jederzeit auftauchen),
+// `record` nur, wenn es ihn im Ausschnitt wirklich gibt.
+const legendTypes = computed(() => {
+  const seen = new Set((props.files || []).map((f) => typeOf(f.class_type)))
+  return [...TYPE_ORDER, ...Object.keys(TYPE_META).filter((t) => !TYPE_ORDER.includes(t) && seen.has(t))]
+})
 
 // Legende: einklappbar und standardmaessig ZU. Permanent sichtbar hat sie ein Viertel des
 // Canvas verdeckt; als Popover bleibt sie einen Klick entfernt. Zustand ueberlebt den Reload.
@@ -673,6 +704,7 @@ const layout = computed(() => {
         methodCount: f.method_count ?? (f.methods || []).length,
         color: pkgColor.get(pkg),
         role: roleFor(id),
+        type: typeOf(f.class_type),
         analyzed: !!(f.description && f.description.trim()),
         version: f.version ?? 1,
       },
@@ -1110,24 +1142,36 @@ watch(
           <span class="vf-strip" />
           <div class="vf-body">
             <div class="vf-name">
-              <Icon
-                :icon="ROLE_META[data.role].icon"
-                class="vf-role-glyph"
-                :title="`${ROLE_META[data.role].label} — ${ROLE_META[data.role].hint}`"
-                :aria-label="ROLE_META[data.role].label"
-              />
+              <!-- Slot 1: WAS ist das? Java-Elementtyp als farbiges Chip. -->
+              <span
+                class="vf-type"
+                :class="{ 'vf-type--plain': data.type === 'class' }"
+                :style="{ '--type': TYPE_META[data.type].color }"
+                :title="TYPE_META[data.type].label"
+                :aria-label="TYPE_META[data.type].label"
+              >
+                <Icon :icon="TYPE_META[data.type].icon" />
+              </span>
               <Icon v-if="data.analyzed" icon="lucide:sparkles" class="vf-ai" title="AI-analyzed" />{{ data.className }}
             </div>
             <div class="vf-pkg">
               <span class="vf-pkgdot" :title="data.pkg" />{{ data.pkg }}
             </div>
           </div>
+          <!-- Version erst ab v2: „v1" ist der Normalfall und kostet nur Platz, den der
+               Klassenname besser gebraucht. Eine Historie dagegen ist eine echte Aussage. -->
           <span
-            class="vf-version"
-            :class="{ 'vf-version--multi': data.version > 1 }"
-            :title="`Version ${data.version}`"
+            v-if="data.version > 1"
+            class="vf-version vf-version--multi"
+            :title="`Version ${data.version} — this class has a history`"
           >v{{ data.version }}</span>
-          <span class="vf-badge" title="Methods">{{ data.methodCount }}</span>
+          <!-- Slot 2: WIE haengt es drin? Rolle + Umfang als eine Einheit (Glyph + Methodenzahl). -->
+          <span
+            class="vf-badge"
+            :title="`${ROLE_META[data.role].label} — ${ROLE_META[data.role].hint} · ${data.methodCount} methods`"
+          >
+            <Icon :icon="ROLE_META[data.role].icon" class="vf-badge-ic" />{{ data.methodCount }}
+          </span>
           <Handle type="source" :position="Position.Bottom" class="vf-handle" />
         </div>
       </template>
@@ -1179,7 +1223,7 @@ watch(
         :title="`${z.key} — show only this package`"
         @click="drillTo(z.path)"
       >
-        <span class="vf-zonedot" />
+        <Icon icon="lucide:folder" class="vf-zoneic" />
         <span class="vf-zonename">{{ z.label }}</span>
         <span class="vf-zonecount">{{ z.count }}</span>
       </button>
@@ -1307,25 +1351,45 @@ watch(
     <div v-if="files.length" class="absolute bottom-3 right-3 z-10 flex flex-col items-end gap-2">
       <Transition name="legend">
         <div v-if="legendOpen" class="vf-legend">
-          <div class="legend-head">Nodes · role</div>
-          <div v-for="role in ROLE_ORDER" :key="role" class="legend-row">
-            <span class="legend-node-swatch" :style="{ background: `var(--color-role-${role})` }" />
-            <Icon :icon="ROLE_META[role].icon" class="h-3.5 w-3.5 shrink-0" :style="{ color: `var(--color-role-${role})` }" />
-            <span>{{ ROLE_META[role].legend }}</span>
+          <!-- Achse 1: WAS ist der Knoten? (Chip vor dem Klassennamen) -->
+          <div class="legend-head">Nodes · what it is</div>
+          <div class="legend-grid">
+            <div v-for="t in legendTypes" :key="t" class="legend-row">
+              <span
+                class="vf-type legend-type"
+                :class="{ 'vf-type--plain': t === 'class' }"
+                :style="{ '--type': TYPE_META[t].color }"
+              >
+                <Icon :icon="TYPE_META[t].icon" />
+              </span>
+              <span>{{ TYPE_META[t].label }}</span>
+            </div>
           </div>
 
-          <!-- Zonen gibt es nur im gruppierten Klassen-Layout. -->
-          <div v-if="zones.length" class="legend-row">
-            <span class="legend-zone" />
-            <span><b>Package</b> zone — click its label to focus</span>
+          <!-- Achse 2: WIE haengt er im Netz? (Streifen, Ring, Methoden-Badge) -->
+          <div class="legend-head mt-1.5">Nodes · how it connects</div>
+          <div class="legend-grid">
+            <div v-for="role in ROLE_ORDER" :key="role" class="legend-row" :title="ROLE_META[role].hint">
+              <span class="legend-node-swatch" :style="{ background: `var(--color-role-${role})` }" />
+              <Icon :icon="ROLE_META[role].icon" class="h-3.5 w-3.5 shrink-0" :style="{ color: `var(--color-role-${role})` }" />
+              <span>{{ ROLE_META[role].label }}</span>
+            </div>
           </div>
 
-          <!-- Package-Knoten gibt es erst ab der aggregierten Ebene -> nur dort erklaeren. -->
-          <div v-if="packageMode" class="legend-row">
-            <span class="legend-node-swatch" style="background: var(--color-thistle)" />
-            <Icon icon="lucide:folder" class="h-3.5 w-3.5 shrink-0" style="color: var(--color-thistle)" />
-            <span>Package · click to open</span>
-          </div>
+          <!-- Achse 3: WO gehoert er hin? (Package als Zone bzw. als eigener Knoten) -->
+          <template v-if="zones.length || packageMode">
+            <div class="legend-head mt-1.5">Groups · packages</div>
+            <div v-if="zones.length" class="legend-row">
+              <span class="legend-zone" />
+              <span><b>Zone</b> — click its label to focus</span>
+            </div>
+            <div v-if="packageMode" class="legend-row">
+              <span class="legend-node-swatch legend-node-swatch--pkg" />
+              <Icon icon="lucide:folder" class="h-3.5 w-3.5 shrink-0" style="color: var(--color-thistle)" />
+              <span><b>Package</b> node — click to open</span>
+            </div>
+            <p class="legend-sub">Each package keeps its own hue — zone, node and the dot on a card.</p>
+          </template>
 
           <div class="legend-head mt-1.5">Edges · what connects them</div>
           <div class="legend-row">
@@ -1361,7 +1425,7 @@ watch(
             Hover a class to isolate its connections.
           </p>
 
-          <div class="legend-head mt-1.5">Badges</div>
+          <div class="legend-head mt-1.5">Badges &amp; states</div>
           <div class="legend-row">
             <Icon icon="lucide:sparkles" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
             <span>AI-analyzed</span>
@@ -1369,6 +1433,14 @@ watch(
           <div class="legend-row">
             <span class="legend-version">v2</span>
             <span>version · history</span>
+          </div>
+          <div class="legend-row">
+            <span class="legend-state legend-state--match" />
+            <span>Search match</span>
+          </div>
+          <div class="legend-row">
+            <span class="legend-state legend-state--dim" />
+            <span>Faded · not connected to the hovered class</span>
           </div>
 
           <!-- One-sided Kanten sind bereits ausgeblendet (nur geladene Klassen sind Knoten) – hier sichtbar machen. -->
@@ -1663,12 +1735,33 @@ watch(
 .vf-role-isolated .vf-strip {
   background: repeating-linear-gradient(var(--role) 0 3px, transparent 3px 6px);
 }
-/* Rollen-Glyph vor dem Klassennamen (Icon in Rollenfarbe). */
-.vf-role-glyph {
+/* Typ-Chip vor dem Klassennamen (Achse 2: WAS ist der Knoten?). Eigener Slot und eigene
+   Farbfamilie – die Rolle sitzt auf der anderen Kartenseite und mischt sich hier nicht ein. */
+.vf-type {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
-  width: 13px;
-  height: 13px;
-  color: var(--role);
+  border-radius: 5px;
+  border: 1px solid color-mix(in srgb, var(--type) 32%, transparent);
+  background: color-mix(in srgb, var(--type) 15%, transparent);
+  color: var(--type);
+}
+.vf-type svg {
+  width: 10px;
+  height: 10px;
+}
+/* `class` ist der Normalfall: nur das Glyph, kein Chip. In einer Codebasis aus 500 Klassen waeren
+   500 identische Kaestchen reines Rauschen – so bleibt der Rahmen dem Besonderen vorbehalten. */
+.vf-type--plain {
+  border-color: transparent;
+  background: none;
+  opacity: 0.75;
+}
+.vf-type--plain svg {
+  width: 12px;
+  height: 12px;
 }
 /* Kleiner Package-Punkt vor dem Package-Text (Package-Identitaet, sekundaer). Inline-block, damit
    das text-overflow:ellipsis des Package-Texts erhalten bleibt. */
@@ -1710,16 +1803,28 @@ watch(
   font-size: 10px;
   color: var(--color-text-muted);
 }
+/* Rollen-Badge: Glyph + Methodenzahl in EINER Pille (Achse 1). Rolle und Umfang gehoeren
+   zusammen – „ein Hub mit 12 Methoden" liest sich als eine Aussage. */
 .vf-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   flex-shrink: 0;
-  min-width: 22px;
-  padding: 1px 6px;
+  padding: 1px 7px 1px 5px;
   border-radius: 999px;
-  text-align: center;
   font-size: 11px;
   font-weight: 700;
-  color: #fff;
+  font-variant-numeric: tabular-nums;
+  /* NICHT hart #fff: im Dark-Mode sind die Rollenfarben aufgehellt, weisser Text darauf ist
+     kaum lesbar. Das Kontrast-Token dreht sich mit dem Theme (dunkel auf hell / hell auf dunkel). */
+  color: var(--color-accent-contrast);
   background: var(--role);
+}
+.vf-badge-ic {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+  opacity: 0.9;
 }
 /* Versions-Chip (Changelog): sekundaer/outlined -> klar abgesetzt von der gefuellten
    Methoden-Pille. Ab v2 in Akzentfarbe, um „hat Historie" hervorzuheben. */
@@ -1787,8 +1892,11 @@ watch(
 .vf-legend {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  max-height: min(420px, 60vh);
+  gap: 2px;
+  width: 352px;
+  /* Hoch genug, dass die fuenf Kategorie-Abschnitte auf ueblichen Fenstern ohne Scrollen
+     nebeneinanderstehen – eine Legende, in der man blaettern muss, wird nicht gelesen. */
+  max-height: min(640px, 76vh);
   overflow-y: auto;
   padding: 10px 12px;
   border-radius: 12px;
@@ -2014,12 +2122,13 @@ watch(
   color: var(--color-text);
   border-color: var(--pkg);
 }
-.vf-zonedot {
-  width: 7px;
-  height: 7px;
+/* Folder-Glyph statt Punkt: die Zone gehoert damit sichtbar zur selben Kategorie wie der
+   Package-Knoten der aggregierten Ebene – Farbe bleibt die des jeweiligen Packages. */
+.vf-zoneic {
+  width: 12px;
+  height: 12px;
   flex-shrink: 0;
-  border-radius: 999px;
-  background: var(--pkg);
+  color: var(--pkg);
 }
 .vf-zonename {
   overflow: hidden;
@@ -2042,6 +2151,50 @@ watch(
 }
 .vf-card--dim:hover {
   opacity: 0.14;
+}
+/* --- Legende: Kategorien --------------------------------------------------------------------
+   Die Typ-Zeilen sind kurz (ein Wort) -> zweispaltig, sonst waere die Legende doppelt so hoch
+   wie noetig und der Rest muesste gescrollt werden. */
+.legend-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 10px;
+}
+/* Chip in der Legende: identisch zur Karte, nur ohne Umgebung. */
+.legend-type {
+  width: 15px;
+  height: 15px;
+}
+/* Erlaeuterung unter einem Abschnitt – erklaert die Systematik, nicht ein einzelnes Symbol. */
+.legend-sub {
+  margin: 2px 0 0 0;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+  opacity: 0.8;
+}
+/* Package-Swatch: mehrfarbig, weil jedes Package seinen eigenen Ton bekommt. */
+.legend-node-swatch--pkg {
+  background: linear-gradient(135deg, var(--color-thistle) 0 50%, var(--color-cyan) 50% 100%);
+}
+/* Zustands-Swatches (Treffer/gedimmt) – zeigen den Effekt, statt ihn zu beschreiben. */
+.legend-state {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border-radius: 3px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+}
+.legend-state--match {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+/* Nicht so weit heruntergezogen wie im Canvas (0.14) – als 12-px-Swatch waere davon nichts mehr
+   zu sehen und die Zeile saehe aus, als fehle ihr das Symbol. */
+.legend-state--dim {
+  opacity: 0.35;
+  border-style: dashed;
 }
 /* Zonen-Swatch der Legende – spiegelt Rand und Fuellung der Flaeche im Canvas. */
 .legend-zone {

@@ -59,6 +59,8 @@ import gitBranch from '@iconify-icons/lucide/git-branch'
 import gitFork from '@iconify-icons/lucide/git-fork'
 import arrowUpFromLine from '@iconify-icons/lucide/arrow-up-from-line'
 import unlink from '@iconify-icons/lucide/unlink'
+import component from '@iconify-icons/lucide/component'
+import atSign from '@iconify-icons/lucide/at-sign'
 import layoutGrid from '@iconify-icons/lucide/layout-grid'
 import moreHorizontal from '@iconify-icons/lucide/more-horizontal'
 import packageIcon from '@iconify-icons/lucide/package'
@@ -116,6 +118,9 @@ const ICONS = {
   'lucide:git-fork': gitFork,
   'lucide:arrow-up-from-line': arrowUpFromLine,
   'lucide:unlink': unlink,
+  // Java-Elementtypen im Graph: Interface = steckbarer Vertrag, Annotation = das @ selbst.
+  'lucide:component': component,
+  'lucide:at-sign': atSign,
   'lucide:layout-grid': layoutGrid,
   'lucide:more-horizontal': moreHorizontal,
   'lucide:package': packageIcon,

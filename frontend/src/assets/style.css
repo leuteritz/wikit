@@ -52,12 +52,27 @@
 
   --color-edge-highlight: #b8862f;  /* warmes Gold: „aufleuchtende" Call-Edge + passender Code-Token */
 
-  /* Knoten-Rollen im Java-Graph (Farbe = Rolle im Abhaengigkeitsnetz). Aus den harmonisierten
-     Palette-Tokens abgeleitet, damit sich Rolle und Package nicht optisch beissen. */
+  /* --- Kategorien im Java-Graph --------------------------------------------------------------
+     DREI Achsen, drei getrennte Farbfamilien – jede sitzt auf der Karte in einem eigenen Slot,
+     damit zwei Aussagen gleichzeitig lesbar bleiben, ohne sich zu vermischen:
+       1. ROLLE     – Streifen links, Ring, Methoden-Badge   (wie haengt der Knoten im Netz?)
+       2. TYP       – Chip vor dem Klassennamen              (was IST der Knoten?)
+       3. GRUPPE    – Package-Zone, Package-Knoten, -Punkt   (wo gehoert er hin?)
+     Die Achsen teilen sich absichtlich keine Hue. */
+
+  /* 1. Rolle im Abhaengigkeitsnetz. */
   --color-role-provider: var(--color-success);   /* Provider – wird genutzt, nutzt selbst nichts */
   --color-role-consumer: var(--color-lavender);  /* Consumer – nutzt andere, ungenutzt */
   --color-role-hub: var(--color-accent);         /* Hub/Gemischt – zentral, beides */
   --color-role-isolated: var(--color-text-muted);/* isoliert, keine Verbindung */
+
+  /* 2. Java-Elementtyp. `class` ist der Normalfall und bleibt bewusst neutral: Information ist
+     die ABWEICHUNG davon – ein Interface oder Enum soll beim Ueberfliegen herausspringen. */
+  --color-type-class: var(--color-text-muted);
+  --color-type-interface: var(--color-cyan);
+  --color-type-enum: var(--color-warning);
+  --color-type-annotation: var(--color-thistle);
+  --color-type-record: var(--color-beige);
 }
 html.dark {
   --color-accent: #c4ba8f;          /* aufgehellter Taupe (Kontrast auf dunkel) */
