@@ -37,6 +37,17 @@ const hoveredNode = ref(null)
 // muesste bei jeder Mausbewegung der komplette Kanten-Store neu geschrieben werden.
 const hoveredEdge = ref(null)
 
+// Rueckweg aus einem Kanten-Panel in den Quellcode.
+//
+// Der Sprung „Kante -> Aufrufstelle" ist eine Einbahnstrasse: das Panel schliesst sich (sonst
+// verdeckt es genau den Code, zu dem gesprungen wurde), und damit ist auch die Beziehung weg, die
+// man gerade untersucht hat. Wer den Code gelesen hat, will zurueck zu genau dieser Kante – nicht
+// sie im Graphen neu suchen. `edgeReturn` haelt dafuer den Panel-Zustand fest; `edgeReturnToken`
+// ist das Signal an den Graphen, ihn wiederherzustellen (gleiche Mechanik wie `focusToken` dort:
+// ein Zaehler, damit auch zweimal dasselbe Ziel ausloest).
+const edgeReturn = ref(null) // { kind: 'edge'|'bundle', label, payload } | null
+const edgeReturnToken = ref(0)
+
 async function fetchEdges() {
   loading.value = true
   error.value = ''
@@ -140,6 +151,19 @@ export function useJavaGraph() {
     hoveredEdge,
     setHoveredEdge(payload) {
       hoveredEdge.value = payload
+    },
+    // --- Rueckweg zum Kanten-Panel ------------------------------------------------------------
+    edgeReturn,
+    edgeReturnToken,
+    setEdgeReturn(target) {
+      edgeReturn.value = target
+    },
+    clearEdgeReturn() {
+      edgeReturn.value = null
+    },
+    // Vom „Back"-Knopf aufgerufen: der Graph hoert auf den Zaehler und oeffnet das Panel erneut.
+    requestEdgeReturn() {
+      if (edgeReturn.value) edgeReturnToken.value++
     },
     // Nur loeschen, wenn wirklich noch DIESE Kante steht: beim Wandern von Kante A nach B feuert
     // As `mouseleave` teils nach Bs `mouseenter` – ohne die Pruefung bliebe gar nichts markiert.

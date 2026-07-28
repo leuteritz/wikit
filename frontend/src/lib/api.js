@@ -102,8 +102,15 @@ export const api = {
   getJavaFile: (id) => http('GET', `/java/files/${id}`),
   getJavaFileByArticle: (articleId) => http('GET', `/java/files/by-article/${articleId}`),
   // Shiki-gehighlightetes Quellcode-Snippet einer Methode (Graph-Edge-Panel).
+  // `silent`: Das Edge-/Bundle-Panel holt je Methode ein Snippet und zeigt fehlende an Ort und
+  // Stelle als leeren Abschnitt. Ein Toast je Methode waere daneben eine Kaskade ohne Mehrwert.
   getJavaMethodSnippet: (fileId, methodName) =>
-    http('GET', `/java/method-snippet?fileId=${encodeURIComponent(fileId)}&methodName=${encodeURIComponent(methodName)}`),
+    http(
+      'GET',
+      `/java/method-snippet?fileId=${encodeURIComponent(fileId)}&methodName=${encodeURIComponent(methodName)}`,
+      null,
+      { silent: true },
+    ),
   deleteJavaFile: (id) => http('DELETE', `/java/files/${id}`),
 
   // Versionsverlauf (Changelog) einer Klasse. Liste = ohne Quelltext (Diff + KI-Summary);

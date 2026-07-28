@@ -26,7 +26,7 @@ const { files, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFile
   useJavaAnalyzer()
 const { summary: queueSummary, enqueueMany, enqueueAllUnanalyzed, cancelJob, cancelAllJobs, progressFor, ensurePolling } =
   useJavaQueue()
-const { recomputeEdges, recomputing, resetEdges } = useJavaGraph()
+const { recomputeEdges, recomputing, resetEdges, edgeReturn, requestEdgeReturn, clearEdgeReturn } = useJavaGraph()
 const { push, clearAll: clearNotifications } = useNotifications()
 // Verschiebbare Spaltenbreiten des 3-Spalten-Layouts (Drag-to-Resize + Reset).
 const {
@@ -525,6 +525,7 @@ async function confirmReset() {
     filename.value = ''
     search.value = ''
     clearNotifications()
+    clearEdgeReturn()
     pendingDelete.value = null
     pendingConflicts.value = null
     for (const k of Object.keys(collapsed)) delete collapsed[k]
@@ -1040,27 +1041,45 @@ function onResetPanels() {
       </div>
 
       <!-- Spalte 3: Detail -->
-      <div class="min-h-0">
-        <JavaClassDetail
-          v-if="selectedFileId"
-          :key="selectedFileId"
-          :file-id="selectedFileId"
-          :target-line="activeTargetLine"
-          :target-end-line="activeTargetEndLine"
-          @close="onDetailClose"
-        />
-        <div
-          v-else
-          class="grid h-full place-items-center rounded-xl border border-dashed border-[var(--color-border)] px-6 text-center"
-        >
-          <div class="max-w-[15rem]">
-            <span class="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-xl bg-[var(--color-surface-offset)] text-[var(--color-text-muted)]">
-              <Icon icon="lucide:mouse-pointer-click" class="h-5 w-5" />
+      <div class="flex min-h-0 flex-col gap-2">
+        <!-- Rueckweg zur Kante, ueber die man hier gelandet ist. Steht UEBER dem Detail und nicht
+             im Graphen: hierher schaut der Nutzer nach dem Sprung, und hier stellt sich die Frage
+             „und wie komme ich zurueck?". -->
+        <Transition name="pop">
+          <button v-if="edgeReturn" type="button" class="edge-back" @click="requestEdgeReturn()">
+            <span class="edge-back-ic"><Icon icon="lucide:corner-up-left" class="h-4 w-4" /></span>
+            <span class="min-w-0 flex-1 text-left">
+              <span class="block text-2xs font-semibold uppercase tracking-[0.12em] opacity-70">Back to relation</span>
+              <span class="block truncate font-mono text-[0.8125rem] font-semibold">{{ edgeReturn.label }}</span>
             </span>
-            <p class="mb-1 text-sm font-semibold text-[var(--color-text)]">No class selected</p>
-            <p class="text-xs leading-relaxed text-[var(--color-text-muted)]">
-              Pick one from the list or click a node in the graph to see its methods, AI summaries and source.
-            </p>
+            <Icon icon="lucide:git-fork" class="h-4 w-4 shrink-0 opacity-60" />
+          </button>
+        </Transition>
+
+        <!-- min-h-0 + flex-1: der Detailbereich behaelt seine eigene Scrollflaeche, auch wenn der
+             Zurueck-Knopf darueber Platz belegt. -->
+        <div class="min-h-0 flex-1">
+          <JavaClassDetail
+            v-if="selectedFileId"
+            :key="selectedFileId"
+            :file-id="selectedFileId"
+            :target-line="activeTargetLine"
+            :target-end-line="activeTargetEndLine"
+            @close="onDetailClose"
+          />
+          <div
+            v-else
+            class="grid h-full place-items-center rounded-xl border border-dashed border-[var(--color-border)] px-6 text-center"
+          >
+            <div class="max-w-[15rem]">
+              <span class="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-xl bg-[var(--color-surface-offset)] text-[var(--color-text-muted)]">
+                <Icon icon="lucide:mouse-pointer-click" class="h-5 w-5" />
+              </span>
+              <p class="mb-1 text-sm font-semibold text-[var(--color-text)]">No class selected</p>
+              <p class="text-xs leading-relaxed text-[var(--color-text-muted)]">
+                Pick one from the list or click a node in the graph to see its methods, AI summaries and source.
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -1289,6 +1308,41 @@ function onResetPanels() {
 .pop-leave-to {
   opacity: 0;
   transform: scale(0.96) translateY(-4px);
+}
+
+/* Rueckweg zur Kante (Spalte 3, ueber dem Detail). Bewusst gross und in Akzentfarbe: er ist die
+   Antwort auf „wie komme ich zu der Beziehung zurueck, aus der ich hier gelandet bin?" – und ein
+   Weg, den man nicht findet, gibt es nicht. Volle Breite, damit der Kantenname (mono, kann lang
+   werden) Platz hat und der Knopf nicht neben dem Detail zu suchen ist. */
+.edge-back {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.625rem;
+  border-radius: 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+  background: var(--color-accent-soft);
+  padding: 0.5rem 0.75rem;
+  color: var(--color-accent);
+  text-align: left;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+.edge-back:hover {
+  border-color: var(--color-accent);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--color-accent) 26%, transparent);
+  transform: translateY(-1px);
+}
+.edge-back:active {
+  transform: translateY(0);
+}
+.edge-back-ic {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--color-accent) 22%, transparent);
 }
 
 /* Tastenkappe fuer den Shortcut-Hinweis im Modal-Footer. */

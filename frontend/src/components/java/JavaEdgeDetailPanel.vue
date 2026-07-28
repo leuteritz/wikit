@@ -30,8 +30,10 @@ const { lastFileId, lastTargetLine, lastTargetEndLine } = useJavaAnalyzer()
 // edgeId der aktuell per Inline-Confirm abgefragten Methode (null = keine Bestätigung offen).
 const confirmingDelete = ref(null)
 
-function close() {
-  emit('close')
+// `reason` unterscheidet das Schliessen per ESC/× vom Schliessen wegen eines Sprungs in den Code
+// ('navigate'). Nur dort bietet der Graph anschliessend den Rueckweg zu dieser Kante an.
+function close(reason) {
+  emit('close', reason)
 }
 
 // Kante einer einzelnen Methode löschen -> Parent (JavaDependencyGraph) persistiert + frischt
@@ -174,7 +176,7 @@ function navigateTo(fileId, line, endLine) {
   lastFileId.value = fileId
   lastTargetLine.value = line ?? null
   lastTargetEndLine.value = endLine ?? null
-  close()
+  close('navigate')
   router.push('/code')
 }
 

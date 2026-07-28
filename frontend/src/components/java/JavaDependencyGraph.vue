@@ -73,6 +73,10 @@ const {
   setHoveredNode,
   hoveredEdge,
   setHoveredEdge,
+  edgeReturn,
+  edgeReturnToken,
+  setEdgeReturn,
+  clearEdgeReturn,
 } = useJavaGraph()
 // Detailabruf einer einzelnen Klasse (Methodenruempfe fuers Edge-Panel) – die Liste traegt sie nicht.
 const { getFile } = useJavaAnalyzer()
@@ -1090,7 +1094,8 @@ function openBundlePanel(d) {
     relations,
   }
 }
-function closeBundlePanel() {
+function closeBundlePanel(reason) {
+  rememberReturn(reason, 'bundle', activeBundle.value)
   activeBundle.value = null
 }
 // Aufrufstellen einer einzelnen Beziehung ermitteln – dieselbe Rechnung wie fuer das
@@ -1123,12 +1128,40 @@ function openRelationCode(rel) {
 
 function onEdgeClick({ edge }) {
   const d = edge?.data
+  // Neue Kante angesehen -> ein gemerkter Rueckweg zur alten fuehrt nur noch in die Irre.
+  clearEdgeReturn()
   if (d?.kind === 'aggregate') return openBundlePanel(d)
   openEdgePanel(d)
 }
-function closeEdgePanel() {
+function closeEdgePanel(reason) {
+  rememberReturn(reason, 'edge', activeEdge.value)
   activeEdge.value = null
 }
+
+// --- Rueckweg aus dem Code zurueck zur Kante -------------------------------------------------
+// Schliesst ein Panel, WEIL in den Quellcode gesprungen wurde, merken wir uns seinen Zustand.
+// CodeView blendet daraufhin einen Zurueck-Knopf ein; ein Klick darauf stellt exakt dieses Panel
+// wieder her (der Zustand IST die Wiederherstellung – nichts wird neu berechnet).
+function rememberReturn(reason, kind, payload) {
+  if (reason !== 'navigate' || !payload) {
+    // Per ESC/× geschlossen: der Nutzer ist fertig mit der Kante, ein Rueckweg waere Ballast.
+    clearEdgeReturn()
+    return
+  }
+  const label =
+    kind === 'bundle'
+      ? `${payload.fromLabel} → ${payload.toLabel}`
+      : `${payload.fromClass} → ${payload.toClass}`
+  setEdgeReturn({ kind, label, payload })
+}
+
+watch(edgeReturnToken, () => {
+  const t = edgeReturn.value
+  if (!t) return
+  if (t.kind === 'bundle') activeBundle.value = t.payload
+  else activeEdge.value = t.payload
+  clearEdgeReturn() // einmaliger Rueckweg: das Panel steht wieder offen, der Knopf hat sich erledigt
+})
 
 // --- Kante löschen (× am Label / Detail-Panel) -------------------------------
 // edgeId = java_edges.id. Backend tombstoned Auto-Kanten (kein Wiederauftauchen),

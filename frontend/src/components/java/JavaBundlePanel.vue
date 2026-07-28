@@ -42,7 +42,9 @@ function goTo(fileId, line = null, endLine = null) {
   lastFileId.value = fileId
   lastTargetLine.value = line
   lastTargetEndLine.value = endLine
-  emit('close') // sonst verdeckt das Panel genau den Code, zu dem gesprungen wurde
+  // 'navigate' unterscheidet das Schliessen HIER (Sprung in den Code) vom Schliessen per ESC/×.
+  // Nur im ersten Fall bietet der Graph anschliessend den Rueckweg zu dieser Beziehung an.
+  emit('close', 'navigate') // sonst verdeckt das Panel genau den Code, zu dem gesprungen wurde
   router.push('/code')
 }
 // Klick auf einen Codeblock springt an die Stelle – ausser der Nutzer hat gerade Text markiert
