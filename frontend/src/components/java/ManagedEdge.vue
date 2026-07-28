@@ -16,6 +16,7 @@
 import { computed, ref } from 'vue'
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from '@vue-flow/core'
 import { Icon } from '../../lib/icons.js'
+import { useJavaGraph } from '../../composables/useJavaGraph.js'
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -81,16 +82,39 @@ const labelX = computed(() => pathData.value[1])
 const labelY = computed(() => pathData.value[2] + labelStagger.value)
 
 const d = computed(() => props.data || {})
+
+// --- Hover-Fokus ---------------------------------------------------------------------------
+// Zeigt die Maus auf einen Knoten, bleiben nur dessen eigene Kanten stehen; alles andere faellt
+// fast auf null. Der Zustand kommt aus dem Composable, NICHT ueber `data`: sonst muesste der
+// Parent bei jeder Mausbewegung saemtliche Kanten neu in den Vue-Flow-Store schreiben.
+const { hoveredNode } = useJavaGraph()
+const dimmed = computed(() => {
+  const h = hoveredNode.value
+  if (!h) return false
+  return d.value.sourceId !== h && d.value.targetId !== h
+})
+const focused = computed(() => !!hoveredNode.value && !dimmed.value)
+
+// Die Kanten-Grundfarbe steht in data.edgeStyle; hier kommt nur der Fokus-Zustand darueber.
+const pathStyle = computed(() => {
+  // Die Transition steht inline, nicht im <style>: BaseEdge rendert mehrere Wurzelelemente, an die
+  // sich weder eine Klasse noch ein scoped-Selektor zuverlaessig haengen laesst.
+  const base = { transition: 'opacity 0.15s ease, stroke-width 0.15s ease', ...(d.value.edgeStyle || {}) }
+  if (dimmed.value) return { ...base, opacity: 0.07 }
+  if (focused.value) return { ...base, opacity: 1, strokeWidth: (base.strokeWidth || 2) + 0.7 }
+  return base
+})
 </script>
 
 <template>
-  <BaseEdge :id="id" :path="edgePath" :marker-end="markerEnd" :style="d.edgeStyle" />
+  <BaseEdge :id="id" :path="edgePath" :marker-end="markerEnd" :style="pathStyle" />
 
   <!-- Aggregierte Package-Kante: nur die Zahl der zusammengefassten Klassenbeziehungen. Keine
        Aktionen – verwaltet wird immer auf Klassenebene, eine Ebene tiefer. -->
   <EdgeLabelRenderer v-if="d.kind === 'aggregate'">
     <div
       class="me-label me-label--agg"
+      :class="{ 'me-label--dim': dimmed }"
       :style="{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }"
       :title="`${d.count} class-to-class relation(s) bundled here – open a package to see them individually`"
     >
@@ -125,6 +149,7 @@ const d = computed(() => props.data || {})
         'me-label--review': d.needsReview,
         'me-label--selected': selected,
         'me-label--lit': d.isHighlighted,
+        'me-label--dim': dimmed,
       }"
       :style="{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }"
       title="Show details"
@@ -177,7 +202,13 @@ const d = computed(() => props.data || {})
   color: var(--color-accent);
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.12);
   cursor: pointer;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+/* Hover-Fokus auf einem Knoten: fremde Labels verschwinden ganz. Nur auszublenden reicht nicht –
+   sie liegen im Label-Overlay und wuerden sonst weiter Klicks abfangen. */
+.me-label--dim {
+  opacity: 0;
+  pointer-events: none;
 }
 .me-label--manual {
   border-style: dashed;

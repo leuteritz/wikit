@@ -16,10 +16,9 @@
 // Badge + Ring); das Package steckt nur noch in einem kleinen Farbpunkt. Alles client-seitig aus
 // der Dateiliste (props.files enthaelt methods[].body + dependencies[]) -> kein Request, kein
 // Backend noetig. Icons via Iconify.
-import { computed, ref, onMounted, watch, nextTick } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { VueFlow, MarkerType, Handle, Position, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
-import dagre from '@dagrejs/dagre'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 import { useTheme } from '../../composables/useTheme.js'
@@ -27,6 +26,7 @@ import { useJavaGraph } from '../../composables/useJavaGraph.js'
 import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
 import { Icon } from '../../lib/icons.js'
 import { buildPackageLevel, commonPackagePrefix, breadcrumbFor } from '../../lib/packageGraph.js'
+import { layoutFlat, layoutClustered } from '../../lib/graphLayout.js'
 import JavaEdgeDetailPanel from './JavaEdgeDetailPanel.vue'
 import ManualEdgePanel from './ManualEdgePanel.vue'
 import ManagedEdge from './ManagedEdge.vue'
@@ -49,14 +49,27 @@ const props = defineProps({
 const emit = defineEmits(['select', 'clear-search'])
 
 const { theme } = useTheme()
-const { fitView, zoomIn, zoomOut, setViewport } = useVueFlow()
+// `viewport` wird fuer den Zonen-Layer gebraucht: er liegt HINTER dem Canvas und muss dessen
+// Pan/Zoom selbst nachfahren (Vue Flow transformiert nur seine eigenen Ebenen).
+const { fitView, zoomIn, zoomOut, setViewport, viewport } = useVueFlow()
 
 // Persistierte Call-/Uses-Edges (auto + manuell) – Quelle der Wahrheit ist das Backend.
 // Kanten lassen sich im Graph manuell anlegen (Drag-to-Connect) und löschen (× am Label):
 //   * createEdge/deleteEdge laufen ausschließlich über das Composable (HTTP via lib/api.js).
 //   * deleteEdge im Backend: manuelle Kante hart löschen, Auto-Kante als Tombstone (dismissed=1)
 //     merken -> falsch erkannte Auto-Kanten kehren bei „Kanten neu simulieren" nicht zurück.
-const { edges: serverEdges, fetchEdges, createEdge, deleteEdge, highlightedCall, clearHighlightedCall, highlightedDef, clearHighlightedDef } = useJavaGraph()
+const {
+  edges: serverEdges,
+  fetchEdges,
+  createEdge,
+  deleteEdge,
+  highlightedCall,
+  clearHighlightedCall,
+  highlightedDef,
+  clearHighlightedDef,
+  hoveredNode,
+  setHoveredNode,
+} = useJavaGraph()
 // Detailabruf einer einzelnen Klasse (Methodenruempfe fuers Edge-Panel) – die Liste traegt sie nicht.
 const { getFile } = useJavaAnalyzer()
 
@@ -122,6 +135,47 @@ function toggleLegend() {
     /* ignore */
   }
 }
+
+// --- Anzeige-Optionen (Dock unten links) -----------------------------------------------------
+// Beides ueberlebt den Reload: wer den Graphen einmal auf „nur Aufrufe" eingestellt hat, will ihn
+// beim naechsten Besuch nicht wieder voller Import-Linien vorfinden.
+const VIEW_KEY = 'wikit:graph-view:v1'
+// Klassen nach Package gruppieren (Zonen-Layout). Default AN – das ist der eigentliche Gewinn.
+const groupByPackage = ref(true)
+// Welche Kantenarten werden gezeichnet? Gefilterte Kanten fallen auch aus dem LAYOUT heraus,
+// wirken also nicht mehr auf die Platzierung – sonst bliebe der Graph nach dem Ausblenden der
+// Imports genauso zerrissen wie vorher.
+const edgeFilter = ref({ call: true, uses: true, import: true })
+try {
+  const raw = JSON.parse(localStorage.getItem(VIEW_KEY) || 'null')
+  if (raw && typeof raw === 'object') {
+    if (typeof raw.grouped === 'boolean') groupByPackage.value = raw.grouped
+    if (raw.edges && typeof raw.edges === 'object') edgeFilter.value = { ...edgeFilter.value, ...raw.edges }
+  }
+} catch {
+  /* kaputter/blockierter localStorage -> Defaults */
+}
+function persistView() {
+  try {
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ grouped: groupByPackage.value, edges: edgeFilter.value }))
+  } catch {
+    /* ignore */
+  }
+}
+function toggleGrouping() {
+  groupByPackage.value = !groupByPackage.value
+  persistView()
+}
+function toggleEdgeKind(kind) {
+  edgeFilter.value = { ...edgeFilter.value, [kind]: !edgeFilter.value[kind] }
+  persistView()
+}
+// Beschriftung + Farbe der Filter-Pillen; die Farben spiegeln exakt die Kanten im Canvas.
+const EDGE_KINDS = [
+  { key: 'call', label: 'Calls', color: 'var(--color-accent)' },
+  { key: 'uses', label: 'Uses', color: 'var(--color-cyan)' },
+  { key: 'import', label: 'Imports', color: 'var(--color-text-muted)' },
+]
 
 const simpleName = (fqn) => String(fqn).split('.').pop()
 
@@ -313,6 +367,11 @@ const layout = computed(() => {
 
   // --- Kanten zwischen geladenen Klassen bestimmen ---
   const edges = []
+  // Jede erkannte Beziehung – auch die gerade ausgeblendete. Die ROLLE eines Knotens
+  // (provider/consumer/hub) haengt daran und darf nicht mit dem Kanten-Filter springen: wer die
+  // Imports abschaltet, will weniger Linien sehen, nicht eine andere Bewertung der Klassen.
+  const rolePairs = []
+  const showKind = (kind) => edgeFilter.value[kind] !== false
   const callPairs = new Set()
   const skipped = [] // Debug: Server-Kanten, die NICHT gezeichnet werden (Endpunkt nicht geladen)
   // Distinkte, referenzierte-aber-nicht-geladene Klassen (Kante hat nur EINEN geladenen Endpunkt).
@@ -356,10 +415,12 @@ const layout = computed(() => {
     }
     const pairKey = `${callerFile.id}->${definerFile.id}`
     callPairs.add(pairKey)
+    rolePairs.push({ source: `c:${definerFile.id}`, target: `c:${callerFile.id}` })
 
     // uses-Kante = struktureller Typ-Bezug (Variablen-/Feld-/Parameter-/Rueckgabetyp, new X(),
     // statischer Aufruf ohne Methoden-Treffer): eigener Stil, kein Label, nicht klickbar, einzeln.
     if (e.kind === 'uses') {
+      if (!showKind('uses')) continue
       edges.push({
         id: `edge:${e.id}`,
         source: `c:${definerFile.id}`,
@@ -368,6 +429,8 @@ const layout = computed(() => {
         markerEnd: { type: MarkerType.ArrowClosed, color: USES_COLOR },
         data: {
           kind: 'uses',
+          sourceId: `c:${definerFile.id}`,
+          targetId: `c:${callerFile.id}`,
           // Kurz gestrichelt – deutlich anders als der Punktraster der Import-Kante.
           edgeStyle: { stroke: USES_COLOR, strokeWidth: 1.6, strokeDasharray: '5 3', cursor: 'default' },
         },
@@ -390,6 +453,7 @@ const layout = computed(() => {
   //     Label) + Rechtsklick gibt es nur fuer Einzel-Methoden-Kanten; Buendel werden ueber das
   //     Detail-Panel verwaltet (onOpen ist immer gesetzt).
   for (const { callerFile, definerFile, methods } of callGroups.values()) {
+    if (!showKind('call')) break
     const single = methods.length === 1
     const allManual = methods.every((m) => m.isManual)
     const needsReview = methods.some((m) => m.needsReview)
@@ -402,6 +466,8 @@ const layout = computed(() => {
       markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
       data: {
         kind: 'call',
+        sourceId: `c:${definerFile.id}`,
+        targetId: `c:${callerFile.id}`,
         methods, // [{ edgeId, method, isManual, confidence, needsReview }]
         bundleCount: methods.length,
         method: methods[0].method, // Back-compat (Einzel-Kante: Label/Context-Menu/Editor)
@@ -435,6 +501,8 @@ const layout = computed(() => {
       if (target.id === f.id) continue
       if (callPairs.has(`${f.id}->${target.id}`)) continue
       callPairs.add(`${f.id}->${target.id}`)
+      rolePairs.push({ source: `c:${target.id}`, target: `c:${f.id}` })
+      if (!showKind('import')) continue
       edges.push({
         id: `imp:${f.id}-${target.id}`,
         // Einheitlicher „Definition -> Nutzung"-Fluss: importierte Klasse = Quelle,
@@ -446,6 +514,8 @@ const layout = computed(() => {
         markerEnd: { type: MarkerType.ArrowClosed, color: IMPORT_COLOR },
         data: {
           kind: 'import',
+          sourceId: `c:${target.id}`,
+          targetId: `c:${f.id}`,
           // Punktraster statt Striche: die schwaechste Aussage bekommt auch die leiseste Linie.
           edgeStyle: {
             stroke: IMPORT_COLOR,
@@ -465,6 +535,7 @@ const layout = computed(() => {
   if (packageMode.value) {
     for (const ge of level.value.groupEdges) {
       const width = Math.min(6, 1.4 + Math.log2(ge.count + 1) * 0.8)
+      rolePairs.push({ source: ge.source, target: ge.target })
       edges.push({
         id: `agg:${ge.id}`,
         source: ge.source,
@@ -474,6 +545,8 @@ const layout = computed(() => {
         data: {
           kind: 'aggregate',
           count: ge.count,
+          sourceId: ge.source,
+          targetId: ge.target,
           // Eigene Farbe, weil es eine ANDERE EBENE ist: hier steht ein Knoten fuer viele Klassen.
           edgeStyle: { stroke: AGG_COLOR, strokeWidth: width, opacity: 0.9, cursor: 'default' },
         },
@@ -508,86 +581,64 @@ const layout = computed(() => {
   //   * consumer – kommt nur als Ziel vor (nutzt andere, wird selbst nicht referenziert)
   //   * hub      – beides (Standard-Fall)
   //   * isolated – keine Kante (keine Verbindung zu einer anderen geladenen Klasse)
-  const sourceNodeIds = new Set(edges.map((e) => e.source)) // Definition/Provider-Seite
-  const targetNodeIds = new Set(edges.map((e) => e.target)) // Anwender/Consumer-Seite
+  const sourceNodeIds = new Set(rolePairs.map((e) => e.source)) // Definition/Provider-Seite
+  const targetNodeIds = new Set(rolePairs.map((e) => e.target)) // Anwender/Consumer-Seite
   const roleFor = (nid) => {
     const isSrc = sourceNodeIds.has(nid)
     const isTgt = targetNodeIds.has(nid)
     return isSrc && isTgt ? 'hub' : isSrc ? 'provider' : isTgt ? 'consumer' : 'isolated'
   }
 
-  // --- dagre-Auto-Layout ---
-  // Groessere nodesep/ranksep als zuvor -> mehr Luft zwischen Knoten, damit Node-Labels (und
-  // die aufgefaecherten Kanten/Kanten-Labels) bei dicht liegenden Klassen nicht kollidieren.
-  // Verbindungslose Klassen aus dagre HERAUSHALTEN: dagre legt sie sonst als eine einzige,
-  // endlos breite Reihe ab -> der Graph zoomt auf Briefmarkengroesse und der Canvas bleibt
-  // vertikal leer. Sie bekommen weiter unten ein eigenes, kompaktes Raster.
-  const degree = new Map()
-  for (const e of edges) {
-    degree.set(e.source, (degree.get(e.source) || 0) + 1)
-    degree.set(e.target, (degree.get(e.target) || 0) + 1)
-  }
-
-  const g = new dagre.graphlib.Graph()
-  // Package-Ebene kompakter stapeln: dort zaehlen wenige, grosse Knoten – mit dem Klassen-Abstand
-  // wuerde eine Kette aus 8 Packages so hoch, dass fitView() sie auf Briefmarkengroesse zoomt.
-  g.setGraph({
-    rankdir: 'TB',
-    nodesep: packageMode.value ? 120 : 90,
-    ranksep: packageMode.value ? 70 : 110,
-    marginx: 24,
-    marginy: 24,
-  })
-  g.setDefaultEdgeLabel(() => ({}))
-  const orphans = []
+  // --- Platzierung ---------------------------------------------------------------------------
+  // Zwei Verfahren (Details in lib/graphLayout.js):
+  //   * geclustert – Klassen werden nach ihrem Package in Zonen gelegt, die Zonen selbst danach
+  //     nach ihren Abhaengigkeiten geschichtet. Das ist der Normalfall im Klassenmodus.
+  //   * flach – ein Lauf ueber alles. Bleibt fuer die Package-Ebene (dort IST jeder Knoten schon
+  //     ein Package) und fuer Ausschnitte mit nur einem Package, wo eine Zone nichts trennt.
   const pkgGroups = packageMode.value ? level.value.groups : []
-  for (const grp of pkgGroups) {
-    if (degree.get(grp.id)) g.setNode(grp.id, { width: PKG_W, height: PKG_H })
-    else orphans.push(grp.id)
-  }
-  for (const f of files) {
-    const id = `c:${f.id}`
-    if (degree.get(id)) g.setNode(id, { width: NODE_W, height: NODE_H })
-    else orphans.push(id)
-  }
-  for (const e of edges) {
-    if (g.hasNode(e.source) && g.hasNode(e.target)) g.setEdge(e.source, e.target)
-  }
-  // Ohne Knoten kein Layout: dagre setzt die Graph-Groesse dann auf -Infinity (Maximum ueber
-  // eine leere Menge). Das ist truthy und wuerde die Orphan-Koordinaten unten unbrauchbar machen.
-  if (g.nodeCount()) dagre.layout(g)
-
-  // Raster der verbindungslosen Klassen: annaehernd quadratisch, unter dem verbundenen Graph
-  // zentriert (bzw. ab 0/0, wenn es gar keine Kanten gibt). Koordinaten wie bei dagre = Mitte.
-  const orphanPos = new Map()
-  if (orphans.length) {
-    const COL_STEP = NODE_W + 60
-    const ROW_STEP = NODE_H + 48
-    const finite = (v) => (Number.isFinite(v) && v > 0 ? v : 0)
-    const gw = finite(g.graph().width)
-    const gh = finite(g.graph().height)
-    const cols = Math.max(1, Math.ceil(Math.sqrt(orphans.length)))
-    const originX = gw ? (gw - (cols * COL_STEP - 60)) / 2 : 0
-    const originY = gh ? gh + ROW_STEP : 0
-    orphans.forEach((id, i) => {
-      orphanPos.set(id, {
-        x: originX + (i % cols) * COL_STEP + NODE_W / 2,
-        y: originY + Math.floor(i / cols) * ROW_STEP + NODE_H / 2,
+  const layoutNodes = [
+    ...pkgGroups.map((grp) => ({ id: grp.id, width: PKG_W, height: PKG_H, group: grp.path })),
+    ...files.map((f) => ({ id: `c:${f.id}`, width: NODE_W, height: NODE_H, group: f.package || '(default)' })),
+  ]
+  const distinctPkgs = new Set(layoutNodes.map((n) => n.group)).size
+  const clustered = !packageMode.value && groupByPackage.value && distinctPkgs > 1
+  const placed = clustered
+    ? layoutClustered({ nodes: layoutNodes, edges, nodesep: 60, ranksep: 90 })
+    : layoutFlat({
+        nodes: layoutNodes,
+        edges,
+        // Package-Ebene kompakter stapeln: dort zaehlen wenige, grosse Knoten – mit dem
+        // Klassen-Abstand wuerde eine Kette aus 8 Packages so hoch, dass fitView() sie auf
+        // Briefmarkengroesse zoomt.
+        nodesep: packageMode.value ? 120 : 90,
+        ranksep: packageMode.value ? 70 : 110,
       })
-    })
+  const posOf = (id) => placed.pos.get(id) || { x: 0, y: 0 }
+
+  // Sichtbare Package-Zonen (Hintergrundflaechen). Beschriftet wird relativ zum geoeffneten
+  // Pfad – der gemeinsame Praefix steht bereits im Breadcrumb und wuerde jede Zone nur verlaengern.
+  const base = basePath.value
+  const zoneLabel = (key) => {
+    if (!key) return '(default)'
+    if (base && key === base) return key.split('.').pop() || key
+    if (base && key.startsWith(base + '.')) return key.slice(base.length + 1)
+    return key
   }
+  const zones = (placed.zones || []).map((z) => ({
+    ...z,
+    label: zoneLabel(z.key),
+    path: z.key === '(default)' ? '' : z.key,
+    color: pkgColor.get(z.key) || PKG_COLORS[0],
+  }))
 
   // Package-Knoten dieser Ebene (nur im Package-Modus). Sie tragen die Bilanz ihres Teilbaums:
   // Klassen, KI-Fortschritt, Zahl der Sub-Packages und die nach aussen laufenden Beziehungen.
   const pkgNodes = pkgGroups.map((grp) => {
-    const nd = g.hasNode(grp.id) ? g.node(grp.id) : orphanPos.get(grp.id)
+    const nd = posOf(grp.id)
     return {
       id: grp.id,
       type: 'pkg',
-      position: {
-        x: (Number.isFinite(nd?.x) ? nd.x : 0) - PKG_W / 2,
-        y: (Number.isFinite(nd?.y) ? nd.y : 0) - PKG_H / 2,
-      },
+      position: { x: nd.x - PKG_W / 2, y: nd.y - PKG_H / 2 },
       data: {
         path: grp.path,
         label: grp.label,
@@ -606,17 +657,12 @@ const layout = computed(() => {
   const nodes = files.map((f) => {
     const pkg = f.package || '(default)'
     const id = `c:${f.id}`
-    const nd = g.hasNode(id) ? g.node(id) : orphanPos.get(id)
+    const nd = posOf(id)
     return {
       id,
       type: 'klass',
-      // dagre (bzw. das Orphan-Raster) liefert die Mitte -> Vue Flow erwartet die obere linke Ecke.
-      // Nicht-endliche Werte hart abfangen: eine einzige NaN-Position macht fitView() und damit
-      // den kompletten Viewport (inkl. Background-Pattern) unbrauchbar.
-      position: {
-        x: (Number.isFinite(nd?.x) ? nd.x : 0) - NODE_W / 2,
-        y: (Number.isFinite(nd?.y) ? nd.y : 0) - NODE_H / 2,
-      },
+      // Das Layout liefert die Mitte -> Vue Flow erwartet die obere linke Ecke.
+      position: { x: nd.x - NODE_W / 2, y: nd.y - NODE_H / 2 },
       data: {
         fileId: f.id,
         className: f.class_name,
@@ -647,10 +693,12 @@ const layout = computed(() => {
     if (skipped.length) console.debug('[java-edges] nicht gezeichnete Kanten:', skipped)
   }
 
-  return { nodes: [...pkgNodes, ...nodes], edges, externalRefsHidden: externalRefs.size }
+  return { nodes: [...pkgNodes, ...nodes], edges, zones, clustered, externalRefsHidden: externalRefs.size }
 })
 
 const nodes = computed(() => layout.value.nodes)
+// Package-Zonen (Hintergrund-Layer, s. Template). Leer, wenn flach gelayoutet wurde.
+const zones = computed(() => layout.value.zones || [])
 // Anzahl referenzierter, aber nicht geladener Klassen (fuer den Legenden-Hinweis).
 const externalRefsHidden = computed(() => layout.value.externalRefsHidden)
 // Reine Projektion: das pure `layout` bleibt unberuehrt; nur hier wird die aktuell „aufleuchtende"
@@ -689,6 +737,37 @@ const edges = computed(() => {
 // nicht als CSS-Property.
 const gridLineColor = computed(() => (theme.value === 'dark' ? 'rgba(196,186,143,0.065)' : 'rgba(133,126,97,0.09)'))
 
+// --- Hover-Fokus -----------------------------------------------------------------------------
+// Bei dicht liegenden Kanten hilft kein Layout mehr weiter – man muss EINE Beziehung isolieren
+// koennen. Zeigt die Maus auf eine Klasse, bleiben nur sie, ihre direkten Nachbarn und die Kanten
+// dazwischen stehen; alles andere faellt fast auf null zurueck. Die Kanten lesen den Zustand
+// selbst (s. ManagedEdge), hier geht es nur um die Knoten.
+const neighbours = computed(() => {
+  const m = new Map()
+  const add = (a, b) => {
+    if (!m.has(a)) m.set(a, new Set())
+    m.get(a).add(b)
+  }
+  for (const e of layout.value.edges) {
+    add(e.source, e.target)
+    add(e.target, e.source)
+  }
+  return m
+})
+function isDimmed(nodeId) {
+  const h = hoveredNode.value
+  if (!h || h === nodeId) return false
+  return !neighbours.value.get(h)?.has(nodeId)
+}
+function onNodeEnter({ node }) {
+  setHoveredNode(node?.id || null)
+}
+function onNodeLeave() {
+  setHoveredNode(null)
+}
+// Modul-State: beim Verlassen des Code-Tabs koennte sonst ein gedimmter Graph zurueckbleiben.
+onUnmounted(() => setHoveredNode(null))
+
 function onNodeClick({ node }) {
   // Klick in den Graph (Node) -> transiente Code-Tab-Highlights verwerfen (Spec: „Node ohne Kante").
   clearHighlights()
@@ -703,6 +782,13 @@ function onNodeClick({ node }) {
 function resetView() {
   setViewport({ x: 0, y: 0, zoom: 1 })
 }
+
+// Der Zonen-Layer liegt ausserhalb der Vue-Flow-Ebenen (einmal dahinter fuer die Flaeche, einmal
+// davor fuer die klickbare Kopfzeile) und muss Pan/Zoom deshalb selbst nachfahren – exakt so, wie
+// Vue Flow es intern mit seinem Viewport macht.
+const viewportStyle = computed(() => ({
+  transform: `translate(${viewport.value.x}px, ${viewport.value.y}px) scale(${viewport.value.zoom})`,
+}))
 
 // `fit-view-on-init` greift ins Leere: die Knoten kommen erst mit dem async fetchFiles() an,
 // der Graph montiert vorher – und die Kanten (fetchEdges) sogar noch einmal spaeter, was das
@@ -973,8 +1059,21 @@ watch(
       </div>
     </div>
 
+    <!-- Package-Zonen, Flaeche: liegt HINTER dem Canvas, damit Kanten und Knoten darueber laufen.
+         Rein dekorativ (pointer-events: none) – geklickt wird die Kopfzeile im vorderen Layer. -->
+    <div v-if="files.length && zones.length" class="vf-zonelayer" :style="viewportStyle">
+      <div
+        v-for="z in zones"
+        :key="z.key"
+        class="vf-zone"
+        :style="{ left: `${z.x}px`, top: `${z.y}px`, width: `${z.width}px`, height: `${z.height}px`, '--pkg': z.color }"
+      />
+    </div>
+
+    <!-- Kein v-else mehr: der Zonen-Layer steht dazwischen (und muss dort stehen, damit er im
+         Stapel unter dem Canvas liegt). Unmounten bei leerer Dateiliste macht das v-if genauso. -->
     <VueFlow
-      v-else
+      v-if="files.length"
       :nodes="nodes"
       :edges="edges"
       :edge-types="edgeTypes"
@@ -985,6 +1084,8 @@ watch(
       :nodes-connectable="true"
       :edges-updatable="false"
       @node-click="onNodeClick"
+      @node-mouse-enter="onNodeEnter"
+      @node-mouse-leave="onNodeLeave"
       @edge-click="onEdgeClick"
       @pane-click="clearHighlights"
       @connect="onConnect"
@@ -1000,6 +1101,7 @@ watch(
               'vf-card--selected': selectedId === data.fileId,
               'vf-card--match': data.isMatch,
               'vf-card--context': data.isContext,
+              'vf-card--dim': isDimmed(`c:${data.fileId}`),
             },
           ]"
           :style="{ '--pkg': data.color }"
@@ -1032,7 +1134,12 @@ watch(
 
       <!-- Package-Knoten: Aggregat eines ganzen Teilbaums. Klick = eine Ebene tiefer. -->
       <template #node-pkg="{ data }">
-        <div class="vf-pkgcard" :style="{ '--pkg': data.color }" :title="`${data.path} — click to open`">
+        <div
+          class="vf-pkgcard"
+          :class="{ 'vf-card--dim': isDimmed(`p:${data.path}`) }"
+          :style="{ '--pkg': data.color }"
+          :title="`${data.path} — click to open`"
+        >
           <Handle type="target" :position="Position.Top" class="vf-handle" />
           <span class="vf-strip" />
           <div class="vf-pkgbody">
@@ -1058,6 +1165,25 @@ watch(
 
       <Background variant="lines" :gap="110" :line-width="1" :color="gridLineColor" />
     </VueFlow>
+
+    <!-- Package-Zonen, Kopfzeile: liegt VOR dem Canvas, weil das Vue-Flow-Pane sonst jeden Klick
+         abfaengt. Der Layer selbst ist durchlaessig, nur die Pille nimmt Klicks an – sie sitzt im
+         Kopfbereich der Zone, den das Layout freihaelt, und ueberdeckt daher keinen Knoten. -->
+    <div v-if="files.length && zones.length" class="vf-zonelayer vf-zonelayer--front" :style="viewportStyle">
+      <button
+        v-for="z in zones"
+        :key="z.key"
+        type="button"
+        class="vf-zonehead"
+        :style="{ left: `${z.x + 12}px`, top: `${z.y + 10}px`, maxWidth: `${z.width - 24}px`, '--pkg': z.color }"
+        :title="`${z.key} — show only this package`"
+        @click="drillTo(z.path)"
+      >
+        <span class="vf-zonedot" />
+        <span class="vf-zonename">{{ z.label }}</span>
+        <span class="vf-zonecount">{{ z.count }}</span>
+      </button>
+    </div>
 
     <!-- Ebenen-Navigation: nur relevant, wenn ueberhaupt aggregiert wird. Der Pfad ist klickbar,
          rechts steht, was der aktuelle Ausschnitt umfasst. -->
@@ -1145,10 +1271,40 @@ watch(
       <button type="button" class="vf-tool" title="Reset view" @click="resetView">
         <Icon icon="lucide:rotate-ccw" class="h-4 w-4" />
       </button>
+      <!-- Zonen an/aus. Auf der Package-Ebene gibt es nichts zu gruppieren – dort ist jeder
+           Knoten bereits ein Package. -->
+      <template v-if="!packageMode">
+        <span class="vf-dock-sep" />
+        <button
+          type="button"
+          class="vf-tool"
+          :class="{ 'is-on': groupByPackage }"
+          :title="groupByPackage ? 'Ungroup: lay out all classes together' : 'Group classes by package'"
+          @click="toggleGrouping"
+        >
+          <Icon icon="lucide:package" class="h-4 w-4" />
+        </button>
+      </template>
+      <!-- Kantenarten einzeln abschaltbar: die schnellste Art, ein ueberladenes Bild aufzuraeumen.
+           Ausgeblendete Kanten wirken auch nicht mehr auf die Platzierung. -->
+      <span class="vf-dock-sep" />
+      <button
+        v-for="k in EDGE_KINDS"
+        :key="k.key"
+        type="button"
+        class="vf-chip"
+        :class="{ 'is-off': !edgeFilter[k.key] }"
+        :style="{ '--c': k.color }"
+        :title="edgeFilter[k.key] ? `Hide ${k.label.toLowerCase()}` : `Show ${k.label.toLowerCase()}`"
+        @click="toggleEdgeKind(k.key)"
+      >
+        <span class="vf-chip-line" />
+        {{ k.label }}
+      </button>
     </div>
 
     <!-- Legende: Toggle-Pille; das Panel klappt darueber auf (Default zu). -->
-    <div v-if="files.length" class="absolute bottom-3 right-3 flex flex-col items-end gap-2">
+    <div v-if="files.length" class="absolute bottom-3 right-3 z-10 flex flex-col items-end gap-2">
       <Transition name="legend">
         <div v-if="legendOpen" class="vf-legend">
           <div class="legend-head">Nodes · role</div>
@@ -1156,6 +1312,12 @@ watch(
             <span class="legend-node-swatch" :style="{ background: `var(--color-role-${role})` }" />
             <Icon :icon="ROLE_META[role].icon" class="h-3.5 w-3.5 shrink-0" :style="{ color: `var(--color-role-${role})` }" />
             <span>{{ ROLE_META[role].legend }}</span>
+          </div>
+
+          <!-- Zonen gibt es nur im gruppierten Klassen-Layout. -->
+          <div v-if="zones.length" class="legend-row">
+            <span class="legend-zone" />
+            <span><b>Package</b> zone — click its label to focus</span>
           </div>
 
           <!-- Package-Knoten gibt es erst ab der aggregierten Ebene -> nur dort erklaeren. -->
@@ -1194,7 +1356,10 @@ watch(
             <span class="legend-line legend-line--lit" style="background: var(--color-edge-highlight)" />
             <span><b>Highlighted</b> from a click in the source code</span>
           </div>
-          <p class="legend-hint">Arrows point from the definition to the class using it.</p>
+          <p class="legend-hint">
+            Arrows point from the definition to the class using it.<br />
+            Hover a class to isolate its connections.
+          </p>
 
           <div class="legend-head mt-1.5">Badges</div>
           <div class="legend-row">
@@ -1579,7 +1744,12 @@ watch(
 .vf-dock {
   position: absolute;
   bottom: 12px;
+  z-index: 6;
   display: flex;
+  /* Umbrechen statt ueberlaufen: in einer schmalen Graph-Spalte passen Werkzeuge und
+     Kanten-Filter nicht in eine Zeile. */
+  max-width: calc(100% - 24px);
+  flex-wrap: wrap;
   align-items: center;
   gap: 2px;
   padding: 4px;
@@ -1757,5 +1927,129 @@ watch(
 .vf-tool:hover {
   background: var(--color-surface-offset);
   color: var(--color-text);
+}
+/* Umschalter im Zustand „aktiv" (Package-Gruppierung). */
+.vf-tool.is-on {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+/* --- Kanten-Filter (Pillen im Dock) ------------------------------------------------------- */
+.vf-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  flex-shrink: 0;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--c) 16%, transparent);
+  transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+.vf-chip-line {
+  width: 12px;
+  height: 2px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--c);
+}
+/* Abgeschaltet: farblos und zurueckgenommen – der Unterschied muss ohne Hover erkennbar sein. */
+.vf-chip.is-off {
+  color: var(--color-text-muted);
+  background: transparent;
+  opacity: 0.6;
+}
+.vf-chip.is-off .vf-chip-line {
+  background: currentColor;
+  opacity: 0.45;
+}
+.vf-chip:hover {
+  opacity: 1;
+  color: var(--color-text);
+}
+
+/* --- Package-Zonen ------------------------------------------------------------------------
+   Zwei Ebenen ausserhalb von Vue Flow, beide mit dem Viewport transformiert:
+     .vf-zonelayer          – die Flaeche, HINTER dem Canvas (Kanten laufen darueber)
+     .vf-zonelayer--front   – die Kopfzeile, DAVOR (sonst schluckt das Vue-Flow-Pane den Klick)
+   Der z-index von --front bleibt unter Breadcrumb (5), Dock und Legende (10). */
+.vf-zonelayer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+.vf-zonelayer--front {
+  z-index: 3;
+}
+.vf-zone {
+  position: absolute;
+  border-radius: 18px;
+  /* Gestrichelt und sehr leise: die Zone ist Ordnung im Hintergrund, keine Aussage im Vordergrund. */
+  border: 1px dashed color-mix(in srgb, var(--pkg) 38%, transparent);
+  background: color-mix(in srgb, var(--pkg) 7%, transparent);
+}
+.vf-zonehead {
+  position: absolute;
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--pkg) 45%, var(--color-border));
+  background: color-mix(in srgb, var(--color-surface-2) 90%, transparent);
+  padding: 2px 4px 2px 8px;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  backdrop-filter: blur(4px);
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.vf-zonehead:hover {
+  color: var(--color-text);
+  border-color: var(--pkg);
+}
+.vf-zonedot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--pkg);
+}
+.vf-zonename {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vf-zonecount {
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--color-surface-offset);
+  padding: 0 6px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Hover-Fokus: alles ausserhalb der Nachbarschaft faellt weit zurueck. Muss NACH den
+   Rollen-Regeln stehen (.vf-role-isolated setzt ebenfalls opacity). */
+.vf-card--dim {
+  opacity: 0.14;
+}
+.vf-card--dim:hover {
+  opacity: 0.14;
+}
+/* Zonen-Swatch der Legende – spiegelt Rand und Fuellung der Flaeche im Canvas. */
+.legend-zone {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  border: 1px dashed color-mix(in srgb, var(--color-thistle) 55%, transparent);
+  background: color-mix(in srgb, var(--color-thistle) 14%, transparent);
 }
 </style>

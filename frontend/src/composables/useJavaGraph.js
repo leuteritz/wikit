@@ -23,6 +23,13 @@ const highlightedCall = ref(null)
 // hebt die eingehenden Kanten dieser Methode hervor, der Editor markiert den GESAMTEN Methodenblock.
 const highlightedDef = ref(null)
 
+// Knoten, ueber dem gerade die Maus steht (`c:<fileId>` | `p:<path>` | null). Der Graph dimmt
+// darueber alles, was nicht in der direkten Nachbarschaft liegt – bei dicht liegenden Kanten die
+// einzige Moeglichkeit, EINE Beziehung wieder herauszulesen. Bewusst hier und nicht als Prop:
+// ManagedEdge liest den Wert direkt, sonst muesste bei jedem Hover der komplette Kanten-Store von
+// Vue Flow neu geschrieben werden (bei einigen hundert Kanten sichtbar traege).
+const hoveredNode = ref(null)
+
 async function fetchEdges() {
   loading.value = true
   error.value = ''
@@ -117,6 +124,11 @@ export function useJavaGraph() {
     },
     clearHighlightedDef() {
       highlightedDef.value = null
+    },
+    // --- Hover-Fokus (Graph) ------------------------------------------------------------------
+    hoveredNode,
+    setHoveredNode(nodeId) {
+      hoveredNode.value = nodeId
     },
     fetchEdges,
     recomputeEdges,

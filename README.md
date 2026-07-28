@@ -80,9 +80,13 @@ Open the **Java Analyzer** from the top bar:
 
 1. **Analyze.** Paste or upload a `.java` file. The source is parsed **locally** with `java-parser`
    (pure JS — no JDK, no `javac`); class, methods, parameters, imports and Javadoc are stored.
-2. **Explore the graph.** Classes are nodes (colored by type: class / interface / enum /
-   annotation); edges are **import dependencies between analyzed classes** (external imports such as
-   `java.util.List` are listed in the detail panel, not drawn).
+2. **Explore the graph.** Classes are nodes, colored by their **role** in the dependency net
+   (source / consumer / hub / isolated); edges are method calls, type usages and plain imports
+   between analyzed classes (external imports such as `java.util.List` are listed in the detail
+   panel, not drawn). Classes are laid out **grouped by package**: every package gets its own zone,
+   and the zones themselves are stacked along the direction of the dependencies. Click a zone label
+   to focus that package, toggle the grouping and the edge kinds in the toolbar, and hover a class
+   to fade out everything that is not connected to it.
 3. **Export.** Turn a class into a normal Markdown article — from then on it is in the sidebar and
    **full-text searchable** (FTS5) like any other note.
 
