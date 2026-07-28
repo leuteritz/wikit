@@ -90,8 +90,9 @@ Open the **Java Analyzer** from the top bar:
    to focus that package, toggle the grouping and the edge kinds in the toolbar, and hover a class
    to fade out everything that is not connected to it. Large code bases start one level up, with a
    node per package: there, a bundled edge (“17 class relations”) opens the list of pairs behind it.
-   Each row explains the relation in plain words and unfolds the actual code — where the method is
-   defined, and the exact line where it is called.
+   Each row explains the relation in plain words and unfolds the actual code — where the method
+   comes from (package, file, line) and the exact line where it is called. Every one of those is
+   clickable and jumps into the source with that line highlighted.
 3. **Export.** Turn a class into a normal Markdown article — from then on it is in the sidebar and
    **full-text searchable** (FTS5) like any other note.
 

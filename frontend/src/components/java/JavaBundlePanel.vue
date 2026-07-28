@@ -15,7 +15,9 @@
 // geteilten Helfern aus lib/javaCode.js aufbereitet – identisch zum Edge-Detail-Modal, kein
 // zweiter Highlighter im Client. Die Aufrufstellen selbst rechnet der Parent (`loadDetail`).
 import { ref, computed, watch, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { api } from '../../lib/api.js'
+import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
 import { addLineNumbers, buildCallWindow } from '../../lib/javaCode.js'
 import { Icon } from '../../lib/icons.js'
 
@@ -26,7 +28,29 @@ const props = defineProps({
   // async (rel) => computeCallEdgeData(...) – liefert Methoden-Signaturen + Aufrufstellen.
   loadDetail: { type: Function, default: null },
 })
-const emit = defineEmits(['close', 'open', 'select'])
+// `select` gibt es bewusst nicht mehr: jeder „geh dorthin"-Klick laeuft ueber goTo(), das die
+// Datei UND (wo bekannt) die Zeile ansteuert – ein Weg statt zwei mit unterschiedlichem Ergebnis.
+const emit = defineEmits(['close', 'open'])
+
+// Sprung in den Quellcode – exakt die Mechanik des Edge-Detail-Modals: Ziel-Datei + Zeile im
+// Analyzer-Store hinterlegen, CodeView hoert darauf, oeffnet den Quellcode-Tab und markiert die
+// Stelle. Kein eigener Weg dafuer, sonst gibt es zwei Arten, „geh dorthin" zu sagen.
+const router = useRouter()
+const { lastFileId, lastTargetLine, lastTargetEndLine } = useJavaAnalyzer()
+function goTo(fileId, line = null, endLine = null) {
+  if (fileId == null) return
+  lastFileId.value = fileId
+  lastTargetLine.value = line
+  lastTargetEndLine.value = endLine
+  emit('close') // sonst verdeckt das Panel genau den Code, zu dem gesprungen wurde
+  router.push('/code')
+}
+// Klick auf einen Codeblock springt an die Stelle – ausser der Nutzer hat gerade Text markiert
+// (dann wollte er kopieren, nicht navigieren).
+function onCodeClick(fileId, line, endLine) {
+  if (String(window.getSelection?.() || '').trim()) return
+  goTo(fileId, line, endLine)
+}
 
 const query = ref('')
 const expanded = ref(new Set())
@@ -105,6 +129,7 @@ async function fetchDetail(rel) {
           signature: m.signature || snip.signature,
           filename: snip.filename,
           startLine: snip.startLine,
+          endLine: snip.endLine ?? snip.startLine,
           html: addLineNumbers(snip.combinedHtml ?? snip.html, snip.startLine),
         })
       } catch (e) {
@@ -275,13 +300,33 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
             <ul v-else class="flex flex-col gap-2">
               <li v-for="r in filtered" :key="r.key" class="rel-card" :style="{ '--kind': KIND_META[r.kind].color }">
-                <!-- Kopfzeile: immer sichtbar, klappt den Code auf/zu. -->
-                <button type="button" class="rel-row" :aria-expanded="expanded.has(r.key)" @click="toggle(r)">
+                <!-- Kopfzeile: klappt den Code auf/zu. Kein <button>, weil die beiden
+                     Klassennamen darin selbst klickbar sind (verschachtelte Buttons sind
+                     ungueltig) – dafuer role/tabindex/Tastatur von Hand. -->
+                <div
+                  class="rel-row"
+                  role="button"
+                  tabindex="0"
+                  :aria-expanded="expanded.has(r.key)"
+                  @click="toggle(r)"
+                  @keydown.enter.prevent="toggle(r)"
+                  @keydown.space.prevent="toggle(r)"
+                >
                   <span class="rel-kind">{{ KIND_META[r.kind].label }}</span>
                   <span class="rel-pair">
-                    <span class="rel-class">{{ r.provider.class_name }}</span>
+                    <button
+                      type="button"
+                      class="rel-class rel-class--link"
+                      :title="`Open ${r.provider.class_name} — ${r.provider.package || 'default package'}`"
+                      @click.stop="goTo(r.provider.id)"
+                    >{{ r.provider.class_name }}</button>
                     <Icon icon="lucide:arrow-right" class="h-3 w-3 shrink-0 opacity-50" />
-                    <span class="rel-class">{{ r.consumer.class_name }}</span>
+                    <button
+                      type="button"
+                      class="rel-class rel-class--link"
+                      :title="`Open ${r.consumer.class_name} — ${r.consumer.package || 'default package'}`"
+                      @click.stop="goTo(r.consumer.id)"
+                    >{{ r.consumer.class_name }}</button>
                   </span>
                   <span v-if="methodsOf(r).length" class="rel-methods">
                     <span v-for="m in methodsOf(r).slice(0, 3)" :key="m.edgeId ?? m.method" class="rel-method">{{ m.method }}()</span>
@@ -292,7 +337,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                     class="rel-go h-4 w-4 shrink-0"
                     :class="{ 'rotate-180': expanded.has(r.key) }"
                   />
-                </button>
+                </div>
 
                 <!-- Aufgeklappt: Klartext + Code. -->
                 <div v-if="expanded.has(r.key)" class="rel-body">
@@ -305,9 +350,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                       No call site to show — this relation comes from the type or the import, not from a method call.
                     </p>
                     <div class="rel-actions">
-                      <button type="button" class="rel-btn" @click="emit('select', r.provider.id)">
+                      <button type="button" class="rel-btn" @click="goTo(r.provider.id)">
                         <Icon icon="lucide:file-code" class="h-3.5 w-3.5" />
                         Open {{ r.provider.class_name }}
+                      </button>
+                      <button type="button" class="rel-btn" @click="goTo(r.consumer.id)">
+                        <Icon icon="lucide:file-code" class="h-3.5 w-3.5" />
+                        Open {{ r.consumer.class_name }}
                       </button>
                     </div>
                   </template>
@@ -325,14 +374,31 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                     <template v-else-if="details[r.key]">
                       <!-- 1 · Definition -->
                       <div v-for="d in details[r.key].defs" :key="`d-${d.name}`" class="rel-block">
-                        <div class="rel-block-head">
+                        <!-- Herkunft: Package · Datei · Zeile, komplett anklickbar -> oeffnet die
+                             Datei und markiert den ganzen Methodenbereich. -->
+                        <button
+                          type="button"
+                          class="rel-block-head rel-block-head--link"
+                          :title="`Open ${d.filename || r.provider.class_name} at line ${d.startLine ?? '?'}`"
+                          @click="goTo(r.provider.id, d.startLine, d.endLine)"
+                        >
                           <span class="rel-step">1</span>
                           <span class="rel-block-title">
-                            Defined in <b>{{ r.provider.class_name }}</b>
+                            Comes from <b>{{ r.provider.class_name }}.{{ d.name }}()</b>
                           </span>
-                          <span v-if="d.filename" class="rel-loc">{{ d.filename }}<template v-if="d.startLine"> · L{{ d.startLine }}</template></span>
-                        </div>
-                        <div v-if="d.html" class="edge-code" v-html="d.html" />
+                          <span class="rel-loc">
+                            <span v-if="r.provider.package" class="rel-pkg">{{ r.provider.package }}</span>
+                            {{ d.filename }}<template v-if="d.startLine"> · L{{ d.startLine }}</template>
+                            <Icon icon="lucide:arrow-up-right" class="rel-loc-go" />
+                          </span>
+                        </button>
+                        <div
+                          v-if="d.html"
+                          class="edge-code rel-clickable"
+                          title="Open this method in the source"
+                          @click="onCodeClick(r.provider.id, d.startLine, d.endLine)"
+                          v-html="d.html"
+                        />
                         <p v-else class="rel-note">{{ d.error || 'No source available.' }}</p>
                       </div>
                       <p v-if="details[r.key].moreDefs" class="rel-note">
@@ -341,21 +407,40 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
                       <!-- 2 · Aufrufstellen -->
                       <div v-for="u in details[r.key].usages" :key="`u-${u.callerMethod}`" class="rel-block">
-                        <div class="rel-block-head">
+                        <!-- Nutzungsort: Klasse.Methode + Package/Datei, ebenfalls anspringbar. -->
+                        <button
+                          type="button"
+                          class="rel-block-head rel-block-head--link"
+                          :title="`Open ${u.filename || r.consumer.class_name} at line ${u.sites[0]?.line ?? '?'}`"
+                          @click="goTo(r.consumer.id, u.sites[0]?.line ?? null)"
+                        >
                           <span class="rel-step">2</span>
                           <span class="rel-block-title">
                             Used in <b>{{ r.consumer.class_name }}.{{ u.callerMethod }}()</b>
                           </span>
-                          <span v-if="u.filename" class="rel-loc">{{ u.filename }}</span>
-                        </div>
+                          <span class="rel-loc">
+                            <span v-if="r.consumer.package" class="rel-pkg">{{ r.consumer.package }}</span>
+                            {{ u.filename }}
+                            <Icon icon="lucide:arrow-up-right" class="rel-loc-go" />
+                          </span>
+                        </button>
                         <div v-for="(s, i) in u.sites" :key="i" class="rel-site">
-                          <div class="edge-usage-code" v-html="s.html" />
+                          <div
+                            class="edge-usage-code rel-clickable"
+                            :title="`Open ${r.consumer.class_name} at line ${s.line}`"
+                            @click="onCodeClick(r.consumer.id, s.line)"
+                            v-html="s.html"
+                          />
                           <p class="rel-caption">
                             Line {{ s.line }}<template v-if="!s.lineExact"> (approx.)</template> — the highlighted line is where
                             <template v-for="(c, ci) in s.callees" :key="c">
                               <template v-if="ci"> and </template><code>{{ c }}()</code>
                             </template>
                             <template v-if="s.callees.length > 1"> are</template><template v-else> is</template> called.
+                            <button type="button" class="rel-jump" @click="goTo(r.consumer.id, s.line)">
+                              Go to line {{ s.line }}
+                              <Icon icon="lucide:arrow-up-right" class="rel-loc-go" />
+                            </button>
                           </p>
                         </div>
                         <p v-if="u.moreSites" class="rel-note">+{{ u.moreSites }} more call site<template v-if="u.moreSites !== 1">s</template> in this method.</p>
@@ -374,11 +459,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                           <Icon icon="lucide:code-2" class="h-3.5 w-3.5" />
                           Full details
                         </button>
-                        <button type="button" class="rel-btn" @click="emit('select', r.provider.id)">
+                        <button type="button" class="rel-btn" @click="goTo(r.provider.id, details[r.key].defs[0]?.startLine, details[r.key].defs[0]?.endLine)">
                           <Icon icon="lucide:file-code" class="h-3.5 w-3.5" />
                           Open {{ r.provider.class_name }}
                         </button>
-                        <button type="button" class="rel-btn" @click="emit('select', r.consumer.id)">
+                        <button type="button" class="rel-btn" @click="goTo(r.consumer.id, details[r.key].usages[0]?.sites[0]?.line)">
                           <Icon icon="lucide:file-code" class="h-3.5 w-3.5" />
                           Open {{ r.consumer.class_name }}
                         </button>
@@ -499,6 +584,17 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   font-weight: 600;
   color: var(--color-text);
 }
+/* Klassenname als Sprungmarke: unterstrichen erst beim Hover, damit die Kopfzeile ruhig bleibt. */
+.rel-class--link {
+  border-radius: 4px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.rel-class--link:hover {
+  background: color-mix(in srgb, var(--kind) 14%, transparent);
+  color: var(--kind);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 .rel-methods {
   display: flex;
   min-width: 0;
@@ -551,14 +647,75 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 }
 .rel-block-head {
   display: flex;
+  width: 100%;
   align-items: center;
   gap: 6px;
   margin-bottom: 4px;
   font-size: 11px;
   color: var(--color-text-muted);
+  text-align: left;
 }
 .rel-block-title b {
   color: var(--color-text);
+}
+/* Herkunft/Nutzungsort sind Sprungmarken: die ganze Zeile ist die Klickflaeche, der Pfeil rechts
+   erscheint beim Hover. */
+.rel-block-head--link {
+  border-radius: 6px;
+  padding: 2px 4px;
+  margin-left: -4px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.rel-block-head--link:hover {
+  background: var(--color-surface-offset);
+  color: var(--color-text);
+}
+.rel-block-head--link:hover .rel-loc-go {
+  opacity: 1;
+}
+/* Package der Klasse – „woher der Code kommt", direkt vor Datei und Zeile. */
+.rel-pkg {
+  border-radius: 4px;
+  background: var(--color-surface-offset);
+  padding: 0 4px;
+  opacity: 0.9;
+}
+.rel-loc-go {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+/* Codeblock als Ganzes anklickbar (Textmarkierung wird respektiert, s. onCodeClick). */
+.rel-clickable {
+  cursor: pointer;
+  border-radius: 8px;
+  outline: 1px solid transparent;
+  transition: outline-color 0.15s ease;
+}
+.rel-clickable:hover {
+  outline-color: color-mix(in srgb, var(--kind) 55%, transparent);
+}
+/* Sprung-Link in der Bildunterschrift. */
+.rel-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+  font-weight: 700;
+  color: var(--kind);
+  transition: opacity 0.15s ease;
+}
+.rel-jump .rel-loc-go {
+  opacity: 0.7;
+}
+.rel-jump:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.rel-jump:hover .rel-loc-go {
+  opacity: 1;
 }
 /* Schrittnummer: macht die Leserichtung „erst Definition, dann Aufruf" explizit. */
 .rel-step {
@@ -574,6 +731,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   color: var(--color-text-muted);
 }
 .rel-loc {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
   margin-left: auto;
   overflow: hidden;
   text-overflow: ellipsis;

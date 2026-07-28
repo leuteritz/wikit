@@ -1059,13 +1059,6 @@ function openBundlePanel(d) {
 function closeBundlePanel() {
   activeBundle.value = null
 }
-// Zeile ohne Codestelle (Import/Typbezug): zur Klasse springen. Das Panel schliesst dabei – es
-// wuerde sonst genau die Detailspalte verdecken, in der die gewaehlte Klasse erscheint.
-function onBundleSelect(fileId) {
-  closeBundlePanel()
-  emit('select', fileId)
-}
-
 // Aufrufstellen einer einzelnen Beziehung ermitteln – dieselbe Rechnung wie fuer das
 // Edge-Detail-Modal, nur ohne es zu oeffnen. Das Bundle-Panel zeigt den Code damit INLINE; die
 // Methodenruempfe kommen aus dem gemeinsamen `methodCache` (die Dateiliste traegt sie nicht).
@@ -1585,7 +1578,6 @@ watch(
       :load-detail="loadRelationDetail"
       @close="closeBundlePanel"
       @open="openRelationCode"
-      @select="onBundleSelect"
     />
 
     <!-- Edge-Detail-Modal: Ansicht Definition -> Nutzung; löscht Kanten pro Methode (ESC schliesst) -->
