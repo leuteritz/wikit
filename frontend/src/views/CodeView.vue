@@ -16,6 +16,7 @@ import JavaCodeEditor from '../components/java/JavaCodeEditor.vue'
 import JavaDependencyGraph from '../components/java/JavaDependencyGraph.vue'
 import JavaClassDetail from '../components/java/JavaClassDetail.vue'
 import JavaQueueModal from '../components/java/JavaQueueModal.vue'
+import JavaDetectedClasses from '../components/java/JavaDetectedClasses.vue'
 import { Icon } from '../lib/icons.js'
 import { detectJavaClasses } from '../lib/javaDetect.js'
 
@@ -85,7 +86,41 @@ function onQueueSelect(fileId) {
 }
 
 // Live-Vorschau der im Editor erkannten Klassen (rein clientseitig, nicht autoritativ).
-const detectedClasses = computed(() => detectJavaClasses(source.value))
+// Entkoppelt vom Tippen: bei einem 15k-Zeilen-Paste kostet der Scan + das Neuzeichnen der
+// Vorschau spuerbar Zeit – 200 ms Ruhe reichen voellig, die Vorschau ist kein Editor-Feedback.
+const detectSource = ref('')
+let detectTimer = null
+watch(
+  source,
+  (v) => {
+    clearTimeout(detectTimer)
+    if (!v) {
+      detectSource.value = ''
+      return
+    }
+    detectTimer = setTimeout(() => (detectSource.value = v), 200)
+  },
+  { immediate: true },
+)
+const detectedClasses = computed(() => detectJavaClasses(detectSource.value))
+
+// Kennzahlen des eingefuegten Quelltexts (Footer des Modals) – ebenfalls auf dem debounced Wert.
+const nf = new Intl.NumberFormat('en-US')
+const sourceStats = computed(() => {
+  const s = detectSource.value
+  if (!s.trim()) return null
+  let lines = 1
+  for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) === 10) lines++
+  return { lines, kb: s.length / 1024 }
+})
+
+// Kennzahl-Kacheln neben dem Editor: die vier Zahlen, die vor dem Klick auf "Analyze" zaehlen.
+const inputTiles = computed(() => [
+  { label: 'classes', value: nf.format(detectedClasses.value.length) },
+  { label: 'packages', value: nf.format(new Set(detectedClasses.value.map((c) => c.package || '')).size) },
+  { label: 'lines', value: nf.format(sourceStats.value?.lines ?? 0) },
+  { label: 'kilobytes', value: (sourceStats.value?.kb ?? 0).toFixed(1) },
+])
 
 // Hand-off aus Landing-Analyse / Suche / Edge-Panel uebernehmen: Datei vorwaehlen und
 // (optional) die Ziel-Quellzeile ans Detail-Panel durchreichen. Danach zuruecksetzen.
@@ -104,9 +139,21 @@ watch(lastFileId, (v) => {
   if (v != null) consumeHandoff()
 })
 
-// ESC schliesst das Overflow-Menue (Modals bringen ihre eigenen Handler mit).
+// ESC schliesst Overflow-Menue bzw. das Analyse-Modal; Strg/Cmd+Enter startet die Analyse
+// direkt aus dem Editor heraus (der Primaerbutton bleibt trotzdem sichtbar im Modal-Footer).
 function onKeydown(e) {
-  if (e.key === 'Escape' && menuOpen.value) menuOpen.value = false
+  if (e.key === 'Escape') {
+    if (menuOpen.value) {
+      menuOpen.value = false
+      return
+    }
+    if (showNew.value && !analyzing.value && !pendingConflicts.value) showNew.value = false
+    return
+  }
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && showNew.value && !analyzing.value && !pendingConflicts.value) {
+    e.preventDefault()
+    analyze()
+  }
 }
 
 let releasePolling = null
@@ -122,6 +169,7 @@ onUnmounted(() => {
   releasePolling?.()
   window.removeEventListener('keydown', onKeydown)
   clearTimeout(noticeTimer)
+  clearTimeout(detectTimer)
 })
 
 // --- Metriken (Command-Bar) ---
@@ -468,100 +516,119 @@ function onResetPanels() {
           class="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 backdrop-blur-sm"
           @click.self="analyzing ? null : (showNew = false)"
         >
+          <!--
+            Feste Modalhoehe (Header / scrollender Body / verankerter Footer). Damit bleibt der
+            Analyze-Button auch bei 500 erkannten Klassen an derselben Stelle sichtbar – frueher
+            schob ihn die Chip-Liste aus dem Viewport.
+          -->
           <section
-            class="w-full max-w-3xl rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 shadow-xl"
+            class="flex max-h-[min(88vh,860px)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)] shadow-2xl"
           >
-            <div class="mb-3 flex items-center justify-between gap-2">
-              <h2 class="flex items-center gap-2 text-lg font-bold text-[var(--color-text)]">
-                <Icon icon="lucide:sparkles" class="h-5 w-5 text-[var(--color-accent)]" />
+            <header class="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">
+              <h2 class="flex items-center gap-2 text-base font-bold text-[var(--color-text)]">
+                <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+                  <Icon icon="lucide:sparkles" class="h-[18px] w-[18px]" />
+                </span>
                 Analyze code
               </h2>
+              <!-- Eingabemodus: Code einfuegen vs. .java-Datei(en) hochladen (beide fuellen `source`). -->
+              <div class="ml-auto inline-flex rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-0.5 text-xs">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-medium transition"
+                  :class="inputMode === 'paste' ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] shadow-sm' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
+                  @click="inputMode = 'paste'"
+                >
+                  <Icon icon="lucide:code-2" class="h-3.5 w-3.5" />
+                  Paste code
+                </button>
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-medium transition"
+                  :class="inputMode === 'file' ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] shadow-sm' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
+                  @click="inputMode = 'file'"
+                >
+                  <Icon icon="lucide:upload" class="h-3.5 w-3.5" />
+                  Upload file
+                </button>
+              </div>
               <button
                 type="button"
-                class="grid h-8 w-8 place-items-center rounded-lg text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-40"
+                class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-40"
                 :disabled="analyzing"
                 title="Close"
                 @click="showNew = false"
               >
                 <Icon icon="lucide:x" class="h-5 w-5" />
               </button>
-            </div>
-            <div class="grid gap-3 lg:grid-cols-[1fr_280px]">
-              <div class="min-w-0">
-                <div class="mb-2 flex items-center justify-between gap-2">
-                  <!-- Eingabemodus: Code einfuegen vs. .java-Datei(en) hochladen (beide fuellen `source`). -->
-                  <div class="inline-flex rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-0.5 text-xs">
-                    <button
-                      type="button"
-                      class="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium transition"
-                      :class="inputMode === 'paste' ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] shadow-sm' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
-                      @click="inputMode = 'paste'"
-                    >
-                      <Icon icon="lucide:code-2" class="h-3.5 w-3.5" />
-                      Paste code
-                    </button>
-                    <button
-                      type="button"
-                      class="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium transition"
-                      :class="inputMode === 'file' ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] shadow-sm' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
-                      @click="inputMode = 'file'"
-                    >
-                      <Icon icon="lucide:upload" class="h-3.5 w-3.5" />
-                      Upload file
-                    </button>
-                  </div>
-                  <label
-                    v-if="inputMode === 'file'"
-                    class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)]"
-                  >
-                    <Icon icon="lucide:file-code" class="h-3.5 w-3.5" />
-                    <span v-if="filename" class="max-w-[10rem] truncate">{{ filename }}</span>
-                    <span v-else>Choose .java file(s)</span>
-                    <input type="file" accept=".java" multiple class="hidden" @change="onFile" />
-                  </label>
-                </div>
-                <div class="h-44">
+            </header>
+
+            <!-- Arbeitsflaeche: ab lg zweispaltig und in sich scrollend, darunter gestapelt. -->
+            <div class="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_300px] lg:overflow-hidden">
+              <div class="flex min-h-0 min-w-0 flex-col gap-2">
+                <label
+                  v-if="inputMode === 'file'"
+                  class="flex shrink-0 cursor-pointer items-center gap-2 rounded-xl border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 py-2 text-xs text-[var(--color-text-muted)] transition hover:border-[var(--color-accent)] hover:bg-[var(--color-surface-offset)]"
+                >
+                  <Icon icon="lucide:file-code" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+                  <span v-if="filename" class="truncate font-mono text-[var(--color-text)]">{{ filename }}</span>
+                  <span v-else>Choose .java file(s) – multiple files are merged and split again by the parser.</span>
+                  <input type="file" accept=".java" multiple class="hidden" @change="onFile" />
+                </label>
+                <div class="h-56 shrink-0 lg:h-auto lg:min-h-0 lg:flex-1">
                   <JavaCodeEditor v-model="source" />
                 </div>
-                <!-- Live-Vorschau der erkannten Klassen (Name · Package), bevor gespeichert wird. -->
-                <div v-if="detectedClasses.length" class="mt-2 flex flex-wrap items-center gap-1.5">
-                  <span class="text-[11px] font-medium text-[var(--color-text-muted)]">
-                    {{ detectedClasses.length }} class(es) detected:
-                  </span>
-                  <span
-                    v-for="c in detectedClasses"
-                    :key="(c.package || '') + '.' + c.class_name"
-                    class="inline-flex items-center gap-1 rounded-md bg-[var(--color-accent-soft)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-accent)]"
-                    :title="c.package ? c.package + '.' + c.class_name : c.class_name"
-                  >
-                    <Icon icon="lucide:box" class="h-3 w-3 shrink-0" />
-                    <span class="font-mono"><span v-if="c.package" class="opacity-70">{{ c.package }}·</span>{{ c.class_name }}</span>
-                  </span>
-                </div>
+                <!-- Live-Vorschau der erkannten Klassen: eigener Scroller, feste Deckelung. -->
+                <JavaDetectedClasses :classes="detectedClasses" class="shrink-0" />
               </div>
-              <div class="flex flex-col">
-                <label class="mb-2 block">
+
+              <aside class="flex min-h-0 min-w-0 flex-col gap-3">
+                <!-- Kacheln erst, wenn es etwas zu zaehlen gibt – vier Nullen sagen nichts. -->
+                <div v-if="sourceStats" class="grid shrink-0 grid-cols-2 gap-2">
+                  <div v-for="s in inputTiles" :key="s.label" class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-2">
+                    <div class="font-mono text-[17px] font-semibold leading-none tabular-nums text-[var(--color-text)]">{{ s.value }}</div>
+                    <div class="mt-1.5 text-[10px] font-medium uppercase tracking-wide text-[var(--color-text-muted)]">{{ s.label }}</div>
+                  </div>
+                </div>
+                <label class="flex min-h-0 flex-1 flex-col">
                   <span class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Project context (optional)</span>
                   <textarea
                     v-model="userContext"
                     spellcheck="false"
-                    rows="4"
                     placeholder="e.g. Windchill background, module purpose… – fed into every AI prompt."
-                    class="w-full resize-y rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-xs text-[var(--color-text)] outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
+                    class="min-h-[6rem] w-full flex-1 resize-none rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2.5 text-xs text-[var(--color-text)] outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
                   />
                 </label>
-                <p v-if="error" class="mb-2 text-xs text-[var(--color-danger)]">{{ error }}</p>
-                <button
-                  type="button"
-                  class="mt-auto inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
-                  :disabled="analyzing || !source.trim()"
-                  @click="analyze"
-                >
-                  <Icon v-if="analyzing" icon="lucide:loader-2" class="h-4 w-4 animate-spin" />
-                  {{ analyzing ? 'Analyzing…' : 'Analyze' }}
-                </button>
-              </div>
+              </aside>
             </div>
+
+            <!-- Footer: verankert, traegt die Primaeraktion. Scrollt nie weg. -->
+            <footer class="flex shrink-0 flex-wrap items-center gap-3 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
+              <p v-if="error" class="min-w-0 flex-1 text-xs text-[var(--color-danger)]">{{ error }}</p>
+              <p v-else class="min-w-0 flex-1 font-mono text-[11px] text-[var(--color-text-muted)]">
+                {{ sourceStats ? 'Parsed server-side – every type becomes its own class.' : 'Paste one or many Java types – they are split automatically.' }}
+              </p>
+              <span class="hidden shrink-0 items-center gap-1 text-[11px] text-[var(--color-text-muted)] sm:inline-flex">
+                <kbd class="kbd">Ctrl</kbd><span class="opacity-50">+</span><kbd class="kbd">↵</kbd>
+              </span>
+              <button
+                type="button"
+                class="action-btn shrink-0 rounded-lg px-3 py-2 text-sm font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-40"
+                :disabled="analyzing"
+                @click="showNew = false"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="action-btn inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-[var(--color-accent)] px-6 text-sm font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
+                :disabled="analyzing || !source.trim()"
+                @click="analyze"
+              >
+                <Icon :icon="analyzing ? 'lucide:loader-2' : 'lucide:sparkles'" class="h-4 w-4" :class="analyzing ? 'animate-spin' : ''" />
+                {{ analyzing ? 'Analyzing…' : detectedClasses.length ? `Analyze ${detectedClasses.length} class(es)` : 'Analyze' }}
+              </button>
+            </footer>
           </section>
         </div>
       </Transition>
@@ -980,6 +1047,20 @@ function onResetPanels() {
 .toast-leave-to {
   opacity: 0;
   transform: translateX(12px);
+}
+
+/* Tastenkappe fuer den Shortcut-Hinweis im Modal-Footer. */
+.kbd {
+  display: inline-block;
+  min-width: 1.25rem;
+  border-radius: 0.3rem;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-2);
+  padding: 0.05rem 0.3rem;
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  line-height: 1.4;
+  text-align: center;
 }
 
 /* Eintraege des Overflow-Menues (gleiche Geometrie, Farbe unterscheidet nur die Gefahr). */
