@@ -58,10 +58,29 @@ export function countClasses(node) {
 export function filterClasses(files = [], query = '') {
   const q = query.trim()
   if (!q) return files
-  const fuse = new Fuse(files, {
-    keys: ['class_name', 'package'],
-    threshold: 0.4,
-    ignoreLocation: true,
-  })
+  const lower = q.toLowerCase()
+
+  // Erst woertlich, dann unscharf. Grund: Fuse allein ist bei gleichfoermigen Namen unbrauchbar –
+  // in einer Codebasis mit tausend Klassen `Thing1`…`Thing999` liefert die Suche nach „Thing100"
+  // mit threshold 0.4 praktisch ALLE zurueck. Wer einen Namen tippt, meint aber genau diesen.
+  // Rangfolge: Klassenname beginnt damit > Klassenname enthaelt es > Package enthaelt es.
+  const ranked = []
+  const others = []
+  for (const f of files) {
+    const name = String(f.class_name || '').toLowerCase()
+    const pkg = String(f.package || '').toLowerCase()
+    if (name.startsWith(lower)) ranked.push({ f, rank: 0 })
+    else if (name.includes(lower)) ranked.push({ f, rank: 1 })
+    else if (pkg.includes(lower)) ranked.push({ f, rank: 2 })
+    else others.push(f)
+  }
+  if (ranked.length) {
+    return ranked
+      .sort((a, b) => a.rank - b.rank || String(a.f.class_name).localeCompare(String(b.f.class_name)))
+      .map((r) => r.f)
+  }
+
+  // Nichts passt woertlich -> unscharfe Suche als Tippfehler-Netz.
+  const fuse = new Fuse(others, { keys: ['class_name', 'package'], threshold: 0.4, ignoreLocation: true })
   return fuse.search(q).map((r) => r.item)
 }

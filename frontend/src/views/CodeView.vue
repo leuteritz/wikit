@@ -197,6 +197,9 @@ const analyzedCount = computed(() => files.value.filter((f) => f.description).le
 const filteredFiles = computed(() => filterClasses(files.value, search.value))
 const tree = computed(() => buildPackageTree(filteredFiles.value))
 const searching = computed(() => search.value.trim().length > 0)
+// Treffer-IDs der Suche -> der Graph zeigt bei aktiver Suche genau diese Klassen (plus ihre
+// direkten Nachbarn als Kontext) statt weiter die volle Ebene.
+const searchMatchIds = computed(() => (searching.value ? filteredFiles.value.map((f) => f.id) : []))
 
 // Ab dieser Klassenzahl ist der Baum standardmaessig EINGEKLAPPT (nur die oberste Ebene offen).
 // Bei einer grossen Codebasis waeren es sonst tausende offene Zeilen – weder lesbar noch billig
@@ -226,8 +229,30 @@ const rows = computed(() => flatten(tree.value, 0, []))
 // `open` kommt aus der gerenderten Zeile: der Default haengt von der Groesse der Codebasis ab
 // (s. folderOpen), ein blosses Invertieren von collapsed[path] wuerde beim ersten Klick auf einen
 // per Default geschlossenen Ordner ins Leere laufen.
+// --- Baum -> Graph: der Graph folgt der Navigation links -------------------------------------
+// Der Baum ist die Navigation, der Graph die Ansicht. Ein Klick auf ein Package oeffnet dort die
+// passende Ebene, ein Klick auf eine Klasse springt in ihr Package und zentriert sie. Ohne diese
+// Kopplung waeren die beiden Spalten bei tausenden Klassen zwei getrennte Welten.
+const graphFocusPath = ref(null) // Package-Pfad, den der Graph oeffnen soll
+const graphFocusFileId = ref(null) // Klasse, die der Graph zentrieren soll
+let focusSeq = 0
+const graphFocusToken = ref(0) // erzwingt eine Reaktion auch bei gleichem Ziel (erneuter Klick)
+
+function focusGraphOnPackage(path) {
+  graphFocusFileId.value = null
+  graphFocusPath.value = path
+  graphFocusToken.value = ++focusSeq
+}
+function focusGraphOnFile(file) {
+  graphFocusPath.value = file?.package || ''
+  graphFocusFileId.value = file?.id ?? null
+  graphFocusToken.value = ++focusSeq
+}
+
 function toggleFolder(path, open) {
   collapsed[path] = open
+  // Auf-/Zuklappen ist zugleich eine Ortsangabe: der Graph zeigt dieses Package.
+  focusGraphOnPackage(path)
 }
 
 // Treffer-Hervorhebung (Substring, ohne v-html).
@@ -436,6 +461,12 @@ function selectFile(id) {
   activeTargetLine.value = null
   activeTargetEndLine.value = null
   selectedFileId.value = id
+}
+
+// Klick im Baum: Klasse auswaehlen UND den Graph dorthin fuehren (Package oeffnen + zentrieren).
+function selectFileFromTree(file) {
+  selectFile(file.id)
+  focusGraphOnFile(file)
 }
 
 // --- Klasse loeschen (Hover-Button -> Bestaetigung) ---
@@ -896,7 +927,7 @@ function onResetPanels() {
                 :class="selectedFileId === row.file.id
                   ? 'is-selected bg-[var(--color-accent-soft)] text-[var(--color-accent)]'
                   : 'hover:bg-[var(--color-surface-offset)]'"
-                @click="selectFile(row.file.id)"
+                @click="selectFileFromTree(row.file)"
               >
                 <span v-for="d in row.depth" :key="d" class="tree-guide" />
                 <Icon
@@ -977,7 +1008,17 @@ function onResetPanels() {
 
       <!-- Spalte 2: Graph -->
       <div class="min-h-[55vh] lg:min-h-0">
-        <JavaDependencyGraph :files="files" :selected-id="selectedFileId" @select="selectFile" />
+        <JavaDependencyGraph
+          :files="files"
+          :selected-id="selectedFileId"
+          :focus-path="graphFocusPath"
+          :focus-file-id="graphFocusFileId"
+          :focus-token="graphFocusToken"
+          :match-ids="searchMatchIds"
+          :search-query="searching ? search : ''"
+          @select="selectFile"
+          @clear-search="search = ''"
+        />
       </div>
 
       <!-- Divider 2↔3 (Drag) -->

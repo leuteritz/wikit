@@ -34,8 +34,19 @@ import ManagedEdge from './ManagedEdge.vue'
 const props = defineProps({
   files: { type: Array, default: () => [] },
   selectedId: { type: [Number, null], default: null },
+  // --- Steuerung aus dem Package-Baum (linke Spalte) ---
+  // Package, das der Graph oeffnen soll; leerer String = oberste Ebene.
+  focusPath: { type: [String, null], default: null },
+  // Klasse, die zusaetzlich zentriert werden soll.
+  focusFileId: { type: [Number, null], default: null },
+  // Zaehler: aendert sich bei JEDEM Klick im Baum, auch wenn dasselbe Ziel erneut gewaehlt wird.
+  focusToken: { type: Number, default: 0 },
+  // Aktive Suche: Treffer-IDs + Suchtext. Ist etwas gesetzt, zeigt der Graph die Treffer samt
+  // direkter Nachbarschaft statt der Package-Ebene.
+  matchIds: { type: Array, default: () => [] },
+  searchQuery: { type: String, default: '' },
 })
-const emit = defineEmits(['select'])
+const emit = defineEmits(['select', 'clear-search'])
 
 const { theme } = useTheme()
 const { fitView, zoomIn, zoomOut, setViewport } = useVueFlow()
@@ -174,7 +185,11 @@ const level = computed(() =>
 // Package-Ebene nur, solange sie ueberhaupt etwas aggregiert: viele Klassen, echte Sub-Packages,
 // und der Nutzer hat sie nicht manuell aufgeklappt.
 const packageMode = computed(
-  () => (props.files || []).length >= PACKAGE_MODE_FROM && level.value.groups.length > 0 && !showClasses.value,
+  () =>
+    !searchActive.value &&
+    (props.files || []).length >= PACKAGE_MODE_FROM &&
+    level.value.groups.length > 0 &&
+    !showClasses.value,
 )
 
 // Welche Klassen werden als Klassenknoten gezeichnet? Auf Package-Ebene nur die, die direkt im
@@ -185,7 +200,39 @@ const scopedFiles = computed(() => {
   if (!base) return files
   return files.filter((f) => f.package === base || String(f.package || '').startsWith(base + '.'))
 })
+// --- Suchmodus: Treffer + direkte Nachbarschaft ----------------------------------------------
+// Nur die Treffer zu zeigen waere ein Graph ohne Kanten – gerade bei einem einzigen Treffer.
+// Deshalb kommt eine Hop-Ebene Kontext dazu: die Klassen, die den Treffer nutzen oder von ihm
+// genutzt werden. Treffer bleiben hervorgehoben, der Kontext tritt zurueck.
+// Oberhalb dieser Trefferzahl waere der Suchmodus sinnlos: hunderte hervorgehobene Knoten sind
+// dasselbe wie keine Hervorhebung. Der Graph bleibt dann auf Package-Ebene und sagt es an.
+const SEARCH_GRAPH_LIMIT = 80
+const searchTooBroad = computed(() => !!props.searchQuery && props.matchIds.length > SEARCH_GRAPH_LIMIT)
+const searchActive = computed(
+  () => !!props.searchQuery && props.matchIds.length > 0 && props.matchIds.length <= SEARCH_GRAPH_LIMIT,
+)
+const matchIdSet = computed(() => new Set(props.matchIds))
+const searchScope = computed(() => {
+  if (!searchActive.value) return null
+  const ids = new Set(matchIdSet.value)
+  const neighbours = new Set()
+  for (const e of allClassEdges.value) {
+    if (ids.has(e.fromId) && !ids.has(e.toId)) neighbours.add(e.toId)
+    if (ids.has(e.toId) && !ids.has(e.fromId)) neighbours.add(e.fromId)
+  }
+  const wanted = new Set([...ids, ...neighbours])
+  return {
+    files: (props.files || []).filter((f) => wanted.has(f.id)),
+    matches: ids.size,
+    related: neighbours.size,
+  }
+})
+
 const visibleFiles = computed(() => {
+  if (searchActive.value) {
+    const list = searchScope.value.files
+    return list.length > CLASS_RENDER_LIMIT ? list.slice(0, CLASS_RENDER_LIMIT) : list
+  }
   if (packageMode.value) return level.value.directFiles
   // Harte Obergrenze: Vue Flow + dagre brauchen fuer tausende Knoten zig Sekunden und blockieren
   // dabei den Hauptthread. Lieber ehrlich abschneiden und es anschreiben, als die Oberflaeche
@@ -227,6 +274,25 @@ function drillUp() {
 watch(rootPath, (root) => {
   if (zoomPath.value != null && !String(zoomPath.value).startsWith(root)) zoomPath.value = null
 })
+
+// --- Der Graph folgt dem Baum ----------------------------------------------------------------
+// Auf einen Klasse-Klick soll der Knoten nicht nur sichtbar, sondern auch angesteuert werden.
+// Das kann erst passieren, wenn das neue Layout steht -> hier nur vormerken, das Anfahren
+// uebernimmt der Geometrie-Watcher weiter unten.
+const pendingFocusNode = ref(null)
+watch(
+  () => props.focusToken,
+  () => {
+    if (props.focusPath != null) {
+      const path = props.focusPath
+      // Nur oeffnen, was zur Wurzel passt (der gemeinsame Praefix ist die oberste Ebene).
+      zoomPath.value = rootPath.value && !path.startsWith(rootPath.value) ? rootPath.value : path
+      // Ein konkretes Package im Baum meint die Klassen darin, nicht dessen Unterebene.
+      showClasses.value = false
+    }
+    if (props.focusFileId != null) pendingFocusNode.value = `c:${props.focusFileId}`
+  },
+)
 
 const layout = computed(() => {
   const files = visibleFiles.value
@@ -538,6 +604,9 @@ const layout = computed(() => {
         fileId: f.id,
         className: f.class_name,
         pkg,
+        // Im Suchmodus: Treffer bleiben voll da, der mitgezeigte Kontext tritt zurueck.
+        isMatch: searchActive.value && matchIdSet.value.has(f.id),
+        isContext: searchActive.value && !matchIdSet.value.has(f.id),
         methodCount: f.method_count ?? (f.methods || []).length,
         color: pkgColor.get(pkg),
         role: roleFor(id),
@@ -632,8 +701,16 @@ watch(
     // Ein nextTick reicht NICHT: Vue Flow uebernimmt die neuen Knoten erst in seinem eigenen
     // Render-Durchlauf. Ohne das zusaetzliche Frame rechnet fitView() beim Ebenenwechsel noch mit
     // der alten Geometrie – der neue Ausschnitt haengt dann halb ausserhalb des Canvas.
+    // Steht ein Klassen-Klick aus dem Baum an, wird DIESER Knoten angefahren statt der ganzen
+    // Ebene – sonst laege die gesuchte Klasse irgendwo im Raster und man muesste sie suchen.
+    const focusId = pendingFocusNode.value
+    const hasFocus = focusId && nodes.value.some((n) => n.id === focusId)
     // maxZoom 1: einzelne Knoten sollen nicht auf Plakatgroesse aufgeblasen werden.
-    const fit = () => fitView({ padding: 0.18, maxZoom: 1, duration: 200 })
+    const fit = () =>
+      hasFocus
+        ? fitView({ nodes: [{ id: focusId }], padding: 1.6, maxZoom: 1.1, duration: 300 })
+        : fitView({ padding: 0.18, maxZoom: 1, duration: 200 })
+    if (hasFocus) pendingFocusNode.value = null
     requestAnimationFrame(fit)
     // Zweiter Anlauf: fitView rechnet mit den GEMESSENEN Knotengroessen. Werden viele Knoten auf
     // einmal ausgetauscht (Ebenenwechsel: 8 Packages -> 125 Klassen), sind die neuen im ersten
@@ -900,7 +977,14 @@ watch(
       <template #node-klass="{ data }">
         <div
           class="vf-card"
-          :class="[`vf-role-${data.role}`, { 'vf-card--selected': selectedId === data.fileId }]"
+          :class="[
+            `vf-role-${data.role}`,
+            {
+              'vf-card--selected': selectedId === data.fileId,
+              'vf-card--match': data.isMatch,
+              'vf-card--context': data.isContext,
+            },
+          ]"
           :style="{ '--pkg': data.color }"
         >
           <Handle type="target" :position="Position.Top" class="vf-handle" />
@@ -960,7 +1044,22 @@ watch(
 
     <!-- Ebenen-Navigation: nur relevant, wenn ueberhaupt aggregiert wird. Der Pfad ist klickbar,
          rechts steht, was der aktuelle Ausschnitt umfasst. -->
-    <div v-if="files.length && (level.groups.length || basePath)" class="vf-breadcrumb">
+    <!-- Suche steuert den Graph: Treffer + eine Hop-Ebene Kontext. Der Breadcrumb weicht solange
+         der Trefferbilanz – der Pfad waere hier keine gueltige Ortsangabe mehr. -->
+    <div v-if="files.length && searchActive" class="vf-breadcrumb">
+      <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
+      <span class="shrink-0 font-mono text-[11px] text-[var(--color-text)]">“{{ searchQuery }}”</span>
+      <span class="vf-crumb-count">
+        {{ searchScope.matches }} match{{ searchScope.matches === 1 ? '' : 'es' }}
+        <template v-if="searchScope.related"> · +{{ searchScope.related }} related</template>
+      </span>
+      <button type="button" class="vf-crumb-toggle" title="Clear the filter and show all packages" @click="emit('clear-search')">
+        <Icon icon="lucide:x" class="h-3.5 w-3.5" />
+        Clear
+      </button>
+    </div>
+
+    <div v-else-if="files.length && (level.groups.length || basePath)" class="vf-breadcrumb">
       <button
         type="button"
         class="vf-crumb-up"
@@ -985,6 +1084,11 @@ watch(
         </template>
       </div>
       <span class="vf-crumb-count">{{ scopeClassCount }} classes</span>
+      <!-- Zu unscharfe Suche: der Graph bleibt, wo er ist, statt hunderte Treffer zu markieren. -->
+      <span v-if="searchTooBroad" class="vf-crumb-warn" title="Narrow the filter to focus the graph on the matches">
+        <Icon icon="lucide:search" class="h-3 w-3" />
+        {{ matchIds.length }} matches – too broad
+      </span>
       <!-- Abgeschnittener Ausschnitt: nie stillschweigend – sonst liest man einen unvollstaendigen
            Graphen als vollstaendig. -->
       <span v-if="truncatedClasses" class="vf-crumb-warn" :title="`Only the first ${CLASS_RENDER_LIMIT} classes are drawn – open a package for the full picture`">
@@ -1326,6 +1430,18 @@ watch(
 .vf-card--selected {
   border-color: var(--role);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--role) 35%, transparent), 0 6px 16px color-mix(in srgb, var(--role) 30%, transparent);
+}
+/* Suchtreffer: klarer Ring in der Akzentfarbe – die Rolle bleibt an Streifen und Glyph ablesbar. */
+.vf-card--match {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 55%, transparent), 0 6px 18px color-mix(in srgb, var(--color-accent) 28%, transparent);
+}
+/* Mitgezeigte Nachbarschaft: sichtbar, aber eindeutig zweite Reihe. */
+.vf-card--context {
+  opacity: 0.5;
+}
+.vf-card--context:hover {
+  opacity: 1;
 }
 /* Rollen-Farbe (Tokens in assets/style.css, theme-faehig). */
 .vf-role-provider { --role: var(--color-role-provider); }
