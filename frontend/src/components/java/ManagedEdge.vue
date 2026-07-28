@@ -198,7 +198,7 @@ const pathStyle = computed(() => {
   border-radius: 6px;
   border: 1px solid var(--color-border);
   background: var(--color-surface-2);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 600;
   line-height: 1.4;
   color: var(--color-accent);
@@ -282,7 +282,7 @@ const pathStyle = computed(() => {
   gap: 2px;
   padding: 0 4px;
   border-radius: 999px;
-  font-size: 9px;
+  font-size: 0.5625rem;
   font-weight: 700;
   color: #fff;
   background: #d4a017;

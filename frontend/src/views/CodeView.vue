@@ -562,11 +562,11 @@ function onResetPanels() {
           <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
             <Icon icon="lucide:git-fork" class="h-[18px] w-[18px]" />
           </span>
-          <h1 class="truncate font-mono text-[15px] font-semibold tracking-tight">Code Analysis</h1>
+          <h1 class="truncate font-mono text-[0.9375rem] font-semibold tracking-tight">Code Analysis</h1>
         </div>
 
         <!-- Live-Metriken: monospace + gedaempft. Zahlen tragen die Information, nicht die Farbe. -->
-        <div v-if="files.length" class="hidden items-center gap-2.5 font-mono text-[11px] text-[var(--color-text-muted)] md:flex">
+        <div v-if="files.length" class="hidden items-center gap-2.5 font-mono text-2xs text-[var(--color-text-muted)] md:flex">
           <span v-for="lang in LANGUAGES" :key="lang.id" class="inline-flex items-center gap-1.5">
             <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />{{ lang.label }}
           </span>
@@ -587,7 +587,7 @@ function onResetPanels() {
                Queue stundenlang, da ist "wie weit / wie lange noch" die eigentliche Information. -->
           <button
             type="button"
-            class="action-btn relative isolate inline-flex h-9 items-center gap-2 overflow-hidden rounded-lg border px-2.5 text-[13px] font-medium transition"
+            class="action-btn relative isolate inline-flex h-9 items-center gap-2 overflow-hidden rounded-lg border px-2.5 text-[0.8125rem] font-medium transition"
             :class="queueActive
               ? 'border-[color-mix(in_srgb,var(--color-lavender)_40%,transparent)] bg-[var(--color-lavender-soft)] text-[var(--color-lavender)]'
               : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]'"
@@ -608,19 +608,19 @@ function onResetPanels() {
               :class="runningQueueJob ? 'animate-spin' : ''"
             />
             <span class="hidden sm:inline">AI Queue</span>
-            <span v-if="queueActive" class="inline-flex min-w-0 items-center gap-1.5 font-mono text-[11px]">
+            <span v-if="queueActive" class="inline-flex min-w-0 items-center gap-1.5 font-mono text-2xs">
               <span v-if="runningQueueJob" class="hidden max-w-[9rem] truncate opacity-90 lg:inline">{{ runningQueueJob.className }}</span>
               <span class="shrink-0 font-semibold tabular-nums">{{ finishedQueueCount }}/{{ queueSummary?.total ?? 0 }}</span>
               <span v-if="queueEta" class="shrink-0 tabular-nums opacity-70">{{ queueEta }}</span>
             </span>
-            <span v-else-if="finishedQueueCount" class="font-mono text-[11px] tabular-nums opacity-70">{{ finishedQueueCount }}</span>
+            <span v-else-if="finishedQueueCount" class="font-mono text-2xs tabular-nums opacity-70">{{ finishedQueueCount }}</span>
           </button>
 
           <!-- KI-Sammellauf ueber alle noch nicht analysierten Klassen. -->
           <button
             v-if="files.length"
             type="button"
-            class="action-btn inline-flex h-9 items-center gap-1.5 rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_35%,transparent)] bg-[var(--color-accent-soft)] px-2.5 text-[13px] font-semibold text-[var(--color-accent)] transition hover:bg-[color-mix(in_srgb,var(--color-accent)_22%,transparent)] disabled:cursor-not-allowed disabled:opacity-50"
+            class="action-btn inline-flex h-9 items-center gap-1.5 rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_35%,transparent)] bg-[var(--color-accent-soft)] px-2.5 text-[0.8125rem] font-semibold text-[var(--color-accent)] transition hover:bg-[color-mix(in_srgb,var(--color-accent)_22%,transparent)] disabled:cursor-not-allowed disabled:opacity-50"
             :disabled="analyzingAll"
             title="Queue every not-yet-analyzed class and method for AI analysis"
             @click="analyzeAll"
@@ -636,7 +636,7 @@ function onResetPanels() {
           <!-- Primaeraktion: neue Quellen einlesen. -->
           <button
             type="button"
-            class="action-btn inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 text-[13px] font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)]"
+            class="action-btn inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 text-[0.8125rem] font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)]"
             title="Parse new .java sources"
             @click="showNew = true"
           >
@@ -764,7 +764,7 @@ function onResetPanels() {
                   <span class="font-mono text-3xl font-bold tabular-nums text-[var(--color-text)]">{{ runPercent }}<span class="text-lg text-[var(--color-text-muted)]">%</span></span>
                   <!-- Zaehler nur, solange er auch zaehlt: die Schreibphase kann keinen liefern
                        (synchrone Transaktion), ein stehendes „0/5.000" waere irrefuehrend. -->
-                  <span v-if="progress.total && progress.done" class="mt-0.5 font-mono text-[11px] tabular-nums text-[var(--color-text-muted)]">
+                  <span v-if="progress.total && progress.done" class="mt-0.5 font-mono text-2xs tabular-nums text-[var(--color-text-muted)]">
                     {{ nf.format(progress.done) }}/{{ nf.format(progress.total) }}
                   </span>
                 </div>
@@ -780,7 +780,7 @@ function onResetPanels() {
                 <template v-for="(p, i) in PHASES" :key="p.key">
                   <span v-if="i" class="h-px w-4 bg-[var(--color-border)]" />
                   <span
-                    class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition"
+                    class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-2xs font-medium transition"
                     :class="i < phaseIndex
                       ? 'border-[color-mix(in_srgb,var(--color-success)_40%,transparent)] bg-[color-mix(in_srgb,var(--color-success)_12%,transparent)] text-[var(--color-success)]'
                       : i === phaseIndex
@@ -803,13 +803,13 @@ function onResetPanels() {
               <div class="flex items-stretch gap-3">
                 <div class="min-w-[8.5rem] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 text-center">
                   <div class="font-mono text-xl font-semibold tabular-nums text-[var(--color-text)]">{{ formatDuration(elapsedMs) }}</div>
-                  <div class="mt-1 text-[10px] font-medium uppercase tracking-wide text-[var(--color-text-muted)]">elapsed</div>
+                  <div class="mt-1 text-3xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">elapsed</div>
                 </div>
                 <div class="min-w-[8.5rem] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 text-center">
                   <div class="font-mono text-xl font-semibold tabular-nums text-[var(--color-text)]">
                     {{ runRemainingMs != null ? formatDuration(runRemainingMs) : '–:––' }}
                   </div>
-                  <div class="mt-1 text-[10px] font-medium uppercase tracking-wide text-[var(--color-text-muted)]">remaining</div>
+                  <div class="mt-1 text-3xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">remaining</div>
                 </div>
               </div>
             </div>
@@ -837,12 +837,12 @@ function onResetPanels() {
                 <!-- Kacheln erst, wenn es etwas zu zaehlen gibt – vier Nullen sagen nichts. -->
                 <div v-if="sourceStats" class="grid shrink-0 grid-cols-2 gap-2">
                   <div v-for="s in inputTiles" :key="s.label" class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-2">
-                    <div class="font-mono text-[17px] font-semibold leading-none tabular-nums text-[var(--color-text)]">{{ s.value }}</div>
-                    <div class="mt-1.5 text-[10px] font-medium uppercase tracking-wide text-[var(--color-text-muted)]">{{ s.label }}</div>
+                    <div class="font-mono text-[1.0625rem] font-semibold leading-none tabular-nums text-[var(--color-text)]">{{ s.value }}</div>
+                    <div class="mt-1.5 text-3xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">{{ s.label }}</div>
                   </div>
                 </div>
                 <label class="flex min-h-0 flex-1 flex-col">
-                  <span class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Project context (optional)</span>
+                  <span class="mb-1 block text-2xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Project context (optional)</span>
                   <textarea
                     v-model="userContext"
                     spellcheck="false"
@@ -856,10 +856,10 @@ function onResetPanels() {
             <!-- Footer: verankert, traegt die Primaeraktion. Scrollt nie weg. -->
             <footer class="flex shrink-0 flex-wrap items-center gap-3 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
               <p v-if="error" class="min-w-0 flex-1 text-xs text-[var(--color-danger)]">{{ error }}</p>
-              <p v-else class="min-w-0 flex-1 font-mono text-[11px] text-[var(--color-text-muted)]">
+              <p v-else class="min-w-0 flex-1 font-mono text-2xs text-[var(--color-text-muted)]">
                 {{ sourceStats ? 'Parsed server-side – every type becomes its own class.' : 'Paste one or many Java types – they are split automatically.' }}
               </p>
-              <span class="hidden shrink-0 items-center gap-1 text-[11px] text-[var(--color-text-muted)] sm:inline-flex">
+              <span class="hidden shrink-0 items-center gap-1 text-2xs text-[var(--color-text-muted)] sm:inline-flex">
                 <kbd class="kbd">Ctrl</kbd><span class="opacity-50">+</span><kbd class="kbd">↵</kbd>
               </span>
               <button
@@ -912,7 +912,7 @@ function onResetPanels() {
               <Icon icon="lucide:x" class="h-3.5 w-3.5" />
             </button>
           </div>
-          <p v-if="searching" class="mt-1.5 px-1 font-mono text-[10px] text-[var(--color-text-muted)]">
+          <p v-if="searching" class="mt-1.5 px-1 font-mono text-3xs text-[var(--color-text-muted)]">
             {{ filteredFiles.length }} of {{ classCount }} match
           </p>
         </div>
@@ -923,14 +923,14 @@ function onResetPanels() {
             <button
               v-if="row.kind === 'folder'"
               type="button"
-              class="tree-row group/f flex w-full items-center gap-1.5 rounded-md py-1 pl-1 pr-2 text-left text-[11px] font-semibold text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+              class="tree-row group/f flex w-full items-center gap-1.5 rounded-md py-1 pl-1 pr-2 text-left text-2xs font-semibold text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
               @click="toggleFolder(row.fullPath, row.open)"
             >
               <span v-for="d in row.depth" :key="d" class="tree-guide" />
               <Icon icon="lucide:chevron-down" class="h-3 w-3 shrink-0 opacity-70 transition-transform" :class="row.open ? '' : '-rotate-90'" />
               <Icon icon="lucide:package" class="h-3.5 w-3.5 shrink-0 opacity-70" />
               <span class="min-w-0 flex-1 truncate font-mono">{{ row.label }}</span>
-              <span class="shrink-0 font-mono text-[10px] tabular-nums opacity-60">{{ row.count }}</span>
+              <span class="shrink-0 font-mono text-3xs tabular-nums opacity-60">{{ row.count }}</span>
             </button>
 
             <!-- Klasse -->
@@ -949,13 +949,13 @@ function onResetPanels() {
                   class="h-3.5 w-3.5 shrink-0"
                   :class="selectedFileId === row.file.id ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'"
                 />
-                <span class="min-w-0 flex-1 truncate text-[13px]" :class="selectedFileId === row.file.id ? 'font-semibold' : ''">
+                <span class="min-w-0 flex-1 truncate text-[0.8125rem]" :class="selectedFileId === row.file.id ? 'font-semibold' : ''">
                   <template v-for="(p, i) in hl(row.file.class_name)" :key="i"><mark v-if="p.m" class="rounded-sm bg-transparent px-0 font-semibold text-[var(--color-accent)]">{{ p.t }}</mark><template v-else>{{ p.t }}</template></template>
                 </span>
                 <!-- Status rechts: laufende Queue schlaegt den ruhenden AI-Punkt. -->
                 <span
                   v-if="progressFor(row.file.id)"
-                  class="shrink-0 rounded-full px-1.5 font-mono text-[10px] font-semibold tabular-nums transition group-hover:opacity-0"
+                  class="shrink-0 rounded-full px-1.5 font-mono text-3xs font-semibold tabular-nums transition group-hover:opacity-0"
                   :class="progressFor(row.file.id).status === 'running' ? 'badge-accent' : 'badge-success'"
                 >
                   {{ progressFor(row.file.id).done }}/{{ progressFor(row.file.id).total }}
@@ -968,7 +968,7 @@ function onResetPanels() {
                 />
                 <span
                   v-if="row.file.method_count"
-                  class="shrink-0 font-mono text-[10px] tabular-nums text-[var(--color-text-muted)] opacity-60 transition group-hover:opacity-0"
+                  class="shrink-0 font-mono text-3xs tabular-nums text-[var(--color-text-muted)] opacity-60 transition group-hover:opacity-0"
                 >
                   {{ row.file.method_count }}
                 </span>
@@ -1080,7 +1080,7 @@ function onResetPanels() {
       <Transition name="toast">
         <div
           v-if="notice"
-          class="fixed bottom-5 right-5 z-[70] flex max-w-sm items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-[13px] shadow-xl backdrop-blur"
+          class="fixed bottom-5 right-5 z-[70] flex max-w-sm items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-[0.8125rem] shadow-xl backdrop-blur"
           :class="notice.kind === 'error'
             ? 'border-[color-mix(in_srgb,var(--color-danger)_40%,transparent)] bg-[color-mix(in_srgb,var(--color-danger)_14%,var(--color-surface-2))] text-[var(--color-danger)]'
             : 'border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text)]'"
@@ -1251,7 +1251,7 @@ function onResetPanels() {
                 :style="{ width: runPercent + '%' }"
               />
             </div>
-            <div class="mt-2 flex items-baseline justify-between gap-2 font-mono text-[11px] tabular-nums text-[var(--color-text-muted)]">
+            <div class="mt-2 flex items-baseline justify-between gap-2 font-mono text-2xs tabular-nums text-[var(--color-text-muted)]">
               <span v-if="progress?.total">
                 <b class="font-semibold text-[var(--color-text)]">{{ nf.format(progress.done || 0) }}</b>/{{ nf.format(progress.total) }} removed
               </span>
@@ -1348,14 +1348,14 @@ function onResetPanels() {
   background: var(--color-surface-2);
   padding: 0.05rem 0.3rem;
   font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 10px;
+  font-size: 0.625rem;
   line-height: 1.4;
   text-align: center;
 }
 
 /* Eintraege des Overflow-Menues (gleiche Geometrie, Farbe unterscheidet nur die Gefahr). */
 .menu-item {
-  @apply flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition;
+  @apply flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[0.8125rem] font-medium transition;
   color: var(--color-text);
 }
 .menu-item:hover:not(:disabled) {

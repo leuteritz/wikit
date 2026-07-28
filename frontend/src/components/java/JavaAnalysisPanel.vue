@@ -159,14 +159,14 @@ async function reRun(m) {
         <div class="h-2 w-full overflow-hidden rounded-full bg-[var(--color-accent-soft)]">
           <div class="h-full rounded-full bg-[var(--color-accent)] transition-all duration-300" :style="{ width: percent + '%' }" />
         </div>
-        <div class="mt-1.5 flex items-center justify-between text-[11px] text-[var(--color-text-muted)]">
+        <div class="mt-1.5 flex items-center justify-between text-2xs text-[var(--color-text-muted)]">
           <span class="tabular-nums">
             Total {{ fmtDur(analysis.totalElapsedMs.value) }}
             <span v-if="completed < steps"> · ~{{ fmtDur(analysis.etaMs.value) }} left</span>
           </span>
           <button
             type="button"
-            class="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-danger)] transition hover:bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)] disabled:opacity-50"
+            class="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] px-2 py-0.5 text-2xs font-medium text-[var(--color-danger)] transition hover:bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)] disabled:opacity-50"
             :disabled="analysis.cancelling.value"
             @click="analysis.cancel(articleId)"
           >
@@ -177,7 +177,7 @@ async function reRun(m) {
         <!-- Schritt-Pills -->
         <div class="mt-2 flex flex-wrap items-center gap-1">
           <span
-            class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
+            class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-3xs font-medium"
             :class="classState === 'done' ? 'badge-success' : classState === 'running' ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' : 'badge-muted'"
           >
             <Icon v-if="classState === 'done'" icon="lucide:check" class="h-3 w-3" /><Icon v-else-if="classState === 'running'" icon="lucide:loader-2" class="h-3 w-3 animate-spin" />
@@ -186,7 +186,7 @@ async function reRun(m) {
           <span
             v-for="(m, i) in methods"
             :key="m.id"
-            class="inline-flex h-5 min-w-[20px] items-center justify-center rounded-md px-1 text-[10px] font-medium"
+            class="inline-flex h-5 min-w-[20px] items-center justify-center rounded-md px-1 text-3xs font-medium"
             :class="methodState(i, m) === 'done' ? 'badge-success' : methodState(i, m) === 'running' ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' : 'badge-muted'"
             :title="m.method_name"
           >{{ i + 1 }}</span>
@@ -227,7 +227,7 @@ async function reRun(m) {
         />
         <span
           v-if="classAiGenerated !== null"
-          class="mt-1.5 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
+          class="mt-1.5 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-3xs font-medium"
           :class="classAiGenerated ? 'badge-success' : 'badge-warning'"
         ><Icon :icon="classAiGenerated ? 'lucide:check' : 'lucide:alert-triangle'" class="h-3 w-3" />{{ classAiGenerated ? 'AI text generated' : 'Fallback: existing description' }}</span>
       </div>
@@ -252,12 +252,12 @@ async function reRun(m) {
             </button>
             <span
               v-if="m.ai_generated === false"
-              class="badge-warning shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
+              class="badge-warning shrink-0 rounded-md px-1.5 py-0.5 text-3xs font-medium"
               title="Ollama returned no text – showing Javadoc as fallback"
             >Fallback: Javadoc</span>
             <span
               v-else-if="m.ai_generated === true"
-              class="badge-success shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
+              class="badge-success shrink-0 rounded-md px-1.5 py-0.5 text-3xs font-medium"
               title="AI text generated"
             >AI text</span>
             <Icon v-if="methodState(i, m) === 'running'" icon="lucide:loader-2" class="h-4 w-4 shrink-0 animate-spin text-[var(--color-accent)]" />

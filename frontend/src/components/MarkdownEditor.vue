@@ -31,7 +31,7 @@ onMounted(() => {
       themeComp.of(themeExtension()),
       EditorView.theme({
         '&': { height: '100%' },
-        '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '13px', lineHeight: '1.6' },
+        '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '0.8125rem', lineHeight: '1.6' },
         '.cm-content': { padding: '12px 0' },
       }),
       EditorView.updateListener.of((u) => {
@@ -56,12 +56,12 @@ onBeforeUnmount(() => view?.destroy())
   <div class="grid h-full grid-cols-1 gap-px overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-border)] lg:grid-cols-2">
     <!-- Editor -->
     <div class="flex min-h-0 flex-col bg-[var(--color-surface-2)]">
-      <div class="border-b border-[var(--color-border)] px-4 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">Markdown</div>
+      <div class="border-b border-[var(--color-border)] px-4 py-2 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">Markdown</div>
       <div ref="editorParent" class="min-h-0 flex-1 overflow-auto px-4"></div>
     </div>
     <!-- Vorschau -->
     <div class="flex min-h-0 flex-col bg-[var(--color-surface-2)]">
-      <div class="border-b border-[var(--color-border)] px-4 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">Preview</div>
+      <div class="border-b border-[var(--color-border)] px-4 py-2 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">Preview</div>
       <div class="min-h-0 flex-1 overflow-auto p-4">
         <div class="prose max-w-none dark:prose-invert prose-sm" v-html="previewHtml" />
       </div>

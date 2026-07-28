@@ -24,6 +24,7 @@ import '@vue-flow/core/dist/theme-default.css'
 import { useTheme } from '../../composables/useTheme.js'
 import { useJavaGraph } from '../../composables/useJavaGraph.js'
 import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
+import { useRootScale } from '../../composables/useRootScale.js'
 import { Icon } from '../../lib/icons.js'
 import { buildPackageLevel, commonPackagePrefix, breadcrumbFor } from '../../lib/packageGraph.js'
 import { layoutFlat, layoutClustered } from '../../lib/graphLayout.js'
@@ -73,6 +74,7 @@ const {
 } = useJavaGraph()
 // Detailabruf einer einzelnen Klasse (Methodenruempfe fuers Edge-Panel) – die Liste traegt sie nicht.
 const { getFile } = useJavaAnalyzer()
+const { scale: rootScale } = useRootScale()
 
 // Beide Code-Tab-Highlights (Consumer ausgehend / Source eingehend) gemeinsam loeschen -> jeder
 // Graph-Klick (Node/Pane) raeumt einen evtl. stehenden Zustand vollstaendig auf.
@@ -90,6 +92,9 @@ const edgeTypes = { managed: ManagedEdge }
 const PKG_COLORS = ['var(--color-thistle)', 'var(--color-lavender)', 'var(--color-cyan)', 'var(--color-beige)']
 // Etwas breiter als frueher: die Karte traegt jetzt Typ-Chip UND Rollen-Badge, und der
 // Klassenname darf davon nicht abgeschnitten werden – er ist die wichtigste Information.
+// BASISWERTE bei 16px-Root. Vue Flow rechnet in px, die Karten selbst sind in rem gesetzt und
+// wachsen mit der Root-Schriftgroesse -> beides muss denselben Faktor sehen, sonst laeuft der
+// Klassenname aus der Box. `rootScale` liefert ihn reaktiv (s. composables/useRootScale.js).
 const NODE_W = 228
 const NODE_H = 66
 const PKG_W = 232
@@ -630,22 +635,29 @@ const layout = computed(() => {
   //   * flach – ein Lauf ueber alles. Bleibt fuer die Package-Ebene (dort IST jeder Knoten schon
   //     ein Package) und fuer Ausschnitte mit nur einem Package, wo eine Zone nichts trennt.
   const pkgGroups = packageMode.value ? level.value.groups : []
+  // Knotengroessen UND Abstaende folgen der Root-Schriftgroesse – die Karten sind in rem gesetzt.
+  const s = rootScale.value
+  const nodeW = NODE_W * s
+  const nodeH = NODE_H * s
+  const pkgW = PKG_W * s
+  const pkgH = PKG_H * s
   const layoutNodes = [
-    ...pkgGroups.map((grp) => ({ id: grp.id, width: PKG_W, height: PKG_H, group: grp.path })),
-    ...files.map((f) => ({ id: `c:${f.id}`, width: NODE_W, height: NODE_H, group: f.package || '(default)' })),
+    ...pkgGroups.map((grp) => ({ id: grp.id, width: pkgW, height: pkgH, group: grp.path })),
+    ...files.map((f) => ({ id: `c:${f.id}`, width: nodeW, height: nodeH, group: f.package || '(default)' })),
   ]
   const distinctPkgs = new Set(layoutNodes.map((n) => n.group)).size
   const clustered = !packageMode.value && groupByPackage.value && distinctPkgs > 1
   const placed = clustered
-    ? layoutClustered({ nodes: layoutNodes, edges, nodesep: 60, ranksep: 90 })
+    ? layoutClustered({ nodes: layoutNodes, edges, nodesep: 60 * s, ranksep: 90 * s, scale: s })
     : layoutFlat({
         nodes: layoutNodes,
         edges,
         // Package-Ebene kompakter stapeln: dort zaehlen wenige, grosse Knoten – mit dem
         // Klassen-Abstand wuerde eine Kette aus 8 Packages so hoch, dass fitView() sie auf
         // Briefmarkengroesse zoomt.
-        nodesep: packageMode.value ? 120 : 90,
-        ranksep: packageMode.value ? 70 : 110,
+        nodesep: (packageMode.value ? 120 : 90) * s,
+        ranksep: (packageMode.value ? 70 : 110) * s,
+        scale: s,
       })
   const posOf = (id) => placed.pos.get(id) || { x: 0, y: 0 }
 
@@ -672,7 +684,7 @@ const layout = computed(() => {
     return {
       id: grp.id,
       type: 'pkg',
-      position: { x: nd.x - PKG_W / 2, y: nd.y - PKG_H / 2 },
+      position: { x: nd.x - pkgW / 2, y: nd.y - pkgH / 2 },
       data: {
         path: grp.path,
         label: grp.label,
@@ -696,7 +708,7 @@ const layout = computed(() => {
       id,
       type: 'klass',
       // Das Layout liefert die Mitte -> Vue Flow erwartet die obere linke Ecke.
-      position: { x: nd.x - NODE_W / 2, y: nd.y - NODE_H / 2 },
+      position: { x: nd.x - nodeW / 2, y: nd.y - nodeH / 2 },
       data: {
         fileId: f.id,
         className: f.class_name,
@@ -1346,7 +1358,7 @@ watch(
          der Trefferbilanz – der Pfad waere hier keine gueltige Ortsangabe mehr. -->
     <div v-if="files.length && searchActive" class="vf-breadcrumb">
       <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
-      <span class="shrink-0 font-mono text-[11px] text-[var(--color-text)]">“{{ searchQuery }}”</span>
+      <span class="shrink-0 font-mono text-2xs text-[var(--color-text)]">“{{ searchQuery }}”</span>
       <span class="vf-crumb-count">
         {{ searchScope.matches }} match{{ searchScope.matches === 1 ? '' : 'es' }}
         <template v-if="searchScope.related"> · +{{ searchScope.related }} related</template>
@@ -1611,7 +1623,9 @@ watch(
   display: flex;
   align-items: stretch;
   gap: 10px;
-  width: 232px;
+  /* in rem, damit die Karte mit der Root-Schriftgroesse waechst – PKG_W im Skript ist derselbe
+     Wert und wird dort mit `rootScale` multipliziert. Beide muessen zusammen bleiben. */
+  width: 14.5rem;
   padding: 0 12px 0 0;
   border-radius: 14px;
   border: 1px solid color-mix(in srgb, var(--role) 42%, var(--color-border));
@@ -1642,7 +1656,7 @@ watch(
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
   /* Bewusst groesser als der Klassenname: auf dieser Ebene wird oft herausgezoomt (viele
      Packages), und der Name ist das Einzige, was dann noch lesbar sein muss. */
-  font-size: 15px;
+  font-size: 0.9375rem;
   font-weight: 700;
   color: var(--color-text);
   text-overflow: ellipsis;
@@ -1660,7 +1674,7 @@ watch(
   align-items: center;
   gap: 8px;
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  font-size: 10px;
+  font-size: 0.625rem;
   color: var(--color-text-muted);
 }
 .vf-pkgstat b {
@@ -1717,7 +1731,7 @@ watch(
   border-radius: 6px;
   padding: 2px 6px;
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--color-text-muted);
   white-space: nowrap;
   transition: background 0.15s ease, color 0.15s ease;
@@ -1760,7 +1774,7 @@ watch(
   border-left: 1px solid var(--color-border);
   padding-left: 8px;
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  font-size: 10px;
+  font-size: 0.625rem;
   color: var(--color-text-muted);
   white-space: nowrap;
 }
@@ -1772,7 +1786,7 @@ watch(
   border-radius: 6px;
   border: 1px solid var(--color-border);
   padding: 2px 6px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 500;
   color: var(--color-text-muted);
   transition: background 0.15s ease, color 0.15s ease;
@@ -1794,7 +1808,7 @@ watch(
   background: color-mix(in srgb, var(--color-warning) 16%, transparent);
   padding: 2px 6px;
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  font-size: 10px;
+  font-size: 0.625rem;
   color: var(--color-warning);
   white-space: nowrap;
 }
@@ -1806,7 +1820,8 @@ watch(
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 208px;
+  /* rem: waechst mit der Root-Schriftgroesse (Gegenstueck zu NODE_W * rootScale im Skript). */
+  width: 13rem;
   padding: 8px 10px 8px 0;
   border-radius: 12px;
   border: 1px solid var(--color-border);
@@ -1907,7 +1922,7 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   color: var(--color-text);
 }
@@ -1922,7 +1937,7 @@ watch(
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 10px;
+  font-size: 0.625rem;
   color: var(--color-text-muted);
 }
 /* Rollen-Badge: Glyph + Methodenzahl in EINER Pille (Achse 1). Rolle und Umfang gehoeren
@@ -1934,7 +1949,7 @@ watch(
   flex-shrink: 0;
   padding: 1px 7px 1px 5px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   /* NICHT hart #fff: im Dark-Mode sind die Rollenfarben aufgehellt, weisser Text darauf ist
@@ -1954,7 +1969,7 @@ watch(
   flex-shrink: 0;
   padding: 1px 6px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--color-text-muted);
@@ -2000,7 +2015,7 @@ watch(
   position: static;
   gap: 6px;
   padding: 5px 9px 5px 8px;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--color-text-muted);
   transition: color 0.15s ease, border-color 0.15s ease;
@@ -2015,7 +2030,7 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 2px;
-  width: 352px;
+  width: 22rem;
   /* Hoch genug, dass die fuenf Kategorie-Abschnitte auf ueblichen Fenstern ohne Scrollen
      nebeneinanderstehen – eine Legende, in der man blaettern muss, wird nicht gelesen. */
   max-height: min(640px, 76vh);
@@ -2026,7 +2041,7 @@ watch(
   background: color-mix(in srgb, var(--color-surface-2) 92%, transparent);
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
   backdrop-filter: blur(8px);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .legend-enter-active,
 .legend-leave-active {
@@ -2082,7 +2097,7 @@ watch(
   margin-top: 6px;
   padding-top: 6px;
   border-top: 1px solid var(--color-border);
-  font-size: 10px;
+  font-size: 0.625rem;
   line-height: 1.5;
   color: var(--color-text-muted);
 }
@@ -2091,11 +2106,11 @@ watch(
   background: var(--color-surface-offset);
   padding: 0 3px;
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  font-size: 10px;
+  font-size: 0.625rem;
 }
 /* Legenden-Abschnittsueberschrift (Nodes / Edges) – dezent, damit die laengere Legende scanbar bleibt. */
 .legend-head {
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -2118,14 +2133,14 @@ watch(
   padding-top: 4px;
   border-top: 1px solid var(--color-border);
   color: var(--color-text-muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 /* Legenden-Swatch fuer den Versions-Chip (spiegelt .vf-version--multi). */
 .legend-version {
   display: inline-block;
   padding: 0 5px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--color-accent);
@@ -2173,7 +2188,7 @@ watch(
   flex-shrink: 0;
   padding: 0 9px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   color: var(--color-text);
   background: color-mix(in srgb, var(--c) 16%, transparent);
@@ -2234,7 +2249,7 @@ watch(
   background: color-mix(in srgb, var(--color-surface-2) 90%, transparent);
   padding: 2px 4px 2px 8px;
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   color: var(--color-text-muted);
   backdrop-filter: blur(4px);
@@ -2262,7 +2277,7 @@ watch(
   border-radius: 999px;
   background: var(--color-surface-offset);
   padding: 0 6px;
-  font-size: 10px;
+  font-size: 0.625rem;
   font-variant-numeric: tabular-nums;
 }
 
@@ -2290,7 +2305,7 @@ watch(
 /* Erlaeuterung unter einem Abschnitt – erklaert die Systematik, nicht ein einzelnes Symbol. */
 .legend-sub {
   margin: 2px 0 0 0;
-  font-size: 10px;
+  font-size: 0.625rem;
   line-height: 1.45;
   color: var(--color-text-muted);
   opacity: 0.8;

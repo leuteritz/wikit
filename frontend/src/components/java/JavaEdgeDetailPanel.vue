@@ -254,7 +254,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                   <Icon icon="lucide:file-code" class="h-5 w-5" />
                 </span>
                 <div class="min-w-0">
-                  <div class="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Source · defines</div>
+                  <div class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Source · defines</div>
                   <h2 class="truncate text-base font-bold text-[var(--color-text)]">{{ edge.toClass }}</h2>
                 </div>
               </div>
@@ -279,7 +279,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                       <button
                         v-if="snippets[c.name]?.html"
                         type="button"
-                        class="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-accent)]"
+                        class="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-2xs font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-accent)]"
                         :title="`Open in the source of ${edge.toClass} and highlight the method`"
                         @click="openDefinition(c)"
                       >
@@ -288,7 +288,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                       </button>
                       <span
                         v-if="snippets[c.name]?.filename"
-                        class="inline-flex min-w-0 items-center gap-1 truncate font-mono text-[11px] text-[var(--color-text-muted)]"
+                        class="inline-flex min-w-0 items-center gap-1 truncate font-mono text-2xs text-[var(--color-text-muted)]"
                         :title="snippets[c.name].filename"
                       >
                         <Icon icon="lucide:file-code" class="h-3 w-3 shrink-0" />
@@ -320,7 +320,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                           <Icon icon="lucide:trash-2" class="h-3.5 w-3.5" />
                         </button>
                         <span v-else class="inline-flex shrink-0 items-center gap-1">
-                          <span class="text-[11px] font-semibold text-[var(--color-danger)]">Delete?</span>
+                          <span class="text-2xs font-semibold text-[var(--color-danger)]">Delete?</span>
                           <button
                             type="button"
                             class="grid h-7 w-7 place-items-center rounded-md text-[var(--color-danger)] transition hover:bg-[var(--color-surface-offset)]"
@@ -380,7 +380,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                   <Icon icon="lucide:code-2" class="h-5 w-5" />
                 </span>
                 <div class="min-w-0">
-                  <div class="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Consumer · calls</div>
+                  <div class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Consumer · calls</div>
                   <h2 class="truncate text-base font-bold text-[var(--color-text)]">{{ edge.fromClass }}</h2>
                 </div>
               </div>
@@ -413,7 +413,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                         <code class="font-mono text-sm font-semibold text-[var(--color-accent)]">{{ site.calleeMethod }}()</code>
                         <div class="ml-auto flex min-w-0 items-center gap-1.5">
                           <span
-                            class="inline-flex min-w-0 items-center gap-1 truncate font-mono text-[11px] text-[var(--color-text-muted)]"
+                            class="inline-flex min-w-0 items-center gap-1 truncate font-mono text-2xs text-[var(--color-text-muted)]"
                             :title="site.lineExact ? 'Exact call line' : 'Line estimated – re-analyze the file for the exact line'"
                           >
                             <Icon icon="lucide:file-code" class="h-3 w-3 shrink-0" />

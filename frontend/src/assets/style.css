@@ -9,6 +9,12 @@
 @theme {
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+
+  /* Micro-Stufen unterhalb von text-xs (0.75rem). Die App braucht sie fuer Badges, Meta-Zeilen
+     und Chips – vorher standen dort ueberall feste Pixelwerte (`text-[10px]` &c.), die
+     bei der Root-Skalierung unten NICHT mitgewachsen waeren. Als rem-Tokens skalieren sie mit. */
+  --text-3xs: 0.625rem;  /* 10px bei 16px-Root */
+  --text-2xs: 0.6875rem; /* 11px bei 16px-Root */
 }
 
 /* --- Design-Tokens (klassenbasierter Dark-Mode) ---------------------------- *
@@ -106,6 +112,20 @@ html.dark {
   /* role provider/consumer/hub/isolated erben reaktiv aus den theme-faehigen Tokens oben */
 }
 
+/* --- Typografischer Massstab: EINE Stellschraube fuer die ganze App ---------------------------
+ * Alle Groessen (Schrift, Abstaende, Radien der Tailwind-Utilities) haengen an rem, also an der
+ * Root-Schriftgroesse. Statt eines festen Wertes waechst sie mit der Viewport-Breite: auf einem
+ * 2K-Schirm ist der Text sonst korrekt-aber-winzig, weil dieselben 16px dort auf deutlich mehr
+ * Flaeche treffen. Rechnung (Browser-Default 16px):
+ *     1280px -> 16px (Untergrenze, unveraendert)   1920px -> ~18px   >=2510px -> 20px
+ * Bewusst in `rem` formuliert, nicht in px: am Wurzelelement bezieht sich rem auf die vom Nutzer
+ * eingestellte Standard-Schriftgroesse – eine groesser gestellte Browser-Schrift bleibt damit
+ * wirksam, statt von einem harten px-Wert ueberschrieben zu werden.
+ * WICHTIG: Neue Schriftgroessen deshalb nie in px notieren, sonst skalieren sie hier nicht mit. */
+html {
+  font-size: clamp(1rem, 0.62rem + 0.42vw, 1.25rem);
+}
+
 html, body, #app {
   height: 100%;
 }
@@ -169,7 +189,7 @@ html.dark .shiki span {
   border: 0;
   border-radius: 0;
   padding: 0.5rem 0;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 /* Parametervariablen im Edge-Panel (Quelle + Anwender): farbig + klickbar. Die Bloecke sind
    via .code-dark immer dunkel -> feste, themenunabhaengige Palette. Jede Variable bekommt per

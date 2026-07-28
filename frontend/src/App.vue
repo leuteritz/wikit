@@ -60,8 +60,8 @@ function isActive(to) {
           <Icon :icon="WIKI_ICON" class="text-xl" />
         </span>
         <span class="hidden min-w-0 flex-col leading-tight lg:flex">
-          <span class="truncate font-mono text-[15px] font-semibold tracking-tight text-[var(--color-text)]">{{ WIKI_TITLE }}</span>
-          <span class="font-mono text-[11px] font-medium tracking-[0.1em] text-[var(--color-text-muted)]">v{{ WIKI_VERSION }} · LOCAL</span>
+          <span class="truncate font-mono text-[0.9375rem] font-semibold tracking-tight text-[var(--color-text)]">{{ WIKI_TITLE }}</span>
+          <span class="font-mono text-2xs font-medium tracking-[0.1em] text-[var(--color-text-muted)]">v{{ WIKI_VERSION }} · LOCAL</span>
         </span>
       </RouterLink>
 
@@ -73,18 +73,18 @@ function isActive(to) {
         @click="searchOpen = true"
       >
         <Icon icon="lucide:search" class="h-4 w-4 shrink-0" />
-        <span class="hidden flex-1 truncate text-left text-[12.5px] lg:inline">Search…</span>
-        <kbd class="ml-auto hidden shrink-0 rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-[9.5px] tracking-wide text-[var(--color-text-muted)] lg:inline">Ctrl K</kbd>
+        <span class="hidden flex-1 truncate text-left text-[0.78125rem] lg:inline">Search…</span>
+        <kbd class="ml-auto hidden shrink-0 rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-[0.59375rem] tracking-wide text-[var(--color-text-muted)] lg:inline">Ctrl K</kbd>
       </button>
 
       <!-- Navigation -->
-      <p class="hidden px-2 pb-2 font-mono text-[9.5px] font-semibold tracking-[0.16em] text-[var(--color-text-muted)] lg:block">NAVIGATE</p>
+      <p class="hidden px-2 pb-2 font-mono text-[0.59375rem] font-semibold tracking-[0.16em] text-[var(--color-text-muted)] lg:block">NAVIGATE</p>
       <nav class="flex flex-col gap-1">
         <RouterLink
           v-for="link in navLinks"
           :key="link.to"
           :to="link.to"
-          class="relative flex items-center gap-2.5 rounded-md px-2 py-2 text-[13px] font-medium transition lg:px-2.5"
+          class="relative flex items-center gap-2.5 rounded-md px-2 py-2 text-[0.8125rem] font-medium transition lg:px-2.5"
           :class="isActive(link.to)
             ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]'
             : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-offset)]'"
@@ -97,7 +97,7 @@ function isActive(to) {
           <Icon :icon="link.icon" class="h-[18px] w-[18px] shrink-0" />
           <span class="hidden flex-1 lg:inline">{{ link.label }}</span>
           <span
-            class="hidden min-w-[24px] rounded px-1.5 py-0.5 text-center font-mono text-[11px] lg:inline"
+            class="hidden min-w-[24px] rounded px-1.5 py-0.5 text-center font-mono text-2xs lg:inline"
             :class="isActive(link.to) ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'"
           >{{ link.count }}</span>
         </RouterLink>
@@ -108,7 +108,7 @@ function isActive(to) {
       <!-- Neuer Artikel -->
       <RouterLink
         to="/new"
-        class="mb-2 flex items-center justify-center gap-1.5 rounded-md bg-[var(--color-accent)] px-2 py-2 text-[12.5px] font-semibold text-[var(--color-accent-contrast)] transition hover:bg-[var(--color-accent-hover)]"
+        class="mb-2 flex items-center justify-center gap-1.5 rounded-md bg-[var(--color-accent)] px-2 py-2 text-[0.78125rem] font-semibold text-[var(--color-accent-contrast)] transition hover:bg-[var(--color-accent-hover)]"
         title="New article"
       >
         <Icon icon="lucide:plus" class="h-4 w-4 shrink-0" />
@@ -118,7 +118,7 @@ function isActive(to) {
       <!-- Theme-Toggle (Pill) -->
       <button
         type="button"
-        class="flex w-full items-center gap-2.5 rounded-md border border-[var(--color-border)] px-2 py-2 font-mono text-[11px] tracking-wide text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] lg:px-2.5"
+        class="flex w-full items-center gap-2.5 rounded-md border border-[var(--color-border)] px-2 py-2 font-mono text-2xs tracking-wide text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] lg:px-2.5"
         :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
         @click="toggleTheme"
       >

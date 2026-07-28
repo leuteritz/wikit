@@ -92,7 +92,7 @@ function openClass(id) {
           <Icon :icon="WIKI_ICON" class="shrink-0 text-[var(--color-accent)]" />
           <span class="text-[var(--color-accent)]">{{ WIKI_TITLE }}</span><span class="blink font-normal text-[var(--color-accent)]">_</span>
         </h1>
-        <p class="mt-3 max-w-xl text-[15px] leading-relaxed text-[var(--color-text-muted)]">
+        <p class="mt-3 max-w-xl text-[0.9375rem] leading-relaxed text-[var(--color-text-muted)]">
           A self-hosted knowledge base for developers: author notes in
           <span class="font-medium text-[var(--color-text)]">Markdown</span>, parse
           <span class="font-medium text-[var(--color-text)]">Java</span> locally into a class graph
@@ -170,7 +170,7 @@ function openClass(id) {
                   Project context
                   <span
                     v-if="userContext"
-                    class="rounded-full bg-[var(--color-accent)] px-1.5 py-0.5 text-[10px] font-bold leading-none text-[var(--color-accent-contrast)]"
+                    class="rounded-full bg-[var(--color-accent)] px-1.5 py-0.5 text-3xs font-bold leading-none text-[var(--color-accent-contrast)]"
                   >active</span>
                   <Icon icon="lucide:chevron-down" class="h-3.5 w-3.5 text-[var(--color-text-muted)] transition-transform" :class="showContext ? 'rotate-180' : ''" />
                 </span>
@@ -226,7 +226,7 @@ function openClass(id) {
             </span>
             <Icon icon="lucide:terminal" class="ml-auto h-3.5 w-3.5 text-[var(--color-text-muted)]" />
           </div>
-          <pre class="snippet overflow-x-auto px-4 py-3 text-[12.5px] leading-relaxed"><code><span class="c">/** Parsed locally — no JDK required. */</span>
+          <pre class="snippet overflow-x-auto px-4 py-3 text-[0.78125rem] leading-relaxed"><code><span class="c">/** Parsed locally — no JDK required. */</span>
 <span class="k">public class</span> <span class="t">{{ WIKI_TITLE }}</span> {
   <span class="k">private final</span> <span class="t">Graph</span> graph;
 

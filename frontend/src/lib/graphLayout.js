@@ -25,6 +25,9 @@ import dagre from '@dagrejs/dagre'
 export const EDGE_WEIGHT = { call: 6, uses: 3, import: 1, aggregate: 4 }
 
 // Innenabstaende der Package-Zone. Oben mehr, weil dort die Kopfzeile der Zone sitzt.
+// Basiswerte bei 16px-Root; der `scale`-Parameter der Layouts zieht sie mit der Root-
+// Schriftgroesse mit (s. composables/useRootScale.js) – sonst waechst die Zonen-Kopfzeile,
+// ihr Platz aber nicht.
 const ZONE_PAD_X = 26
 const ZONE_PAD_TOP = 40
 const ZONE_PAD_BOTTOM = 24
@@ -56,7 +59,7 @@ function pairWeights(edges, keep = () => true) {
  * @returns {{ pos: Map<string,{x:number,y:number}>, width: number, height: number }}
  *          Positionen sind Mittelpunkte, normalisiert auf den Ursprung (0,0) oben links.
  */
-export function layoutFlat({ nodes = [], edges = [], nodesep = 90, ranksep = 110, edgesep = 40 } = {}) {
+export function layoutFlat({ nodes = [], edges = [], nodesep = 90, ranksep = 110, edgesep = 40, scale = 1 } = {}) {
   const pos = new Map()
   if (!nodes.length) return { pos, width: 0, height: 0 }
 
@@ -101,15 +104,16 @@ export function layoutFlat({ nodes = [], edges = [], nodesep = 90, ranksep = 110
   if (orphans.length) {
     const ow = Math.max(...orphans.map((n) => n.width))
     const oh = Math.max(...orphans.map((n) => n.height))
-    const colStep = ow + 48
-    const rowStep = oh + 40
+    const gapX = 48 * scale
+    const colStep = ow + gapX
+    const rowStep = oh + 40 * scale
     // Mindestens annaehernd quadratisch – und breiter, wenn der verbundene Teil ohnehin Platz
     // vorgibt. (Andersherum gedeckelt waere falsch: eine Zone mit einer einzigen Knotenspalte
     // haette ihre uebrigen Klassen sonst zu einem endlosen Turm gestapelt.)
     let cols = Math.ceil(Math.sqrt(orphans.length))
     if (width > 0) cols = Math.max(cols, Math.floor(width / colStep))
     const rows = Math.ceil(orphans.length / cols)
-    const gridW = cols * colStep - 48
+    const gridW = cols * colStep - gapX
     const originX = width > 0 ? (width - gridW) / 2 : 0
     const originY = height > 0 ? height + rowStep - oh / 2 : 0
     orphans.forEach((n, i) => {
@@ -148,7 +152,11 @@ export function layoutFlat({ nodes = [], edges = [], nodesep = 90, ranksep = 110
  * @param edges  [{ source, target, kind }]
  * @returns {{ pos: Map, zones: Array<{key,x,y,width,height,count}>, width, height }}
  */
-export function layoutClustered({ nodes = [], edges = [], nodesep = 70, ranksep = 90 } = {}) {
+export function layoutClustered({ nodes = [], edges = [], nodesep = 70, ranksep = 90, scale = 1 } = {}) {
+  const padX = ZONE_PAD_X * scale
+  const padTop = ZONE_PAD_TOP * scale
+  const padBottom = ZONE_PAD_BOTTOM * scale
+
   const groups = new Map() // group -> nodes[]
   for (const n of nodes) {
     const key = n.group ?? ''
@@ -163,11 +171,11 @@ export function layoutClustered({ nodes = [], edges = [], nodesep = 70, ranksep 
   for (const [key, list] of groups) {
     const inside = new Set(list.map((n) => n.id))
     const intra = edges.filter((e) => inside.has(e.source) && inside.has(e.target))
-    const sub = layoutFlat({ nodes: list, edges: intra, nodesep, ranksep, edgesep: 30 })
+    const sub = layoutFlat({ nodes: list, edges: intra, nodesep, ranksep, edgesep: 30 * scale, scale })
     boxes.set(key, {
       pos: sub.pos,
-      width: sub.width + ZONE_PAD_X * 2,
-      height: sub.height + ZONE_PAD_TOP + ZONE_PAD_BOTTOM,
+      width: sub.width + padX * 2,
+      height: sub.height + padTop + padBottom,
     })
   }
 
@@ -184,7 +192,14 @@ export function layoutClustered({ nodes = [], edges = [], nodesep = 70, ranksep 
   }
   // Zonen sind gross – zwischen ihnen braucht es mehr Luft als zwischen Knoten, sonst laufen die
   // Kanten der einen Zone durch die Kopfzeile der naechsten.
-  const meta = layoutFlat({ nodes: metaNodes, edges: metaEdges, nodesep: 80, ranksep: 110, edgesep: 60 })
+  const meta = layoutFlat({
+    nodes: metaNodes,
+    edges: metaEdges,
+    nodesep: 80 * scale,
+    ranksep: 110 * scale,
+    edgesep: 60 * scale,
+    scale,
+  })
 
   // 3) Zonen absolut setzen und die lokalen Knotenpositionen hineinschieben.
   const pos = new Map()
@@ -202,7 +217,7 @@ export function layoutClustered({ nodes = [], edges = [], nodesep = 70, ranksep 
       count: (groups.get(key) || []).length,
     })
     for (const [id, p] of b.pos) {
-      pos.set(id, { x: originX + ZONE_PAD_X + p.x, y: originY + ZONE_PAD_TOP + p.y })
+      pos.set(id, { x: originX + padX + p.x, y: originY + padTop + p.y })
     }
   }
 

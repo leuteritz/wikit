@@ -376,23 +376,23 @@ async function removeFile() {
     <header class="flex items-start gap-3 border-b border-[var(--color-border)] px-4 py-3">
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-2">
-          <span class="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase" :class="typeBadge">{{ file?.class_type }}</span>
+          <span class="rounded px-1.5 py-0.5 text-3xs font-semibold uppercase" :class="typeBadge">{{ file?.class_type }}</span>
           <h2 class="truncate text-xl font-bold text-[var(--color-text)]">{{ file?.class_name }}</h2>
         </div>
         <p v-if="file?.package" class="truncate font-mono text-xs text-[var(--color-text-muted)]">{{ file.package }}</p>
         <div v-if="file" class="mt-1.5 flex flex-wrap items-center gap-1.5">
-          <span class="rounded-md bg-[var(--color-surface-offset)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-muted)]">
+          <span class="rounded-md bg-[var(--color-surface-offset)] px-1.5 py-0.5 text-3xs font-medium text-[var(--color-text-muted)]">
             {{ methodCount }} method(s)
           </span>
           <span
-            class="rounded-md px-1.5 py-0.5 text-[10px] font-medium"
+            class="rounded-md px-1.5 py-0.5 text-3xs font-medium"
             :class="summarizedCount === methodCount && methodCount > 0 ? 'badge-success' : 'badge-accent'"
           >
             AI {{ summarizedCount }}/{{ methodCount }}
           </span>
           <span
             v-if="queueProgress && queueProgress.status === 'running'"
-            class="badge-accent inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
+            class="badge-accent inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-3xs font-medium"
           >
             <Icon icon="lucide:loader-2" class="h-3 w-3 animate-spin" />
             <span v-if="queueProgress.current">{{ queueProgress.current.name }}()</span>
@@ -482,7 +482,7 @@ async function removeFile() {
               >
                 <code class="min-w-0 flex-1 truncate text-xs text-[var(--color-text)]">{{ signature(m) }}</code>
                 <span
-                  class="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase"
+                  class="shrink-0 rounded px-1.5 py-0.5 text-[0.5625rem] font-semibold uppercase"
                   :class="{
                     'badge-success': methodStatus(m) === 'done',
                     'badge-accent': methodStatus(m) === 'running' || methodStatus(m) === 'pending',
@@ -583,7 +583,7 @@ async function removeFile() {
                 <span class="rounded-md bg-[var(--color-accent-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--color-accent)]">
                   Version {{ v.version_number }}
                 </span>
-                <span v-if="!v.diff" class="badge-muted rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase">
+                <span v-if="!v.diff" class="badge-muted rounded px-1.5 py-0.5 text-3xs font-semibold uppercase">
                   Initial upload
                 </span>
                 <span class="text-xs text-[var(--color-text-muted)]">{{ formatRelative(v.created_at) }}</span>

@@ -273,7 +273,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                     />
                     <Icon v-else icon="lucide:sparkles" class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
 
-                    <span class="badge-lavender rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase">
+                    <span class="badge-lavender rounded px-1.5 py-0.5 text-3xs font-semibold uppercase">
                       AI analysis
                     </span>
                     <button
@@ -282,8 +282,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                       :title="`Open ${j.className} in the analyzer`"
                       @click="openClass(j)"
                     >{{ j.className }}</button>
-                    <span class="rounded-md px-2 py-0.5 text-[11px] font-semibold" :class="statusInfo(j.status).cls">{{ statusInfo(j.status).label }}</span>
-                    <span v-if="j.finishedAt && isFinished(j.status)" class="shrink-0 text-[11px] text-[var(--color-text-muted)]">{{ fmtTime(j.finishedAt) }}</span>
+                    <span class="rounded-md px-2 py-0.5 text-2xs font-semibold" :class="statusInfo(j.status).cls">{{ statusInfo(j.status).label }}</span>
+                    <span v-if="j.finishedAt && isFinished(j.status)" class="shrink-0 text-2xs text-[var(--color-text-muted)]">{{ fmtTime(j.finishedAt) }}</span>
                     <button
                       type="button"
                       class="shrink-0 rounded-md p-1 text-[var(--color-text-muted)] transition hover:bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)] hover:text-[var(--color-danger)]"
@@ -294,12 +294,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                       <Icon icon="lucide:x" class="h-4 w-4" />
                     </button>
                   </div>
-                  <p v-if="j.package" class="mb-2 truncate font-mono text-[11px] text-[var(--color-text-muted)]">{{ j.package }}</p>
+                  <p v-if="j.package" class="mb-2 truncate font-mono text-2xs text-[var(--color-text-muted)]">{{ j.package }}</p>
 
                   <div class="mb-1.5 flex items-center justify-between text-xs">
                     <span class="flex min-w-0 items-center gap-1.5" :class="j.status === 'running' ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'">
                       <template v-if="j.status === 'running'">
-                        <span class="rounded bg-[var(--color-accent-soft)] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[var(--color-accent)]">{{ phaseLabel(j) }}</span>
+                        <span class="rounded bg-[var(--color-accent-soft)] px-1.5 py-0.5 text-3xs font-semibold uppercase text-[var(--color-accent)]">{{ phaseLabel(j) }}</span>
                         <span class="truncate">
                           <template v-if="j.current">{{ j.current.name }}<template v-if="j.phase !== 'class'">()</template></template>
                           <template v-else>preparing…</template>
@@ -318,7 +318,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                     />
                   </div>
 
-                  <p v-if="j.ollamaUnavailable" class="mt-2 flex items-center gap-1 text-[11px] text-[var(--color-warning)]">
+                  <p v-if="j.ollamaUnavailable" class="mt-2 flex items-center gap-1 text-2xs text-[var(--color-warning)]">
                     <Icon icon="lucide:alert-triangle" class="h-3.5 w-3.5 shrink-0" />
                     Ollama unreachable – using fallback text.
                   </p>
@@ -340,13 +340,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             <!-- Rechte Spalte: grossflaechiges Live-Terminal des laufenden Jobs -->
             <div class="flex min-h-0 flex-col p-4">
               <div class="mb-2 flex items-center justify-between gap-2">
-                <span class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                <span class="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
                   <Icon icon="lucide:terminal" class="h-3.5 w-3.5" />
                   Live output
                 </span>
                 <span
                   v-if="runningJob"
-                  class="flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums text-[var(--color-accent)]"
+                  class="flex shrink-0 items-center gap-1.5 text-2xs tabular-nums text-[var(--color-accent)]"
                 >
                   <Icon icon="lucide:loader-2" class="h-3 w-3 animate-spin" />
                   {{ runningLive ? runningLive.tokens : 0 }} tokens generated…
@@ -355,7 +355,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
               <template v-if="runningJob">
                 <div class="mb-2 flex min-w-0 items-center gap-2 text-sm">
-                  <span class="rounded bg-[var(--color-accent-soft)] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[var(--color-accent)]">{{ phaseLabel(runningJob) }}</span>
+                  <span class="rounded bg-[var(--color-accent-soft)] px-1.5 py-0.5 text-3xs font-semibold uppercase text-[var(--color-accent)]">{{ phaseLabel(runningJob) }}</span>
                   <span class="min-w-0 flex-1 truncate font-semibold text-[var(--color-text)]">{{ runningJob.className }}</span>
                   <span class="shrink-0 tabular-nums text-xs text-[var(--color-text-muted)]">{{ runningJob.done }}/{{ runningJob.total }}</span>
                 </div>
@@ -404,7 +404,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 /* Abgedunkelter Terminal-/Log-Bereich: scrollbar, monospace. Auch im Light-Mode ein Terminal. */
 .queue-log {
-  @apply overflow-y-auto whitespace-pre-wrap break-words rounded-lg p-3 font-mono text-[11px] leading-relaxed;
+  @apply overflow-y-auto whitespace-pre-wrap break-words rounded-lg p-3 font-mono text-2xs leading-relaxed;
   background-color: #0f172a; /* slate-900 */
   color: #cbd5e1; /* slate-300 */
   border: 1px solid rgba(148, 163, 184, 0.18);

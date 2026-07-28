@@ -131,12 +131,12 @@ function flatIndex(groupKey, i) {
             class="w-full bg-transparent py-3.5 text-sm text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
             @keydown="onKeydown"
           />
-          <kbd class="hidden rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--color-text-muted)] sm:block">ESC</kbd>
+          <kbd class="hidden rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-3xs text-[var(--color-text-muted)] sm:block">ESC</kbd>
         </div>
 
         <div v-if="flatItems.length" class="max-h-[50vh] overflow-y-auto py-2">
           <div v-for="group in groups" :key="group.key">
-            <div class="flex items-center gap-1.5 px-4 pb-1 pt-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
+            <div class="flex items-center gap-1.5 px-4 pb-1 pt-2 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
               <Icon v-if="group.key === 'java_file'" icon="lucide:code-2" class="h-3 w-3" />
               {{ group.label }}
             </div>
@@ -176,12 +176,12 @@ function flatIndex(groupKey, i) {
                   <div class="min-w-0 flex-1">
                     <div class="flex items-center gap-2">
                       <span class="truncate font-mono text-sm font-medium text-[var(--color-text)]">{{ item.name }}()</span>
-                      <span class="shrink-0 rounded bg-[var(--color-accent-soft)] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[var(--color-accent)]">method</span>
+                      <span class="shrink-0 rounded bg-[var(--color-accent-soft)] px-1.5 py-0.5 font-mono text-3xs font-semibold text-[var(--color-accent)]">method</span>
                     </div>
                     <div class="mt-0.5 flex items-center gap-1.5 truncate text-xs text-[var(--color-text-muted)]">
                       <span class="truncate">{{ item.className }}</span>
                       <span class="text-[var(--color-border-strong)]">·</span>
-                      <code class="truncate font-mono text-[11px] text-[var(--color-text-muted)]">{{ item.signature }}</code>
+                      <code class="truncate font-mono text-2xs text-[var(--color-text-muted)]">{{ item.signature }}</code>
                     </div>
                   </div>
                 </button>
@@ -201,10 +201,10 @@ function flatIndex(groupKey, i) {
                   <div class="min-w-0 flex-1">
                     <div class="flex items-center gap-2">
                       <span class="truncate text-sm font-medium text-[var(--color-text)]">{{ item.name }}</span>
-                      <span class="shrink-0 rounded bg-[var(--color-accent-soft)] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[var(--color-accent)]">&lt;/&gt; Code</span>
+                      <span class="shrink-0 rounded bg-[var(--color-accent-soft)] px-1.5 py-0.5 font-mono text-3xs font-semibold text-[var(--color-accent)]">&lt;/&gt; Code</span>
                     </div>
-                    <code v-if="item.snippet" class="search-snippet mt-1 block truncate rounded bg-[var(--color-surface-offset)] px-1.5 py-1 font-mono text-[11px] text-[var(--color-text-muted)]" v-html="renderSnippet(item.snippet)" />
-                    <div v-if="item.package" class="mt-0.5 truncate font-mono text-[10px] text-[var(--color-text-muted)]">{{ item.package }}</div>
+                    <code v-if="item.snippet" class="search-snippet mt-1 block truncate rounded bg-[var(--color-surface-offset)] px-1.5 py-1 font-mono text-2xs text-[var(--color-text-muted)]" v-html="renderSnippet(item.snippet)" />
+                    <div v-if="item.package" class="mt-0.5 truncate font-mono text-3xs text-[var(--color-text-muted)]">{{ item.package }}</div>
                   </div>
                 </button>
               </li>

@@ -125,7 +125,7 @@ watch(() => props.article?.id, () => nextTick(enhanceCodeBlocks))
           :to="`/article/${rel.slug}`"
           class="group flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 transition hover:border-[var(--color-accent)]"
         >
-          <span class="rounded-md bg-[var(--color-accent-soft)] px-2 py-1 text-[11px] font-medium text-[var(--color-accent)]">{{ rel.relation_type }}</span>
+          <span class="rounded-md bg-[var(--color-accent-soft)] px-2 py-1 text-2xs font-medium text-[var(--color-accent)]">{{ rel.relation_type }}</span>
           <span class="min-w-0 flex-1 truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-accent)]">{{ rel.title }}</span>
           <Icon icon="lucide:arrow-right" class="h-4 w-4 text-[var(--color-text-muted)] transition group-hover:translate-x-0.5 group-hover:text-[var(--color-accent)]" />
         </RouterLink>

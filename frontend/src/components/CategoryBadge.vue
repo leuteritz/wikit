@@ -9,7 +9,7 @@ defineProps({
   <span
     v-if="category"
     class="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-offset)] font-medium text-[var(--color-text-muted)]"
-    :class="size === 'xs' ? 'px-2 py-0.5 text-[11px]' : 'px-2.5 py-1 text-xs'"
+    :class="size === 'xs' ? 'px-2 py-0.5 text-2xs' : 'px-2.5 py-1 text-xs'"
   >
     <span v-if="category.icon">{{ category.icon }}</span>
     {{ category.name }}

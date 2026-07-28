@@ -115,9 +115,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                 <Icon icon="lucide:file-code" class="h-5 w-5" />
               </span>
               <div class="min-w-0 flex-1">
-                <div class="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Source · defines</div>
+                <div class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Source · defines</div>
                 <h3 class="truncate text-base font-bold text-[var(--color-text)]">{{ sourceFile.class_name }}</h3>
-                <p class="truncate font-mono text-[11px] text-[var(--color-text-muted)]">{{ sourceFile.filename }}</p>
+                <p class="truncate font-mono text-2xs text-[var(--color-text-muted)]">{{ sourceFile.filename }}</p>
               </div>
               <button
                 type="button"
@@ -132,7 +132,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
             <!-- ── Methoden-Auswahl (Pflicht, falls vorhanden) ── -->
             <div class="mt-4">
-              <div class="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+              <div class="mb-2 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
                 <Icon icon="lucide:braces" class="h-3.5 w-3.5" />
                 Called method
                 <span v-if="hasMethods" class="text-[var(--color-danger)]">*</span>
@@ -172,9 +172,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                 <Icon icon="lucide:code-2" class="h-5 w-5" />
               </span>
               <div class="min-w-0 flex-1">
-                <div class="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Consumer · calls</div>
+                <div class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Consumer · calls</div>
                 <h3 class="truncate text-base font-bold text-[var(--color-text)]">{{ targetFile.class_name }}</h3>
-                <p class="truncate font-mono text-[11px] text-[var(--color-text-muted)]">{{ targetFile.filename }}</p>
+                <p class="truncate font-mono text-2xs text-[var(--color-text-muted)]">{{ targetFile.filename }}</p>
               </div>
             </div>
           </div>

@@ -254,7 +254,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             </div>
 
             <!-- Richtung des Buendels: definierende Seite -> nutzende Seite, wie der Pfeil im Graph. -->
-            <div class="mt-2 flex items-center gap-2 text-[13px]">
+            <div class="mt-2 flex items-center gap-2 text-[0.8125rem]">
               <span class="bundle-end">
                 <Icon :icon="bundle.fromIsClass ? 'lucide:box' : 'lucide:folder'" class="h-3.5 w-3.5 shrink-0" />
                 <span class="truncate">{{ bundle.fromLabel }}</span>
@@ -475,7 +475,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             </ul>
           </div>
 
-          <footer class="shrink-0 border-t border-[var(--color-border)] px-4 py-2.5 text-[11px] text-[var(--color-text-muted)]">
+          <footer class="shrink-0 border-t border-[var(--color-border)] px-4 py-2.5 text-2xs text-[var(--color-text-muted)]">
             Arrows read “defines → uses”. Open a row for the code, “Full details” for every call site.
           </footer>
         </aside>
@@ -496,7 +496,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   background: var(--color-surface-offset);
   padding: 2px 8px;
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--color-text);
 }
@@ -510,7 +510,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   border: 1px solid color-mix(in srgb, var(--k) 32%, transparent);
   background: color-mix(in srgb, var(--k) 12%, transparent);
   padding: 1px 8px;
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 600;
   color: var(--k);
 }
@@ -529,7 +529,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   border-radius: 8px;
   background: var(--color-surface);
   padding: 7px 9px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   line-height: 1.55;
   color: var(--color-text-muted);
 }
@@ -564,7 +564,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   border-radius: 999px;
   background: color-mix(in srgb, var(--kind) 16%, transparent);
   padding: 1px 7px;
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   color: var(--kind);
   white-space: nowrap;
@@ -580,7 +580,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--color-text);
 }
@@ -607,11 +607,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   background: var(--color-surface-offset);
   padding: 0 5px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 10px;
+  font-size: 0.625rem;
   color: var(--color-text-muted);
 }
 .rel-more {
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   color: var(--color-text-muted);
 }
@@ -638,7 +638,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   border-left: 2px solid var(--kind);
   background: color-mix(in srgb, var(--kind) 7%, transparent);
   padding: 6px 9px;
-  font-size: 11.5px;
+  font-size: 0.71875rem;
   line-height: 1.55;
   color: var(--color-text);
 }
@@ -651,7 +651,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   align-items: center;
   gap: 6px;
   margin-bottom: 4px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--color-text-muted);
   text-align: left;
 }
@@ -726,7 +726,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   place-items: center;
   border-radius: 999px;
   background: var(--color-surface-offset);
-  font-size: 9px;
+  font-size: 0.5625rem;
   font-weight: 800;
   color: var(--color-text-muted);
 }
@@ -740,7 +740,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  font-size: 10px;
+  font-size: 0.625rem;
   opacity: 0.85;
 }
 .rel-site + .rel-site {
@@ -749,7 +749,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 /* Bildunterschrift unter einem Codefenster – sagt, was die markierte Zeile bedeutet. */
 .rel-caption {
   margin-top: 3px;
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   line-height: 1.5;
   color: var(--color-text-muted);
 }
@@ -764,7 +764,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   align-items: center;
   gap: 5px;
   margin-top: 8px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--color-text-muted);
 }
 .rel-note--warn {
@@ -784,7 +784,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   padding: 4px 9px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   color: var(--color-text-muted);
   transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;

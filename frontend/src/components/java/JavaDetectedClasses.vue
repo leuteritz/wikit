@@ -93,7 +93,7 @@ function toggleAll() {
     <!-- Kopfzeile: Bilanz links, Werkzeuge rechts. Bleibt beim Scrollen stehen. -->
     <div class="flex shrink-0 items-center gap-2 border-b border-[var(--color-border)] px-2.5 py-1.5">
       <Icon icon="lucide:package" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
-      <span class="shrink-0 font-mono text-[11px] text-[var(--color-text-muted)]">
+      <span class="shrink-0 font-mono text-2xs text-[var(--color-text-muted)]">
         <b class="font-semibold tabular-nums text-[var(--color-text)]">{{ classes.length }}</b> detected
         <span class="opacity-40">·</span>
         <b class="font-semibold tabular-nums text-[var(--color-text)]">{{ packageCount }}</b> pkg
@@ -108,12 +108,12 @@ function toggleAll() {
           v-model="filter"
           type="text"
           placeholder="Filter detected…"
-          class="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] py-1 pl-7 pr-2 font-mono text-[11px] text-[var(--color-text)] outline-none transition focus:border-[var(--color-accent)]"
+          class="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] py-1 pl-7 pr-2 font-mono text-2xs text-[var(--color-text)] outline-none transition focus:border-[var(--color-accent)]"
         />
       </div>
       <button
         type="button"
-        class="shrink-0 rounded-md px-1.5 py-1 text-[11px] font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-40"
+        class="shrink-0 rounded-md px-1.5 py-1 text-2xs font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-40"
         :class="classes.length < FILTER_FROM ? 'ml-auto' : ''"
         :disabled="filtering"
         :title="allOpen ? 'Collapse all packages' : 'Expand all packages'"
@@ -128,7 +128,7 @@ function toggleAll() {
       v-if="typeBreakdown.length > 1"
       class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-0.5 border-b border-[var(--color-border)] px-2.5 py-1"
     >
-      <span v-for="t in typeBreakdown" :key="t.type" class="inline-flex items-center gap-1.5 font-mono text-[10px] text-[var(--color-text-muted)]">
+      <span v-for="t in typeBreakdown" :key="t.type" class="inline-flex items-center gap-1.5 font-mono text-3xs text-[var(--color-text-muted)]">
         <span class="h-1.5 w-1.5 shrink-0 rounded-full" :style="{ background: t.tone }" />
         <b class="font-semibold tabular-nums text-[var(--color-text)]">{{ t.n }}</b>{{ t.type }}
       </span>
@@ -136,7 +136,7 @@ function toggleAll() {
 
     <!-- Scroller: waechst mit dem Inhalt, deckelt aber bei ~11rem -> darunter bleibt Platz. -->
     <div class="min-h-0 max-h-44 overflow-y-auto overscroll-contain p-1.5">
-      <p v-if="!groups.length" class="px-1 py-2 text-center font-mono text-[11px] text-[var(--color-text-muted)]">
+      <p v-if="!groups.length" class="px-1 py-2 text-center font-mono text-2xs text-[var(--color-text-muted)]">
         No class matches “{{ filter }}”.
       </p>
       <div v-for="g in groups" :key="g.pkg" class="mb-0.5 last:mb-0">
@@ -150,9 +150,9 @@ function toggleAll() {
             class="h-3 w-3 shrink-0 text-[var(--color-text-muted)] transition-transform duration-150"
             :class="isOpen(g.pkg) ? 'rotate-90' : ''"
           />
-          <span class="truncate font-mono text-[11px] text-[var(--color-text-muted)]">{{ g.pkg }}</span>
+          <span class="truncate font-mono text-2xs text-[var(--color-text-muted)]">{{ g.pkg }}</span>
           <span
-            class="ml-auto shrink-0 rounded-full bg-[var(--color-surface-offset)] px-1.5 font-mono text-[10px] tabular-nums text-[var(--color-text-muted)]"
+            class="ml-auto shrink-0 rounded-full bg-[var(--color-surface-offset)] px-1.5 font-mono text-3xs tabular-nums text-[var(--color-text-muted)]"
           >
             {{ g.items.length }}
           </span>
@@ -175,7 +175,7 @@ function toggleAll() {
     <!-- Fusszeile nur im Filtermodus: sagt, wie viel gerade ausgeblendet ist. -->
     <div
       v-if="filtering"
-      class="shrink-0 border-t border-[var(--color-border)] px-2.5 py-1 font-mono text-[10px] text-[var(--color-text-muted)]"
+      class="shrink-0 border-t border-[var(--color-border)] px-2.5 py-1 font-mono text-3xs text-[var(--color-text-muted)]"
     >
       {{ matchCount }} of {{ classes.length }} shown
     </div>
@@ -193,7 +193,7 @@ function toggleAll() {
   border: 1px solid color-mix(in srgb, var(--tone) 30%, transparent);
   background: color-mix(in srgb, var(--tone) 12%, transparent);
   padding: 0.0625rem 0.375rem;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 500;
   line-height: 1.5;
   color: var(--tone);
