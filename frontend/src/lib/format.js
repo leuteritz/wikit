@@ -45,3 +45,16 @@ export function formatDuration(ms) {
   const s = Math.max(0, Math.round((ms || 0) / 1000))
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
+
+// Grobe Restzeit ("~2h 15m", "~8 min", "< 1 min") fuer Fortschrittsanzeigen. Bewusst gerundet:
+// eine Schaetzung auf die Sekunde genau anzugeben taeuscht eine Praezision vor, die eine aus
+// dem bisherigen Durchsatz hochgerechnete ETA nicht hat.
+export function formatEta(ms) {
+  if (ms == null || !isFinite(ms) || ms <= 0) return ''
+  const mins = Math.round(ms / 60000)
+  if (mins < 1) return '< 1 min'
+  if (mins < 60) return `~${mins} min`
+  const hrs = Math.floor(mins / 60)
+  const rest = mins % 60
+  return rest ? `~${hrs}h ${rest}m` : `~${hrs}h`
+}

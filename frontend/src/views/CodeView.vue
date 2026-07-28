@@ -8,7 +8,7 @@
 // Datenhaltung via useJavaAnalyzer (Dateien/CRUD) + useJavaQueue (KI-Queue, Polling).
 import { ref, reactive, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
-import { useJavaQueue, isFinishedStatus } from '../composables/useJavaQueue.js'
+import { useJavaQueue } from '../composables/useJavaQueue.js'
 import { useJavaGraph } from '../composables/useJavaGraph.js'
 import { buildPackageTree, countClasses, filterClasses, LANGUAGES } from '../composables/useCodeAnalysis.js'
 import { usePanelResize } from '../composables/usePanelResize.js'
@@ -19,10 +19,12 @@ import JavaQueueModal from '../components/java/JavaQueueModal.vue'
 import JavaDetectedClasses from '../components/java/JavaDetectedClasses.vue'
 import { Icon } from '../lib/icons.js'
 import { detectJavaClasses } from '../lib/javaDetect.js'
+import { formatEta } from '../lib/format.js'
 
 const { files, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFileId, lastTargetLine, lastTargetEndLine, deleteFile, resetAll } =
   useJavaAnalyzer()
-const { allJobs, enqueueClass, enqueueAllUnanalyzed, cancelJob, cancelAllJobs, progressFor, ensurePolling } = useJavaQueue()
+const { summary: queueSummary, enqueueMany, enqueueAllUnanalyzed, cancelJob, cancelAllJobs, progressFor, ensurePolling } =
+  useJavaQueue()
 const { recomputeEdges, recomputing, resetEdges } = useJavaGraph()
 // Verschiebbare Spaltenbreiten des 3-Spalten-Layouts (Drag-to-Resize + Reset).
 const {
@@ -73,11 +75,24 @@ function dismissNotice() {
   notice.value = null
 }
 
-// Kompakte Queue-Anzeige in der Command-Bar. Liest den geteilten useJavaQueue-State;
-// das Polling laeuft bereits ueber ensurePolling() (onMounted).
-const finishedQueueCount = computed(() => allJobs.value.filter((j) => isFinishedStatus(j.status)).length)
-const runningQueueJob = computed(() => allJobs.value.find((j) => j.status === 'running') || null)
-const queuedQueueCount = computed(() => allJobs.value.filter((j) => j.status === 'queued').length)
+// Kompakte Queue-Anzeige in der Command-Bar. Quelle ist die Server-Bilanz (useJavaQueue.summary),
+// nicht mehr die volle Job-Liste – die wird bei grossen Queues gar nicht mehr dauergepollt.
+const finishedQueueCount = computed(() => queueSummary.value?.finished ?? 0)
+const runningQueueJob = computed(() => queueSummary.value?.current || null)
+const queuedQueueCount = computed(() => queueSummary.value?.queued ?? 0)
+// Gesamtfortschritt der KI-Analyse: Klassen fuer die Zahl, Einheiten (Methoden + Klassenschritt)
+// fuer den Balken – Klassen haben sehr unterschiedlich viele Methoden, der Balken laeuft dadurch
+// deutlich gleichmaessiger als eine reine Klassen-Quote.
+const queueActive = computed(() => {
+  const s = queueSummary.value
+  return !!s && (s.running > 0 || s.queued > 0)
+})
+const queuePercent = computed(() => {
+  const s = queueSummary.value
+  if (!s?.unitsTotal) return 0
+  return Math.min(100, Math.round((s.unitsDone / s.unitsTotal) * 100))
+})
+const queueEta = computed(() => formatEta(queueSummary.value?.etaMs))
 
 // Klasse aus dem Queue-Modal heraus oeffnen: direkt auswaehlen + Modal schliessen (wir sind im View).
 function onQueueSelect(fileId) {
@@ -259,16 +274,21 @@ async function onFile(e) {
   showNew.value = true
 }
 
-// Erfolgreichen Batch abschliessen: erste Klasse vorwaehlen, je Klasse KI-Queue starten,
-// Warnungen anzeigen, Panel zuruecksetzen.
+// Erfolgreichen Batch abschliessen. Reihenfolge ist hier die eigentliche Funktion: Der GRAPH
+// steht bereits (analyzeBatch hat die Dateien geladen) – die KI-Queue wird nur noch angestossen
+// und NICHT abgewartet. Frueher lief hier pro Klasse ein eigener Request samt Nachladen der
+// gesamten Queue-Liste; bei 1000 Klassen blockierte das die Oberflaeche minutenlang, bevor
+// ueberhaupt etwas zu sehen war.
 function finishBatch(res) {
-  if (res.saved?.length) {
-    selectedFileId.value = res.saved[0].id
-    for (const f of res.saved) enqueueClass(f, { userContext: userContext.value })
+  const saved = res.saved || []
+  if (saved.length) {
+    selectedFileId.value = saved[0].id
+    enqueueMany(saved, { userContext: userContext.value }).catch((e) => setNotice(e.message, 'error'))
   }
   const parts = []
-  if (res.saved?.length) parts.push(`${res.saved.length} class(es) analyzed.`)
+  if (saved.length) parts.push(`${saved.length} class(es) parsed – graph is ready.`)
   if (res.overwritten?.length) parts.push(`${res.overwritten.length} overwritten.`)
+  if (saved.length) parts.push('AI analysis runs in the background.')
   if (res.warnings?.length) parts.push(...res.warnings)
   setNotice(parts.join(' '), res.warnings?.length ? 'error' : 'info')
   source.value = ''
@@ -414,28 +434,36 @@ function onResetPanels() {
         </div>
 
         <div class="ml-auto flex items-center gap-2">
-          <!-- AI-Queue: Chip mit Live-Status; nur bei Aktivitaet farbig, sonst dezent. -->
+          <!-- AI-Queue: Chip mit Live-Status. Bei laufender Analyse traegt er den Gesamtfortschritt
+               als Fuellbalken im Hintergrund + Restzeit-Schaetzung – bei 1000 Klassen laeuft die
+               Queue stundenlang, da ist "wie weit / wie lange noch" die eigentliche Information. -->
           <button
             type="button"
-            class="action-btn inline-flex h-9 items-center gap-2 rounded-lg border px-2.5 text-[13px] font-medium transition"
-            :class="runningQueueJob || queuedQueueCount
+            class="action-btn relative isolate inline-flex h-9 items-center gap-2 overflow-hidden rounded-lg border px-2.5 text-[13px] font-medium transition"
+            :class="queueActive
               ? 'border-[color-mix(in_srgb,var(--color-lavender)_40%,transparent)] bg-[var(--color-lavender-soft)] text-[var(--color-lavender)]'
               : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]'"
-            :title="runningQueueJob ? `Analyzing ${runningQueueJob.className}` : 'Open the AI analysis queue'"
+            :title="runningQueueJob
+              ? `Analyzing ${runningQueueJob.className} – ${finishedQueueCount}/${queueSummary?.total ?? 0} classes done${queueEta ? `, ${queueEta} remaining` : ''}`
+              : 'Open the AI analysis queue'"
             @click="queueOpen = true"
           >
+            <!-- Fuellbalken: liegt hinter dem Inhalt, waechst mit den erledigten Einheiten. -->
+            <span
+              v-if="queueActive"
+              class="absolute inset-y-0 left-0 -z-10 bg-[color-mix(in_srgb,var(--color-lavender)_22%,transparent)] transition-[width] duration-500 ease-out"
+              :style="{ width: queuePercent + '%' }"
+            />
             <Icon
               :icon="runningQueueJob ? 'lucide:loader-2' : 'lucide:list-checks'"
               class="h-4 w-4 shrink-0"
               :class="runningQueueJob ? 'animate-spin' : ''"
             />
             <span class="hidden sm:inline">AI Queue</span>
-            <span v-if="runningQueueJob" class="inline-flex min-w-0 items-center gap-1.5 font-mono text-[11px]">
-              <span class="max-w-[10rem] truncate opacity-90">{{ runningQueueJob.className }}</span>
-              <span class="shrink-0 tabular-nums opacity-70">{{ runningQueueJob.done }}/{{ runningQueueJob.total }}</span>
-            </span>
-            <span v-else-if="queuedQueueCount" class="rounded-full bg-[color-mix(in_srgb,var(--color-lavender)_22%,transparent)] px-1.5 font-mono text-[11px] tabular-nums">
-              {{ queuedQueueCount }}
+            <span v-if="queueActive" class="inline-flex min-w-0 items-center gap-1.5 font-mono text-[11px]">
+              <span v-if="runningQueueJob" class="hidden max-w-[9rem] truncate opacity-90 lg:inline">{{ runningQueueJob.className }}</span>
+              <span class="shrink-0 font-semibold tabular-nums">{{ finishedQueueCount }}/{{ queueSummary?.total ?? 0 }}</span>
+              <span v-if="queueEta" class="shrink-0 tabular-nums opacity-70">{{ queueEta }}</span>
             </span>
             <span v-else-if="finishedQueueCount" class="font-mono text-[11px] tabular-nums opacity-70">{{ finishedQueueCount }}</span>
           </button>

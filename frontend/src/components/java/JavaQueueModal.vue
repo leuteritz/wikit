@@ -9,13 +9,44 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useJavaQueue, isFinishedStatus as isFinished } from '../../composables/useJavaQueue.js'
 import { Icon } from '../../lib/icons.js'
+import { formatEta } from '../../lib/format.js'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
 })
 const emit = defineEmits(['close', 'select'])
 
-const { allJobs, liveByKey, cancelJob, cancelAllJobs, markAllRead } = useJavaQueue()
+const { allJobs, summary, liveByKey, cancelJob, cancelAllJobs, markAllRead, ensurePolling } = useJavaQueue()
+
+// Solange das Modal offen ist, wird die VOLLE Job-Liste gepollt – sie ist hier die Hauptanzeige.
+// Geschlossen laeuft nur die kompakte Bilanz (bei 1000 Jobs waeren das sonst ~390 KB alle 3 s).
+let releaseDetail = null
+watch(
+  () => props.open,
+  (open) => {
+    if (open && !releaseDetail) releaseDetail = ensurePolling({ detail: true })
+    else if (!open && releaseDetail) {
+      releaseDetail()
+      releaseDetail = null
+    }
+  },
+  { immediate: true },
+)
+onBeforeUnmount(() => releaseDetail?.())
+
+// Gesamtfortschritt (Server-Bilanz): Klassen-Quote + Restzeit. Bei hunderten Klassen ist das die
+// eigentliche Information – die Einzelliste sagt nur, was gerade passiert.
+const overall = computed(() => {
+  const s = summary.value
+  if (!s || !s.total) return null
+  return {
+    total: s.total,
+    finished: s.finished,
+    percent: s.unitsTotal ? Math.min(100, Math.round((s.unitsDone / s.unitsTotal) * 100)) : 0,
+    eta: formatEta(s.etaMs),
+    active: s.running > 0 || s.queued > 0,
+  }
+})
 
 // Klick auf einen Queue-Eintrag -> Klasse im Analyzer oeffnen (wir sind schon im Code-View).
 function openClass(j) {
@@ -189,6 +220,33 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               </button>
             </div>
           </header>
+
+          <!-- Gesamtfortschritt: bei hunderten Klassen laeuft die Queue lange – wie weit sie ist
+               und wie lange es noch dauert, gehoert deshalb ueber die Einzelliste, nicht hinein. -->
+          <div v-if="overall" class="shrink-0 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-3">
+            <div class="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span class="font-mono text-sm font-semibold tabular-nums text-[var(--color-text)]">
+                {{ overall.finished }}<span class="text-[var(--color-text-muted)]">/{{ overall.total }}</span>
+              </span>
+              <span class="text-xs text-[var(--color-text-muted)]">classes analyzed</span>
+              <span class="font-mono text-xs tabular-nums text-[var(--color-text-muted)]">{{ overall.percent }}%</span>
+              <span v-if="overall.eta" class="ml-auto inline-flex items-center gap-1.5 font-mono text-xs text-[var(--color-lavender)]">
+                <Icon icon="lucide:clock" class="h-3.5 w-3.5" />
+                {{ overall.eta }} remaining
+              </span>
+              <span v-else-if="!overall.active" class="ml-auto inline-flex items-center gap-1.5 text-xs text-[var(--color-success)]">
+                <Icon icon="lucide:check-circle" class="h-3.5 w-3.5" />
+                All done
+              </span>
+            </div>
+            <div class="h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-surface-offset)]">
+              <div
+                class="h-full rounded-full transition-[width] duration-500 ease-out"
+                :class="overall.active ? 'bg-[var(--color-lavender)]' : 'bg-[var(--color-success)]'"
+                :style="{ width: Math.max(overall.percent, overall.finished ? 2 : 0) + '%' }"
+              />
+            </div>
+          </div>
 
           <!-- Koerper: links Jobliste, rechts Live-Terminal (langgezogenes Querformat) -->
           <div class="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[1.1fr_0.9fr]">

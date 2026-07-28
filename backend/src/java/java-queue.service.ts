@@ -162,6 +162,87 @@ export class JavaQueueService {
       .map((j) => this.snapshot(j));
   }
 
+  // Kompakte Gesamtbilanz aller Jobs (~1 KB) fuer das Dauer-Polling der Command-Bar. Die volle
+  // list() waechst linear mit der Queue – bei 1000 eingereihten Klassen sind das ~390 KB und
+  // knapp eine Sekunde Serverzeit ALLE 3 SEKUNDEN. Die Detailliste holt daher nur noch, wer sie
+  // wirklich anzeigt (Queue-Modal).
+  //
+  // ETA: Der Worker arbeitet strikt SEQUENTIELL, also ist die Restzeit direkt hochrechenbar.
+  // Bezugsgroesse ist die einzelne Einheit (je Methode ein Ollama-Call + ein Klassen-Schritt),
+  // nicht die Klasse – Klassen haben sehr unterschiedlich viele Methoden. Gemittelt wird ueber
+  // die letzten ETA_WINDOW abgeschlossenen Jobs, damit die Schaetzung der aktuellen Maschinen-
+  // last folgt statt einem Mittelwert seit Queue-Beginn.
+  summary(): any {
+    const jobs = [...this.jobs.values()];
+    let queued = 0;
+    let running = 0;
+    let done = 0;
+    let failed = 0;
+    let cancelled = 0;
+    let unitsTotal = 0;
+    let unitsDone = 0;
+    let current: any = null;
+    const finishedJobs: QueueJob[] = [];
+
+    for (const j of jobs) {
+      const units = j.methodTotal + 1;
+      unitsTotal += units;
+      unitsDone += j.methodDone + (j.classDone ? 1 : 0);
+      if (j.status === 'queued') queued++;
+      else if (j.status === 'running') {
+        running++;
+        current = {
+          fileId: j.fileId,
+          className: j.className,
+          phase: j.phase,
+          done: j.methodDone + (j.classDone ? 1 : 0),
+          total: units,
+          current: j.current ? { ...j.current } : null,
+        };
+      } else if (j.status === 'cancelled') cancelled++;
+      else if (j.status === 'failed') failed++;
+      else {
+        done++;
+        if (j.startedAt && j.finishedAt) finishedJobs.push(j);
+      }
+    }
+
+    // Durchsatz aus den zuletzt abgeschlossenen Jobs (nur erfolgreiche – abgebrochene/fehlerhafte
+    // sind sofort fertig und wuerden die Rate beschoenigen).
+    const ETA_WINDOW = 20;
+    const recent = finishedJobs
+      .sort((a, b) => String(a.finishedAt).localeCompare(String(b.finishedAt)))
+      .slice(-ETA_WINDOW);
+    let msPerUnit = 0;
+    if (recent.length) {
+      let ms = 0;
+      let units = 0;
+      for (const j of recent) {
+        ms += Math.max(0, new Date(j.finishedAt as string).getTime() - new Date(j.startedAt as string).getTime());
+        units += j.methodDone + (j.classDone ? 1 : 0) || 1;
+      }
+      if (units > 0) msPerUnit = ms / units;
+    }
+    const unitsLeft = Math.max(0, unitsTotal - unitsDone);
+    const etaMs = msPerUnit > 0 && (queued > 0 || running > 0) ? Math.round(msPerUnit * unitsLeft) : null;
+
+    return {
+      total: jobs.length,
+      queued,
+      running,
+      done,
+      failed,
+      cancelled,
+      finished: done + failed + cancelled,
+      unitsTotal,
+      unitsDone,
+      unitsLeft,
+      msPerUnit: Math.round(msPerUnit),
+      etaMs,
+      current,
+    };
+  }
+
   // Snapshot der (einen) Queue einer Datei -> Polling-Banner/Badge in der Analyzer-View.
   get(fileId: number): any | null {
     const job = this.jobs.get(this.key(fileId));
@@ -230,16 +311,31 @@ export class JavaQueueService {
           )`,
     );
     const unanalyzed = new Set(rows.map((r) => r.id));
+    return this.enqueueMany([...unanalyzed], userContext);
+  }
+
+  // Bulk: genau die uebergebenen Klassen einreihen (topologisch sortiert). Gegenstueck zum
+  // frueheren Frontend-Verhalten, das nach einem Paste PRO Klasse einen eigenen Request schickte
+  // und danach jedes Mal die komplette Queue-Liste nachlud – bei 1000 Klassen summierte sich das
+  // auf Minuten, waehrend derselbe Vorgang hier ein Request ist.
+  async enqueueMany(fileIds: number[], userContext?: string): Promise<{ queuedClasses: number }> {
+    const wanted = new Set((fileIds || []).map((id) => Number(id)).filter((id) => Number.isFinite(id)));
+    if (!wanted.size) return { queuedClasses: 0 };
 
     const order = await this.topologicalOrder();
-    const queueIds = order.filter((id) => unanalyzed.has(id));
-    // Defensive: falls die Topo-Sortierung eine Datei ausgelassen hat, hinten anhaengen.
-    for (const id of unanalyzed) if (!queueIds.includes(id)) queueIds.push(id);
+    const queueIds = order.filter((id) => wanted.has(id));
+    // Defensive: was die Topo-Sortierung nicht kennt (z. B. gerade erst angelegt), hinten anhaengen.
+    const inOrder = new Set(queueIds);
+    for (const id of wanted) if (!inOrder.has(id)) queueIds.push(id);
 
     let queued = 0;
     for (const id of queueIds) {
-      await this.enqueueClass(id, userContext);
-      queued++;
+      try {
+        await this.enqueueClass(id, userContext);
+        queued++;
+      } catch {
+        // Datei zwischenzeitlich geloescht -> ueberspringen, der Rest wird trotzdem eingereiht.
+      }
     }
     return { queuedClasses: queued };
   }
@@ -281,7 +377,9 @@ export class JavaQueueService {
       }
     }
     if (out.length < ids.length) {
-      for (const id of [...ids].sort((a, b) => a - b)) if (!out.includes(id)) out.push(id);
+      // Zyklen-Rest anhaengen. Set statt out.includes(): bei 1000 Klassen waere das O(n²).
+      const emitted = new Set(out);
+      for (const id of [...ids].sort((a, b) => a - b)) if (!emitted.has(id)) out.push(id);
     }
     return out;
   }

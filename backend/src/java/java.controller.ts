@@ -86,6 +86,13 @@ export class JavaController {
     return this.queue.getStream();
   }
 
+  // Kompakte Gesamtbilanz (Zaehler + Restzeit-Schaetzung) fuer das Dauer-Polling der Command-Bar.
+  // Statische Route -> MUSS vor queues/:id stehen.
+  @Get('queues/summary')
+  queueSummary() {
+    return this.queue.summary();
+  }
+
   // Snapshot der Queue einer Datei (fuer das Live-Banner in der Analyzer-View).
   @Get('queues/:id')
   getQueue(@Param('id') id: string) {
@@ -100,6 +107,14 @@ export class JavaController {
   @HttpCode(202)
   analyzeAll(@Body() body: any) {
     return this.queue.enqueueAllUnanalyzed(body?.userContext);
+  }
+
+  // Genau die uebergebenen Klassen gesammelt einreihen (nach einem Paste). EIN Request statt
+  // eines Requests je Klasse. Statische Route -> vor queues/:id.
+  @Post('queues/batch')
+  @HttpCode(202)
+  queueBatch(@Body() body: any) {
+    return this.queue.enqueueMany(body?.fileIds || [], body?.userContext);
   }
 
   // Gesamte Queue leeren (aktive Jobs abbrechen + History entfernen). Muss vor den

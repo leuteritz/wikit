@@ -65,7 +65,12 @@ export const api = {
   queueJavaClass: (id, data) => http('POST', `/java/files/${id}/queue-class`, data),
   // Alle noch nicht analysierten Klassen gesammelt (topologisch) einreihen.
   analyzeAllJava: (data) => http('POST', '/java/queues/analyze-all', data),
+  // Bulk nach einem Paste: genau diese fileIds einreihen – EIN Request statt einem je Klasse.
+  queueJavaBatch: (fileIds, data) => http('POST', '/java/queues/batch', { fileIds, ...data }),
   listJavaQueues: () => http('GET', '/java/queues'),
+  // Kompakte Bilanz (Zaehler + Restzeit) fuer das Dauer-Polling; die volle Liste holt nur, wer
+  // sie anzeigt (Queue-Modal) – bei 1000 Jobs sind das ~390 KB pro Abruf.
+  getJavaQueueSummary: () => http('GET', '/java/queues/summary'),
   // Queue-Jobs abbrechen: einzeln (fileId), alle, oder nur die abgeschlossenen ("als gelesen").
   cancelJavaQueue: (fileId) => http('DELETE', `/java/queues/${fileId}`),
   cancelAllJavaQueues: () => http('DELETE', '/java/queues'),
