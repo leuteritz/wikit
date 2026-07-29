@@ -15,6 +15,8 @@ import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
 import { parseParamNames, markParamOccurrences, toggleParamHighlight as onParamClick } from '../../lib/javaParams.js'
 // Gutter/Fenster-Aufbereitung des Shiki-HTML – geteilt mit JavaBundlePanel (s. lib/javaCode.js).
 import { addLineNumbers, buildCallWindow } from '../../lib/javaCode.js'
+// Identitaetsfarbe je Methode: Definition oben, Aufrufstelle unten und Token im Code teilen sie.
+import { buildMethodColorMap, methodColorVars, markMethodCalls } from '../../lib/javaMethodColors.js'
 import { copyToClipboard } from '../../lib/clipboard.js'
 import { Icon } from '../../lib/icons.js'
 
@@ -83,6 +85,35 @@ const callerGroups = computed(() => {
   }))
 })
 
+// Farbzuordnung der Kante: jede Methode genau eine Farbe – vergeben in der Reihenfolge, in der die
+// Methoden oben in der Quelle stehen. Callees, die nur an Aufrufstellen auftauchen (ohne eigene
+// Definitionskarte), haengen hinten dran, damit unten nichts farblos bleibt.
+const methodColors = computed(() =>
+  buildMethodColorMap([
+    ...calleeList.value.map((c) => c.name),
+    ...(props.edge?.callSites || []).map((s) => s.calleeMethod),
+  ]),
+)
+
+// Inline-Vars (`--mc` fuer Panel-Flaechen, `--mc-code` fuer den dunklen Code-Block). Alles Weitere
+// erbt – im Template steht deshalb nirgends eine Farbe, nur die Zuordnung.
+function mcVars(name) {
+  return methodColorVars(methodColors.value.get(name))
+}
+
+// Fokus auf EINE Methode: Hover (fluechtig) oder Klick auf den Legenden-Chip (bleibt stehen).
+// Alles, was nicht zu ihr gehoert, wird gedaempft – bei acht Aufrufstellen ist die Farbe allein
+// zwar zuordenbar, aber nicht mehr scanbar.
+const focusMethod = ref(null)
+const hoverMethod = ref(null)
+const activeMethod = computed(() => hoverMethod.value ?? focusMethod.value)
+function isDimmed(name) {
+  return !!activeMethod.value && activeMethod.value !== name
+}
+function toggleFocus(name) {
+  focusMethod.value = focusMethod.value === name ? null : name
+}
+
 // Shiki-Snippets der definierten Methoden (Quelle, lazy beim Oeffnen geladen).
 // Ein KOMBINIERTER, leerzeilenfreier Block (Signatur + Rumpf) je Methode, vom Backend gerendert.
 // methodName -> { loading, html, code, startLine, endLine, filename, signature, error }
@@ -100,9 +131,16 @@ async function loadSnippets() {
         ...snippets.value,
         [c.name]: {
           loading: false,
-          html: markParamOccurrences(
-            addLineNumbers(snip.combinedHtml ?? snip.html, snip.startLine),
-            parseParamNames(snip.signature),
+          // Reihenfolge: erst Parameter faerben, dann den Methoden-Token – `markMethodCalls`
+          // ueberspringt bereits markierte Parameter, umgekehrt gaebe es Doppel-Wrapping.
+          html: markMethodCalls(
+            markParamOccurrences(
+              addLineNumbers(snip.combinedHtml ?? snip.html, snip.startLine),
+              parseParamNames(snip.signature),
+            ),
+            // Nur die eigene Methode: in der Definition ist sie die Aussage, andere Callees der
+            // Kante waeren hier bloss Rauschen.
+            new Map([[c.name, methodColors.value.get(c.name) ?? 0]]),
           ),
           code: snip.combinedCode ?? snip.code,
           startLine: snip.startLine,
@@ -138,8 +176,13 @@ async function loadUsageSnippets() {
         line: s.line,
         lineExact: s.lineExact,
         calleeMethod: s.calleeMethod,
-        // Pro Aufrufstelle ein eigenes Fenster aus dem ganzen Rumpf (snip.html).
-        html: markParamOccurrences(buildCallWindow(snip.html, base, s.line), names),
+        // Pro Aufrufstelle ein eigenes Fenster aus dem ganzen Rumpf (snip.html). Hier werden ALLE
+        // Callees der Kante markiert: im Kontextfenster stehen oft weitere Aufrufe derselben
+        // Kante – die tragen dann ihre eigene Farbe statt namenlos mitzulaufen.
+        html: markMethodCalls(
+          markParamOccurrences(buildCallWindow(snip.html, base, s.line), names),
+          methodColors.value,
+        ),
       }))
       usageSnippets.value = {
         ...usageSnippets.value,
@@ -203,6 +246,8 @@ watch(
   () => props.visible,
   (vis) => {
     confirmingDelete.value = null
+    focusMethod.value = null
+    hoverMethod.value = null
     if (vis) {
       window.addEventListener('keydown', onKeydown)
       loadSnippets()
@@ -251,7 +296,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           <div class="min-h-0 flex-1 overflow-y-auto">
             <!-- ── Quelle: definierende Klasse + Methoden-Quellcode (Shiki) ── -->
             <section class="p-4">
-              <div class="mb-3 flex items-center gap-2.5">
+              <div class="mb-3 flex flex-wrap items-center gap-2.5">
                 <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
                   <Icon icon="lucide:file-code" class="h-5 w-5" />
                 </span>
@@ -259,21 +304,49 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                   <div class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Source · defines</div>
                   <h2 class="truncate text-base font-bold text-[var(--color-text)]">{{ edge.toClass }}</h2>
                 </div>
+
+                <!-- Farb-Legende der Kante = zugleich Filter. Erst ab zwei Methoden sinnvoll: bei
+                     einer einzigen ist die Zuordnung trivial und der Chip nur Dekoration. -->
+                <div v-if="calleeList.length > 1" class="ml-auto flex flex-wrap items-center justify-end gap-1.5">
+                  <button
+                    v-for="c in calleeList"
+                    :key="c.name"
+                    type="button"
+                    class="mc-chip"
+                    :class="{ 'is-on': focusMethod === c.name, 'is-dim': isDimmed(c.name) }"
+                    :style="mcVars(c.name)"
+                    :title="focusMethod === c.name ? `Show all methods again` : `Focus “${c.name}()” – dim everything else`"
+                    @click="toggleFocus(c.name)"
+                    @mouseenter="hoverMethod = c.name"
+                    @mouseleave="hoverMethod = null"
+                  >
+                    <span class="mc-dot" />
+                    <span class="truncate font-mono">{{ c.name }}</span>
+                  </button>
+                </div>
               </div>
 
               <div class="space-y-3">
                 <article
                   v-for="c in calleeList"
                   :key="c.name"
-                  class="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-offset)]"
+                  class="method-card overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-offset)]"
+                  :class="{ 'is-dim': isDimmed(c.name), 'is-active': activeMethod === c.name }"
+                  :style="mcVars(c.name)"
+                  @mouseenter="hoverMethod = c.name"
+                  @mouseleave="hoverMethod = null"
                 >
                   <!-- Methoden-Header: Name + „Definiert in"-Sprung + (Datei · Zeilenbereich) +
                        Kopier-Button. Der Kopier-Button sitzt bewusst hier (nicht schwebend ueber dem
                        Code), damit er die Signatur-Zeile nicht ueberdeckt und die Parameter-Variablen
                        klickbar bleiben. -->
                   <div class="flex items-center gap-2 px-3 py-2">
-                    <Icon icon="lucide:braces" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
-                    <code class="font-mono text-sm font-semibold text-[var(--color-text)]">{{ c.name }}()</code>
+                    <!-- Farb-Badge = Identitaet dieser Methode; dasselbe Zeichen steht unten an
+                         jeder Aufrufstelle, die sie ruft. -->
+                    <span class="mc-badge">
+                      <Icon icon="lucide:braces" class="h-3.5 w-3.5" />
+                    </span>
+                    <code class="mc-name font-mono text-sm font-semibold">{{ c.name }}()</code>
                     <div class="ml-auto flex min-w-0 items-center gap-1.5">
                       <!-- „Definiert in <Klasse>": springt in den Quellcode der Zielklasse und
                            markiert dort die komplette Methode. Dezent, header-konform (keine
@@ -402,17 +475,25 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                     <div
                       v-for="(site, i) in usageSnippets[grp.callerMethod]?.sites || []"
                       :key="i"
-                      class="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-offset)]"
+                      class="method-card overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-offset)]"
+                      :class="{ 'is-dim': isDimmed(site.calleeMethod), 'is-active': activeMethod === site.calleeMethod }"
+                      :style="mcVars(site.calleeMethod)"
+                      @mouseenter="hoverMethod = site.calleeMethod"
+                      @mouseleave="hoverMethod = null"
                     >
                       <!-- Site-Header: Aufruf-Kette (aufrufende Methode → aufgerufene Methode) links,
                            in identischer Typo zum Quelle-Methoden-Header; (Datei · Zeile) + Öffnen-Button
                            rechts. Jeder Block nennt seinen konkreten Callee -> mehrere Aufrufe sauber
-                           getrennt (kein Aneinanderreihen). -->
+                           getrennt (kein Aneinanderreihen). Der Callee traegt die Farbe seiner
+                           Definitionskarte oben – Streifen, Badge, Aufrufzeile und Code-Token ziehen
+                           dieselbe Variable. -->
                       <div class="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2">
-                        <Icon icon="lucide:corner-down-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
+                        <span class="mc-badge">
+                          <Icon icon="lucide:corner-down-right" class="h-3.5 w-3.5" />
+                        </span>
                         <code class="font-mono text-sm font-semibold text-[var(--color-text)]">{{ grp.callerMethod }}()</code>
                         <Icon icon="lucide:arrow-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
-                        <code class="font-mono text-sm font-semibold text-[var(--color-accent)]">{{ site.calleeMethod }}()</code>
+                        <code class="mc-name font-mono text-sm font-semibold">{{ site.calleeMethod }}()</code>
                         <div class="ml-auto flex min-w-0 items-center gap-1.5">
                           <span
                             class="inline-flex min-w-0 items-center gap-1 truncate font-mono text-2xs text-[var(--color-text-muted)]"
@@ -464,7 +545,58 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 /* Hinweis: Die Shiki-Optik der Quelle-Bloecke (.edge-code) wird gemeinsam mit den
    Anwender-Bloecken in assets/style.css (.edge-usage-code, .edge-code) gepflegt -> identische
-   Optik. Hier nur noch Panel-spezifische Animationen. */
+   Optik. Hier nur noch Panel-spezifische Animationen + die Methoden-Faerbung.
+   Alles unten liest NUR `var(--mc)`; welche Farbe das ist, entscheidet `mcVars()` am Element
+   (lib/javaMethodColors.js). Ohne gesetzte Variable faellt jede Regel auf den Akzent zurueck. */
+
+/* Karte einer Methode – oben ihre Definition, unten jede Aufrufstelle. Der linke Streifen ist der
+   gemeinsame Anker: gleiche Farbe = gleiche Methode, ueber die Panel-Haelften hinweg. */
+.method-card {
+  border-left: 3px solid var(--mc, var(--color-border));
+  transition: opacity 0.18s ease, box-shadow 0.18s ease;
+}
+.method-card.is-active {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--mc, var(--color-accent)) 45%, transparent);
+}
+/* Fokus auf eine Methode: alles Uebrige tritt zurueck, statt zu verschwinden – der Kontext
+   („es gibt noch drei weitere") bleibt sichtbar. */
+.is-dim {
+  opacity: 0.32;
+}
+
+.mc-badge {
+  @apply grid h-6 w-6 shrink-0 place-items-center rounded-md;
+  color: var(--mc, var(--color-accent));
+  background-color: color-mix(in srgb, var(--mc, var(--color-accent)) 16%, transparent);
+}
+.mc-name {
+  color: var(--mc, var(--color-accent));
+}
+
+/* Legende = Filter: Punkt + Name in der Methodenfarbe, Klick haelt den Fokus fest. */
+.mc-chip {
+  @apply inline-flex min-w-0 max-w-[11rem] items-center gap-1.5 rounded-full px-2 py-0.5 text-2xs font-semibold transition;
+  color: var(--mc, var(--color-accent));
+  border: 1px solid color-mix(in srgb, var(--mc, var(--color-accent)) 40%, transparent);
+  background-color: color-mix(in srgb, var(--mc, var(--color-accent)) 10%, transparent);
+}
+.mc-chip:hover {
+  background-color: color-mix(in srgb, var(--mc, var(--color-accent)) 20%, transparent);
+}
+.mc-chip.is-on {
+  background-color: color-mix(in srgb, var(--mc, var(--color-accent)) 22%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--mc, var(--color-accent)) 30%, transparent);
+}
+.mc-dot {
+  @apply h-2 w-2 shrink-0 rounded-full;
+  background-color: var(--mc, var(--color-accent));
+}
+@media (prefers-reduced-motion: reduce) {
+  .method-card,
+  .mc-chip {
+    transition: none;
+  }
+}
 
 /* Zentriertes Einblenden: Backdrop faded, Card skaliert sanft von 0.95 auf 1. */
 .modal-enter-active,

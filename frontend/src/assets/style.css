@@ -79,6 +79,25 @@
   --color-type-enum: var(--color-warning);
   --color-type-annotation: var(--color-thistle);
   --color-type-record: var(--color-beige);
+
+  /* --- Methoden-Identitaetsfarben (Java-Edge-Panel) ------------------------------------------
+     Eine Kante traegt oft mehrere Methoden: oben ihre Definition, unten ihre Aufrufstellen.
+     Jede Methode bekommt EINE Farbe und traegt sie ueberall (Karte, Chip, Aufrufzeile, Token im
+     Code) – so ist die Zuordnung sichtbar statt lesbar. Zuteilung in `lib/javaMethodColors.js`.
+     Zwei Saetze, weil zwei Untergruende: `--mc-N` sitzt auf dem Panel (hier hell), `--mc-Nc` im
+     IMMER dunklen Code-Block (`.code-dark`). Gleiche Hue, unterschiedliche Helligkeit. */
+  --mc-0: #2f7ea8;  /* blau     */
+  --mc-1: #a06a24;  /* amber    */
+  --mc-2: #3c8459;  /* gruen    */
+  --mc-3: #a24d85;  /* magenta  */
+  --mc-4: #635cb4;  /* lavendel */
+  --mc-5: #1f7f77;  /* teal     */
+  --mc-0c: #7fb4d0;
+  --mc-1c: #e0a45e;
+  --mc-2c: #8fce8f;
+  --mc-3c: #d894c4;
+  --mc-4c: #b6a4e8;
+  --mc-5c: #6fcfc6;
 }
 html.dark {
   --color-accent: #c4ba8f;          /* aufgehellter Taupe (Kontrast auf dunkel) */
@@ -108,6 +127,14 @@ html.dark {
   --color-beige: #c3ae9c;
 
   --color-edge-highlight: #e0b45e;  /* kraeftiger auf dunklem Grund */
+
+  /* Methodenfarben auf dunklem Panel-Grund: dieselben Werte wie im Code-Block. */
+  --mc-0: #7fb4d0;
+  --mc-1: #e0a45e;
+  --mc-2: #8fce8f;
+  --mc-3: #d894c4;
+  --mc-4: #b6a4e8;
+  --mc-5: #6fcfc6;
 
   /* role provider/consumer/hub/isolated erben reaktiv aus den theme-faehigen Tokens oben */
 }
@@ -165,13 +192,16 @@ html.dark .shiki span {
 .code-dark .shiki {
   border-color: rgba(127, 180, 208, 0.20);
 }
+/* `--mc-code` setzt die Karte der jeweiligen Methode (s. lib/javaMethodColors.js) -> die
+   markierte Aufrufzeile traegt die Farbe GENAU der Methode, um die es in diesem Block geht.
+   Ohne gesetzte Variable bleibt es beim Akzent (alle uebrigen Code-Bloecke der App). */
 .code-dark .line-highlight,
 .code-dark span.line-highlight {
-  background-color: color-mix(in srgb, var(--color-accent) 30%, transparent) !important;
-  border-left: 3px solid var(--color-accent);
+  background-color: color-mix(in srgb, var(--mc-code, var(--color-accent)) 30%, transparent) !important;
+  border-left: 3px solid var(--mc-code, var(--color-accent));
 }
 .code-dark .line-highlight::before {
-  color: var(--color-accent);
+  color: var(--mc-code, var(--color-accent));
   font-weight: 700;
 }
 
@@ -216,6 +246,25 @@ html.dark .shiki span {
 .code-dark .shiki .java-param-c3 { color: #d894c4 !important; } /* magenta  */
 .code-dark .shiki .java-param-c4 { color: #b6a4e8 !important; } /* lavendel */
 .code-dark .shiki .java-param-c5 { color: #6fcfc6 !important; } /* teal     */
+
+/* Methoden-Token im Code (`foo(`): traegt die Identitaetsfarbe SEINER Methode. Bewusst anders
+   gebaut als die Parameterfarben oben – dieselben Hues bedienen zwei Achsen, also muss die FORM
+   unterscheiden: Parameter faerben nur den Text, Methoden bekommen zusaetzlich eine Unterlage und
+   einen Unterstrich, lesen sich also als Marke statt als Syntaxfarbe. */
+.code-dark .shiki .java-call {
+  color: var(--jc) !important;
+  background-color: color-mix(in srgb, var(--jc) 18%, transparent) !important;
+  box-shadow: inset 0 -2px 0 var(--jc);
+  border-radius: 3px;
+  padding: 0 1px;
+  font-weight: 600;
+}
+.java-call-c0 { --jc: var(--mc-0c); }
+.java-call-c1 { --jc: var(--mc-1c); }
+.java-call-c2 { --jc: var(--mc-2c); }
+.java-call-c3 { --jc: var(--mc-3c); }
+.java-call-c4 { --jc: var(--mc-4c); }
+.java-call-c5 { --jc: var(--mc-5c); }
 .edge-usage-code .shiki code,
 .edge-code .shiki code {
   display: block;
@@ -242,19 +291,19 @@ html.dark .shiki span {
 /* Hervorgehobene Aufrufzeile (Light-Mode): kraeftiger Akzent-Hintergrund + deutlicher
    linker Balken, damit die Quellzeile im Snippet sofort ins Auge faellt. */
 .edge-usage-code .line-highlight {
-  background-color: color-mix(in srgb, var(--color-accent) 16%, transparent);
-  border-left-color: var(--color-accent);
+  background-color: color-mix(in srgb, var(--mc-code, var(--color-accent)) 16%, transparent);
+  border-left-color: var(--mc-code, var(--color-accent));
   border-left-width: 3px;
 }
 .edge-usage-code .line-highlight::before {
-  color: var(--color-accent);
+  color: var(--mc-code, var(--color-accent));
   font-weight: 700;
 }
 /* Dark-Mode: die globale `html.dark .shiki span { ... !important }`-Regel oben wuerde
    die Markierung sonst plattmachen -> mit hoeherer Spezifitaet + !important kontern. */
 html.dark .edge-usage-code .line-highlight,
 html.dark .edge-usage-code span.line-highlight {
-  background-color: color-mix(in srgb, var(--color-accent) 30%, transparent) !important;
+  background-color: color-mix(in srgb, var(--mc-code, var(--color-accent)) 30%, transparent) !important;
 }
 
 /* --- Prose-Feinschliff fuer gerenderte Artikel ---------------------------- */
