@@ -54,6 +54,22 @@ export function countClasses(node) {
   return n
 }
 
+// Ein Collator statt `String.localeCompare` je Vergleich: die Methode baut intern bei JEDEM Aufruf
+// die Locale-Regeln auf. Bei einigen tausend Treffern sind das zehntausende Aufrufe pro Tastendruck
+// – hier der teuerste Einzelposten der Suche, und der Vergleich bleibt derselbe.
+const collator = new Intl.Collator()
+
+// Fuse-Index ueber die volle Dateiliste, gemerkt an ihrer IDENTITAET. Der Index kostet bei
+// tausenden Klassen deutlich mehr als die Suche darin; neu gebaut wird er nur, wenn die Liste
+// wirklich eine andere ist (Analyse, Loeschen, Reload) – nicht bei jedem Tastendruck.
+let fuseCache = { files: null, fuse: null }
+function fuseFor(files) {
+  if (fuseCache.files !== files) {
+    fuseCache = { files, fuse: new Fuse(files, { keys: ['class_name', 'package'], threshold: 0.4, ignoreLocation: true }) }
+  }
+  return fuseCache.fuse
+}
+
 // Fuzzy-Filter ueber Klassennamen (+ Package). Leeres Query -> unveraendert.
 export function filterClasses(files = [], query = '') {
   const q = query.trim()
@@ -64,23 +80,23 @@ export function filterClasses(files = [], query = '') {
   // in einer Codebasis mit tausend Klassen `Thing1`…`Thing999` liefert die Suche nach „Thing100"
   // mit threshold 0.4 praktisch ALLE zurueck. Wer einen Namen tippt, meint aber genau diesen.
   // Rangfolge: Klassenname beginnt damit > Klassenname enthaelt es > Package enthaelt es.
+  // Kein `others`-Array mehr: der unscharfe Zweig unten greift nur, wenn NICHTS woertlich passt –
+  // dann waere es ohnehin die komplette Liste, und die liegt bereits vor.
   const ranked = []
-  const others = []
   for (const f of files) {
     const name = String(f.class_name || '').toLowerCase()
-    const pkg = String(f.package || '').toLowerCase()
     if (name.startsWith(lower)) ranked.push({ f, rank: 0 })
     else if (name.includes(lower)) ranked.push({ f, rank: 1 })
-    else if (pkg.includes(lower)) ranked.push({ f, rank: 2 })
-    else others.push(f)
+    else if (String(f.package || '').toLowerCase().includes(lower)) ranked.push({ f, rank: 2 })
   }
   if (ranked.length) {
     return ranked
-      .sort((a, b) => a.rank - b.rank || String(a.f.class_name).localeCompare(String(b.f.class_name)))
+      .sort((a, b) => a.rank - b.rank || collator.compare(String(a.f.class_name), String(b.f.class_name)))
       .map((r) => r.f)
   }
 
   // Nichts passt woertlich -> unscharfe Suche als Tippfehler-Netz.
-  const fuse = new Fuse(others, { keys: ['class_name', 'package'], threshold: 0.4, ignoreLocation: true })
-  return fuse.search(q).map((r) => r.item)
+  return fuseFor(files)
+    .search(q)
+    .map((r) => r.item)
 }

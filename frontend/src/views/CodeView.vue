@@ -45,7 +45,26 @@ const inputMode = ref('paste') // 'paste' = Editor | 'file' = .java-Datei(en) ho
 const selectedFileId = ref(null)
 const activeTargetLine = ref(null) // Ziel-Quellzeile fuer das Detail-Panel (Such-Sprung)
 const activeTargetEndLine = ref(null) // Ziel-End-Zeile -> markiert den gesamten Methodenbereich
-const search = ref('')
+const search = ref('') // was im Feld steht – reagiert sofort auf jeden Tastendruck
+// …und was daraus tatsaechlich gefiltert wird. Getrennt, weil an EINEM Tastendruck der halbe
+// Bildschirm haengt: Trefferliste, Package-Baum, alle Baumzeilen und der Graph (der bei wenigen
+// Treffern sein dagre-Layout neu rechnet). Bei einigen tausend Klassen kostet das mehr Zeit, als
+// zwischen zwei Anschlaegen liegt – die Eingabe fuehlt sich dann zaeh an, obwohl nur die Folge
+// davon teuer ist. Der Ruecklauf auf „leer" laeuft ohne Verzoegerung: Filter loeschen soll sich
+// nicht anfuehlen wie ein Nachladen.
+const appliedSearch = ref('')
+const SEARCH_DEBOUNCE_MS = 160
+let searchTimer = null
+watch(search, (v) => {
+  clearTimeout(searchTimer)
+  if (!v.trim()) {
+    appliedSearch.value = ''
+    return
+  }
+  searchTimer = setTimeout(() => {
+    appliedSearch.value = v
+  }, SEARCH_DEBOUNCE_MS)
+})
 const showNew = ref(false)
 const collapsed = reactive({}) // packagePfad -> true (eingeklappt)
 const pendingDelete = ref(null)
@@ -190,11 +209,22 @@ const packageCount = computed(() => new Set(files.value.map((f) => f.package || 
 const analyzedCount = computed(() => files.value.filter((f) => f.description).length)
 
 // --- Package-Baum (gefiltert) -> flache Zeilenliste fuer iteratives Rendern ---
-const filteredFiles = computed(() => filterClasses(files.value, search.value))
-const tree = computed(() => buildPackageTree(filteredFiles.value))
-const searching = computed(() => search.value.trim().length > 0)
+const filteredFiles = computed(() => filterClasses(files.value, appliedSearch.value))
+const searching = computed(() => appliedSearch.value.trim().length > 0)
+// Bei aktiver Suche steht JEDER Treffer-Ordner offen (s. folderOpen) – „a" in einer Codebasis mit
+// tausenden Klassen hiesse also tausende Zeilen, jede mit eigenen Icon-Komponenten. Das rendert
+// niemand mehr, und lesen kann man es auch nicht. Der Baum zeigt deshalb die ersten Treffer und
+// schreibt an, dass es mehr sind – wer eine bestimmte Klasse sucht, tippt ohnehin weiter.
+const TREE_MATCH_LIMIT = 300
+const treeFiles = computed(() => {
+  const list = filteredFiles.value
+  return searching.value && list.length > TREE_MATCH_LIMIT ? list.slice(0, TREE_MATCH_LIMIT) : list
+})
+const treeTruncated = computed(() => filteredFiles.value.length - treeFiles.value.length)
+const tree = computed(() => buildPackageTree(treeFiles.value))
 // Treffer-IDs der Suche -> der Graph zeigt bei aktiver Suche genau diese Klassen (plus ihre
-// direkten Nachbarn als Kontext) statt weiter die volle Ebene.
+// direkten Nachbarn als Kontext) statt weiter die volle Ebene. Bewusst aus der VOLLEN Trefferliste:
+// der Graph hat seinen eigenen Deckel und nennt die echte Trefferzahl, wenn sie zu gross ist.
 const searchMatchIds = computed(() => (searching.value ? filteredFiles.value.map((f) => f.id) : []))
 
 // Ab dieser Klassenzahl ist der Baum standardmaessig EINGEKLAPPT (nur die oberste Ebene offen).
@@ -276,9 +306,10 @@ function setAllFolders(open) {
   for (const p of folderPaths.value) collapsed[p] = !open
 }
 
-// Treffer-Hervorhebung (Substring, ohne v-html).
+// Treffer-Hervorhebung (Substring, ohne v-html). Am ANGEWENDETEN Filter, nicht am Feldinhalt:
+// sonst markierte die Zeile schon das nächste Zeichen, nach dem noch gar nicht gefiltert wurde.
 function hl(name) {
-  const q = search.value.trim().toLowerCase()
+  const q = appliedSearch.value.trim().toLowerCase()
   if (!q) return [{ t: name, m: false }]
   const lower = name.toLowerCase()
   const parts = []
@@ -1040,8 +1071,15 @@ function onResetPanels() {
               <Icon :icon="anyFolderOpen ? 'lucide:fold-vertical' : 'lucide:unfold-vertical'" class="h-4 w-4" />
             </button>
           </div>
-          <p v-if="searching" class="mt-1.5 px-1 font-mono text-3xs text-[var(--color-text-muted)]">
-            {{ filteredFiles.length }} of {{ classCount }} match
+          <!-- Trefferbilanz. Ist die Liste gedeckelt, steht es DANEBEN – ein Baum, der nur einen
+               Teil zeigt, darf nicht aussehen wie das vollstaendige Ergebnis. -->
+          <p v-if="searching" class="mt-1.5 flex items-center gap-1.5 px-1 font-mono text-3xs text-[var(--color-text-muted)]">
+            <span>{{ filteredFiles.length }} of {{ classCount }} match</span>
+            <span
+              v-if="treeTruncated > 0"
+              class="rounded bg-[color-mix(in_srgb,var(--color-warning)_16%,transparent)] px-1 text-[var(--color-warning)]"
+              :title="`Only the first ${TREE_MATCH_LIMIT} are listed – keep typing to narrow it down`"
+            >first {{ TREE_MATCH_LIMIT }}</span>
           </p>
         </div>
 
@@ -1117,7 +1155,7 @@ function onResetPanels() {
           <li v-if="!rows.length" class="px-3 py-10 text-center">
             <template v-if="searching">
               <Icon icon="lucide:search" class="mx-auto mb-2 h-6 w-6 text-[var(--color-text-muted)] opacity-40" />
-              <p class="text-xs text-[var(--color-text-muted)]">No class matches “{{ search }}”.</p>
+              <p class="text-xs text-[var(--color-text-muted)]">No class matches “{{ appliedSearch }}”.</p>
             </template>
             <template v-else>
               <Icon icon="lucide:braces" class="mx-auto mb-2 h-6 w-6 text-[var(--color-text-muted)] opacity-40" />
@@ -1157,7 +1195,7 @@ function onResetPanels() {
           :focus-file-id="graphFocusFileId"
           :focus-token="graphFocusToken"
           :match-ids="searchMatchIds"
-          :search-query="searching ? search : ''"
+          :search-query="searching ? appliedSearch : ''"
           @select="selectFile"
           @clear-search="search = ''"
         />
