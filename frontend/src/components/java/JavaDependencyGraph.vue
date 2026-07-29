@@ -807,12 +807,24 @@ const layout = computed(() => {
     ...files.map((f) => ({ id: `c:${f.id}`, width: nodeW, height: nodeH, group: f.package || '(default)' })),
   ]
   const distinctPkgs = new Set(layoutNodes.map((n) => n.group)).size
-  // Im Suchmodus NICHT clustern: Treffer liegen quer ueber die Codebasis, das waeren zwanzig Zonen
-  // mit je einer Karte darin – Rahmen, die nichts zusammenfassen, dafuer ein dagre-Lauf je Zone
-  // plus Meta-Layout. Das Package steht ohnehin auf jeder Karte (Punkt + Text).
-  const clustered = !packageMode.value && !searchActive.value && groupByPackage.value && distinctPkgs > 1
+  // Im Suchmodus wird nur geclustert, wenn die Umgebung mitgezeichnet wird: die blossen Treffer
+  // liegen quer ueber die Codebasis, das waeren zwanzig Rahmen um je eine Karte – nichts
+  // zusammengefasst, dafuer ein dagre-Lauf je Zone plus Meta-Layout. Kommen die nutzenden und
+  // genutzten Klassen dazu, entstehen dagegen echte Gruppen (ein Treffer und seine Nutzer liegen
+  // oft im selben Package), und dann traegt die Zone. Einzelgaenger bleiben auch dort ungerahmt
+  // (minGroupSize) – genau der Fall, der die Gruppierung hier frueher gekostet hat.
+  const searchClustered = searchActive.value && showSearchContext.value
+  const clustered =
+    !packageMode.value && groupByPackage.value && distinctPkgs > 1 && (!searchActive.value || searchClustered)
   const placed = clustered
-    ? layoutClustered({ nodes: layoutNodes, edges, nodesep: 60 * s, ranksep: 90 * s, scale: s })
+    ? layoutClustered({
+        nodes: layoutNodes,
+        edges,
+        nodesep: 60 * s,
+        ranksep: 90 * s,
+        scale: s,
+        minGroupSize: searchActive.value ? 2 : 1,
+      })
     : layoutFlat({
         nodes: layoutNodes,
         edges,
@@ -1686,26 +1698,38 @@ watch(
       <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
       <span class="shrink-0 font-mono text-2xs text-[var(--color-text)]">“{{ searchQuery }}”</span>
       <span class="vf-crumb-count">{{ searchScope.matches }} match{{ searchScope.matches === 1 ? '' : 'es' }}</span>
-      <!-- Der Kontext ist eine Entscheidung, keine Nebenwirkung: die Zahl sagt, was dazukaeme
-           (bzw. was gerade dazukommt), der Klick schaltet um. -->
-      <button
-        v-if="searchScope.related"
-        type="button"
-        class="vf-crumb-toggle"
-        :class="{ 'is-on': showSearchContext }"
-        :title="showSearchContext
-          ? `Hide the ${searchScope.related} classes shown around the matches`
-          : `Also show the ${searchScope.related} classes that use or are used by the matches`"
-        @click="contextOverride = !showSearchContext"
-      >
-        <Icon :icon="showSearchContext ? 'lucide:eye' : 'lucide:eye-off'" class="h-3.5 w-3.5" />
+      <span v-if="searchScope.related && showSearchContext" class="vf-crumb-count">
         +{{ searchScope.related }} related
-      </button>
+      </span>
       <button type="button" class="vf-crumb-toggle" title="Clear the filter and show all packages" @click="emit('clear-search')">
         <Icon icon="lucide:x" class="h-3.5 w-3.5" />
         Clear
       </button>
     </div>
+
+    <!-- Der Kontext ist eine ENTSCHEIDUNG, keine Nebenwirkung – und als Chip in der Kopfzeile war
+         sie weder zu sehen noch aus sich heraus zu verstehen. Deshalb eine eigene Schaltflaeche
+         mittig ueber dem Graphen: Beschriftung sagt, was passiert, die Zeile darunter, was das
+         bedeutet. Sie steht nur da, wenn es ueberhaupt Umgebung gibt. -->
+    <button
+      v-if="files.length && searchActive && searchScope.related"
+      type="button"
+      class="vf-ctx-toggle"
+      :class="{ 'is-on': showSearchContext }"
+      @click="contextOverride = !showSearchContext"
+    >
+      <Icon :icon="showSearchContext ? 'lucide:eye-off' : 'lucide:eye'" class="vf-ctx-icon" />
+      <span class="vf-ctx-text">
+        <span class="vf-ctx-title">
+          {{ showSearchContext ? 'Hide' : 'Show' }} {{ searchScope.related }} related class{{ searchScope.related === 1 ? '' : 'es' }}
+        </span>
+        <span class="vf-ctx-sub">
+          {{ showSearchContext
+            ? `Back to the ${searchScope.matches} match${searchScope.matches === 1 ? '' : 'es'} on their own`
+            : `Classes that use or are used by the ${searchScope.matches} match${searchScope.matches === 1 ? '' : 'es'}` }}
+        </span>
+      </span>
+    </button>
 
     <div v-else-if="files.length && (level.groups.length || basePath)" class="vf-breadcrumb">
       <button
@@ -2211,6 +2235,67 @@ watch(
   background: var(--color-accent-soft);
   color: var(--color-accent);
 }
+/* --- Umgebung im Suchmodus ein-/ausblenden ---------------------------------------------------
+   Eigene Schaltflaeche statt eines Chips in der Kopfzeile: die Frage „will ich die Klassen um die
+   Treffer herum sehen?" ist die einzige Entscheidung, die der Suchmodus verlangt – sie gehoert
+   nicht in eine Reihe mit Zaehlern. Mittig oben, weil dort der Blick beginnt; deckender
+   Hintergrund statt backdrop-filter (s. Stolperfalle „kein filter im Graphen"). */
+.vf-ctx-toggle {
+  position: absolute;
+  top: 54px;
+  left: 50%;
+  z-index: 6;
+  display: flex;
+  max-width: calc(100% - 24px);
+  transform: translateX(-50%);
+  align-items: center;
+  gap: 10px;
+  border-radius: 12px;
+  border: 1px solid var(--color-accent);
+  background: var(--color-surface-2);
+  padding: 8px 16px 8px 12px;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.14);
+  text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+.vf-ctx-toggle:hover {
+  background: var(--color-accent-soft);
+  box-shadow: 0 8px 22px rgb(0 0 0 / 0.18);
+}
+/* Ist die Umgebung bereits im Bild, ist der Knopf nur noch der Rueckweg – dann tritt er zurueck,
+   statt weiter zum Klicken einzuladen. */
+.vf-ctx-toggle.is-on {
+  border-color: var(--color-border-strong);
+}
+.vf-ctx-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+  color: var(--color-accent);
+}
+.vf-ctx-toggle.is-on .vf-ctx-icon {
+  color: var(--color-text-muted);
+}
+.vf-ctx-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.vf-ctx-title {
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--color-text);
+}
+.vf-ctx-sub {
+  overflow: hidden;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--color-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Bilanz der Umgebung: eigene Farbe (Aggregat-Ton), damit sie nicht als Teil der Klassenzahl des
    Ausschnitts gelesen wird – sie zaehlt genau das, was AUSSERHALB liegt. */
 .vf-crumb-rel {

@@ -59,7 +59,7 @@ function pairWeights(edges, keep = () => true) {
  * @returns {{ pos: Map<string,{x:number,y:number}>, width: number, height: number }}
  *          Positionen sind Mittelpunkte, normalisiert auf den Ursprung (0,0) oben links.
  */
-export function layoutFlat({ nodes = [], edges = [], nodesep = 90, ranksep = 110, edgesep = 40, scale = 1 } = {}) {
+export function layoutFlat({ nodes = [], edges = [], nodesep = 90, ranksep = 110, edgesep = 40, scale = 1, orphanAspect = 1 } = {}) {
   const pos = new Map()
   if (!nodes.length) return { pos, width: 0, height: 0 }
 
@@ -182,7 +182,11 @@ export function layoutFlat({ nodes = [], edges = [], nodesep = 90, ranksep = 110
     // Breiter wird das Raster weiterhin, wenn der verbundene Teil ohnehin Platz vorgibt.
     // (Andersherum gedeckelt waere falsch: eine Zone mit einer einzigen Knotenspalte haette ihre
     // uebrigen Klassen sonst zu einem endlosen Turm gestapelt.)
-    let cols = Math.max(1, Math.ceil(Math.sqrt((orphans.length * rowStep) / colStep)))
+    // `orphanAspect` verschiebt dieses Ziel: INNERHALB einer Package-Zone soll breit-flach heraus-
+    // kommen, nicht quadratisch. Zwei Klassen desselben Packages ohne Kante zwischen ihnen ergaben
+    // sonst eine Spalte – also untereinander, obwohl sie zusammengehoeren –, und weil das
+    // Meta-Layout die Zonen ohnehin uebereinander schichtet, wuchs damit nur die Gesamthoehe.
+    let cols = Math.max(1, Math.ceil(Math.sqrt((orphans.length * rowStep * orphanAspect) / colStep)))
     if (width > 0) cols = Math.max(cols, Math.floor(width / colStep))
     const rows = Math.ceil(orphans.length / cols)
     const gridW = cols * colStep - gapX
@@ -222,9 +226,17 @@ export function layoutFlat({ nodes = [], edges = [], nodesep = 90, ranksep = 110
  *
  * @param nodes  [{ id, width, height, group }] – `group` ist der Package-Pfad
  * @param edges  [{ source, target, kind }]
+ * @param minGroupSize  ab wie vielen Knoten eine Gruppe eine EIGENE Zone bekommt (Default 1 = jede).
+ *   Alles darunter wandert in eine gemeinsame, rahmenlose Restgruppe. Gedacht für Ausschnitte, die
+ *   quer über die Codebasis liegen (Suchtreffer): dort ist eine Zone um eine einzelne Karte ein
+ *   Rahmen ohne Aussage – und kostet trotzdem einen eigenen dagre-Lauf plus einen Meta-Knoten.
  * @returns {{ pos: Map, zones: Array<{key,x,y,width,height,count}>, width, height }}
  */
-export function layoutClustered({ nodes = [], edges = [], nodesep = 70, ranksep = 90, scale = 1 } = {}) {
+// Schlüssel der rahmenlosen Restgruppe. Ein NUL-Zeichen kann in keinem Package-Pfad vorkommen,
+// die Gruppe kann also nie mit einer echten kollidieren.
+const MISC_GROUP = ' misc'
+
+export function layoutClustered({ nodes = [], edges = [], nodesep = 70, ranksep = 90, scale = 1, minGroupSize = 1 } = {}) {
   const padX = ZONE_PAD_X * scale
   const padTop = ZONE_PAD_TOP * scale
   const padBottom = ZONE_PAD_BOTTOM * scale
@@ -235,19 +247,45 @@ export function layoutClustered({ nodes = [], edges = [], nodesep = 70, ranksep 
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key).push(n)
   }
-  const groupOf = new Map(nodes.map((n) => [n.id, n.group ?? '']))
+
+  // Zu kleine Gruppen einsammeln: EIN Layout-Durchgang für alle statt einer je Einzelgänger.
+  if (minGroupSize > 1) {
+    const misc = []
+    for (const [key, list] of [...groups]) {
+      if (list.length < minGroupSize) {
+        misc.push(...list)
+        groups.delete(key)
+      }
+    }
+    if (misc.length) groups.set(MISC_GROUP, misc)
+  }
+
+  // Zuordnung NACH dem Umgruppieren: die Meta-Kanten müssen auf die Restgruppe zeigen, nicht auf
+  // die aufgelösten Einzelgruppen.
+  const groupOf = new Map()
+  for (const [key, list] of groups) for (const n of list) groupOf.set(n.id, key)
 
   // 1) Jede Zone fuer sich layouten – nur mit ihren INTERNEN Kanten. Externe Kanten hier
   //    mitzurechnen wuerde die Box verzerren, ohne dass die Gegenseite ueberhaupt darin liegt.
-  const boxes = new Map() // group -> { pos, width, height }
+  const boxes = new Map() // group -> { pos, width, height, padX, padTop }
   for (const [key, list] of groups) {
     const inside = new Set(list.map((n) => n.id))
     const intra = edges.filter((e) => inside.has(e.source) && inside.has(e.target))
-    const sub = layoutFlat({ nodes: list, edges: intra, nodesep, ranksep, edgesep: 30 * scale, scale })
+    // orphanAspect: Klassen einer Zone, die untereinander keine Kante haben, sollen NEBENeinander
+    // stehen (s. Begruendung in layoutFlat) – „gleiches Package" ist genau die Aussage der Zone.
+    const sub = layoutFlat({ nodes: list, edges: intra, nodesep, ranksep, edgesep: 30 * scale, scale, orphanAspect: 3 })
+    // Die Restgruppe wird nicht gerahmt und braucht deshalb weder Innenabstand noch Platz für eine
+    // Kopfzeile – sonst stünde ihr Inhalt gegenüber den echten Zonen versetzt.
+    const framed = key !== MISC_GROUP
+    const px = framed ? padX : 0
+    const pt = framed ? padTop : 0
+    const pb = framed ? padBottom : 0
     boxes.set(key, {
       pos: sub.pos,
-      width: sub.width + padX * 2,
-      height: sub.height + padTop + padBottom,
+      width: sub.width + px * 2,
+      height: sub.height + pt + pb,
+      padX: px,
+      padTop: pt,
     })
   }
 
@@ -280,16 +318,19 @@ export function layoutClustered({ nodes = [], edges = [], nodesep = 70, ranksep 
     const mp = meta.pos.get(key) || { x: b.width / 2, y: b.height / 2 }
     const originX = mp.x - b.width / 2
     const originY = mp.y - b.height / 2
-    zones.push({
-      key,
-      x: originX,
-      y: originY,
-      width: b.width,
-      height: b.height,
-      count: (groups.get(key) || []).length,
-    })
+    // Die Restgruppe ist nur eine Platzierungshilfe, keine Aussage -> sie liefert keine Zone.
+    if (key !== MISC_GROUP) {
+      zones.push({
+        key,
+        x: originX,
+        y: originY,
+        width: b.width,
+        height: b.height,
+        count: (groups.get(key) || []).length,
+      })
+    }
     for (const [id, p] of b.pos) {
-      pos.set(id, { x: originX + padX + p.x, y: originY + padTop + p.y })
+      pos.set(id, { x: originX + b.padX + p.x, y: originY + b.padTop + p.y })
     }
   }
 

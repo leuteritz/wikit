@@ -95,9 +95,11 @@ Open the **Java Analyzer** from the top bar:
    comes from (package, file, line) and the exact line where it is called. Every one of those is
    clickable and jumps into the source with that line highlighted.
    Filtering the class list steers the graph too: it shows the matches themselves, and the classes
-   around them as soon as that stays readable — beyond that they are one click away (“+78 related”
-   in the header). Only relations that touch a match are drawn; how the neighbours relate to each
-   other is a different question.
+   around them as soon as that stays readable — beyond that they are one click away, on a button
+   above the graph that spells out what it does (“Show 78 related classes”). Only relations that
+   touch a match are drawn; how the neighbours relate to each other is a different question. With
+   the surroundings in view, classes of the same package are laid out side by side inside a tinted
+   frame carrying the package name; a class that is the only one from its package stays unframed.
    An opened package never stands alone: whatever it connects to **outside** itself comes with it —
    as single classes while there are few, as one node per foreign package once there are many
    (“bom · 12 linked”). Those bundled edges open the same list of class pairs, so a relation that
