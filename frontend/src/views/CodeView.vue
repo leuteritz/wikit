@@ -6,7 +6,7 @@
 //  Spalte 2: Klassen-Abhaengigkeitsgraph (Vue Flow + dagre)
 //  Spalte 3: vollstaendige Klassen-Doku + KI-Zusammenfassungen
 // Datenhaltung via useJavaAnalyzer (Dateien/CRUD) + useJavaQueue (KI-Queue, Polling).
-import { ref, reactive, onMounted, onUnmounted, computed, watch } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { useJavaQueue } from '../composables/useJavaQueue.js'
 import { useJavaGraph } from '../composables/useJavaGraph.js'
@@ -263,18 +263,27 @@ function folderOpen(node, depth) {
   return !denseTree.value || depth === 0
 }
 
-function flatten(nodes, depth, out) {
+// `here` = der Ordner, dessen Ebene der Graph gerade zeigt (s. activeFolderPath). Die Einordnung
+// entsteht HIER und nicht im Template: sie haengt an drei Werten, die sich alle drei selten
+// aendern (Baum, Faltung, Graph-Ebene), waehrend das Template bei jedem Tastendruck neu laeuft.
+//   trail  – der Weg dorthin (Vorfahren)
+//   here   – genau diese Ebene liegt im Graphen
+//   inside – Inhalt dieser Ebene (Unterordner + Klassen), also das, was im Graphen zu sehen ist
+function flatten(nodes, depth, out, here, inZone) {
   for (const n of nodes) {
     const open = folderOpen(n, depth)
-    out.push({ kind: 'folder', id: n.id, label: n.label, fullPath: n.fullPath, depth, count: countClasses(n), open })
+    const isHere = here != null && n.fullPath === here
+    const state = isHere ? 'here' : here != null && here.startsWith(n.fullPath + '.') ? 'trail' : inZone ? 'inside' : null
+    out.push({ kind: 'folder', id: n.id, label: n.label, fullPath: n.fullPath, depth, count: countClasses(n), open, state })
     if (open) {
-      flatten(n.children, depth + 1, out)
-      for (const f of n.classes) out.push({ kind: 'class', id: `c:${f.id}`, file: f, depth: depth + 1 })
+      flatten(n.children, depth + 1, out, here, inZone || isHere)
+      const state = inZone || isHere ? 'inside' : null
+      for (const f of n.classes) out.push({ kind: 'class', id: `c:${f.id}`, file: f, depth: depth + 1, state })
     }
   }
   return out
 }
-const rows = computed(() => flatten(tree.value, 0, []))
+const rows = computed(() => flatten(tree.value, 0, [], activeFolderPath.value, false))
 
 // `open` kommt aus der gerenderten Zeile: der Default haengt von der Groesse der Codebasis ab
 // (s. folderOpen), ein blosses Invertieren von collapsed[path] wuerde beim ersten Klick auf einen
@@ -288,14 +297,21 @@ const graphFocusFileId = ref(null) // Klasse, die der Graph zentrieren soll
 let focusSeq = 0
 const graphFocusToken = ref(0) // erzwingt eine Reaktion auch bei gleichem Ziel (erneuter Klick)
 
+// Merkt sich den Pfad, den der BAUM gerade an den Graphen geschickt hat. Der Graph meldet jede
+// Ebene zurueck (auch die, die er von hier bekommen hat) – ohne diese Notiz wuerde ein Zuklappen
+// im Baum als Graph-Navigation zurueckkommen und den Ordner sofort wieder aufklappen.
+let treeDrivenPath = null
+
 function focusGraphOnPackage(path) {
   graphFocusFileId.value = null
   graphFocusPath.value = path
+  treeDrivenPath = path
   graphFocusToken.value = ++focusSeq
 }
 function focusGraphOnFile(file) {
   graphFocusPath.value = file?.package || ''
   graphFocusFileId.value = file?.id ?? null
+  treeDrivenPath = graphFocusPath.value
   graphFocusToken.value = ++focusSeq
 }
 
@@ -328,6 +344,69 @@ const anyFolderOpen = computed(() => rows.value.some((r) => r.kind === 'folder' 
 // Ortsangabe – der Graph soll dabei stehen bleiben, wo er ist.
 function setAllFolders(open) {
   for (const p of folderPaths.value) collapsed[p] = !open
+}
+
+// --- Graph -> Baum: „du bist hier" -----------------------------------------------------------
+// Der Graph zeigt immer genau eine Ebene. Welche das ist, beantwortete bisher nur sein eigenes
+// Breadcrumb – wer sich per Zonenkopf und Package-Knoten drei Ebenen tief geklickt hatte, fand den
+// Ort links im Baum nicht wieder, obwohl der Baum die Navigation ist. Der Baum folgt deshalb jeder
+// Ebene, die der Graph meldet: Weg aufklappen, Ebene markieren, Zeile in den Blick holen.
+// Bewusst NUR aufdecken – nichts zuklappen: was man selbst geoeffnet hat, soll ein Klick im
+// Graphen nicht wegnehmen (dieselbe Zurueckhaltung wie „alles zuklappen", das den Graphen in Ruhe
+// laesst).
+const activePath = ref(null) // Package-Pfad, den der Graph gerade zeigt
+const treeListEl = ref(null)
+
+// Der Baum zieht leere Zwischen-Packages zusammen (`buildPackageTree`), der Graph kennt jede
+// Ebene einzeln: `com.acme` kann dort eine Ebene sein, die es im Baum nur als Teil des Knotens
+// `com.acme.util` gibt. Deshalb erst der exakte Knoten – und sonst der kompaktierte, der ihn
+// enthaelt (der kuerzeste, der mit dem Pfad beginnt; Kompaktierung gibt es nur bei genau einem
+// Kind, also ist er eindeutig).
+const activeFolderPath = computed(() => {
+  const path = activePath.value
+  if (!path) return null
+  const all = folderPaths.value
+  if (all.includes(path)) return path
+  let best = null
+  for (const p of all) if (p.startsWith(path + '.') && (best === null || p.length < best.length)) best = p
+  return best
+})
+
+// Sichtbar machen, ohne den Blick zu verreissen: `nearest` scrollt nur, wenn die Zeile wirklich
+// ausserhalb liegt. Ein Tick Wartezeit, weil die Zeile durch das Aufklappen erst entstehen muss.
+async function scrollTreeTo(selector) {
+  await nextTick()
+  treeListEl.value?.querySelector(selector)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+}
+
+// Den Pfad selbst und jeden Vorfahren oeffnen (der Knoten mit genau diesem Pfad traegt die
+// Klassen, seine Vorfahren den Weg dorthin).
+function openPathInTree(path) {
+  if (!path) return
+  for (const p of folderPaths.value) if (p === path || path.startsWith(p + '.')) collapsed[p] = false
+}
+
+function onGraphNavigate(path) {
+  activePath.value = path || null
+  // Kam die Ebene aus dem Baum, ist dessen Zustand bereits die Absicht des Nutzers – dann nur die
+  // Markierung nachziehen, nicht die Faltung.
+  const fromTree = treeDrivenPath !== null && treeDrivenPath === path
+  treeDrivenPath = null
+  if (fromTree) return
+  const key = activeFolderPath.value
+  if (!key) return
+  openPathInTree(key)
+  scrollTreeTo(`[data-path="${key}"]`)
+}
+
+// Klick auf eine Karte im Graphen: die Klasse ist ausgewaehlt (Spalte 3) – dann soll sie auch
+// links stehen, sonst zeigt der Baum weiter irgendeinen anderen Ort.
+function selectFileFromGraph(id) {
+  selectFile(id)
+  const file = files.value.find((f) => f.id === id)
+  if (!file) return
+  openPathInTree(file.package || '(default)')
+  scrollTreeTo(`[data-fid="${id}"]`)
 }
 
 // Treffer-Hervorhebung (Substring, ohne v-html). Am ANGEWENDETEN Filter, nicht am Feldinhalt:
@@ -1107,24 +1186,36 @@ function onResetPanels() {
           </p>
         </div>
 
-        <ul class="min-h-0 flex-1 overflow-y-auto p-1.5">
-          <li v-for="row in rows" :key="row.id">
+        <ul ref="treeListEl" class="min-h-0 flex-1 overflow-y-auto p-1.5">
+          <!-- Die Kante links am Eintrag klammert zusammen, was im Graphen zu sehen ist: kraeftig
+               an der offenen Ebene selbst, blass an deren Inhalt. -->
+          <li
+            v-for="row in rows"
+            :key="row.id"
+            class="tree-li"
+            :class="row.state === 'here' ? 'tree-zone tree-zone--head' : row.state === 'inside' ? 'tree-zone' : ''"
+          >
             <!-- Package-Ordner -->
             <button
               v-if="row.kind === 'folder'"
               type="button"
               class="tree-row group/f flex w-full items-center gap-1.5 rounded-md py-1 pl-1 pr-2 text-left text-2xs font-semibold text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+              :class="row.state === 'here' ? 'is-here' : row.state === 'trail' ? 'is-trail' : ''"
+              :data-path="row.fullPath"
               @click="toggleFolder(row.fullPath, row.open)"
             >
               <span v-for="d in row.depth" :key="d" class="tree-guide" />
               <Icon icon="lucide:chevron-down" class="h-3 w-3 shrink-0 opacity-70 transition-transform" :class="row.open ? '' : '-rotate-90'" />
-              <Icon icon="lucide:package" class="h-3.5 w-3.5 shrink-0 opacity-70" />
+              <Icon :icon="row.state === 'here' ? 'lucide:package-open' : 'lucide:package'" class="h-3.5 w-3.5 shrink-0 opacity-70" />
               <span class="min-w-0 flex-1 truncate font-mono">{{ row.label }}</span>
+              <!-- Der Punkt sagt „genau diese Ebene steht gerade im Graphen" – ein Wort dafuer
+                   passt in eine schmale Spalte nicht, der Titel traegt es nach. -->
+              <span v-if="row.state === 'here'" class="tree-here shrink-0" title="Currently open in the graph" />
               <span class="shrink-0 font-mono text-3xs tabular-nums opacity-60">{{ row.count }}</span>
             </button>
 
             <!-- Klasse -->
-            <div v-else class="group relative">
+            <div v-else class="group relative" :data-fid="row.file.id">
               <button
                 type="button"
                 class="tree-row flex w-full items-center gap-1.5 rounded-md py-1.5 pl-1 pr-8 text-left transition"
@@ -1220,7 +1311,8 @@ function onResetPanels() {
           :focus-token="graphFocusToken"
           :match-ids="graphMatchIds"
           :search-query="graphQuery"
-          @select="selectFile"
+          @select="selectFileFromGraph"
+          @navigate="onGraphNavigate"
           @clear-search="search = ''"
         />
       </div>
@@ -1587,6 +1679,81 @@ function onResetPanels() {
 }
 .tree-row.is-selected .tree-guide {
   border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+
+/* --- „Du bist hier": der Baum zeigt die Ebene, die im Graphen offen ist ----------------- *
+ * Drei Staerken statt einer Markierung, weil drei verschiedene Aussagen zu treffen sind und
+ * sie gleichzeitig im Bild stehen: der WEG dorthin (trail, nur eingefaerbt), die EBENE selbst
+ * (here, volle Markierung) und ihr INHALT (zone, Kante am linken Rand). Die Kante laeuft ueber
+ * mehrere Zeilen durch und macht damit sichtbar, wo der Ausschnitt anfaengt und aufhoert –
+ * eine Hervorhebung nur an einer Zeile beantwortet „wo bin ich", nicht „was sehe ich". */
+.tree-li {
+  position: relative;
+}
+.tree-zone::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-accent) 50%, transparent);
+}
+.tree-zone--head::before {
+  width: 3px;
+  background: var(--color-accent);
+}
+
+/* Flaeche statt `--color-accent-soft`: der Token ist im Light-Theme deckend und im Dark-Theme
+   halbtransparent – die Markierung waere je nach Theme unterschiedlich stark. Ein color-mix auf
+   dem Akzent traegt in beiden gleich weit. */
+.tree-row.is-here {
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+}
+.tree-row.is-here:hover {
+  background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+}
+.tree-row.is-here .tree-guide {
+  border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+/* Der Weg dorthin bleibt Text – eine zweite Flaeche waere ein zweiter „hier". */
+.tree-row.is-trail {
+  color: color-mix(in srgb, var(--color-accent) 85%, var(--color-text));
+}
+.tree-row.is-trail .tree-guide {
+  border-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
+}
+/* Die Icons der markierten Zeilen tragen die Akzentfarbe voll – gedaempft (Tailwind opacity-70)
+   verlieren sie im Light-Theme genau den Unterschied, der die Zeile ausmacht. */
+.tree-row.is-here svg,
+.tree-row.is-trail svg {
+  opacity: 1;
+}
+
+/* Der Punkt an der offenen Ebene atmet, damit er sich vom ruhenden AI-Punkt der Klassenzeilen
+   unterscheidet: der eine ist ein Zustand der Klasse, der andere sagt „hier stehst du gerade". */
+.tree-here {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  animation: tree-here-pulse 2.4s ease-in-out infinite;
+}
+@keyframes tree-here-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 40%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 8%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tree-here {
+    animation: none;
+  }
 }
 
 /* --- Resizer-Divider zwischen den drei Panels ---------------------------- *

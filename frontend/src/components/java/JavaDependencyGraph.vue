@@ -49,7 +49,10 @@ const props = defineProps({
   matchIds: { type: Array, default: () => [] },
   searchQuery: { type: String, default: '' },
 })
-const emit = defineEmits(['select', 'clear-search'])
+// `navigate` = „der Graph zeigt jetzt diese Ebene" (Package-Pfad, leerer String = oberste Ebene).
+// Gegenrichtung zu focusPath: der Baum links ist die Ortsangabe und darf nicht stehenbleiben,
+// waehrend man sich hier durch die Packages klickt.
+const emit = defineEmits(['select', 'clear-search', 'navigate'])
 
 const { theme } = useTheme()
 // `viewport` wird fuer den Zonen-Layer gebraucht: er liegt HINTER dem Canvas und muss dessen
@@ -495,6 +498,16 @@ function drillUp() {
   const parent = base.includes('.') ? base.slice(0, base.lastIndexOf('.')) : ''
   drillTo(parent.length >= rootPath.value.length ? parent : rootPath.value)
 }
+
+// --- Der Baum folgt dem Graphen --------------------------------------------------------------
+// Gemeldet wird der GEZEIGTE Pfad, nicht der Klick: Zonenkopf, Package-Knoten, Breadcrumb und
+// `drillUp` laufen alle ueber `drillTo`, ein von aussen gesetzter Fokus (Baum-Klick) dagegen
+// direkt ueber `zoomPath` – und ein verschobener Wurzelpraefix ueber den Watcher darueber. Am
+// `basePath` haengt jeder dieser Wege, also gibt es genau eine Meldung und keinen Zustand, den
+// der Baum zeigt, ohne dass der Graph ihn haette. `immediate`, damit auch die Startebene ankommt.
+// Im Suchmodus gibt es keine Ebene zu melden: der Graph zeigt dann die Treffer quer durch die
+// Codebasis, und eine markierte Ebene im Baum waere eine Ortsangabe, die nicht mehr stimmt.
+watch([basePath, searchActive], ([path, searching]) => emit('navigate', searching ? null : path), { immediate: true })
 
 // Das Einpassen nach einem Ebenenwechsel uebernimmt der Geometrie-Watcher weiter unten: er hoert
 // auf die tatsaechlichen Knotenpositionen und feuert damit erst, wenn das neue Layout steht. Ein
