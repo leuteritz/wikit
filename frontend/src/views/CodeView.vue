@@ -148,13 +148,18 @@ watch(lastFileId, (v) => {
 
 // ESC schliesst Overflow-Menue bzw. das Analyse-Modal; Strg/Cmd+Enter startet die Analyse
 // direkt aus dem Editor heraus (der Primaerbutton bleibt trotzdem sichtbar im Modal-Footer).
+//
+// Waehrend eines Laufs schliesst ESC das Modal ebenfalls – es MINIMIERT dann nur (s. runChip
+// in der Command-Bar). Der Lauf haengt an keinem Dialog: die Anfrage laeuft im Composable,
+// der Fortschritt kommt per SSE. Das Modal offenhalten zu MUESSEN war eine Einschraenkung
+// ohne technischen Grund – bei einem Import, der Minuten braucht, eine ziemlich teure.
 function onKeydown(e) {
   if (e.key === 'Escape') {
     if (menuOpen.value) {
       menuOpen.value = false
       return
     }
-    if (showNew.value && !analyzing.value && !pendingConflicts.value) showNew.value = false
+    if (showNew.value && !pendingConflicts.value) showNew.value = false
     return
   }
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && showNew.value && !analyzing.value && !pendingConflicts.value) {
@@ -387,6 +392,21 @@ const phaseIndex = computed(() => {
 // naehert er sich in solchen Phasen ZEITBASIERT dem Phasenende (asymptotisch, erreicht es nie) –
 // die Anzeige bleibt lebendig, ohne einen Fortschritt zu behaupten, der schon erreicht waere.
 const PHASE_TAU_MS = 9000
+// Fuellgrad der LAUFENDEN Phase (0..1). Eigene Groesse, weil zwei Anzeigen sie brauchen: der
+// Ring im Modal (als Teil der Gesamtquote) und die Phasenleiste im Header. Zweimal gerechnet
+// waere zweimal die Gelegenheit, auseinanderzulaufen.
+const currentPhaseFraction = computed(() => {
+  const p = progress.value
+  if (!p) return 0
+  if (p.phase === 'done') return 1
+  // `now` aus dem tickenden elapsedMs ableiten – so ist die Interpolation reaktiv.
+  const now = runStartedAt + elapsedMs.value
+  // Zeitkurve laeuft IMMER mit (deckelt bei 90 % der Phase, erreicht sie also nie von selbst);
+  // meldet der Server einen weiteren Zaehlerstand, gewinnt der.
+  const byTime = (1 - Math.exp(-Math.max(0, now - phaseStartedAt.value) / PHASE_TAU_MS)) * 0.9
+  const byCount = p.total ? Math.min(1, (p.done || 0) / p.total) : 0
+  return Math.max(0, Math.min(1, Math.max(byTime, byCount)))
+})
 const runPercent = computed(() => {
   const p = progress.value
   if (!p) return 0
@@ -395,17 +415,11 @@ const runPercent = computed(() => {
   const list = activePhases.value
   for (let i = 0; i < phaseIndex.value; i++) acc += list[i].weight
   const cur = list[phaseIndex.value]
-  if (cur) {
-    // `now` aus dem tickenden elapsedMs ableiten – so ist die Interpolation reaktiv.
-    const now = runStartedAt + elapsedMs.value
-    // Zeitkurve laeuft IMMER mit (deckelt bei 90 % der Phase, erreicht sie also nie von selbst);
-    // meldet der Server einen weiteren Zaehlerstand, gewinnt der.
-    const byTime = (1 - Math.exp(-Math.max(0, now - phaseStartedAt.value) / PHASE_TAU_MS)) * 0.9
-    const byCount = p.total ? Math.min(1, (p.done || 0) / p.total) : 0
-    acc += cur.weight * Math.max(0, Math.min(1, Math.max(byTime, byCount)))
-  }
+  if (cur) acc += cur.weight * currentPhaseFraction.value
   return Math.max(1, Math.min(99, Math.round(acc * 100)))
 })
+// Fuellgrad EINER Phase fuer die Segmentleiste: durch = 1, laufend = ihr Bruchteil, offen = 0.
+const phaseFill = (i) => (i < phaseIndex.value ? 1 : i === phaseIndex.value ? currentPhaseFraction.value : 0)
 // Restzeit aus der bisher gemessenen Rate. Erst ab etwas Fortschritt, sonst schwankt sie wild.
 const runRemainingMs = computed(() => {
   const pct = runPercent.value
@@ -557,8 +571,65 @@ function onResetPanels() {
           <h1 class="truncate font-mono text-[0.9375rem] font-semibold tracking-tight">Code Analysis</h1>
         </div>
 
+        <!--
+          Laufender Import: die Command-Bar wird zur Live-Anzeige. Sie steht an der Stelle der
+          Bestandsmetriken, weil beides dieselbe Frage beantwortet ("was ist gerade da?") und
+          waehrend eines Laufs die laufende Zahl die interessantere ist – nebeneinander waeren
+          es zwei Zahlenreihen, die um denselben Blick konkurrieren.
+
+          Aufgeschluesselt heisst: je Server-Phase ein Segment, dessen BREITE dem Zeitgewicht
+          der Phase entspricht (PHASES[].weight). Damit zeigt die Leiste nicht nur "62 %",
+          sondern auch, welcher Abschnitt gerade laeuft und wie viel Weg er noch hat – bei
+          einem Import, der Minuten braucht, ist das der Unterschied zwischen "es tut sich
+          etwas" und "es haengt". Klick stellt das Modal wieder her.
+        -->
+        <button
+          v-if="analyzing && progress"
+          type="button"
+          class="run-chip group flex min-w-0 items-center gap-2.5 rounded-xl border border-[color-mix(in_srgb,var(--color-accent)_35%,transparent)] bg-[var(--color-accent-soft)] py-1.5 pl-2.5 pr-3 text-left transition hover:border-[var(--color-accent)]"
+          :title="`${runPhaseLabel} – ${runPercent}% done, ${formatDuration(elapsedMs)} elapsed${
+            runRemainingMs != null ? `, about ${formatDuration(runRemainingMs)} left` : ''
+          }. Click to reopen the progress dialog.`"
+          @click="showNew = true"
+        >
+          <Icon icon="lucide:loader-2" class="h-4 w-4 shrink-0 animate-spin text-[var(--color-accent)]" />
+          <div class="flex min-w-0 flex-col gap-1">
+            <div class="flex min-w-0 items-baseline gap-2">
+              <span class="truncate text-2xs font-semibold text-[var(--color-accent)]">{{ runPhaseLabel }}</span>
+              <span class="shrink-0 font-mono text-2xs font-semibold tabular-nums text-[var(--color-accent)]">{{ runPercent }}%</span>
+              <span class="hidden shrink-0 font-mono text-2xs tabular-nums text-[var(--color-text-muted)] sm:inline">
+                {{ formatDuration(elapsedMs) }}
+                <template v-if="runRemainingMs != null">
+                  <span class="opacity-40">·</span> {{ formatDuration(runRemainingMs) }}<span class="opacity-60"> left</span>
+                </template>
+              </span>
+            </div>
+            <!-- Segmentleiste: eine Spalte je Phase, Spaltenbreite = Gewicht der Phase. -->
+            <div
+              class="grid h-1 w-[13rem] gap-px lg:w-[17rem]"
+              :style="{ gridTemplateColumns: activePhases.map((p) => `${p.weight}fr`).join(' ') }"
+            >
+              <span
+                v-for="(p, i) in activePhases"
+                :key="p.key"
+                class="relative overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--color-accent)_18%,transparent)]"
+              >
+                <span
+                  class="absolute inset-y-0 left-0 rounded-full bg-[var(--color-accent)] transition-[width] duration-500 ease-out"
+                  :style="{ width: phaseFill(i) * 100 + '%' }"
+                />
+              </span>
+            </div>
+          </div>
+          <!-- Nur als Affordanz: das Modal ist einen Klick entfernt, nicht weg. -->
+          <Icon
+            icon="lucide:maximize-2"
+            class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)] opacity-0 transition group-hover:opacity-70"
+          />
+        </button>
+
         <!-- Live-Metriken: monospace + gedaempft. Zahlen tragen die Information, nicht die Farbe. -->
-        <div v-if="files.length" class="hidden items-center gap-2.5 font-mono text-2xs text-[var(--color-text-muted)] md:flex">
+        <div v-else-if="files.length" class="hidden items-center gap-2.5 font-mono text-2xs text-[var(--color-text-muted)] md:flex">
           <span v-for="lang in LANGUAGES" :key="lang.id" class="inline-flex items-center gap-1.5">
             <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />{{ lang.label }}
           </span>
@@ -682,7 +753,7 @@ function onResetPanels() {
         <div
           v-if="showNew"
           class="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 backdrop-blur-sm"
-          @click.self="analyzing ? null : (showNew = false)"
+          @click.self="showNew = false"
         >
           <!--
             Feste Modalhoehe (Header / scrollender Body / verankerter Footer). Damit bleibt der
@@ -720,14 +791,17 @@ function onResetPanels() {
                   Upload file
                 </button>
               </div>
+              <!-- Waehrend eines Laufs ist das kein Abbrechen, sondern ein Wegstellen: der Import
+                   laeuft weiter, die Command-Bar traegt ihn sichtbar (run-chip). Icon + Titel
+                   sagen das auch – ein "×" an dieser Stelle laese "abbrechen" erwarten. -->
               <button
                 type="button"
-                class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-40"
-                :disabled="analyzing"
-                title="Close"
+                class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+                :title="analyzing ? 'Minimize – the run keeps going' : 'Close'"
+                :aria-label="analyzing ? 'Minimize' : 'Close'"
                 @click="showNew = false"
               >
-                <Icon icon="lucide:x" class="h-5 w-5" />
+                <Icon :icon="analyzing ? 'lucide:minimize-2' : 'lucide:x'" class="h-5 w-5" />
               </button>
             </header>
 
@@ -764,7 +838,9 @@ function onResetPanels() {
 
               <div class="text-center">
                 <p class="text-sm font-semibold text-[var(--color-text)]">{{ runPhaseLabel }}</p>
-                <p class="mt-1 text-xs text-[var(--color-text-muted)]">Keep this dialog open – the graph appears as soon as it finishes.</p>
+                <p class="mt-1 text-xs text-[var(--color-text-muted)]">
+                  You can close this – the run continues and stays visible in the top bar.
+                </p>
               </div>
 
               <!-- Phasenkette: zeigt, was schon durch ist und was noch kommt. -->
@@ -856,11 +932,11 @@ function onResetPanels() {
               </span>
               <button
                 type="button"
-                class="action-btn shrink-0 rounded-lg px-3 py-2 text-sm font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-40"
-                :disabled="analyzing"
+                class="action-btn inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
                 @click="showNew = false"
               >
-                Cancel
+                <Icon v-if="analyzing" icon="lucide:minimize-2" class="h-4 w-4" />
+                {{ analyzing ? 'Run in background' : 'Cancel' }}
               </button>
               <button
                 type="button"
@@ -1432,6 +1508,29 @@ function onResetPanels() {
 .panel-resizer:hover .panel-resizer__grip,
 .panel-resizer.is-active .panel-resizer__grip {
   opacity: 0.9;
+}
+
+/* Der Live-Chip eines laufenden Imports. Er atmet leicht – nicht als Zierde: waehrend der
+   Schreibphase kann der Server minutenlang keinen Zaehler liefern, und eine vollkommen
+   stehende Anzeige liest sich dann wie ein Absturz. Der Puls sitzt auf der Randfarbe
+   (box-shadow), nicht auf der Groesse: nichts darf in der Command-Bar wandern. */
+.run-chip {
+  animation: run-chip-pulse 2.4s ease-in-out infinite;
+}
+@keyframes run-chip-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 26%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 6%, transparent);
+  }
+}
+/* Wer Bewegung abbestellt hat, bekommt den Chip ruhig – die Zahlen tragen die Aussage ohnehin. */
+@media (prefers-reduced-motion: reduce) {
+  .run-chip {
+    animation: none;
+  }
 }
 
 /* Klick-Feedback der Aktions-Buttons: gedrueckt 0.96, federt in 150ms auf 1.0 zurueck. */

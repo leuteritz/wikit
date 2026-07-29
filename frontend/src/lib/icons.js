@@ -40,6 +40,8 @@ import refreshCw from '@iconify-icons/lucide/refresh-cw'
 import zoomIn from '@iconify-icons/lucide/zoom-in'
 import zoomOut from '@iconify-icons/lucide/zoom-out'
 import maximize from '@iconify-icons/lucide/maximize'
+import maximize2 from '@iconify-icons/lucide/maximize-2'
+import minimize2 from '@iconify-icons/lucide/minimize-2'
 import rotateCcw from '@iconify-icons/lucide/rotate-ccw'
 import fileText from '@iconify-icons/lucide/file-text'
 import pencil from '@iconify-icons/lucide/pencil'
@@ -101,6 +103,8 @@ const ICONS = {
   'lucide:zoom-in': zoomIn,
   'lucide:zoom-out': zoomOut,
   'lucide:maximize': maximize,
+  'lucide:maximize-2': maximize2,
+  'lucide:minimize-2': minimize2,
   'lucide:rotate-ccw': rotateCcw,
   'lucide:file-text': fileText,
   'lucide:pencil': pencil,
