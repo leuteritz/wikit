@@ -27,8 +27,13 @@ const props = defineProps({
   // Aktuell markierter Methodenbereich (reaktiv, aus dem geteilten highlightedDef-State):
   // { from, to } (1-basierte Zeilen) | null. Treibt die persistente Block-Decoration.
   activeDefRange: { type: Object, default: null },
+  // Code-Suche: ALLE Treffer als Dokument-Offsets [{from,to}] (berechnet in lib/codeSearch.js,
+  // gehalten von der Suchleiste im Detail-Panel) und der Index des aktiven Treffers (-1 = keiner).
+  // Der Editor rechnet nichts – er markiert und scrollt nur.
+  searchMatches: { type: Array, default: () => [] },
+  searchActive: { type: Number, default: -1 },
 })
-const emit = defineEmits(['update:modelValue', 'method-click', 'clear-call', 'def-click', 'clear-def'])
+const emit = defineEmits(['update:modelValue', 'method-click', 'clear-call', 'def-click', 'clear-def', 'select-word'])
 
 // Dark/Light-Umschaltung zentral (identisch in JavaDiffViewer/MarkdownEditor).
 const { themeComp, themeExtension, bindTheme } = useCodeMirrorTheme()
@@ -166,6 +171,48 @@ function markField(effect, mark) {
 const linkField = markField(setLinkMarks, linkMark)
 const callField = markField(setCallMarks, callMark)
 
+// --- Code-Suche (Suchleiste im Detail-Panel) ----------------------------------
+// Zwei Mark-Ebenen nach demselben Muster: alle Treffer dezent, der aktive kraeftig. Die Trefferliste
+// kommt fertig als Prop – dieselben Offsets, aus denen die Leiste ihren Zaehler bildet, also kann
+// „3 von 12" nicht von dem abweichen, was im Code leuchtet.
+const setSearchMarks = StateEffect.define() // value: [{from,to}] | null
+const setActiveMatch = StateEffect.define() // value: [{from,to}] | null
+const searchMark = Decoration.mark({ class: 'cm-search-match' })
+const activeMatchMark = Decoration.mark({ class: 'cm-search-active' })
+const searchField = markField(setSearchMarks, searchMark)
+const activeMatchField = markField(setActiveMatch, activeMatchMark)
+
+// Treffer-Markierung an die Props angleichen. Der aktive Treffer wird aus der Sammel-Ebene
+// herausgenommen (statt beide Marks zu stapeln), damit seine Farbe nicht die des Untergrunds erbt.
+// Gescrollt wird NUR, wenn der aktive Treffer nicht genau die aktuelle Selektion ist: sonst
+// ruckelte das Bild bei jeder Doppelklick-Uebernahme, obwohl die Stelle schon vor Augen liegt.
+function applySearch() {
+  if (!view) return
+  const list = props.searchMatches || []
+  const i = props.searchActive
+  const active = i >= 0 && i < list.length ? list[i] : null
+  const rest = active ? list.filter((_, n) => n !== i) : list
+  const effects = [setSearchMarks.of(rest), setActiveMatch.of(active ? [active] : null)]
+  if (active) {
+    const sel = view.state.selection.main
+    if (sel.from !== active.from || sel.to !== active.to) {
+      effects.push(EditorView.scrollIntoView(active.from, { y: 'center' }))
+    }
+  }
+  view.dispatch({ effects })
+}
+
+// Aktuelle Selektion nach oben melden (speist die Suchleiste). Bewusst an mouseup/keyup statt an
+// einen updateListener gehaengt: waehrend des Ziehens ist die Selektion ein Zwischenstand, und jeder
+// davon wuerde die Suche neu anwerfen. Mehrzeilige oder sehr lange Selektionen sind kein Suchbegriff.
+function reportSelection(v) {
+  const sel = v.state.selection.main
+  if (sel.empty) return
+  const text = v.state.sliceDoc(sel.from, sel.to)
+  if (!text.trim() || text.length > 80 || text.includes('\n')) return
+  emit('select-word', { text, from: sel.from })
+}
+
 // Methodennamen-Aufrufstellen (`name(`) im Dokument finden -> Zeichenbereiche des Namens (ohne die
 // Klammer). Regex analog zu computeCallEdgeData in JavaDependencyGraph; global -> aufsteigend sortiert.
 function scanCalls(text, names) {
@@ -272,6 +319,8 @@ onMounted(() => {
     sourceMethodField,
     linkField,
     callField,
+    searchField,
+    activeMatchField,
     // Klick (links ODER rechts – mousedown feuert fuer beide Buttons):
     //   - auf eine Consumer-Call-Site (clickableWords) -> method-click (ausgehende Kante)
     //   - sonst auf eine Methoden-Definition mit eingehender Kante (defWords) -> def-click
@@ -291,6 +340,16 @@ onMounted(() => {
         }
         emit('clear-call')
         emit('clear-def')
+        return false
+      },
+      // Fertige Maus-Selektion (auch der Doppelklick aufs Wort) -> Suchbegriff melden.
+      mouseup(event, v) {
+        reportSelection(v)
+        return false
+      },
+      // Tastatur-Selektion (Shift+Pfeil/Shift+Ende) – derselbe Weg, damit die Maus nicht Pflicht ist.
+      keyup(event, v) {
+        if (event.shiftKey) reportSelection(v)
         return false
       },
       // Rechtsklick auf eine klickbare Methode (Consumer ODER Definition): natives Kontextmenue
@@ -331,6 +390,7 @@ onMounted(() => {
   refreshLinks()
   applyActiveCall(props.activeCall) // evtl. bereits gesetztes Highlight sofort spiegeln
   applyActiveDefRange(props.activeDefRange) // evtl. bereits gesetzten Methodenbereich spiegeln
+  applySearch() // laufende Suche ueberlebt den Tab-Wechsel (der Editor wird dabei neu gemountet)
 })
 
 // Externe Aenderungen (z. B. Datei-Upload) in den Editor spiegeln.
@@ -349,6 +409,10 @@ watch(() => props.activeCall, (name) => applyActiveCall(name))
 
 // Reaktive Source-Methoden-Block-Markierung: folgt props.activeDefRange (Setzen/Wechseln/Loeschen).
 watch(() => props.activeDefRange, (range) => applyActiveDefRange(range))
+
+// Treffer-Markierung der Code-Suche: folgt Trefferliste UND aktivem Index (ein watch fuer beides,
+// sonst wuerde ein Wechsel der Liste zweimal dispatchen).
+watch(() => [props.searchMatches, props.searchActive], applySearch)
 
 onBeforeUnmount(() => {
   clearTimeout(glowTimer)
@@ -443,5 +507,20 @@ html.dark .cm-source-method-highlight {
   background-color: color-mix(in srgb, var(--color-edge-highlight) 32%, transparent);
   border-radius: 3px;
   box-shadow: inset 0 -2px 0 0 var(--color-edge-highlight);
+}
+
+/* Code-Suche: dieselbe Gold-Familie wie `mark` in style.css – „Suchtreffer sieht in Wikit so aus".
+   Der AKTIVE Treffer trennt sich nicht ueber eine zweite Farbe, sondern ueber Deckkraft + Ring:
+   eine dritte Bedeutung fuer eine neue Hue haette der Editor (Gold=Call, Indigo/Violett=Methode,
+   Amber=Sprung) nicht mehr frei. */
+.cm-search-match {
+  background-color: color-mix(in srgb, var(--color-warning) 30%, transparent);
+  border-radius: 2px;
+}
+.cm-search-active {
+  background-color: color-mix(in srgb, var(--color-warning) 85%, transparent);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px var(--color-warning);
+  color: #17160f; /* dunkler Text – die volle Goldflaeche traegt keine Shiki-/oneDark-Farbe mehr */
 }
 </style>

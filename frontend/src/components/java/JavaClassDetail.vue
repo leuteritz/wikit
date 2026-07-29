@@ -3,7 +3,7 @@
 // Header + KI-Status, Klassen-Zusammenfassung (description_html), Methoden-Accordion
 // (summary_html, einzeln nachgenerierbar) und Quellcode-Tab (read-only CodeMirror).
 // HTTP nur via lib/api.js (Composable).
-import { ref, watch, computed, nextTick, onBeforeUnmount } from 'vue'
+import { ref, watch, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
 import { useJavaQueue } from '../../composables/useJavaQueue.js'
@@ -14,6 +14,7 @@ import JavaDiffViewer from './JavaDiffViewer.vue'
 import { processMethodBody } from '../../lib/javaCode.js'
 import { parseParamNames, markParamOccurrences, toggleParamHighlight as onParamClick } from '../../lib/javaParams.js'
 import { reindentJava } from '../../lib/javaIndent.js'
+import { findMatches, indexAtOrAfter, isIdentifier, MATCH_LIMIT } from '../../lib/codeSearch.js'
 import { copyToClipboard } from '../../lib/clipboard.js'
 import { parseTimestamp as parseTs, formatRelative } from '../../lib/format.js'
 import { api } from '../../lib/api.js'
@@ -336,6 +337,109 @@ async function fullAnalysis() {
 // (targetLine/highlightMethod) bleiben gueltig.
 const displaySource = computed(() => reindentJava(file.value?.raw_source || ''))
 
+// --- Code-Suche im Quellcode-Tab -----------------------------------------------
+// Gesucht wird im ANGEZEIGTEN Quelltext (`displaySource`) – damit sind Treffer-Offsets exakt die
+// Dokument-Offsets des Editors, ohne Umrechnung. Der Zustand liegt HIER und nicht im Editor:
+// Zaehler, Vor/Zurueck und die Markierung im Code stammen so aus genau einer Trefferliste, „3 von
+// 12" kann also nicht von dem abweichen, was leuchtet. Der Editor bekommt sie als Prop und rendert.
+const search = ref('')
+const searchOpts = ref({ caseSensitive: false, wholeWord: false, regex: false })
+const searchCursor = ref(0) // laeuft frei weiter; der Modulo unten macht das Umlaufen daraus
+const searchInput = ref(null)
+
+const SEARCH_TOGGLES = [
+  { key: 'caseSensitive', icon: 'lucide:case-sensitive', title: 'Match case' },
+  { key: 'wholeWord', icon: 'lucide:whole-word', title: 'Match whole word' },
+  { key: 'regex', icon: 'lucide:regex', title: 'Use regular expression' },
+]
+
+const searchResult = computed(() =>
+  findMatches(displaySource.value, { query: search.value, ...searchOpts.value }),
+)
+const matches = computed(() => searchResult.value.matches)
+
+// Aktiver Treffer = Modulo des freilaufenden Zaehlers: „weiter" hinter dem letzten Treffer landet
+// wieder beim ersten, ohne dass die Vor-/Zurueck-Handler die Grenzen kennen muessen.
+const activeMatch = computed(() => {
+  const n = matches.value.length
+  if (!n) return -1
+  return ((searchCursor.value % n) + n) % n
+})
+
+const searchCounter = computed(() => {
+  if (!search.value) return ''
+  if (searchResult.value.error) return 'Invalid regex'
+  if (!matches.value.length) return 'No results'
+  return `${activeMatch.value + 1}/${matches.value.length}${searchResult.value.capped ? '+' : ''}`
+})
+const searchCounterTitle = computed(() => {
+  if (searchResult.value.error) return searchResult.value.error
+  if (searchResult.value.capped) return `Showing the first ${MATCH_LIMIT} matches`
+  return ''
+})
+const searchFailed = computed(() => !!search.value && (!!searchResult.value.error || !matches.value.length))
+
+// Jede Aenderung an Query oder Optionen beginnt wieder beim ersten Treffer. Bewusst in den Settern
+// statt in einem watch: `onSelectWord` setzt Query UND Ziel-Treffer in einem Zug – ein watch wuerde
+// den Cursor beim naechsten Flush wieder auf 0 ziehen und das markierte Vorkommen verlieren.
+function setQuery(value) {
+  search.value = value
+  searchCursor.value = 0
+  // Getippt wird fuer den Quelltext – die Leiste gehoert zu keinem anderen Tab.
+  if (value) tab.value = 'source'
+}
+function toggleSearchOpt(key) {
+  searchOpts.value = { ...searchOpts.value, [key]: !searchOpts.value[key] }
+  searchCursor.value = 0
+}
+function stepMatch(delta) {
+  if (matches.value.length) searchCursor.value += delta
+}
+function closeSearch() {
+  search.value = ''
+  searchCursor.value = 0
+  searchInput.value?.blur()
+}
+
+// Selektion im Editor -> Suchbegriff. Ein markierter Identifier meint genau dieses Wort, also
+// „Ganzes Wort" an (`id` soll nicht `valid` treffen); Regex aus, weil markierter Text woertlich
+// gemeint ist. Gross-/Kleinschreibung bleibt so, wie der Nutzer sie gesetzt hat.
+function onSelectWord({ text, from }) {
+  const value = text.trim()
+  if (!value) return
+  searchOpts.value = { ...searchOpts.value, wholeWord: isIdentifier(value), regex: false }
+  search.value = value
+  // Das markierte Vorkommen wird zum aktiven Treffer -> „weiter" setzt dort fort, wo der Blick
+  // liegt, statt am Dateianfang.
+  searchCursor.value = Math.max(0, indexAtOrAfter(matches.value, from))
+}
+
+// Ctrl/Cmd+F im offenen Klassen-Panel: Suchfeld statt Browser-Suche (die faende nur den sichtbaren
+// Ausschnitt des virtualisierten Editors). Liegt der Fokus in einem ANDEREN Eingabefeld – etwa dem
+// Klassenfilter der linken Spalte –, bleibt das Kuerzel unangetastet.
+function onGlobalKey(e) {
+  if ((e.key || '').toLowerCase() !== 'f' || !(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return
+  if (!file.value) return
+  const el = document.activeElement
+  if (el && el !== searchInput.value && /^(input|textarea)$/i.test(el.tagName)) return
+  e.preventDefault()
+  focusSearch()
+}
+async function focusSearch() {
+  tab.value = 'source'
+  await nextTick()
+  searchInput.value?.focus()
+  searchInput.value?.select()
+}
+onMounted(() => window.addEventListener('keydown', onGlobalKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKey))
+
+// Klassenwechsel: die Suche gehoerte zur vorherigen Datei.
+watch(() => props.fileId, () => {
+  search.value = ''
+  searchCursor.value = 0
+})
+
 async function copySource() {
   // copyToClipboard kapselt den Secure-Context-/Fallback-Fall (Pi laeuft ueber http).
   // Kopiert wird der ANGEZEIGTE (eingerueckte) Code.
@@ -436,8 +540,10 @@ async function removeFile() {
       </button>
     </header>
 
-    <!-- Tabs -->
-    <div v-if="file" class="flex shrink-0 gap-1 border-b border-[var(--color-border)] px-4 pt-2">
+    <!-- Tabs + Code-Suche. Die drei Tabs bilden EINE Flex-Einheit: bei schmaler dritter Spalte
+         rutscht die Suchleiste sonst so um, dass „History" allein in einer Zeile steht. -->
+    <div v-if="file" class="flex shrink-0 flex-wrap items-center gap-1 border-b border-[var(--color-border)] px-4 pt-2">
+      <div class="flex items-center gap-1">
       <button
         type="button"
         class="border-b-2 px-3 py-1.5 text-sm font-medium transition"
@@ -456,6 +562,84 @@ async function removeFile() {
         :class="tab === 'history' ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
         @click="tab = 'history'"
       >History</button>
+      </div>
+
+      <!-- Suche im Quelltext. Steht neben den Tabs, weil sie zu genau EINEM davon gehoert: Tippen
+           wechselt deshalb in den Source-Tab, statt still ins Leere zu suchen. -->
+      <div
+        class="mb-1 ml-auto flex min-w-0 max-w-[26rem] flex-1 basis-[20rem] flex-wrap items-center gap-0.5 rounded-lg border bg-[var(--color-surface)] px-1.5 py-0.5 transition"
+        :class="searchFailed ? 'border-[var(--color-danger)]' : 'border-[var(--color-border)] focus-within:border-[var(--color-accent)]'"
+      >
+        <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
+        <input
+          ref="searchInput"
+          :value="search"
+          type="text"
+          placeholder="Search source…"
+          aria-label="Search source code"
+          spellcheck="false"
+          class="min-w-[6rem] flex-1 bg-transparent py-0.5 text-xs text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
+          @input="setQuery($event.target.value)"
+          @keydown.enter.prevent="stepMatch($event.shiftKey ? -1 : 1)"
+          @keydown.esc.prevent="closeSearch"
+        />
+        <span
+          v-if="search"
+          class="shrink-0 whitespace-nowrap px-0.5 text-3xs tabular-nums"
+          :class="searchFailed ? 'text-[var(--color-danger)]' : 'text-[var(--color-text-muted)]'"
+          :title="searchCounterTitle"
+        >{{ searchCounter }}</span>
+
+        <!-- Modus-Schalter (Aa / ganzes Wort / Regex) -->
+        <button
+          v-for="o in SEARCH_TOGGLES"
+          :key="o.key"
+          type="button"
+          class="grid h-5 w-5 shrink-0 place-items-center rounded transition"
+          :class="searchOpts[o.key]
+            ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)]'
+            : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]'"
+          :title="o.title"
+          :aria-pressed="searchOpts[o.key]"
+          @click="toggleSearchOpt(o.key)"
+        >
+          <Icon :icon="o.icon" class="h-3.5 w-3.5" />
+        </button>
+
+        <!-- Navigation als EINE Einheit: in einer schmalen Spalte bricht die Leiste intern um, und
+             ein einzeln abgetrennter Weiter-Pfeil waere dort ein Bedienelement ohne Zusammenhang. -->
+        <div class="ml-auto flex shrink-0 items-center gap-0.5">
+        <span class="mx-0.5 h-4 w-px shrink-0 bg-[var(--color-border)]" />
+
+        <button
+          type="button"
+          class="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-40 disabled:hover:bg-transparent"
+          title="Previous match (Shift+Enter)"
+          :disabled="!matches.length"
+          @click="stepMatch(-1)"
+        >
+          <Icon icon="lucide:chevron-up" class="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          class="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-40 disabled:hover:bg-transparent"
+          title="Next match (Enter)"
+          :disabled="!matches.length"
+          @click="stepMatch(1)"
+        >
+          <Icon icon="lucide:chevron-down" class="h-3.5 w-3.5" />
+        </button>
+        <button
+          v-if="search"
+          type="button"
+          class="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+          title="Clear search (Esc)"
+          @click="closeSearch"
+        >
+          <Icon icon="lucide:x" class="h-3.5 w-3.5" />
+        </button>
+        </div>
+      </div>
     </div>
 
     <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
@@ -554,11 +738,14 @@ async function removeFile() {
               :active-call="activeCall"
               :def-words="incomingMethods"
               :active-def-range="activeDefRange"
+              :search-matches="matches"
+              :search-active="activeMatch"
               readonly
               @method-click="onMethodClick"
               @clear-call="onClearCall"
               @def-click="onDefClick"
               @clear-def="onClearDef"
+              @select-word="onSelectWord"
             />
           </div>
         </template>

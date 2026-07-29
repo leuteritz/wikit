@@ -103,7 +103,14 @@ Open the **Java Analyzer** from the top bar:
    (“bom · 12 linked”). Those bundled edges open the same list of class pairs, so a relation that
    leaves the package is still traceable down to the line of code. A toggle in the toolbar turns the
    surroundings off when you want to read one package on its own.
-3. **Export.** Turn a class into a normal Markdown article — from then on it is in the sidebar and
+3. **Search inside a class.** The `Source` tab of the detail panel carries its own search bar next
+   to the tabs: type there (or press `Ctrl`/`Cmd`+`F` anywhere in the panel) and every hit is
+   highlighted, with a counter and `Enter` / `Shift`+`Enter` to walk through them — match case,
+   whole word and regular expressions are one click away, `Esc` clears everything. Selecting a
+   variable in the code is the same gesture: the name lands in the search bar with *whole word*
+   turned on, so all its occurrences light up and the same arrows step from one to the next,
+   starting at the one you marked.
+4. **Export.** Turn a class into a normal Markdown article — from then on it is in the sidebar and
    **full-text searchable** (FTS5) like any other note.
 
 ## AI summaries (Ollama)

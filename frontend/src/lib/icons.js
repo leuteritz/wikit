@@ -74,6 +74,10 @@ import packageIcon from '@iconify-icons/lucide/package'
 import mousePointerClick from '@iconify-icons/lucide/mouse-pointer-click'
 import eye from '@iconify-icons/lucide/eye'
 import eyeOff from '@iconify-icons/lucide/eye-off'
+import chevronUp from '@iconify-icons/lucide/chevron-up'
+import caseSensitive from '@iconify-icons/lucide/case-sensitive'
+import wholeWord from '@iconify-icons/lucide/whole-word'
+import regexIcon from '@iconify-icons/lucide/regex'
 
 // --- Phosphor (Duotone, fuer das Brand-Logo) ---
 import phBooksDuotone from '@iconify-icons/ph/books-duotone'
@@ -146,6 +150,11 @@ const ICONS = {
   'lucide:mouse-pointer-click': mousePointerClick,
   'lucide:eye': eye,
   'lucide:eye-off': eyeOff,
+  // Code-Suche im Klassen-Detail: Navigation + die drei Modus-Schalter der Suchleiste.
+  'lucide:chevron-up': chevronUp,
+  'lucide:case-sensitive': caseSensitive,
+  'lucide:whole-word': wholeWord,
+  'lucide:regex': regexIcon,
   'ph:books-duotone': phBooksDuotone,
 }
 
