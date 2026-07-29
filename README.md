@@ -100,6 +100,13 @@ Open the **Java Analyzer** from the top bar:
    touch a match are drawn; how the neighbours relate to each other is a different question. With
    the surroundings in view, classes of the same package are laid out side by side inside a tinted
    frame carrying the package name; a class that is the only one from its package stays unframed.
+   A second search box sits in the top right corner **of the graph** and answers a different
+   question: not *which* classes to draw, but where something is in the picture you already have.
+   It matches class names, packages and the **method names on the edges** — everything else fades,
+   nothing moves. Prefixes narrow it down (`m:` method, `c:` class, `p:` package, `t:` type,
+   `r:` role), `review:` lights up every uncertain edge and `manual:` every hand-made one; the
+   prefixes appear as clickable chips when the empty box is focused. `Enter` / `Shift`+`Enter`
+   walks the hits and moves the camera to each one.
    An opened package never stands alone: whatever it connects to **outside** itself comes with it —
    as single classes while there are few, as one node per foreign package once there are many
    (“bom · 12 linked”). Those bundled edges open the same list of class pairs, so a relation that

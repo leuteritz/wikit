@@ -37,6 +37,15 @@ const hoveredNode = ref(null)
 // muesste bei jeder Mausbewegung der komplette Kanten-Store neu geschrieben werden.
 const hoveredEdge = ref(null)
 
+// --- Suche IM gezeichneten Graphen ------------------------------------------------------------
+// Aus demselben Grund hier wie der Hover-Zustand: ManagedEdge entscheidet selbst, ob es gemeint
+// ist, statt dass der komplette Kanten-Store bei jedem Tastendruck neu geschrieben wird.
+// `graphQuery` ist die Roheingabe (Parsen macht lib/graphQuery.js), `graphHitNodes` die Menge der
+// getroffenen Karten-Ids – Kanten brauchen sie, um zu erkennen, dass sie ZWEI Treffer verbindet
+// und deshalb dazugehoert.
+const graphQuery = ref('')
+const graphHitNodes = ref(new Set())
+
 // Rueckweg aus einem Kanten-Panel in den Quellcode.
 //
 // Der Sprung „Kante -> Aufrufstelle" ist eine Einbahnstrasse: das Panel schliesst sich (sonst
@@ -151,6 +160,17 @@ export function useJavaGraph() {
     hoveredEdge,
     setHoveredEdge(payload) {
       hoveredEdge.value = payload
+    },
+    // --- Suche im Graphen ---------------------------------------------------------------------
+    graphQuery,
+    setGraphQuery(value) {
+      graphQuery.value = value || ''
+      if (!graphQuery.value) graphHitNodes.value = new Set()
+    },
+    graphHitNodes,
+    // Immer ein NEUES Set setzen – ein mutiertes bliebe fuer die Kanten unsichtbar.
+    setGraphHitNodes(ids) {
+      graphHitNodes.value = ids instanceof Set ? ids : new Set(ids || [])
     },
     // --- Rueckweg zum Kanten-Panel ------------------------------------------------------------
     edgeReturn,

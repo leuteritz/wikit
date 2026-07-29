@@ -28,6 +28,7 @@ import { useRootScale } from '../../composables/useRootScale.js'
 import { Icon } from '../../lib/icons.js'
 import { buildPackageLevel, buildNeighbourLevel, commonPackagePrefix, breadcrumbFor } from '../../lib/packageGraph.js'
 import { layoutFlat, layoutClustered } from '../../lib/graphLayout.js'
+import { parseGraphQuery, matchNode, matchEdge, GRAPH_QUERY_HELP } from '../../lib/graphQuery.js'
 import JavaEdgeDetailPanel from './JavaEdgeDetailPanel.vue'
 import JavaBundlePanel from './JavaBundlePanel.vue'
 import ManualEdgePanel from './ManualEdgePanel.vue'
@@ -53,7 +54,7 @@ const emit = defineEmits(['select', 'clear-search'])
 const { theme } = useTheme()
 // `viewport` wird fuer den Zonen-Layer gebraucht: er liegt HINTER dem Canvas und muss dessen
 // Pan/Zoom selbst nachfahren (Vue Flow transformiert nur seine eigenen Ebenen).
-const { fitView, zoomIn, zoomOut, setViewport, viewport } = useVueFlow()
+const { fitView, zoomIn, zoomOut, setViewport, setCenter, viewport } = useVueFlow()
 
 // Persistierte Call-/Uses-Edges (auto + manuell) – Quelle der Wahrheit ist das Backend.
 // Kanten lassen sich im Graph manuell anlegen (Drag-to-Connect) und löschen (× am Label):
@@ -73,6 +74,8 @@ const {
   setHoveredNode,
   hoveredEdge,
   setHoveredEdge,
+  setGraphQuery,
+  setGraphHitNodes,
   edgeReturn,
   edgeReturnToken,
   setEdgeReturn,
@@ -994,6 +997,107 @@ const edges = computed(() => {
   })
 })
 
+// --- Suche IM gezeichneten Graphen ------------------------------------------------------------
+// Unterschied zum Klassenfilter der linken Spalte: DER bestimmt, was gezeichnet wird, und rechnet
+// dafuer ein Layout. Diese Suche laesst das Bild stehen und beantwortet „wo ist das hier drin?" –
+// sie setzt nur Treffer-/Daempfungs-Klassen, kostet also keinen dagre-Lauf, und nichts springt.
+// Die Kanten pruefen sich selbst (ManagedEdge liest den Zustand aus dem Composable), damit bei
+// jedem Tastendruck nicht der komplette Kanten-Store neu geschrieben wird.
+const findInput = ref('')
+const findCursor = ref(0)
+const findFocused = ref(false)
+const findField = ref(null)
+const findQuery = computed(() => parseGraphQuery(findInput.value))
+
+// Praefix-Chips: machen die Facetten entdeckbar, statt sie in einem Tooltip zu verstecken.
+const FIND_HINTS = [
+  { prefix: 'm:', label: 'method' },
+  { prefix: 'c:', label: 'class' },
+  { prefix: 'p:', label: 'package' },
+  { prefix: 't:', label: 'type' },
+  { prefix: 'r:', label: 'role' },
+  { prefix: 'review:', label: 'uncertain edges' },
+  { prefix: 'manual:', label: 'hand-made edges' },
+]
+
+// Getroffene Karten in ZEICHENreihenfolge -> „weiter" laeuft stabil durch dasselbe Bild.
+const findNodeHits = computed(() => {
+  const q = findQuery.value
+  if (!q) return []
+  return nodes.value.filter((n) => matchNode(n.data, q)).map((n) => n.id)
+})
+const findNodeHitSet = computed(() => new Set(findNodeHits.value))
+// Eine Kante gilt als getroffen, wenn ihr Methodenname passt ODER sie zwei Treffer verbindet –
+// zwischen zwei leuchtenden Karten eine gedaempfte Linie zu lassen, waere die halbe Aussage.
+const findEdgeHits = computed(() => {
+  const q = findQuery.value
+  if (!q) return []
+  const hits = findNodeHitSet.value
+  return edges.value.filter((e) => matchEdge(e.data, q) || (hits.has(e.source) && hits.has(e.target)))
+})
+// Endpunkte getroffener Kanten bleiben stehen (gleiche Regel wie beim Kanten-Hover): eine Kante
+// ist eine Aussage ueber zwei Klassen, und die will man dabei sehen.
+const findEdgeEnds = computed(() => {
+  const s = new Set()
+  for (const e of findEdgeHits.value) {
+    s.add(e.source)
+    s.add(e.target)
+  }
+  return s
+})
+const findTotal = computed(() => findNodeHits.value.length + findEdgeHits.value.length)
+const findCounter = computed(() => {
+  if (!findQuery.value) return ''
+  const n = findNodeHits.value.length
+  const e = findEdgeHits.value.length
+  if (!n && !e) return 'No match'
+  const parts = []
+  if (n) parts.push(`${n} class${n === 1 ? '' : 'es'}`)
+  if (e) parts.push(`${e} edge${e === 1 ? '' : 's'}`)
+  return parts.join(' · ')
+})
+// Ist eine Karte vom aktuellen Fund betroffen (selbst getroffen oder Endpunkt einer Treffer-Kante)?
+function isFindHit(nodeId) {
+  return findNodeHitSet.value.has(nodeId) || findEdgeEnds.value.has(nodeId)
+}
+
+// Zustand nach unten reichen: die Kanten lesen ihn selbst.
+watch(findInput, (v) => setGraphQuery(v))
+watch(findNodeHits, (ids) => setGraphHitNodes(ids), { immediate: true })
+watch(findQuery, () => {
+  findCursor.value = 0
+})
+
+// Von Treffer zu Treffer: der Graph faehrt hin, statt dass man ihn absucht. Karten zuerst, sonst
+// die Endpunkte der getroffenen Kanten (bei `review:`/`m:` gibt es oft nur Kanten-Treffer).
+const findTargets = computed(() => (findNodeHits.value.length ? findNodeHits.value : [...findEdgeEnds.value]))
+function stepFind(delta) {
+  const list = findTargets.value
+  if (!list.length) return
+  findCursor.value = ((findCursor.value + delta) % list.length + list.length) % list.length
+  const node = nodes.value.find((n) => n.id === list[findCursor.value])
+  if (!node) return
+  // Bewusst `setCenter` statt `fitView([node])`: fitView rechnet einen eigenen Zoom aus dem
+  // Padding und liess den Ausschnitt bei kleinen Treffermengen unveraendert. Hier soll nur die
+  // Kamera fahren – der Zoom bleibt, wie der Nutzer ihn eingestellt hat (nur nach unten begrenzt,
+  // damit ein Treffer im weit herausgezoomten Bild ueberhaupt lesbar ankommt).
+  const w = (node.type === 'pkg' ? PKG_W : NODE_W) * rootScale.value
+  const h = (node.type === 'pkg' ? PKG_H : NODE_H) * rootScale.value
+  setCenter(node.position.x + w / 2, node.position.y + h / 2, {
+    zoom: Math.max(viewport.value?.zoom ?? 1, 0.75),
+    duration: 320,
+  })
+}
+function clearFind() {
+  findInput.value = ''
+  findCursor.value = 0
+  findField.value?.blur()
+}
+function applyHint(prefix) {
+  findInput.value = prefix
+  findField.value?.focus()
+}
+
 // Canvas-Raster: ein einzelnes Linienraster, das mit dem Viewport wandert und beim Pannen
 // Orientierung gibt. Deckkraft so gewaehlt, dass es als Gefuege lesbar bleibt, ohne mit den
 // Knoten zu konkurrieren. Feste rgba-Werte statt color-mix: die Farbe landet als SVG-Attribut,
@@ -1019,6 +1123,9 @@ const neighbours = computed(() => {
 })
 function isDimmed(nodeId) {
   const h = hoveredNode.value
+  // Reihenfolge mit Absicht: der Hover ist die feinere Geste und darf INNERHALB eines Suchergebnisses
+  // weiter isolieren. Liegt die Maus nirgends, bestimmt die Suche das Bild.
+  if (!h && !hoveredEdge.value && findQuery.value) return !isFindHit(nodeId)
   if (h) return h !== nodeId && !neighbours.value.get(h)?.has(nodeId)
   // Hover auf einer KANTE: nur ihre beiden Endpunkte bleiben stehen. Schaerfer als beim
   // Knoten-Hover (dort bleibt die ganze Nachbarschaft) – eine Kante ist genau eine Beziehung
@@ -1565,6 +1672,7 @@ watch(
               'vf-card--context': data.isContext,
               'vf-card--dim': isDimmed(`c:${data.fileId}`),
               'vf-card--edge-end': !!edgeEndColor(`c:${data.fileId}`),
+              'vf-card--find': findNodeHitSet.has(`c:${data.fileId}`),
             },
           ]"
           :style="{ '--pkg': data.color, '--edge': edgeEndColor(`c:${data.fileId}`) }"
@@ -1619,6 +1727,7 @@ watch(
             'vf-pkgcard--related': data.related,
             'vf-card--dim': isDimmed(`p:${data.path}`),
             'vf-card--edge-end': !!edgeEndColor(`p:${data.path}`),
+            'vf-card--find': findNodeHitSet.has(`p:${data.path}`),
           }"
           :style="{ '--pkg': data.color, '--edge': edgeEndColor(`p:${data.path}`) }"
           :title="data.related
@@ -1705,6 +1814,63 @@ watch(
         <Icon icon="lucide:x" class="h-3.5 w-3.5" />
         Clear
       </button>
+    </div>
+
+    <!-- Suche IM Bild (oben rechts, die einzige freie Ecke). Sie aendert den Ausschnitt nicht –
+         sie sagt, wo im aktuellen Graphen etwas steckt, und daempft den Rest. -->
+    <div v-if="files.length" class="vf-find" :class="{ 'is-active': !!findQuery }">
+      <div class="vf-find-row">
+        <Icon icon="lucide:search" class="vf-find-icon" />
+        <input
+          ref="findField"
+          v-model="findInput"
+          type="text"
+          class="vf-find-input"
+          placeholder="Find in graph…"
+          aria-label="Find in graph"
+          spellcheck="false"
+          :title="GRAPH_QUERY_HELP"
+          @focus="findFocused = true"
+          @blur="findFocused = false"
+          @keydown.enter.prevent="stepFind($event.shiftKey ? -1 : 1)"
+          @keydown.esc.prevent="clearFind"
+        />
+        <span v-if="findQuery" class="vf-find-count" :class="{ 'is-empty': !findTotal }">{{ findCounter }}</span>
+        <button
+          type="button"
+          class="vf-find-btn"
+          title="Previous hit (Shift+Enter)"
+          :disabled="!findTargets.length"
+          @click="stepFind(-1)"
+        >
+          <Icon icon="lucide:chevron-up" class="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          class="vf-find-btn"
+          title="Next hit (Enter) — the graph moves to it"
+          :disabled="!findTargets.length"
+          @click="stepFind(1)"
+        >
+          <Icon icon="lucide:chevron-down" class="h-3.5 w-3.5" />
+        </button>
+        <button v-if="findInput" type="button" class="vf-find-btn" title="Clear (Esc)" @click="clearFind">
+          <Icon icon="lucide:x" class="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <!-- Die Facetten stehen nicht in einem Tooltip, den niemand oeffnet: sie erscheinen beim
+           ersten Klick ins leere Feld und tragen sich per Klick selbst ein. -->
+      <div v-if="findFocused && !findInput" class="vf-find-hints">
+        <button
+          v-for="h in FIND_HINTS"
+          :key="h.prefix"
+          type="button"
+          class="vf-find-hint"
+          @mousedown.prevent="applyHint(h.prefix)"
+        >
+          <code>{{ h.prefix }}</code>{{ h.label }}
+        </button>
+      </div>
     </div>
 
     <!-- Der Kontext ist eine ENTSCHEIDUNG, keine Nebenwirkung – und als Chip in der Kopfzeile war
@@ -2235,6 +2401,111 @@ watch(
   background: var(--color-accent-soft);
   color: var(--color-accent);
 }
+/* --- Suche im gezeichneten Graphen (oben rechts) ---------------------------------------------
+   Deckender Hintergrund, kein backdrop-filter (s. Stolperfalle „kein filter im Graphen"). */
+.vf-find {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 6;
+  display: flex;
+  width: 19rem;
+  max-width: calc(100% - 20px);
+  flex-direction: column;
+  gap: 4px;
+}
+.vf-find-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  padding: 3px 6px;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.08);
+  transition: border-color 0.15s ease;
+}
+.vf-find.is-active .vf-find-row,
+.vf-find-row:focus-within {
+  border-color: var(--color-accent);
+}
+.vf-find-icon {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+}
+.vf-find-input {
+  min-width: 0;
+  flex: 1;
+  background: transparent;
+  padding: 3px 2px;
+  font-size: 0.75rem;
+  color: var(--color-text);
+  outline: none;
+}
+.vf-find-input::placeholder {
+  color: var(--color-text-muted);
+}
+.vf-find-count {
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  color: var(--color-text-muted);
+}
+.vf-find-count.is-empty {
+  color: var(--color-danger);
+}
+.vf-find-btn {
+  display: grid;
+  height: 1.25rem;
+  width: 1.25rem;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 5px;
+  color: var(--color-text-muted);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.vf-find-btn:hover:not(:disabled) {
+  background: var(--color-surface-offset);
+  color: var(--color-text);
+}
+.vf-find-btn:disabled {
+  opacity: 0.35;
+}
+/* Facetten-Chips: erscheinen im leeren, fokussierten Feld und tragen sich per Klick ein. */
+.vf-find-hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  padding: 5px 6px;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.08);
+}
+.vf-find-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border-radius: 6px;
+  background: var(--color-surface-offset);
+  padding: 1px 5px;
+  font-size: 0.625rem;
+  color: var(--color-text-muted);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.vf-find-hint:hover {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+.vf-find-hint code {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
 /* --- Umgebung im Suchmodus ein-/ausblenden ---------------------------------------------------
    Eigene Schaltflaeche statt eines Chips in der Kopfzeile: die Frage „will ich die Klassen um die
    Treffer herum sehen?" ist die einzige Entscheidung, die der Suchmodus verlangt – sie gehoert
@@ -2812,6 +3083,18 @@ watch(
    welche beiden Klassen die Beziehung eigentlich verbindet. Der Ring liegt aussen (box-shadow),
    veraendert also keine Kartengroesse – ein Aufklappen beim Hover wuerde das Layout verspringen
    lassen und die Maus womoeglich gleich wieder aus der Kante schieben. */
+/* Treffer der Graph-Suche: Gold-Familie wie jeder andere Suchtreffer in Wikit (`mark` in
+   style.css, Treffer im Quelltext). Ring per box-shadow – eine Karte, die beim Suchen ihre Groesse
+   aendert, verschoebe das ganze Layout. Die Rollenfarbe am Streifen bleibt sichtbar: WAS der Knoten
+   im Netz ist, aendert sich durch eine Suche nicht. */
+.vf-card--find,
+.vf-pkgcard.vf-card--find {
+  border-color: var(--color-warning);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-warning) 42%, transparent),
+    0 8px 22px color-mix(in srgb, var(--color-warning) 26%, transparent);
+  z-index: 1;
+}
+
 .vf-card--edge-end,
 .vf-pkgcard.vf-card--edge-end {
   border-color: var(--edge);

@@ -18,6 +18,7 @@ import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from '@vue-flow/core'
 import { Icon } from '../../lib/icons.js'
 import { useJavaGraph } from '../../composables/useJavaGraph.js'
 import { useRootScale } from '../../composables/useRootScale.js'
+import { parseGraphQuery, matchEdge } from '../../lib/graphQuery.js'
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -92,7 +93,23 @@ const d = computed(() => props.data || {})
 // Zeigt die Maus auf einen Knoten, bleiben nur dessen eigene Kanten stehen; alles andere faellt
 // fast auf null. Der Zustand kommt aus dem Composable, NICHT ueber `data`: sonst muesste der
 // Parent bei jeder Mausbewegung saemtliche Kanten neu in den Vue-Flow-Store schreiben.
-const { hoveredNode, hoveredEdge, setHoveredEdge, clearHoveredEdge } = useJavaGraph()
+const { hoveredNode, hoveredEdge, setHoveredEdge, clearHoveredEdge, graphQuery, graphHitNodes } = useJavaGraph()
+
+// --- Suche im Graphen ---------------------------------------------------------------------------
+// Die Kante prueft sich selbst (statt dass der Parent bei jedem Tastendruck den Kanten-Store neu
+// schreibt). Getroffen ist sie, wenn ihr Methodenname passt – oder wenn sie zwei getroffene Karten
+// verbindet: eine gedaempfte Linie zwischen zwei leuchtenden Knoten waere die halbe Aussage.
+const findQuery = computed(() => parseGraphQuery(graphQuery.value))
+const isFindHit = computed(() => {
+  const q = findQuery.value
+  if (!q) return false
+  if (matchEdge(d.value, q)) return true
+  const hits = graphHitNodes.value
+  return hits.has(d.value.sourceId) && hits.has(d.value.targetId)
+})
+// Bei aktiver Suche tritt alles zurueck, was nicht dazugehoert – dieselbe Daempfung wie beim Hover,
+// damit im Bild nur EINE Sprache fuer „gerade nicht gemeint" existiert.
+const findDimmed = computed(() => !!findQuery.value && !isFindHit.value)
 
 // --- Hover auf der KANTE ---------------------------------------------------------------------
 // Die Linie selbst ist 2 px schmal und damit kaum zu treffen. Darum liegt ein unsichtbarer,
@@ -131,7 +148,9 @@ const dimmed = computed(() => {
   if (h) return d.value.sourceId !== h && d.value.targetId !== h
   // Steht die Maus auf einer anderen Kante, tritt diese hier zurueck – sonst bliebe die
   // hervorgehobene Beziehung in einem dichten Graphen genauso unlesbar wie vorher.
-  return !!hoveredEdge.value && !isHovered.value
+  if (hoveredEdge.value) return !isHovered.value
+  // Ohne Maus im Bild bestimmt die Suche (gleiche Vorrangregel wie bei den Karten).
+  return findDimmed.value
 })
 const focused = computed(() => (!!hoveredNode.value || !!hoveredEdge.value) && !dimmed.value)
 
@@ -144,6 +163,9 @@ const pathStyle = computed(() => {
   // Direkt gehoverte Kante: kraeftiger als der blosse Nachbarschafts-Fokus. Der Schein kommt NICHT
   // von `filter: drop-shadow` (s. .me-glow unten), sondern von zwei breiteren Pfaden darunter.
   if (isHovered.value) return { ...base, opacity: 1, strokeWidth: (base.strokeWidth || 2) + 1.4 }
+  // Suchtreffer: kraeftig wie eine gehoverte Kante, aber ohne deren Extra-Breite – bei zwanzig
+  // Treffern gleichzeitig waere das ein Balkenbild.
+  if (isFindHit.value) return { ...base, opacity: 1, strokeWidth: (base.strokeWidth || 2) + 0.7 }
   if (focused.value) return { ...base, opacity: 1, strokeWidth: (base.strokeWidth || 2) + 0.7 }
   return base
 })
@@ -157,7 +179,7 @@ const pathStyle = computed(() => {
 // Zwei breitere, halbtransparente Pfade unter der Linie sehen praktisch gleich aus und sind
 // gewoehnliche Vektor-Zeichnungen ohne Zwischentextur.
 const baseWidth = computed(() => Number(d.value.edgeStyle?.strokeWidth) || 2)
-const glowing = computed(() => isHovered.value || !!d.value.isHighlighted)
+const glowing = computed(() => isHovered.value || !!d.value.isHighlighted || isFindHit.value)
 // Nur die „aufleuchtende" Kante (Code-Tab-Klick) pulsiert – beim Hover waere Bewegung unruhig.
 const pulsing = computed(() => !!d.value.isHighlighted && !isHovered.value)
 </script>
@@ -212,7 +234,7 @@ const pulsing = computed(() => !!d.value.isHighlighted && !isHovered.value)
   <EdgeLabelRenderer v-if="d.kind === 'aggregate'">
     <div
       class="me-label me-label--agg"
-      :class="{ 'me-label--dim': dimmed, 'me-label--hot': isHovered }"
+      :class="{ 'me-label--dim': dimmed, 'me-label--hot': isHovered, 'me-label--find': isFindHit && !isHovered }"
       :style="{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`, '--edge': edgeColor }"
       :title="`${d.count} class-to-class relation${d.count === 1 ? '' : 's'} bundled here — click to list them`"
       @mouseenter="onEdgeEnter"
@@ -255,6 +277,7 @@ const pulsing = computed(() => !!d.value.isHighlighted && !isHovered.value)
         'me-label--lit': d.isHighlighted,
         'me-label--dim': dimmed,
         'me-label--hot': isHovered,
+        'me-label--find': isFindHit && !isHovered,
       }"
       :style="{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`, '--edge': edgeColor }"
       title="Show details"
@@ -378,6 +401,14 @@ const pulsing = computed(() => !!d.value.isHighlighted && !isHovered.value)
 }
 .me-label--manual {
   border-style: dashed;
+}
+/* Treffer der Graph-Suche: dieselbe Gold-Familie wie die getroffenen Karten und wie jeder andere
+   Suchtreffer in Wikit. Bewusst schwaecher als `--hot`: gehovert ist immer genau eine Kante,
+   getroffen koennen zwanzig sein. */
+.me-label--find {
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-warning) 30%, transparent);
 }
 /* Label der gehoverten Kante: uebernimmt deren Farbe und tritt vor. Der Rahmen ist dieselbe
    Farbe, die auch die Linie und die Ringe an den beiden Endkarten tragen – daran haengt die
