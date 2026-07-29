@@ -61,11 +61,17 @@ const calleeList = computed(() => {
       signature: m.signature || '',
       edgeId: m.edgeId ?? null,
       isManual: !!m.isManual,
+      // Unsicherer Auto-Treffer: der Aufruf nennt kein Objekt, die Zielklasse wurde ueber den
+      // Methodennamen geraten (s. Erklaerung im Template).
+      needsReview: !!m.needsReview,
     }))
   }
   const sigs = new Map((props.edge.calleeSignatures || []).map((s) => [s.name, s.signature]))
-  return (props.edge.callees || []).map((name) => ({ name, signature: sigs.get(name) || '', edgeId: null, isManual: false }))
+  return (props.edge.callees || []).map((name) => ({ name, signature: sigs.get(name) || '', edgeId: null, isManual: false, needsReview: false }))
 })
+
+// Namen der unsicher erkannten Methoden – die Aufrufstellen unten kennen nur ihren Callee-Namen.
+const unverified = computed(() => new Set(calleeList.value.filter((c) => c.needsReview).map((c) => c.name)))
 
 // Aufrufstellen pro aufrufende Methode gruppieren (Anwender-Sektion). Jede Site traegt ihre
 // exakte Zeile + (relative) Position im Rumpf fuer das fokussierte Snippet.
@@ -266,6 +272,17 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               <span class="truncate">{{ edge.toClass }}</span>
               <Icon icon="lucide:arrow-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
               <span class="truncate">{{ edge.fromClass }}</span>
+              <!-- Dasselbe Badge wie am Kanten-Label im Graph. Es steht hier, damit der Klick auf
+                   eine „Please review"-Kante nicht in einem Modal endet, das aussieht wie jedes
+                   andere – erklärt wird es an der betroffenen Methode weiter unten. -->
+              <span
+                v-if="unverified.size"
+                class="review-badge shrink-0"
+                :title="`${unverified.size} of ${calleeList.length} method(s) on this edge were matched by name only – see the note on the method below`"
+              >
+                <Icon icon="lucide:alert-triangle" class="h-3 w-3 shrink-0" />
+                Please review
+              </span>
             </div>
             <button
               type="button"
@@ -318,6 +335,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                       <Icon icon="lucide:braces" class="h-3.5 w-3.5" />
                     </span>
                     <code class="mc-name font-mono text-sm font-semibold">{{ c.name }}()</code>
+                    <span v-if="c.needsReview" class="review-badge shrink-0">
+                      <Icon icon="lucide:alert-triangle" class="h-3 w-3 shrink-0" />
+                      Please review
+                    </span>
                     <div class="ml-auto flex min-w-0 items-center gap-1.5">
                       <!-- „Definiert in <Klasse>": springt in den Quellcode der Zielklasse und
                            markiert dort die komplette Methode. Dezent, header-konform (keine
@@ -389,6 +410,22 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                       </template>
                     </div>
                   </div>
+
+                  <!-- Antwort auf das „Please review" am Kanten-Label: WARUM ist dieser Treffer
+                       unsicher und was soll man damit tun. Ohne diesen Satz sieht das Modal
+                       genauso aus wie bei einer gesicherten Kante. -->
+                  <p v-if="c.needsReview" class="review-note">
+                    <Icon icon="lucide:alert-triangle" class="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>
+                      <!-- Leerzeichen in DERSELBEN Zeile: Vue verwirft Whitespace-Knoten, die eine
+                           Zeilenschaltung enthalten – „verified.purge()" waere zusammengeklebt. -->
+                      <strong>Matched by name, not verified.</strong> <code class="font-mono">{{ c.name }}()</code> is called in {{ edge.fromClass }} without naming an
+                      object in front of it, so its receiver type is unknown. It was linked to
+                      <strong>{{ edge.toClass }}</strong> because that is the only analyzed class defining a method with
+                      this name — it could just as well be inherited, statically imported, or defined in a class that was
+                      never analyzed. Check the call site below and delete this connection if it is wrong.
+                    </span>
+                  </p>
 
                   <!-- EIN kombinierter Code-Block: Signatur + Rumpf, leerzeilenfrei (Shiki, Dual-Theme) -->
                   <div class="px-3 pb-2">
@@ -462,6 +499,16 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                         <code class="font-mono text-sm font-semibold text-[var(--color-text)]">{{ grp.callerMethod }}()</code>
                         <Icon icon="lucide:arrow-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
                         <code class="mc-name font-mono text-sm font-semibold">{{ site.calleeMethod }}()</code>
+                        <!-- Genau diese Zeile ist die geratene Stelle -> das Badge gehoert hierher,
+                             nicht nur an die Definition oben. -->
+                        <span
+                          v-if="unverified.has(site.calleeMethod)"
+                          class="review-badge shrink-0"
+                          :title="`This call names no object, so the target class was matched by method name only – verify that it really goes to ${edge.toClass}`"
+                        >
+                          <Icon icon="lucide:alert-triangle" class="h-3 w-3 shrink-0" />
+                          Please review
+                        </span>
                         <div class="ml-auto flex min-w-0 items-center gap-1.5">
                           <span
                             class="inline-flex min-w-0 items-center gap-1 truncate font-mono text-2xs text-[var(--color-text-muted)]"
@@ -544,6 +591,36 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .mc-dot {
   @apply h-2 w-2 shrink-0 rounded-full;
   background-color: var(--mc, var(--color-accent));
+}
+
+/* „Please review": unsicherer Auto-Treffer. Gleiche Warnfarbe wie das Badge am Kanten-Label im
+   Graph (REVIEW_COLOR = --color-warning), damit man dasselbe Zeichen wiedererkennt. */
+.review-badge {
+  @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-3xs font-bold uppercase tracking-wide;
+  color: var(--color-warning);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 45%, transparent);
+  background-color: color-mix(in srgb, var(--color-warning) 14%, transparent);
+}
+/* Die Erklaerung dazu – Fliesstext, bewusst nicht als Tooltip: sie beantwortet die Frage, die das
+   Badge aufwirft, und muss ohne Hover lesbar sein. */
+.review-note {
+  @apply mx-3 mb-2 flex gap-2 rounded-lg px-2.5 py-2 text-2xs leading-relaxed;
+  /* Die Karte waechst per `w-max` mit ihrem breitesten Kind – ein Fliesstext dieser Laenge wuerde
+     das Modal auf Maximalbreite ziehen, obwohl der Code viel schmaler ist. Mit `width: 0` zaehlt
+     der Absatz nicht in die max-content-Breite und fuellt ueber `min-width` trotzdem die Karte
+     (abzueglich der eigenen mx-3-Raender), bricht also um statt zu strecken. */
+  width: 0;
+  min-width: calc(100% - 1.5rem);
+  color: var(--color-text);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 35%, transparent);
+  background-color: color-mix(in srgb, var(--color-warning) 10%, transparent);
+}
+.review-note :where(strong) {
+  color: var(--color-warning);
+}
+.review-note :where(code) {
+  @apply rounded px-1;
+  background-color: color-mix(in srgb, var(--color-warning) 16%, transparent);
 }
 
 /* Zentriertes Einblenden: Backdrop faded, Card skaliert sanft von 0.95 auf 1. */

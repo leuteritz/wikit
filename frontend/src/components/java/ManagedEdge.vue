@@ -225,7 +225,11 @@ const pathStyle = computed(() => {
       </span>
       <span v-else class="me-method">{{ d.method ? d.method + '()' : '—' }}</span>
 
-      <span v-if="d.needsReview" class="me-badge" title="Detected as uncertain – please review">
+      <span
+        v-if="d.needsReview"
+        class="me-badge"
+        title="Call without a named object – the target class was matched by method name only. Open the edge for details."
+      >
         <Icon icon="lucide:alert-triangle" class="me-ic" />Please review
       </span>
 

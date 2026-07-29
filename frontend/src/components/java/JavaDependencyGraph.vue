@@ -938,6 +938,10 @@ function computeCallEdgeData(callerFile, definerFile, methods, edgeMeta = {}) {
       name: methodName,
       signature: ce ? buildSignature(ce) : '',
       isManual: !!meta.isManual,
+      // Unsicherer Auto-Treffer (confidence < 1): das Panel erklaert ihn – bis hierher wurde die
+      // Angabe verworfen, das „Please review" am Kanten-Label blieb im Modal unbeantwortet.
+      confidence: meta.confidence ?? 1,
+      needsReview: !!meta.needsReview,
     })
   }
   const single = panelMethods.length === 1
@@ -946,6 +950,8 @@ function computeCallEdgeData(callerFile, definerFile, methods, edgeMeta = {}) {
     bundleCount: panelMethods.length,
     // Pro-Methoden-Liste (Panel-Anzeige + Per-Methoden-Aktionen/Footer-Loeschen).
     methods: panelMethods,
+    // Traegt IRGENDEINE Methode einen unsicheren Treffer? -> Hinweis im Modal-Kopf.
+    needsReview: panelMethods.some((p) => p.needsReview),
     // Kanten-Metadaten fuer die Footer-Aktionen (Bearbeiten/Loeschen) im Modal – nur bei Einzelkante.
     edgeId: single ? panelMethods[0].edgeId : null,
     method: single ? panelMethods[0].name : null,
@@ -990,7 +996,7 @@ async function openEdgePanel(d) {
     const methodList = d.methods?.length
       ? d.methods
       : d.method
-        ? [{ edgeId: d.edgeId, method: d.method, isManual: d.isManual }]
+        ? [{ edgeId: d.edgeId, method: d.method, isManual: d.isManual, confidence: d.confidence, needsReview: d.needsReview }]
         : []
     if (!methodList.length) return
     const callerFile = filesById.value.get(d.fromFileId)
@@ -1060,7 +1066,20 @@ function relationsBetween(sourceKey, targetKey) {
     const provider = byName.get(e.target_class)
     if (!consumer || !provider || consumer.id === provider.id) continue
     if (keyOf.get(provider.id) !== sourceKey || keyOf.get(consumer.id) !== targetKey) continue
-    add(provider, consumer, e.kind || 'call', e.kind === 'uses' ? null : { edgeId: e.id, method: e.method_name, isManual: !!e.is_manual })
+    add(
+      provider,
+      consumer,
+      e.kind || 'call',
+      e.kind === 'uses'
+        ? null
+        : {
+            edgeId: e.id,
+            method: e.method_name,
+            isManual: !!e.is_manual,
+            confidence: e.confidence,
+            needsReview: !e.is_manual && e.confidence < 1,
+          },
+    )
   }
   // Import-Fallback: nur fuer Paare, die noch gar keine Beziehung haben (wie im Graph).
   for (const f of files) {
