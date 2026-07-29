@@ -251,6 +251,31 @@ function toggleFolder(path, open) {
   focusGraphOnPackage(path)
 }
 
+// --- Alles auf-/zuklappen ---------------------------------------------------------------------
+// Einzeln zuklappen ist bei tiefen Paketbaeumen keine Option: wer sich durch `com.acme.a.b.c`
+// gearbeitet hat, muesste denselben Weg rueckwaerts klicken, um wieder Ueberblick zu bekommen.
+// Ein Knopf, ZWEI Richtungen: was er tut, haengt daran, ob ueberhaupt noch etwas offen ist –
+// zwei getrennte Knoepfe waeren einer zuviel, von dem immer nur einer sinnvoll ist.
+const folderPaths = computed(() => {
+  const out = []
+  const walk = (nodes) => {
+    for (const n of nodes) {
+      out.push(n.fullPath)
+      walk(n.children)
+    }
+  }
+  walk(tree.value)
+  return out
+})
+// Ein offener Ordner ist immer auch sichtbar (seine Vorfahren sind es dann ebenfalls) -> die
+// gerenderten Zeilen reichen als Antwort, der Baum muss dafuer nicht zweimal durchlaufen werden.
+const anyFolderOpen = computed(() => rows.value.some((r) => r.kind === 'folder' && r.open))
+// Bewusst OHNE focusGraphOnPackage: „alles zuklappen" ist eine Aussage ueber den Baum, keine
+// Ortsangabe – der Graph soll dabei stehen bleiben, wo er ist.
+function setAllFolders(open) {
+  for (const p of folderPaths.value) collapsed[p] = !open
+}
+
 // Treffer-Hervorhebung (Substring, ohne v-html).
 function hl(name) {
   const q = search.value.trim().toLowerCase()
@@ -995,9 +1020,30 @@ function onResetPanels() {
               <Icon icon="lucide:x" class="h-3.5 w-3.5" />
             </button>
           </div>
-          <p v-if="searching" class="mt-1.5 px-1 font-mono text-3xs text-[var(--color-text-muted)]">
-            {{ filteredFiles.length }} of {{ classCount }} match
-          </p>
+          <!-- Baum-Werkzeugzeile: links, was der Baum gerade zeigt, rechts der Falt-Umschalter.
+               Er gehoert hierher und nicht an die Ordnerzeilen: er wirkt auf den GANZEN Baum. -->
+          <div v-if="rows.length" class="mt-1.5 flex items-center justify-between gap-2 pl-1">
+            <!-- Links nur die Trefferbilanz der Suche. KEINE Package-Zahl: der Baum zieht leere
+                 Zwischenebenen zusammen (`com.acme` als ein Knoten), seine Knotenzahl weicht damit
+                 von der Package-Zahl in der Kommandozeile ab – zwei Zahlen fuer dasselbe Wort. -->
+            <p class="min-w-0 truncate font-mono text-3xs text-[var(--color-text-muted)]">
+              <template v-if="searching">{{ filteredFiles.length }} of {{ classCount }} match</template>
+            </p>
+            <button
+              type="button"
+              class="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-3xs font-semibold text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:pointer-events-none disabled:opacity-40"
+              :disabled="searching || !folderPaths.length"
+              :title="searching
+                ? 'While filtering, every matching package stays open'
+                : anyFolderOpen
+                  ? 'Collapse every package in the tree'
+                  : 'Expand every package in the tree'"
+              @click="setAllFolders(!anyFolderOpen)"
+            >
+              <Icon :icon="anyFolderOpen ? 'lucide:fold-vertical' : 'lucide:unfold-vertical'" class="h-3.5 w-3.5" />
+              {{ anyFolderOpen ? 'Collapse all' : 'Expand all' }}
+            </button>
+          </div>
         </div>
 
         <ul class="min-h-0 flex-1 overflow-y-auto p-1.5">
