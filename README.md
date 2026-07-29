@@ -70,6 +70,7 @@ Copy `.env.example` to `.env`. All values are optional; the Docker-relevant ones
 | `OLLAMA_URL` | `http://localhost:11434/api/generate` | Ollama endpoint for AI summaries. In Docker use `http://host.docker.internal:11434/api/generate`. |
 | `OLLAMA_MODEL` | `qwen2.5-coder:3b` | Model used for AI summaries. |
 | `OLLAMA_TIMEOUT_MS` | `20000` | Abort and fall back to Javadoc if the model is too slow. |
+| `WIKI_BODY_LIMIT` | `64mb` | Largest accepted request body. Only the bulk paste in the Java Analyzer gets anywhere near it. Raising it means also raising `client_max_body_size` in `deploy/nginx.conf` — nginx rejects first otherwise. |
 
 > `PORT`, `HOST` and `WIKI_DB` in `.env.example` are for **bare-metal** runs only — in Docker the
 > backend always listens on `3000` internally and uses `/data/wiki.db`.

@@ -60,7 +60,14 @@ async function http(method, url, body, opts = {}) {
     const payload = await res.json().catch(() => null)
     // Backend-Meldung bevorzugen: sie nennt den konkreten Grund („Keine Klasse/Interface/Enum im
     // Quelltext gefunden") statt nur die Statuszeile.
-    const reason = payload?.error || res.statusText || `HTTP ${res.status}`
+    // 413 kommt NICHT aus all-exceptions.filter.ts, sondern direkt aus dem JSON-Parser in
+    // main.ts – also ohne unser `{ error: … }`. Uebrig bliebe "Payload Too Large", und damit
+    // weiss niemand, dass dahinter eine einstellbare Grenze steht.
+    const tooLarge =
+      res.status === 413
+        ? 'The request is larger than the server accepts. Paste fewer classes at once, or raise WIKI_BODY_LIMIT on the server.'
+        : ''
+    const reason = payload?.error || tooLarge || res.statusText || `HTTP ${res.status}`
     const err = new Error(reason)
     err.status = res.status
     err.endpoint = endpoint

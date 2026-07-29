@@ -242,6 +242,7 @@ export class JavaService {
     //    Klassen werden uebersprungen (kein neuer Version-Snapshot) und nur als Warnung gemeldet.
     type WritePlan = { it: (typeof items)[number]; existing: JavaFile | undefined; diff: string | null };
     const plans: WritePlan[] = [];
+    const unchanged: string[] = [];
     for (const it of items) {
       const existing = existingByFqcn.get(it.fqcn);
       if (!existing) {
@@ -251,10 +252,23 @@ export class JavaService {
       const fname = `${it.cls.class_name}.java`;
       const check = structuredPatch(fname, fname, existing.raw_source, it.chunk);
       if (!check.hunks.length) {
-        warnings.push(`Class "${it.fqcn}" unchanged — no new version created.`);
+        unchanged.push(it.fqcn);
         continue;
       }
       plans.push({ it, existing, diff: createPatch(fname, existing.raw_source, it.chunk) });
+    }
+
+    // Unveraenderte Klassen gedeckelt melden (wie die Parse-Fehler oben). Beim Re-Import einer
+    // ganzen Codebasis sind fast alle unveraendert – das Frontend haengt jede Warnung an EINE
+    // Meldung, aus tausend Saetzen wuerde dort eine Textwand. Ab dem Deckel ist die Zahl die
+    // Aussage, nicht die Liste.
+    const UNCHANGED_MAX = 5;
+    if (unchanged.length) {
+      if (unchanged.length <= UNCHANGED_MAX) {
+        warnings.push(...unchanged.map((f) => `Class "${f}" unchanged — no new version created.`));
+      } else {
+        warnings.push(`${unchanged.length} class(es) unchanged — no new versions created.`);
+      }
     }
 
     // Nichts zu schreiben (alle Konflikte waren identisch) -> 409, damit das Frontend meldet.
@@ -327,11 +341,22 @@ export class JavaService {
 
     // 6) KI-Zusammenfassung je geaenderter Version im Hintergrund nachtragen (blockiert die
     //    Antwort NICHT; Ollama optional -> ai_summary bleibt sonst NULL, Frontend faellt zurueck).
-    for (const cv of changedVersions) {
-      this.generateVersionSummary(cv.versionId, cv.className, cv.diff, b.userContext).catch((e) =>
-        this.logger.warn(`Diff-Summary fehlgeschlagen (Version ${cv.versionId}): ${e?.message || e}`),
-      );
-    }
+    //
+    //    NACHEINANDER, nicht als Schleife von .catch()-Aufrufen: Der Re-Import einer ganzen
+    //    Codebasis meldet hier tausende geaenderte Versionen. Alle gleichzeitig loszuschicken
+    //    heisst tausende offene Ollama-Anfragen samt anschliessendem Shiki-Rendering – Ollama
+    //    beantwortet ohnehin nur wenige parallel, der Rest laeuft in den Timeout, und auf einem
+    //    Pi geht dem Prozess dabei der Speicher aus. Die Kette laeuft ohne await weiter: die
+    //    Antwort geht sofort raus, die Summaries tropfen nach.
+    void changedVersions.reduce(
+      (chain, cv) =>
+        chain.then(() =>
+          this.generateVersionSummary(cv.versionId, cv.className, cv.diff, b.userContext).catch((e) =>
+            this.logger.warn(`Diff-Summary fehlgeschlagen (Version ${cv.versionId}): ${e?.message || e}`),
+          ),
+        ),
+      Promise.resolve(),
+    );
 
     // Reihenfolge wie savedIds beibehalten (find() sortiert nicht garantiert).
     const savedRows = await repo.find({ where: { id: In(savedIds) } });
@@ -361,23 +386,32 @@ export class JavaService {
     methods: any[],
     imports: string[],
   ): Promise<void> {
-    for (const m of methods) {
-      // ai_summary initial = Javadoc-Fallback (KI spaeter on-demand pro Methode).
-      await manager.getRepository(JavaMethod).insert({
-        file_id: fileId,
-        method_name: m.method_name,
-        return_type: m.return_type,
-        parameters: JSON.stringify(m.parameters),
-        modifiers: JSON.stringify(m.modifiers ?? []),
-        javadoc: m.javadoc || '',
-        ai_summary: m.javadoc || '',
-        body: m.body || '',
-        start_line: m.start_line ?? null,
-        body_start_line: m.body_start_line ?? null,
-      });
+    // Blockweise statt Zeile fuer Zeile: ein Massen-Paste bringt zehntausende Methoden mit, und
+    // jedes einzelne INSERT ist ein eigener TypeORM-Roundtrip. Der Deckel (insertChunked) bleibt
+    // noetig – s. Kommentar dort zur zu tiefen Ausdrucks-Kette bei sehr grossen Mehrzeilen-Inserts.
+    if (methods.length) {
+      await insertChunked(
+        manager.getRepository(JavaMethod),
+        methods.map((m) => ({
+          file_id: fileId,
+          method_name: m.method_name,
+          return_type: m.return_type,
+          parameters: JSON.stringify(m.parameters),
+          modifiers: JSON.stringify(m.modifiers ?? []),
+          javadoc: m.javadoc || '',
+          // ai_summary initial = Javadoc-Fallback (KI spaeter on-demand pro Methode).
+          ai_summary: m.javadoc || '',
+          body: m.body || '',
+          start_line: m.start_line ?? null,
+          body_start_line: m.body_start_line ?? null,
+        })),
+      );
     }
-    for (const fqn of imports) {
-      await manager.getRepository(JavaDependency).insert({ from_file_id: fileId, to_class_name: fqn });
+    if (imports.length) {
+      await insertChunked(
+        manager.getRepository(JavaDependency),
+        imports.map((fqn) => ({ from_file_id: fileId, to_class_name: fqn })),
+      );
     }
   }
 
@@ -863,8 +897,13 @@ export class JavaService {
       return acc;
     }, {});
     const suppressed = computed.length - toInsert.length;
+    // Klassennamen nur bei ueberschaubarem Bestand ausschreiben: bei einigen tausend Klassen
+    // waere das eine Logzeile von zig Kilobyte – bei JEDER Analyse, jedem Delete, jedem
+    // Recompute. Die Zahl ist die Aussage, die Liste war nur zum Nachsehen bei wenigen Klassen.
+    const NAME_LIST_MAX = 40;
+    const nameList = classNames.size <= NAME_LIST_MAX ? ` [${[...classNames].join(', ')}]` : '';
     this.logger.log(
-      `[java-edges] recompute: ${classNames.size} Klassen [${[...classNames].join(', ')}] | ` +
+      `[java-edges] recompute: ${classNames.size} Klassen${nameList} | ` +
         `berechnet ${computed.length} ${JSON.stringify(byKind)} | ` +
         `Tombstones ${dismissedKeys.size}, davon unterdrueckt ${suppressed} | eingefuegt ${toInsert.length}`,
     );
