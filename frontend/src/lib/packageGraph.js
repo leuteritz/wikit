@@ -155,6 +155,137 @@ export function buildPackageLevel({ files = [], classEdges = [], basePath = '' }
   }
 }
 
+// Die Umgebung eines Ausschnitts: was liegt AUSSERHALB und haengt mit ihm zusammen?
+//
+// Warum: buildPackageLevel beantwortet „was steckt in diesem Package?". Jede Kante, die den
+// Ausschnitt verlaesst, wird dort nur GEZAEHLT (externalByKey) – gezeichnet wird sie nie. Damit
+// sieht ein geoeffnetes Package aus wie eine Insel, obwohl genau die Frage „wen benutzt es, und
+// wer benutzt es?" der Grund ist, warum man es geoeffnet hat. Diese Funktion hebt jede solche
+// Kante auf einen Aggregatknoten AUSSERHALB des Ausschnitts.
+//
+// Granularitaet: der Nachbarknoten ist der Zweig, an dem der fremde Pfad den Ausschnitt verlaesst
+// (erstes abweichendes Segment). Fuer basePath `com.acme.n8n.core` landet `com.acme.n8n.util.x`
+// unter `com.acme.n8n.util`, `com.acme.bom.impl` unter `com.acme.bom`. Jeder Nachbar ist damit ein
+// Geschwisterzweig eines Vorfahren des Ausschnitts – lesbar benannt und in der Zahl begrenzt
+// (hoechstens so viele, wie der Pfad Geschwister hat).
+//
+//   files       – alle Klassen
+//   classEdges  – [{ fromId (Definition/Provider), toId (Nutzung/Consumer), kind }]
+//   basePath    – der geoeffnete Ausschnitt ('' -> es gibt kein Aussen)
+//   insideKeys  – fileId -> Ebenen-Schluessel der GEZEICHNETEN Knoten des Ausschnitts. Bewusst ein
+//                 Parameter und nicht `level.keyByFileId`: auf der Package-Ebene haengt eine Klasse
+//                 an ihrem Aggregatknoten, im Klassenmodus an sich selbst – die Kante muss an dem
+//                 Knoten landen, der wirklich da ist.
+//   rootPath    – gemeinsamer Praefix; nur fuer die Beschriftung (er steht bereits im Breadcrumb)
+//   limit       – hoechstens so viele Nachbarknoten; der Rest wird gemeldet, nicht verschwiegen
+export function buildNeighbourLevel({
+  files = [],
+  classEdges = [],
+  basePath = '',
+  insideKeys = new Map(),
+  rootPath = '',
+  limit = 8,
+} = {}) {
+  const empty = {
+    nodes: [],
+    edges: [],
+    keyByFileId: new Map(),
+    linkedIds: new Set(),
+    hiddenPackages: 0,
+    hiddenRelations: 0,
+    relations: 0,
+  }
+  if (!basePath) return empty // der Ausschnitt ist alles -> es gibt nichts ausserhalb
+
+  const baseSegs = segments(basePath)
+  const label = (path) => {
+    if (!path) return DEFAULT_PACKAGE
+    if (rootPath && path === rootPath) return path
+    if (rootPath && path.startsWith(rootPath + '.')) return path.slice(rootPath.length + 1)
+    return path
+  }
+
+  // fileId -> Nachbarknoten. Klassen INNERHALB des Ausschnitts sind nie Nachbarn – auch die, die
+  // gerade nicht gezeichnet werden (abgeschnittener Ausschnitt): sie gehoeren zum Package, nicht
+  // zu seiner Umgebung, und wuerden sonst als Nachbarknoten des eigenen Pfades auftauchen.
+  const keyByFileId = new Map()
+  const nodes = new Map()
+  for (const f of files) {
+    if (insideKeys.has(f.id)) continue
+    const pkg = f.package || DEFAULT_PACKAGE
+    if (inBase(pkg, basePath)) continue
+    const segs = segments(pkg)
+    let i = 0
+    while (i < baseSegs.length && i < segs.length && baseSegs[i] === segs[i]) i++
+    const path = segs.slice(0, Math.min(i + 1, segs.length)).join('.')
+    const key = `p:${path || DEFAULT_PACKAGE}`
+    keyByFileId.set(f.id, key)
+    let node = nodes.get(key)
+    if (!node) {
+      node = { id: key, path, label: label(path), classCount: 0, linked: new Set(), provides: 0, consumes: 0, relations: 0 }
+      nodes.set(key, node)
+    }
+    node.classCount++
+  }
+
+  // Kanten hochziehen: genau EIN Endpunkt liegt im Ausschnitt.
+  const edges = new Map()
+  const linkedIds = new Set() // jede Klasse ausserhalb, die wirklich eine Beziehung zum Ausschnitt hat
+  let relations = 0
+  for (const e of classEdges) {
+    const a = insideKeys.get(e.fromId) // Definition
+    const b = insideKeys.get(e.toId) // Nutzung
+    if ((a && b) || (!a && !b)) continue // ganz innen (zeichnet der Ausschnitt) bzw. ganz aussen
+    const outsideId = a ? e.toId : e.fromId
+    const key = keyByFileId.get(outsideId)
+    if (!key) continue // ausserhalb, aber nicht gezeichnet (Ausschnitt abgeschnitten)
+    const node = nodes.get(key)
+    const source = a || key
+    const target = a ? key : b
+    const k = `${source}->${target}`
+    const cur = edges.get(k)
+    if (cur) cur.count++
+    else edges.set(k, { id: k, source, target, count: 1 })
+    node.linked.add(outsideId)
+    linkedIds.add(outsideId)
+    if (a) node.consumes++ // der Nachbar nutzt den Ausschnitt
+    else node.provides++ // der Ausschnitt nutzt den Nachbarn
+    node.relations++
+    relations++
+  }
+
+  // Nachbarn ohne Beziehung sind keine Nachbarn – nur andere Packages.
+  const withRelations = [...nodes.values()].filter((n) => n.relations > 0)
+  const ranked = withRelations.sort((a, b) => b.relations - a.relations || a.label.localeCompare(b.label))
+  const kept = ranked.slice(0, limit)
+  const keptIds = new Set(kept.map((n) => n.id))
+  const hidden = ranked.slice(limit)
+
+  return {
+    nodes: kept.map((n) => ({
+      id: n.id,
+      path: n.path,
+      label: n.label,
+      classCount: n.classCount,
+      linkedCount: n.linked.size,
+      provides: n.provides,
+      consumes: n.consumes,
+      relations: n.relations,
+    })),
+    edges: [...edges.values()].filter((e) => keptIds.has(e.source) || keptIds.has(e.target)),
+    // Nur die behaltenen Knoten: das Buendel-Panel loest eine Aggregatkante ueber diese Zuordnung
+    // auf und darf keine Klasse einem Knoten zuschlagen, den es gar nicht gibt.
+    keyByFileId: new Map([...keyByFileId].filter(([, key]) => keptIds.has(key))),
+    // Absichtlich UNGEDECKELT: die Deckelung oben begrenzt die AGGREGATKNOTEN. Sind es wenige
+    // Klassen, zeigt der Graph sie einzeln (Klassenmodus) – dort waere ein Package-Deckel eine
+    // willkuerliche Luecke im Bild.
+    linkedIds,
+    hiddenPackages: hidden.length,
+    hiddenRelations: hidden.reduce((sum, n) => sum + n.relations, 0),
+    relations,
+  }
+}
+
 // Breadcrumb ab der Wurzel-Ebene: [{ label, path }]. Der erste Eintrag ist der gemeinsame
 // Praefix (dort beginnt die Navigation), danach folgt je Segment darunter ein Eintrag. Die
 // Segmente des Praefixes selbst tauchen NICHT einzeln auf – sie sind nicht anspringbar, weil

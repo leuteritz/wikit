@@ -172,14 +172,16 @@ const pathStyle = computed(() => {
       class="me-label me-label--agg"
       :class="{ 'me-label--dim': dimmed, 'me-label--hot': isHovered }"
       :style="{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`, '--edge': edgeColor }"
-      :title="`${d.count} class-to-class relation(s) bundled here — click to list them`"
+      :title="`${d.count} class-to-class relation${d.count === 1 ? '' : 's'} bundled here — click to list them`"
       @mouseenter="onEdgeEnter"
       @mouseleave="onEdgeLeave"
       @click.stop="d.onOpen && d.onOpen(d, $event)"
     >
       <!-- Ausgeschrieben: die Zahl allein liess offen, WAS gezaehlt wird, und „links" laesst sich
            im deutschen Lesefluss als Richtungsangabe missverstehen. -->
-      <span class="me-method me-count"><Icon icon="lucide:git-fork" class="me-ic" />{{ d.count }} class relations</span>
+      <span class="me-method me-count"
+        ><Icon icon="lucide:git-fork" class="me-ic" />{{ d.count }} class relation{{ d.count === 1 ? '' : 's' }}</span
+      >
       <Icon icon="lucide:chevron-right" class="me-ic me-agg-go" />
     </div>
   </EdgeLabelRenderer>

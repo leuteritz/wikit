@@ -26,7 +26,7 @@ import { useJavaGraph } from '../../composables/useJavaGraph.js'
 import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
 import { useRootScale } from '../../composables/useRootScale.js'
 import { Icon } from '../../lib/icons.js'
-import { buildPackageLevel, commonPackagePrefix, breadcrumbFor } from '../../lib/packageGraph.js'
+import { buildPackageLevel, buildNeighbourLevel, commonPackagePrefix, breadcrumbFor } from '../../lib/packageGraph.js'
 import { layoutFlat, layoutClustered } from '../../lib/graphLayout.js'
 import JavaEdgeDetailPanel from './JavaEdgeDetailPanel.vue'
 import JavaBundlePanel from './JavaBundlePanel.vue'
@@ -209,10 +209,15 @@ const groupByPackage = ref(true)
 // wirken also nicht mehr auf die Platzierung – sonst bliebe der Graph nach dem Ausblenden der
 // Imports genauso zerrissen wie vorher.
 const edgeFilter = ref({ call: true, uses: true, import: true })
+// Umgebung des Ausschnitts mitzeichnen. Default AN: ein geoeffnetes Package ohne seine Umgebung
+// sieht aus wie eine Insel – und beantwortet damit genau die Frage nicht, wegen der man es
+// geoeffnet hat. Abschaltbar, weil „nur dieses Package" beim Lesen einer einzelnen Ebene hilft.
+const showRelated = ref(true)
 try {
   const raw = JSON.parse(localStorage.getItem(VIEW_KEY) || 'null')
   if (raw && typeof raw === 'object') {
     if (typeof raw.grouped === 'boolean') groupByPackage.value = raw.grouped
+    if (typeof raw.related === 'boolean') showRelated.value = raw.related
     if (raw.edges && typeof raw.edges === 'object') edgeFilter.value = { ...edgeFilter.value, ...raw.edges }
   }
 } catch {
@@ -220,10 +225,17 @@ try {
 }
 function persistView() {
   try {
-    localStorage.setItem(VIEW_KEY, JSON.stringify({ grouped: groupByPackage.value, edges: edgeFilter.value }))
+    localStorage.setItem(
+      VIEW_KEY,
+      JSON.stringify({ grouped: groupByPackage.value, related: showRelated.value, edges: edgeFilter.value }),
+    )
   } catch {
     /* ignore */
   }
+}
+function toggleRelated() {
+  showRelated.value = !showRelated.value
+  persistView()
 }
 function toggleGrouping() {
   groupByPackage.value = !groupByPackage.value
@@ -353,11 +365,10 @@ const searchScope = computed(() => {
   }
 })
 
-const visibleFiles = computed(() => {
-  if (searchActive.value) {
-    const list = searchScope.value.files
-    return list.length > CLASS_RENDER_LIMIT ? list.slice(0, CLASS_RENDER_LIMIT) : list
-  }
+// --- Der Ausschnitt selbst (ohne seine Umgebung) ---------------------------------------------
+// Grundlage fuer alles Weitere: WELCHE Knoten stehen fuer den geoeffneten Pfad? Auf der
+// Package-Ebene die Aggregate + die direkt darin liegenden Klassen, sonst die Klassen darunter.
+const scopeFiles = computed(() => {
   if (packageMode.value) return level.value.directFiles
   // Harte Obergrenze: Vue Flow + dagre brauchen fuer tausende Knoten zig Sekunden und blockieren
   // dabei den Hauptthread. Lieber ehrlich abschneiden und es anschreiben, als die Oberflaeche
@@ -365,9 +376,76 @@ const visibleFiles = computed(() => {
   const list = scopedFiles.value
   return list.length > CLASS_RENDER_LIMIT ? list.slice(0, CLASS_RENDER_LIMIT) : list
 })
-// Wieviele Klassen des Ausschnitts werden gerade NICHT gezeichnet?
+
+// --- Die Umgebung des Ausschnitts ------------------------------------------------------------
+// Ein geoeffnetes Package zeigte bisher nur sich selbst: jede Beziehung nach draussen endete am
+// Rand des Ausschnitts und wurde nur gezaehlt. Genau die ist aber die Frage, wegen der man ein
+// Package oeffnet. Der Graph zieht sie deshalb auf zwei Arten mit herein – die Wahl haengt an der
+// Zahl, weil dieselbe Darstellung nicht beides kann:
+//   * wenige Nachbarklassen -> jede EINZELN, wie im Suchmodus. Bei einer Handvoll ist die Klasse
+//     die Aussage, und ihre Kanten tragen Methodennamen (klickbar bis in den Code).
+//   * viele -> je fremdem Zweig EIN Aggregatknoten. 300 fremde Klassen um ein Package herum sind
+//     kein Bild mehr; „bom · 12 relations" ist eines – und die Aggregatkante loest sich per Klick
+//     ohnehin in genau diese Klassenpaare auf (JavaBundlePanel).
+// Welche Knoten der Ausschnitt zeichnet, muss die Umgebung wissen: auf der Package-Ebene haengt
+// eine Klasse an ihrem Aggregat, im Klassenmodus an sich selbst.
+const RELATED_NODE_LIMIT = 8 // hoechstens so viele Nachbar-Packages (nach Beziehungszahl)
+const RELATED_CLASS_LIMIT = 60 // bis hierher einzelne Nachbarklassen statt Aggregatknoten
+const insideKeys = computed(() =>
+  packageMode.value ? level.value.keyByFileId : new Map(scopeFiles.value.map((f) => [f.id, `c:${f.id}`])),
+)
+const neighbourhood = computed(() =>
+  buildNeighbourLevel({
+    files: props.files || [],
+    classEdges: allClassEdges.value,
+    // Im Suchmodus und bei abgeschalteter Umgebung: leerer basePath -> die Funktion liefert nichts.
+    // Die Suche bringt ihre eigene Nachbarschaft mit; zwei Kontextbegriffe gleichzeitig waeren
+    // nicht mehr lesbar.
+    basePath: searchActive.value || !showRelated.value ? '' : basePath.value,
+    insideKeys: insideKeys.value,
+    rootPath: rootPath.value,
+    limit: RELATED_NODE_LIMIT,
+  }),
+)
+// Nachbarklassen als eigene Knoten – nur im Klassenmodus und nur, solange es wenige sind.
+const relatedFiles = computed(() => {
+  const ids = neighbourhood.value.linkedIds
+  if (packageMode.value || !ids.size) return []
+  return (props.files || []).filter((f) => ids.has(f.id))
+})
+const relatedAsClasses = computed(
+  () =>
+    relatedFiles.value.length > 0 &&
+    relatedFiles.value.length <= RELATED_CLASS_LIMIT &&
+    scopeFiles.value.length + relatedFiles.value.length <= CLASS_RENDER_LIMIT,
+)
+// Sonst: Aggregatknoten. (Beides gleichzeitig waere dieselbe Beziehung zweimal im Bild.)
+const relatedNodes = computed(() => (relatedAsClasses.value ? [] : neighbourhood.value.nodes))
+const relatedIdSet = computed(() => new Set(relatedAsClasses.value ? relatedFiles.value.map((f) => f.id) : []))
+// Kopfzeile: was traegt die Umgebung gerade bei?
+const relatedSummary = computed(() => {
+  const n = neighbourhood.value
+  if (!n.relations) return null
+  return {
+    relations: n.relations,
+    classes: relatedAsClasses.value ? relatedFiles.value.length : 0,
+    packages: relatedAsClasses.value ? 0 : n.nodes.length,
+    hiddenPackages: relatedAsClasses.value ? 0 : n.hiddenPackages,
+    hiddenRelations: relatedAsClasses.value ? 0 : n.hiddenRelations,
+  }
+})
+
+const visibleFiles = computed(() => {
+  if (searchActive.value) {
+    const list = searchScope.value.files
+    return list.length > CLASS_RENDER_LIMIT ? list.slice(0, CLASS_RENDER_LIMIT) : list
+  }
+  return relatedAsClasses.value ? [...scopeFiles.value, ...relatedFiles.value] : scopeFiles.value
+})
+// Wieviele Klassen des Ausschnitts werden gerade NICHT gezeichnet? Gemessen am AUSSCHNITT, nicht
+// an den gezeichneten Knoten – die Umgebung gehoert nicht dazu und wuerde die Zahl schoenrechnen.
 const truncatedClasses = computed(() =>
-  packageMode.value ? 0 : Math.max(0, scopedFiles.value.length - visibleFiles.value.length),
+  packageMode.value ? 0 : Math.max(0, scopedFiles.value.length - scopeFiles.value.length),
 )
 
 const breadcrumb = computed(() => breadcrumbFor(basePath.value, rootPath.value))
@@ -424,8 +502,11 @@ const layout = computed(() => {
   const known = new Map() // class_name -> file
   for (const f of files) known.set(f.class_name, f)
 
-  // Package -> Farbindex (stabil sortiert).
-  const pkgs = [...new Set(files.map((f) => f.package || '(default)'))].sort()
+  // Package -> Farbindex (stabil sortiert). Die Nachbar-Aggregate gehoeren dazu: sie bekommen im
+  // geclusterten Layout eine eigene Zone, und die traegt die Package-Farbe.
+  const pkgs = [
+    ...new Set([...files.map((f) => f.package || '(default)'), ...relatedNodes.value.map((n) => n.path || '(default)')]),
+  ].sort()
   const pkgColor = new Map(pkgs.map((p, i) => [p, PKG_COLORS[i % PKG_COLORS.length]]))
 
   // --- Kanten zwischen geladenen Klassen bestimmen ---
@@ -595,28 +676,32 @@ const layout = computed(() => {
   // 2b) Aggregierte Kanten zwischen den Package-Knoten dieser Ebene. Ein Label mit der Anzahl der
   //     zusammengefassten Klassenbeziehungen; die Strichstaerke waechst logarithmisch mit, damit
   //     ein Buendel aus 400 Kanten nicht 40x dicker wirkt als eines aus 10.
-  if (packageMode.value) {
-    for (const ge of level.value.groupEdges) {
-      const width = Math.min(7, 1.8 + Math.log2(ge.count + 1) * 0.9)
-      rolePairs.push({ source: ge.source, target: ge.target })
-      edges.push({
-        id: `agg:${ge.id}`,
-        source: ge.source,
-        target: ge.target,
-        type: 'managed',
-        markerEnd: { type: MarkerType.ArrowClosed, color: AGG_COLOR },
-        data: {
-          kind: 'aggregate',
-          count: ge.count,
-          sourceId: ge.source,
-          targetId: ge.target,
-          // Eigene Farbe, weil es eine ANDERE EBENE ist: hier steht ein Knoten fuer viele Klassen.
-          edgeStyle: { stroke: AGG_COLOR, strokeWidth: width, opacity: 0.9, cursor: 'pointer' },
-          // Klick loest das Buendel in seine einzelnen Klassenbeziehungen auf.
-          onOpen: openBundlePanel,
-        },
-      })
-    }
+  // 2c) …und dieselbe Bauart fuer die Kanten in die UMGEBUNG (Ausschnitt <-> fremder Zweig). Sie
+  //     entstehen unabhaengig vom Modus: auch ein Klassenausschnitt haengt an anderen Packages.
+  const aggEdges = [
+    ...(packageMode.value ? level.value.groupEdges : []),
+    ...(relatedNodes.value.length ? neighbourhood.value.edges : []),
+  ]
+  for (const ge of aggEdges) {
+    const width = Math.min(7, 1.8 + Math.log2(ge.count + 1) * 0.9)
+    rolePairs.push({ source: ge.source, target: ge.target })
+    edges.push({
+      id: `agg:${ge.id}`,
+      source: ge.source,
+      target: ge.target,
+      type: 'managed',
+      markerEnd: { type: MarkerType.ArrowClosed, color: AGG_COLOR },
+      data: {
+        kind: 'aggregate',
+        count: ge.count,
+        sourceId: ge.source,
+        targetId: ge.target,
+        // Eigene Farbe, weil es eine ANDERE EBENE ist: hier steht ein Knoten fuer viele Klassen.
+        edgeStyle: { stroke: AGG_COLOR, strokeWidth: width, opacity: 0.9, cursor: 'pointer' },
+        // Klick loest das Buendel in seine einzelnen Klassenbeziehungen auf.
+        onOpen: openBundlePanel,
+      },
+    })
   }
 
   // Parallele Kanten desselben (UNGEORDNETEN) Knotenpaars indizieren -> ManagedEdge faechert
@@ -661,6 +746,7 @@ const layout = computed(() => {
   //   * flach – ein Lauf ueber alles. Bleibt fuer die Package-Ebene (dort IST jeder Knoten schon
   //     ein Package) und fuer Ausschnitte mit nur einem Package, wo eine Zone nichts trennt.
   const pkgGroups = packageMode.value ? level.value.groups : []
+  const related = relatedNodes.value
   // Knotengroessen UND Abstaende folgen der Root-Schriftgroesse – die Karten sind in rem gesetzt.
   const s = rootScale.value
   const nodeW = NODE_W * s
@@ -669,6 +755,10 @@ const layout = computed(() => {
   const pkgH = PKG_H * s
   const layoutNodes = [
     ...pkgGroups.map((grp) => ({ id: grp.id, width: pkgW, height: pkgH, group: grp.path })),
+    // Nachbar-Aggregate liegen ausserhalb des Ausschnitts -> im geclusterten Layout bekommt jedes
+    // seine eigene Zone (mit seinem Package-Namen), damit man auf einen Blick sieht, was zum
+    // geoeffneten Pfad gehoert und was daneben liegt.
+    ...related.map((n) => ({ id: n.id, width: pkgW, height: pkgH, group: n.path || '(default)' })),
     ...files.map((f) => ({ id: `c:${f.id}`, width: nodeW, height: nodeH, group: f.package || '(default)' })),
   ]
   const distinctPkgs = new Set(layoutNodes.map((n) => n.group)).size
@@ -696,12 +786,18 @@ const layout = computed(() => {
     if (base && key.startsWith(base + '.')) return key.slice(base.length + 1)
     return key
   }
-  const zones = (placed.zones || []).map((z) => ({
-    ...z,
-    label: zoneLabel(z.key),
-    path: z.key === '(default)' ? '' : z.key,
-    color: pkgColor.get(z.key) || PKG_COLORS[0],
-  }))
+  // Nachbar-Aggregate bekommen KEINE Zone: die Karte traegt den Package-Namen bereits, eine Box um
+  // eine einzelne Box herum waere nur ein zweiter Rahmen um dieselbe Aussage. Im Meta-Layout
+  // zaehlen sie trotzdem als eigene Gruppe – sie sollen ja neben dem Ausschnitt liegen, nicht darin.
+  const relatedPaths = new Set(related.map((n) => n.path || '(default)'))
+  const zones = (placed.zones || [])
+    .filter((z) => !relatedPaths.has(z.key))
+    .map((z) => ({
+      ...z,
+      label: zoneLabel(z.key),
+      path: z.key === '(default)' ? '' : z.key,
+      color: pkgColor.get(z.key) || PKG_COLORS[0],
+    }))
 
   // Package-Knoten dieser Ebene (nur im Package-Modus). Sie tragen die Bilanz ihres Teilbaums:
   // Klassen, KI-Fortschritt, Zahl der Sub-Packages und die nach aussen laufenden Beziehungen.
@@ -726,6 +822,29 @@ const layout = computed(() => {
     }
   })
 
+  // Nachbar-Aggregate: dieselbe Karte, aber sichtbar „zweite Reihe" (data.related). Sie zeigen
+  // NICHT die Bilanz eines Teilbaums, sondern seine Beruehrung mit dem Ausschnitt – wieviele
+  // Klassen daran haengen und in welche Richtung.
+  const relatedNodeList = related.map((n) => {
+    const nd = posOf(n.id)
+    return {
+      id: n.id,
+      type: 'pkg',
+      position: { x: nd.x - pkgW / 2, y: nd.y - pkgH / 2 },
+      data: {
+        related: true,
+        path: n.path,
+        label: n.label,
+        classCount: n.classCount,
+        linkedCount: n.linkedCount,
+        provides: n.provides,
+        consumes: n.consumes,
+        relations: n.relations,
+        color: pkgColor.get(n.path || '(default)') || PKG_COLORS[n.label.length % PKG_COLORS.length],
+      },
+    }
+  })
+
   const nodes = files.map((f) => {
     const pkg = f.package || '(default)'
     const id = `c:${f.id}`
@@ -739,9 +858,11 @@ const layout = computed(() => {
         fileId: f.id,
         className: f.class_name,
         pkg,
-        // Im Suchmodus: Treffer bleiben voll da, der mitgezeigte Kontext tritt zurueck.
+        // Im Suchmodus: Treffer bleiben voll da, der mitgezeigte Kontext tritt zurueck. Dieselbe
+        // Unterscheidung traegt die mitgezeigte Umgebung eines Packages – es ist derselbe
+        // Sachverhalt („das hier ist der Kontext, nicht das Gesuchte"), also dieselbe Darstellung.
         isMatch: searchActive.value && matchIdSet.value.has(f.id),
-        isContext: searchActive.value && !matchIdSet.value.has(f.id),
+        isContext: (searchActive.value && !matchIdSet.value.has(f.id)) || relatedIdSet.value.has(f.id),
         methodCount: f.method_count ?? (f.methods || []).length,
         // Feldzahl der Datenträger (NULL bei noch nicht neu analysierten Klassen -> die Karte
         // zeigt dann weiter die Methodenzahl statt einer erfundenen 0).
@@ -769,7 +890,13 @@ const layout = computed(() => {
     if (skipped.length) console.debug('[java-edges] nicht gezeichnete Kanten:', skipped)
   }
 
-  return { nodes: [...pkgNodes, ...nodes], edges, zones, clustered, externalRefsHidden: externalRefs.size }
+  return {
+    nodes: [...pkgNodes, ...relatedNodeList, ...nodes],
+    edges,
+    zones,
+    clustered,
+    externalRefsHidden: externalRefs.size,
+  }
 })
 
 const nodes = computed(() => layout.value.nodes)
@@ -867,8 +994,10 @@ function onNodeClick({ node }) {
   clearHighlights()
   // Package-Knoten: eine Ebene tiefer. Hat er keine Sub-Packages mehr, zeigt die naechste Ebene
   // direkt die Klassen dieses Packages.
-  if (node?.type === 'pkg' && node?.data?.path) {
-    drillTo(node.data.path)
+  // Ein Nachbar-Aggregat traegt keinen eigenen Inhalt, sondern einen Ort: der Klick oeffnet ihn –
+  // damit ist der Weg aus einem Package zu seinem Gegenueber ein einziger Klick.
+  if (node?.type === 'pkg') {
+    drillTo(node.data?.path || '')
     return
   }
   if (node?.data?.fileId != null) emit('select', node.data.fileId)
@@ -1067,8 +1196,17 @@ function labelForKey(key) {
 // Alle Klassenbeziehungen zwischen zwei Ebenen-Knoten, gruppiert nach Klassenpaar. Richtung wie
 // im Graph: `provider` definiert, `consumer` nutzt. Die Kanten kommen aus derselben Quelle wie
 // im Layout (serverEdges + Import-Fallback), damit die Liste die gezeichnete Zahl exakt trifft.
+// Ebenen-Schluessel ALLER aufloesbaren Knoten: der Ausschnitt und seine Umgebung. Ohne die
+// Umgebung liefe der Klick auf eine Kante „Ausschnitt -> Nachbar-Package" ins Leere – die fremden
+// Klassen haetten keinen Knoten, dem sie zugeordnet sind.
+const bundleKeys = computed(() => {
+  const m = new Map(insideKeys.value)
+  for (const [id, key] of neighbourhood.value.keyByFileId) if (!m.has(id)) m.set(id, key)
+  return m
+})
+
 function relationsBetween(sourceKey, targetKey) {
-  const keyOf = level.value.keyByFileId || new Map()
+  const keyOf = bundleKeys.value
   const files = props.files || []
   const byName = new Map(files.map((f) => [f.class_name, f]))
   const groups = new Map()
@@ -1397,35 +1535,62 @@ watch(
         </div>
       </template>
 
-      <!-- Package-Knoten: Aggregat eines ganzen Teilbaums. Klick = eine Ebene tiefer. -->
+      <!-- Package-Knoten: Aggregat eines ganzen Teilbaums. Klick = eine Ebene tiefer.
+           Zwei Auspraegungen, EINE Karte: ein Knoten DIESER Ebene traegt die Bilanz seines
+           Teilbaums (Klassen, Sub-Packages, KI-Fortschritt), ein NACHBAR ausserhalb des
+           Ausschnitts traegt seine Beruehrung mit ihm (verbundene Klassen, Richtung). Beides sind
+           Packages – deshalb dieselbe Form; nur was sie sagen, ist verschieden. -->
       <template #node-pkg="{ data }">
         <div
           class="vf-pkgcard"
           :class="{
+            'vf-pkgcard--related': data.related,
             'vf-card--dim': isDimmed(`p:${data.path}`),
             'vf-card--edge-end': !!edgeEndColor(`p:${data.path}`),
           }"
           :style="{ '--pkg': data.color, '--edge': edgeEndColor(`p:${data.path}`) }"
-          :title="`${data.path} — click to open`"
+          :title="data.related
+            ? `${data.path || '(default)'} — outside this scope, ${data.relations} relation${data.relations === 1 ? '' : 's'}. Click to open.`
+            : `${data.path} — click to open`"
         >
           <Handle type="target" :position="Position.Top" class="vf-handle" />
           <span class="vf-strip" />
           <div class="vf-pkgbody">
             <div class="vf-pkgname">
-              <Icon :icon="data.hasChildren ? 'lucide:folder' : 'lucide:package'" class="vf-pkgicon" />
+              <Icon
+                :icon="data.related ? 'lucide:share-2' : data.hasChildren ? 'lucide:folder' : 'lucide:package'"
+                class="vf-pkgicon"
+              />
               {{ data.label }}
+              <span v-if="data.related" class="vf-pkgtag">related</span>
             </div>
-            <div class="vf-pkgmeta">
-              <span class="vf-pkgstat"><b>{{ data.classCount }}</b> classes</span>
-              <span v-if="data.childCount" class="vf-pkgstat"><b>{{ data.childCount }}</b> sub</span>
-              <span v-if="data.external" class="vf-pkgstat vf-pkgstat--ext" title="Relations leaving this package">
-                <Icon icon="lucide:arrow-up-from-line" class="vf-pkgic" />{{ data.external }}
+            <!-- Nachbar: die Zahlen beschreiben die BEZIEHUNG, nicht den Teilbaum. Richtung mit
+                 denselben Glyphen wie die Rollen auf der Klassenkarte (Pfeil nach unten =
+                 liefert, Pfeil nach oben = nutzt) – der Graph fliesst ueberall gleich. -->
+            <div v-if="data.related" class="vf-pkgmeta">
+              <span class="vf-pkgstat" :title="`${data.linkedCount} of ${data.classCount} classes touch this scope`">
+                <b>{{ data.linkedCount }}</b> linked
+              </span>
+              <span v-if="data.provides" class="vf-pkgstat vf-pkgstat--ext" title="Used by this scope">
+                <Icon icon="lucide:arrow-down" class="vf-pkgic" />{{ data.provides }}
+              </span>
+              <span v-if="data.consumes" class="vf-pkgstat vf-pkgstat--ext" title="Uses this scope">
+                <Icon icon="lucide:arrow-up-from-line" class="vf-pkgic" />{{ data.consumes }}
               </span>
             </div>
-            <!-- KI-Fortschritt des Teilbaums: schmaler Balken, damit man sieht, wo noch Arbeit liegt. -->
-            <div class="vf-pkgbar" :title="`${data.analyzedCount}/${data.classCount} analyzed`">
-              <span :style="{ width: (data.classCount ? (data.analyzedCount / data.classCount) * 100 : 0) + '%' }" />
-            </div>
+            <template v-else>
+              <div class="vf-pkgmeta">
+                <span class="vf-pkgstat"><b>{{ data.classCount }}</b> classes</span>
+                <span v-if="data.childCount" class="vf-pkgstat"><b>{{ data.childCount }}</b> sub</span>
+                <span v-if="data.external" class="vf-pkgstat vf-pkgstat--ext" title="Relations leaving this package">
+                  <Icon icon="lucide:arrow-up-from-line" class="vf-pkgic" />{{ data.external }}
+                </span>
+              </div>
+              <!-- KI-Fortschritt des Teilbaums: schmaler Balken, damit man sieht, wo noch Arbeit liegt. -->
+              <div class="vf-pkgbar" :title="`${data.analyzedCount}/${data.classCount} analyzed`">
+                <span :style="{ width: (data.classCount ? (data.analyzedCount / data.classCount) * 100 : 0) + '%' }" />
+              </div>
+            </template>
           </div>
           <Handle type="source" :position="Position.Bottom" class="vf-handle" />
         </div>
@@ -1495,6 +1660,24 @@ watch(
         </template>
       </div>
       <span class="vf-crumb-count">{{ scopeClassCount }} classes</span>
+      <!-- Was die Umgebung beitraegt. Ohne diese Zeile waere nicht zu unterscheiden, was zum
+           geoeffneten Pfad gehoert und was nur danebensteht. -->
+      <span v-if="relatedSummary" class="vf-crumb-rel" :title="relatedSummary.classes
+        ? `${relatedSummary.relations} relations to ${relatedSummary.classes} classes outside this scope`
+        : `${relatedSummary.relations} relations to ${relatedSummary.packages} packages outside this scope`">
+        <Icon icon="lucide:share-2" class="h-3 w-3" />
+        +{{ relatedSummary.classes || relatedSummary.packages }}
+        {{ relatedSummary.classes ? 'related' : relatedSummary.packages === 1 ? 'package' : 'packages' }}
+      </span>
+      <!-- Gedeckelte Umgebung: die uebrigen Nachbarn werden genannt, nicht verschwiegen. -->
+      <span
+        v-if="relatedSummary && relatedSummary.hiddenPackages"
+        class="vf-crumb-warn"
+        :title="`${relatedSummary.hiddenRelations} relations to ${relatedSummary.hiddenPackages} further packages are not drawn – open a smaller scope to see them`"
+      >
+        <Icon icon="lucide:alert-triangle" class="h-3 w-3" />
+        +{{ relatedSummary.hiddenPackages }} more
+      </span>
       <!-- Zu unscharfe Suche: der Graph bleibt, wo er ist, statt hunderte Treffer zu markieren. -->
       <span v-if="searchTooBroad" class="vf-crumb-warn" title="Narrow the filter to focus the graph on the matches">
         <Icon icon="lucide:search" class="h-3 w-3" />
@@ -1553,6 +1736,23 @@ watch(
           <Icon icon="lucide:package" class="h-4 w-4" />
         </button>
       </template>
+      <!-- Umgebung an/aus. Gilt in BEIDEN Modi (Package-Ebene wie Klassen): die Frage „wen beruehrt
+           das hier?" haengt nicht daran, wie fein der Ausschnitt gerade gezeichnet wird. Auf der
+           obersten Ebene gibt es kein Aussen -> gesperrt statt wirkungslos. -->
+      <button
+        type="button"
+        class="vf-tool"
+        :class="{ 'is-on': showRelated }"
+        :disabled="!basePath || basePath === rootPath"
+        :title="!basePath || basePath === rootPath
+          ? 'Everything is inside this scope – nothing to relate to'
+          : showRelated
+            ? 'Hide what this scope connects to outside itself'
+            : 'Show what this scope connects to outside itself'"
+        @click="toggleRelated"
+      >
+        <Icon icon="lucide:share-2" class="h-4 w-4" />
+      </button>
       <!-- Kantenarten einzeln abschaltbar: die schnellste Art, ein ueberladenes Bild aufzuraeumen.
            Ausgeblendete Kanten wirken auch nicht mehr auf die Platzierung. -->
       <span class="vf-dock-sep" />
@@ -1601,7 +1801,7 @@ watch(
           </div>
 
           <!-- Achse 3: WO gehoert er hin? (Package als Zone bzw. als eigener Knoten) -->
-          <template v-if="zones.length || packageMode">
+          <template v-if="zones.length || packageMode || relatedNodes.length">
             <div class="legend-head mt-1.5">Groups · packages</div>
             <div v-if="zones.length" class="legend-row">
               <span class="legend-zone" />
@@ -1611,6 +1811,11 @@ watch(
               <span class="legend-node-swatch legend-node-swatch--pkg" />
               <Icon icon="lucide:folder" class="h-3.5 w-3.5 shrink-0" style="color: var(--color-thistle)" />
               <span><b>Package</b> node — click to open</span>
+            </div>
+            <div v-if="relatedNodes.length" class="legend-row">
+              <span class="legend-node-swatch legend-node-swatch--rel" />
+              <Icon icon="lucide:share-2" class="h-3.5 w-3.5 shrink-0" style="color: var(--color-thistle)" />
+              <span><b>Related</b> package — outside this scope</span>
             </div>
             <p class="legend-sub">Each package keeps its own hue — zone, node and the dot on a card.</p>
           </template>
@@ -1636,7 +1841,7 @@ watch(
             <span class="legend-line legend-line--dotted" style="color: var(--color-text-muted)" />
             <span><b>Imports</b> only — no access found</span>
           </div>
-          <div v-if="packageMode" class="legend-row">
+          <div v-if="packageMode || relatedNodes.length" class="legend-row">
             <span class="legend-line legend-line--thick" style="background: var(--color-thistle)" />
             <span><b>Bundle</b> of class relations — click to list them</span>
           </div>
@@ -1661,6 +1866,10 @@ watch(
           <div class="legend-row">
             <span class="legend-state legend-state--match" />
             <span>Search match</span>
+          </div>
+          <div class="legend-row">
+            <span class="legend-state legend-state--context" />
+            <span>Context · outside the scope, shown to explain a relation</span>
           </div>
           <div class="legend-row">
             <span class="legend-state legend-state--dim" />
@@ -1739,6 +1948,30 @@ watch(
   transform: translateY(-1px);
   border-color: var(--role);
   box-shadow: 0 8px 20px color-mix(in srgb, var(--role) 34%, transparent);
+}
+/* Nachbar ausserhalb des Ausschnitts: gestrichelt und zurueckgenommen – dieselbe „zweite Reihe"
+   wie die mitgezeigten Klassen im Suchmodus (.vf-card--context), nur eben als Package. Der
+   Strichrand sagt dabei zusaetzlich, dass die Karte NICHT vollstaendig ist: sie steht fuer einen
+   Zweig, von dem nur der beruehrte Teil zaehlt. */
+.vf-pkgcard--related {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--color-surface-2) 82%, transparent);
+  box-shadow: none;
+  opacity: 0.62;
+}
+.vf-pkgcard--related:hover {
+  opacity: 1;
+}
+.vf-pkgtag {
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--role) 18%, transparent);
+  padding: 0 5px;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.5625rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--color-text-muted);
 }
 .vf-pkgbody {
   display: flex;
@@ -1899,6 +2132,21 @@ watch(
 .vf-crumb-toggle:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+/* Bilanz der Umgebung: eigene Farbe (Aggregat-Ton), damit sie nicht als Teil der Klassenzahl des
+   Ausschnitts gelesen wird – sie zaehlt genau das, was AUSSERHALB liegt. */
+.vf-crumb-rel {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 3px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-thistle) 18%, transparent);
+  padding: 2px 6px;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
 }
 .vf-crumb-warn {
   display: inline-flex;
@@ -2430,6 +2678,12 @@ watch(
 .legend-node-swatch--pkg {
   background: linear-gradient(135deg, var(--color-thistle) 0 50%, var(--color-cyan) 50% 100%);
 }
+/* Nachbar-Package: dieselbe Flaeche, aber gestrichelt umrandet und zurueckgenommen – genau wie
+   die Karte im Canvas. */
+.legend-node-swatch--rel {
+  border: 1px dashed color-mix(in srgb, var(--color-thistle) 70%, var(--color-border));
+  background: color-mix(in srgb, var(--color-thistle) 22%, transparent);
+}
 /* Zustands-Swatches (Treffer/gedimmt) – zeigen den Effekt, statt ihn zu beschreiben. */
 .legend-state {
   width: 12px;
@@ -2442,6 +2696,11 @@ watch(
 .legend-state--match {
   border-color: var(--color-accent);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+/* Kontext: derselbe Effekt wie im Canvas (halbe Deckkraft, gestrichelt = „nicht der Ausschnitt"). */
+.legend-state--context {
+  border-style: dashed;
+  opacity: 0.5;
 }
 /* Nicht so weit heruntergezogen wie im Canvas (0.14) – als 12-px-Swatch waere davon nichts mehr
    zu sehen und die Zeile saehe aus, als fehle ihr das Symbol. */
