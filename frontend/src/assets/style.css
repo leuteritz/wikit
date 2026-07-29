@@ -475,27 +475,13 @@ html.dark {
 }
 
 /* „Aufleuchtende" Call-Edge: gesetzt, wenn im Code-Tab ein passender Methodenname angeklickt wird
-   (JavaDependencyGraph haengt die Klasse `edge-lit` an die Kante). Vue-Flow erzeugt das
-   `.vue-flow__edge`-DOM -> globale Regel statt scoped. Farbe = --color-edge-highlight (identisch
-   zum Code-Token-Highlight im JavaCodeEditor). */
-.vue-flow__edge.edge-lit .vue-flow__edge-path {
-  filter: drop-shadow(0 0 4px var(--color-edge-highlight));
-  animation: edge-lit-pulse 1.1s ease-in-out infinite;
-}
-@keyframes edge-lit-pulse {
-  0%, 100% {
-    filter: drop-shadow(0 0 2px var(--color-edge-highlight));
-  }
-  50% {
-    filter: drop-shadow(0 0 7px var(--color-edge-highlight));
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .vue-flow__edge.edge-lit .vue-flow__edge-path {
-    animation: none;
-    filter: drop-shadow(0 0 5px var(--color-edge-highlight));
-  }
-}
+   (JavaDependencyGraph haengt die Klasse `edge-lit` an die Kante, die Farbe kommt ueber
+   `edgeStyle.stroke` = --color-edge-highlight, identisch zum Code-Token-Highlight).
+   Der pulsierende Schein lag hier frueher als animierter `filter: drop-shadow(…)` – also eine
+   Offscreen-Textur ueber die volle Bounding-Box des Pfads, 60-mal je Sekunde neu gerastert. Bei
+   grossen Layouts (bis 400 Karten) reichte das, um den Compositor den ganzen Layer schwarz zeichnen
+   zu lassen. Der Schein liegt jetzt als zwei blasse Pfade IN der Kante (`.me-glow` in
+   ManagedEdge.vue) und pulsiert ueber die Deckkraft. Die Klasse bleibt als Zustandsmarker im DOM. */
 
 /* Diff-Viewer (JavaDiffViewer): zeilenweise Einfaerbung nach Unified-Diff-Praefix. CodeMirror
    erzeugt das Zeilen-DOM ohne data-v-Attribut -> globale Regeln. Farben wie gefordert:

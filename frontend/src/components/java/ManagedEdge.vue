@@ -141,22 +141,51 @@ const pathStyle = computed(() => {
   // sich weder eine Klasse noch ein scoped-Selektor zuverlaessig haengen laesst.
   const base = { transition: 'opacity 0.15s ease, stroke-width 0.15s ease', ...(d.value.edgeStyle || {}) }
   if (dimmed.value) return { ...base, opacity: 0.07 }
-  // Direkt gehoverte Kante: kraeftiger als der blosse Nachbarschafts-Fokus und mit Schein in der
-  // eigenen Farbe – sie ist das, was gerade gelesen wird, nicht nur „nicht gedaempft".
-  if (isHovered.value) {
-    return {
-      ...base,
-      opacity: 1,
-      strokeWidth: (base.strokeWidth || 2) + 1.4,
-      filter: `drop-shadow(0 0 6px ${edgeColor.value})`,
-    }
-  }
+  // Direkt gehoverte Kante: kraeftiger als der blosse Nachbarschafts-Fokus. Der Schein kommt NICHT
+  // von `filter: drop-shadow` (s. .me-glow unten), sondern von zwei breiteren Pfaden darunter.
+  if (isHovered.value) return { ...base, opacity: 1, strokeWidth: (base.strokeWidth || 2) + 1.4 }
   if (focused.value) return { ...base, opacity: 1, strokeWidth: (base.strokeWidth || 2) + 0.7 }
   return base
 })
+
+// --- Schein um die betonte Kante ---------------------------------------------------------------
+// Frueher `filter: drop-shadow(...)` auf dem Pfad. Ein CSS-Filter zwingt den Compositor, eine
+// Offscreen-Textur ueber die GESAMTE Bounding-Box des Pfads anzulegen – bei bis zu 400 Karten ist
+// das Layout mehrere tausend Pixel gross, und eine Kante quer darueber hat eine entsprechend
+// riesige Box. Das Ergebnis waren schwarze Flaechen im ganzen Fenster, sobald man so eine Kante
+// hoverte (stehen blieb nur, was einen eigenen Layer hat: Legende, Dock, Breadcrumb).
+// Zwei breitere, halbtransparente Pfade unter der Linie sehen praktisch gleich aus und sind
+// gewoehnliche Vektor-Zeichnungen ohne Zwischentextur.
+const baseWidth = computed(() => Number(d.value.edgeStyle?.strokeWidth) || 2)
+const glowing = computed(() => isHovered.value || !!d.value.isHighlighted)
+// Nur die „aufleuchtende" Kante (Code-Tab-Klick) pulsiert – beim Hover waere Bewegung unruhig.
+const pulsing = computed(() => !!d.value.isHighlighted && !isHovered.value)
 </script>
 
 <template>
+  <!-- Schein UNTER der Linie (Dokumentreihenfolge = Malreihenfolge): zwei breitere, blasse Pfade
+       in der Kantenfarbe. Ersetzt den frueheren drop-shadow-Filter, s. Kommentar im Script. -->
+  <template v-if="glowing">
+    <path
+      class="me-glow me-glow--outer"
+      :class="{ 'me-glow--pulse': pulsing }"
+      :d="edgePath"
+      fill="none"
+      :stroke="edgeColor"
+      :stroke-width="baseWidth + 9"
+      stroke-linecap="round"
+    />
+    <path
+      class="me-glow me-glow--inner"
+      :class="{ 'me-glow--pulse': pulsing }"
+      :d="edgePath"
+      fill="none"
+      :stroke="edgeColor"
+      :stroke-width="baseWidth + 4"
+      stroke-linecap="round"
+    />
+  </template>
+
   <BaseEdge :id="id" :path="edgePath" :marker-end="markerEnd" :style="pathStyle" />
 
   <!-- Unsichtbare Trefferflaeche: macht die schmale Linie ueberhaupt erst hoverbar. `stroke` als
@@ -276,6 +305,42 @@ const pathStyle = computed(() => {
 /* Laufender Richtungspunkt – reine Dekoration, darf keine Klicks abfangen. */
 .me-flow {
   pointer-events: none;
+}
+
+/* Schein der betonten Kante: zwei blasse Pfade statt eines Filters (Begruendung im Script).
+   Deckkraft so gewaehlt, dass der Schein die Linie umgibt, ohne sie zu ueberstrahlen. */
+.me-glow {
+  pointer-events: none;
+  fill: none;
+}
+.me-glow--outer {
+  opacity: 0.13;
+}
+.me-glow--inner {
+  opacity: 0.26;
+}
+/* „Aufleuchtende" Kante (Code-Tab-Klick): der Puls laeuft auf der Deckkraft der Schein-Pfade –
+   eine Eigenschaft, die der Compositor ohne Neurasterung animiert. */
+@keyframes me-glow-pulse {
+  0%,
+  100% {
+    opacity: 0.1;
+  }
+  50% {
+    opacity: 0.32;
+  }
+}
+.me-glow--inner.me-glow--pulse {
+  animation: me-glow-pulse 1.1s ease-in-out infinite;
+}
+.me-glow--outer.me-glow--pulse {
+  animation: me-glow-pulse 1.1s ease-in-out infinite;
+  animation-delay: 0.12s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .me-glow--pulse {
+    animation: none;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .me-flow {

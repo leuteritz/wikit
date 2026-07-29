@@ -2675,13 +2675,17 @@ watch(
   gap: 6px;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--pkg) 45%, var(--color-border));
-  background: color-mix(in srgb, var(--color-surface-2) 90%, transparent);
+  /* Deckend statt `backdrop-filter: blur()`: von diesem Kopf gibt es EINEN JE PACKAGE, und jedes
+     backdrop-filter-Element verlangt vom Compositor eine eigene Kopie des Hintergrunds – bei
+     Dutzenden Zonen ueber einem mehrere tausend Pixel grossen Graph-Layer war das ein Auslöser
+     fuer schwarz gezeichnete Flaechen. Legende/Dock/Breadcrumb bleiben unveraendert: die gibt es
+     genau einmal. */
+  background: var(--color-surface-2);
   padding: 2px 4px 2px 8px;
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--color-text-muted);
-  backdrop-filter: blur(4px);
   transition: color 0.15s ease, border-color 0.15s ease;
 }
 .vf-zonehead:hover {
