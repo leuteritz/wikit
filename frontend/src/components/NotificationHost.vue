@@ -179,6 +179,16 @@ async function copyDetails(n) {
   line-height: 1.45;
   color: var(--color-text);
   overflow-wrap: anywhere;
+  /* Mehrere Hinweise kommen als je eine Zeile (z. B. uebersprungene Sektionen eines Massen-
+     Imports). Ohne pre-line liefe das zu einem Absatz zusammen, in dem man keinen einzelnen
+     Punkt mehr findet. Normale einzeilige Meldungen aendert das nicht. */
+  white-space: pre-line;
+  /* Deckel gegen eine Karte, die den halben Bildschirm einnimmt. Die Listen sind serverseitig
+     bereits begrenzt – das hier faengt den Fall ab, dass eine Meldung trotzdem einmal laenger
+     ausfaellt, statt sich auf die Disziplin des Absenders zu verlassen. */
+  max-height: 30vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .nh-meta {
   margin-top: 0.25rem;

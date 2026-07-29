@@ -48,6 +48,21 @@ function classColumns(cls: any) {
   };
 }
 
+// Gleichartige Hinweise eines Massen-Imports zu Warnungstexten machen – gedeckelt.
+//
+// Drei Stellen brauchen das: nicht lesbare Abschnitte, Duplikate im Paste, unveraenderte
+// Klassen. Bei einem Re-Import einer ganzen Codebasis sind das schnell tausende Faelle, und
+// das Frontend haengt jede Warnung in dieselbe Karte. Die Regel ist deshalb ueberall gleich:
+// bis WARN_LIST_MAX mit Namen (bei zwei, drei Faellen IST der Name die Information – daran
+// liess sich zuletzt ueberhaupt erst erkennen, dass es Annotationstypen waren), darueber die
+// ersten paar plus eine Zeile mit der Restzahl.
+const WARN_LIST_MAX = 5;
+function summarizeWarnings(items: string[], line: (x: string) => string, rest: (n: number) => string): string[] {
+  if (!items.length) return [];
+  if (items.length <= WARN_LIST_MAX) return items.map(line);
+  return [...items.slice(0, WARN_LIST_MAX).map(line), rest(items.length - WARN_LIST_MAX)];
+}
+
 // java-parser (chevrotain) wirft bei einem Syntaxfehler eine mehrere Kilobyte lange Meldung
 // ("Expecting: one of these possible Token sequences: 1. … 157. …"). Fuer die UI bleibt davon
 // nur die Fundstelle uebrig – der Rest ist fuer den Nutzer wertlos.
@@ -164,6 +179,10 @@ export class JavaService {
     this.progress.emit(jobId, { phase: 'parse', done: 0, total: chunks.length });
     const warnings: string[] = [];
     const parseErrors: string[] = []; // Chunks, die nicht geparst werden konnten
+    // FQCN mehrfach IM PASTE – je betroffener Klasse EIN Eintrag: dass `Foo` dreimal drinsteht,
+    // ist eine Feststellung ueber Foo, keine drei verschiedenen Hinweise.
+    const duplicates: string[] = [];
+    const reportedDuplicates = new Set<string>();
     const seen = new Set<string>(); // FQCN -> bereits im Paste vorgekommen
     const items: Array<{ fqcn: string; pkg: string | null; cls: any; imports: string[]; chunk: string }> = [];
 
@@ -188,19 +207,28 @@ export class JavaService {
       const pkg = parsed.package || null;
       const fqcn = (pkg ? pkg + '.' : '') + cls.class_name;
       if (seen.has(fqcn)) {
-        warnings.push(`Duplicate class “${fqcn}” in the paste – only the first occurrence was kept.`);
+        if (!reportedDuplicates.has(fqcn)) {
+          reportedDuplicates.add(fqcn);
+          duplicates.push(fqcn);
+        }
         continue;
       }
       seen.add(fqcn);
       items.push({ fqcn, pkg, cls, imports: parsed.imports, chunk });
     }
 
-    // Uebersprungene Abschnitte als Warnung sichtbar machen (gedeckelt, damit ein kaputter
-    // Massen-Paste nicht hunderte Zeilen Toast erzeugt).
-    if (parseErrors.length) {
-      warnings.push(...parseErrors.slice(0, 5));
-      if (parseErrors.length > 5) warnings.push(`… and ${parseErrors.length - 5} more section(s) skipped.`);
-    }
+    warnings.push(
+      ...summarizeWarnings(
+        parseErrors,
+        (msg) => msg, // bereits fertige Saetze aus describeChunkError
+        (n) => `… and ${n} more section(s) skipped.`,
+      ),
+      ...summarizeWarnings(
+        duplicates,
+        (fqcn) => `Duplicate class “${fqcn}” in the paste – only the first occurrence was kept.`,
+        (n) => `… and ${n} more duplicated class(es) in the paste – only the first occurrence was kept.`,
+      ),
+    );
 
     if (!items.length) {
       throw new BadRequestException(
@@ -258,18 +286,13 @@ export class JavaService {
       plans.push({ it, existing, diff: createPatch(fname, existing.raw_source, it.chunk) });
     }
 
-    // Unveraenderte Klassen gedeckelt melden (wie die Parse-Fehler oben). Beim Re-Import einer
-    // ganzen Codebasis sind fast alle unveraendert – das Frontend haengt jede Warnung an EINE
-    // Meldung, aus tausend Saetzen wuerde dort eine Textwand. Ab dem Deckel ist die Zahl die
-    // Aussage, nicht die Liste.
-    const UNCHANGED_MAX = 5;
-    if (unchanged.length) {
-      if (unchanged.length <= UNCHANGED_MAX) {
-        warnings.push(...unchanged.map((f) => `Class "${f}" unchanged — no new version created.`));
-      } else {
-        warnings.push(`${unchanged.length} class(es) unchanged — no new versions created.`);
-      }
-    }
+    warnings.push(
+      ...summarizeWarnings(
+        unchanged,
+        (fqcn) => `Class “${fqcn}” unchanged — no new version created.`,
+        (n) => `… and ${n} more unchanged — no new versions created.`,
+      ),
+    );
 
     // Nichts zu schreiben (alle Konflikte waren identisch) -> 409, damit das Frontend meldet.
     if (!plans.length) {

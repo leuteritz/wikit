@@ -322,12 +322,27 @@ function finishBatch(res) {
     selectedFileId.value = saved[0].id
     enqueueMany(saved, { userContext: userContext.value }).catch((e) => setNotice(e.message, 'error'))
   }
+  // ZWEI Karten, weil es zwei Aussagen sind: was ankam, und was dabei auffiel. Aneinander-
+  // gereiht ergaben sie einen Fliesstext, in dem schon bei einer Handvoll Hinweise weder das
+  // Ergebnis noch die Hinweise zu erfassen waren – und das Ganze in Rot, obwohl der Import
+  // gelungen ist. Die Hinweise sind eine Warnung, kein Fehler: der Rest ist importiert.
   const parts = []
-  if (saved.length) parts.push(`${saved.length} class(es) parsed – graph is ready.`)
   if (res.overwritten?.length) parts.push(`${res.overwritten.length} overwritten.`)
-  if (saved.length) parts.push('AI analysis runs in the background.')
-  if (res.warnings?.length) parts.push(...res.warnings)
-  setNotice(parts.join(' '), res.warnings?.length ? 'error' : 'info')
+  if (saved.length) parts.push('Graph is ready – AI analysis runs in the background.')
+  push({
+    kind: 'success',
+    title: `${saved.length} class(es) parsed`,
+    message: parts.join(' '),
+  })
+  if (res.warnings?.length) {
+    // Eine Zeile je Hinweis (die Karte rendert Umbrueche). Gedeckelt ist die Liste bereits
+    // serverseitig – hier kommen nie hunderte Zeilen an.
+    push({
+      kind: 'warning',
+      title: `${res.warnings.length} note(s) about this import`,
+      message: res.warnings.join('\n'),
+    })
+  }
   source.value = ''
   filename.value = ''
   showNew.value = false

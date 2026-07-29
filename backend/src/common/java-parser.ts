@@ -199,6 +199,19 @@ function bodyText(methodNode: any, source: string): string {
   return slice === ';' ? '' : slice;
 }
 
+// `default …` eines Annotationselements als Quelltext (leer, wenn es keinen Default gibt).
+// Gleiche Technik wie bodyText: Spannweite der Tokens aus dem Original schneiden, damit
+// Formatierung und Schreibweise erhalten bleiben.
+function defaultValueText(elementNode: any, source: string): string {
+  const def = findFirst(elementNode, 'defaultValue');
+  if (!def) return '';
+  const toks = collectTokens(def);
+  if (!toks.length) return '';
+  const start = Math.min(...toks.map((t) => t.startOffset));
+  const end = Math.max(...toks.map((t) => t.endOffset ?? t.startOffset));
+  return source.slice(start, end + 1).trim();
+}
+
 // Typ-Text aus den Tokens rekonstruieren (z. B. "List<String>", "int", "String[]").
 function typeText(node: any): string {
   if (!node) return '';
@@ -319,8 +332,44 @@ function extractMethods(typeNode: any, blocks: any[], source: string): JavaMetho
       body_start_line: minLine(findFirst(mNode, 'methodBody')),
     });
   }
+
+  // Elemente eines Annotationstyps (`String value() default "";`). In Java SIND das Methoden,
+  // sie stehen im CST aber unter einem eigenen Knoten ohne `methodDeclarator` – ohne diesen
+  // Zweig kaeme jede importierte Annotation als voellig leerer Typ an (0 Methoden, 0 Felder),
+  // und genau ihre Elemente sind das, was eine Annotation ausmacht.
+  for (const el of findAll(typeNode, 'annotationInterfaceElementDeclaration')) {
+    // Der Elementname ist der Identifier NACH dem Typ (`String value()` -> "value"); der Typ
+    // selbst besteht ebenfalls aus Identifiern, deshalb der Offset-Vergleich.
+    const typeNodeEl = findFirst(el, 'unannType');
+    const afterType = typeNodeEl ? Math.max(...collectTokens(typeNodeEl).map((t) => t.startOffset)) : -1;
+    const nameTok = collectTokens(el).find((t) => isIdent(t) && t.startOffset > afterType);
+    if (!nameTok) continue;
+    methods.push({
+      method_name: nameTok.image,
+      return_type: typeText(typeNodeEl) || 'void',
+      parameters: [],
+      // Elemente sind implizit public abstract – der Quelltext schreibt es nicht hin, und
+      // etwas hinzuschreiben, das dort nicht steht, waere geraten.
+      modifiers: [],
+      javadoc: javadocFor(minOffset(el), blocks, source),
+      // Kein Rumpf; der Default-Wert ist das einzige, was ueberhaupt dranhaengt.
+      body: defaultValueText(el, source),
+      start_line: minLine(el),
+      body_start_line: null,
+    });
+  }
   return methods;
 }
+
+// Der CST-Knoten eines Annotationstyps (`public @interface X {}`) heisst je nach java-parser-
+// Version anders: die aktuelle Grammatik folgt der JLS-17-Benennung ("AnnotationInterface"),
+// aeltere hiessen "AnnotationType". Es wird immer nur EINER davon existieren – beide zu suchen
+// kostet nichts und macht ein Parser-Update in beide Richtungen ungefaehrlich.
+//
+// Der falsche Name allein hat jede Annotation lautlos verschluckt: `parseJava` fand keinen Typ
+// und meldete "No class, interface, enum or record found in the source" – bei einem Massen-Paste
+// als eine von vielen uebersprungenen Sektionen, deren Ursache man dem Text nicht ansieht.
+const ANNOTATION_DECL_NODES = ['annotationInterfaceDeclaration', 'annotationTypeDeclaration'];
 
 // --- Klassen-Charakter (Stereotyp) -------------------------------------------
 // Nur Java-Modifier, keine Annotationen (analog METHOD_MODIFIERS).
@@ -403,7 +452,9 @@ export function parseJava(source: string): JavaParseResult {
     ...findAll(cst, 'normalClassDeclaration').map((node) => ({ node, type: 'class' as const })),
     ...findAll(cst, 'normalInterfaceDeclaration').map((node) => ({ node, type: 'interface' as const })),
     ...findAll(cst, 'enumDeclaration').map((node) => ({ node, type: 'enum' as const })),
-    ...findAll(cst, 'annotationTypeDeclaration').map((node) => ({ node, type: 'annotation' as const })),
+    ...ANNOTATION_DECL_NODES.flatMap((key) =>
+      findAll(cst, key).map((node) => ({ node, type: 'annotation' as const })),
+    ),
     // Records (Java 16) waren bisher gar nicht analysierbar: ohne diesen Eintrag fand `parseJava`
     // in `record Point(int x, int y) {}` keinen Typ und die Analyse brach mit
     // „No class, interface or enum found in the source" ab.
@@ -423,7 +474,7 @@ export function parseJava(source: string): JavaParseResult {
           .join(''),
       )
       .filter((m: string) => CLASS_MODIFIERS.has(m));
-    for (const key of ['normalClassDeclaration', 'enumDeclaration', 'recordDeclaration', 'normalInterfaceDeclaration', 'annotationTypeDeclaration']) {
+    for (const key of ['normalClassDeclaration', 'enumDeclaration', 'recordDeclaration', 'normalInterfaceDeclaration', ...ANNOTATION_DECL_NODES]) {
       for (const child of wrap.children[key] || []) modsByNode.set(child, mods);
     }
   }
@@ -868,7 +919,7 @@ export function parseJavaForEdges(source: string): JavaClassGraphInfo[] {
     // Interfaces/Annotations rufen i. d. R. nichts auf, aber ihre definierten Methoden
     // sind als Ziel relevant -> ebenfalls aufnehmen.
     ...findAll(cst, 'normalInterfaceDeclaration'),
-    ...findAll(cst, 'annotationTypeDeclaration'),
+    ...ANNOTATION_DECL_NODES.flatMap((key) => findAll(cst, key)),
     // Records sind ganz normale Kanten-Teilnehmer: sie werden instanziiert, herumgereicht und
     // ihre (auch generierten) Zugriffe erscheinen als Aufrufe.
     ...findAll(cst, 'recordDeclaration'),
