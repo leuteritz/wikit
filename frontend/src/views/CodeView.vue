@@ -1002,48 +1002,47 @@ function onResetPanels() {
       <!-- Spalte 1: Suche + Package-Tree -->
       <section class="flex min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]">
         <div class="shrink-0 border-b border-[var(--color-border)] p-2">
-          <div class="relative">
-            <Icon icon="lucide:search" class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]" />
-            <input
-              v-model="search"
-              type="text"
-              placeholder="Filter classes…"
-              class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 pl-8 pr-7 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
-            />
+          <!-- Filter + Falt-Umschalter in EINER Zeile: der Knopf wirkt auf den ganzen Baum, gehoert
+               also neben dessen Kopf – aber eine eigene Zeile ist er nicht wert. Als Icon in
+               Feldhoehe steht er da, wo man ihn sucht, ohne dem Baum Platz wegzunehmen. -->
+          <div class="flex items-center gap-1.5">
+            <div class="relative min-w-0 flex-1">
+              <Icon icon="lucide:search" class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]" />
+              <input
+                v-model="search"
+                type="text"
+                placeholder="Filter classes…"
+                class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 pl-8 pr-7 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
+              />
+              <button
+                v-if="search"
+                type="button"
+                class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
+                title="Clear filter"
+                @click="search = ''"
+              >
+                <Icon icon="lucide:x" class="h-3.5 w-3.5" />
+              </button>
+            </div>
             <button
-              v-if="search"
+              v-if="rows.length"
               type="button"
-              class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
-              title="Clear filter"
-              @click="search = ''"
-            >
-              <Icon icon="lucide:x" class="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <!-- Baum-Werkzeugzeile: links, was der Baum gerade zeigt, rechts der Falt-Umschalter.
-               Er gehoert hierher und nicht an die Ordnerzeilen: er wirkt auf den GANZEN Baum. -->
-          <div v-if="rows.length" class="mt-1.5 flex items-center justify-between gap-2 pl-1">
-            <!-- Links nur die Trefferbilanz der Suche. KEINE Package-Zahl: der Baum zieht leere
-                 Zwischenebenen zusammen (`com.acme` als ein Knoten), seine Knotenzahl weicht damit
-                 von der Package-Zahl in der Kommandozeile ab – zwei Zahlen fuer dasselbe Wort. -->
-            <p class="min-w-0 truncate font-mono text-3xs text-[var(--color-text-muted)]">
-              <template v-if="searching">{{ filteredFiles.length }} of {{ classCount }} match</template>
-            </p>
-            <button
-              type="button"
-              class="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-3xs font-semibold text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:pointer-events-none disabled:opacity-40"
+              class="grid w-[2.125rem] shrink-0 self-stretch place-items-center rounded-lg border border-[var(--color-border)] text-[var(--color-text-muted)] transition hover:border-[var(--color-accent)] hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:pointer-events-none disabled:opacity-40"
               :disabled="searching || !folderPaths.length"
+              :aria-label="anyFolderOpen ? 'Collapse all packages' : 'Expand all packages'"
               :title="searching
                 ? 'While filtering, every matching package stays open'
                 : anyFolderOpen
-                  ? 'Collapse every package in the tree'
-                  : 'Expand every package in the tree'"
+                  ? 'Collapse all packages'
+                  : 'Expand all packages'"
               @click="setAllFolders(!anyFolderOpen)"
             >
-              <Icon :icon="anyFolderOpen ? 'lucide:fold-vertical' : 'lucide:unfold-vertical'" class="h-3.5 w-3.5" />
-              {{ anyFolderOpen ? 'Collapse all' : 'Expand all' }}
+              <Icon :icon="anyFolderOpen ? 'lucide:fold-vertical' : 'lucide:unfold-vertical'" class="h-4 w-4" />
             </button>
           </div>
+          <p v-if="searching" class="mt-1.5 px-1 font-mono text-3xs text-[var(--color-text-muted)]">
+            {{ filteredFiles.length }} of {{ classCount }} match
+          </p>
         </div>
 
         <ul class="min-h-0 flex-1 overflow-y-auto p-1.5">
