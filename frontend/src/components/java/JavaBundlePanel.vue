@@ -19,6 +19,10 @@ import { useRouter } from 'vue-router'
 import { api } from '../../lib/api.js'
 import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
 import { addLineNumbers, buildCallWindow } from '../../lib/javaCode.js'
+// Identitaetsfarbe je Methode – dieselben Helfer wie im Edge-Detail-Modal. Die Zuordnung MUSS
+// dort und hier gleich ausfallen: „Full details" zeigt genau diese Beziehung noch einmal, und
+// eine Methode, die dabei die Farbe wechselt, waere blosse Dekoration statt einer Aussage.
+import { buildMethodColorMap, methodColorVars, markMethodCalls } from '../../lib/javaMethodColors.js'
 import { Icon } from '../../lib/icons.js'
 
 const props = defineProps({
@@ -107,6 +111,28 @@ const tally = computed(() => {
 })
 
 const methodsOf = (r) => (r.methods || []).filter((m) => m && m.method)
+
+// Farbindex je Methode, EINE Map pro Beziehung. Die Reihenfolge ist dieselbe, aus der auch
+// `computeCallEdgeData` seine Methodenliste baut (`rel.methods`, gefiltert auf `m.method`) –
+// deshalb vergibt das Edge-Modal fuer dieselbe Beziehung exakt dieselben Farben.
+// Vorab fuer ALLE Zeilen berechnet, damit die Chips in der Kopfzeile die Farbe schon tragen,
+// bevor der Code nachgeladen ist.
+const colorMaps = computed(() => {
+  const out = new Map()
+  for (const r of relations.value) out.set(r.key, buildMethodColorMap(methodsOf(r).map((m) => m.method)))
+  return out
+})
+// Inline-Vars (`--mc` fuer Panel-Flaechen, `--mc-code` fuer den dunklen Code-Block). Unbekannter
+// Name -> leeres Objekt, die CSS-Fallbacks greifen dann auf den Akzent.
+function mcVars(rel, name) {
+  return methodColorVars(colorMaps.value.get(rel.key)?.get(name))
+}
+// Farbe einer Aufrufstelle: nur bei GENAU einem Callee. Stehen zwei Aufrufe in derselben Zeile,
+// gaebe eine der beiden Farben eine Zuordnung vor, die es nicht gibt – dann bleibt es beim Akzent
+// und die Zuordnung passiert ueber die farbigen Namen in der Bildunterschrift.
+function siteVars(rel, site) {
+  return site.callees?.length === 1 ? mcVars(rel, site.callees[0]) : {}
+}
 const explainFor = (r) => {
   const names = methodsOf(r).map((m) => `${m.method}()`)
   const list = names.length > 2 ? `${names.slice(0, 2).join(', ')} and ${names.length - 2} more` : names.join(' and ')
@@ -120,6 +146,12 @@ async function fetchDetail(rel) {
   try {
     const data = (await props.loadDetail(rel)) || {}
     const wanted = (data.methods || []).slice(0, MAX_DEFS)
+    // Basis ist die Kopfzeilen-Map (gleiche Reihenfolge wie im Edge-Modal); Callees, die nur an
+    // einer Aufrufstelle auftauchen, haengen hinten an – bestehende Indizes bleiben damit stabil.
+    const colors = buildMethodColorMap([
+      ...methodsOf(rel).map((m) => m.method),
+      ...(data.callSites || []).map((s) => s.calleeMethod),
+    ])
 
     // 1) Definitionen: die aufgerufene Methode im Original.
     const defs = []
@@ -132,7 +164,12 @@ async function fetchDetail(rel) {
           filename: snip.filename,
           startLine: snip.startLine,
           endLine: snip.endLine ?? snip.startLine,
-          html: addLineNumbers(snip.combinedHtml ?? snip.html, snip.startLine),
+          // In der Definition nur die eigene Methode einfaerben – andere Namen der Beziehung
+          // waeren hier Rauschen (identisch zum Edge-Modal).
+          html: markMethodCalls(
+            addLineNumbers(snip.combinedHtml ?? snip.html, snip.startLine),
+            new Map([[m.name, colors.get(m.name) ?? 0]]),
+          ),
         })
       } catch (e) {
         defs.push({ name: m.name, signature: m.signature, error: e.message })
@@ -167,7 +204,11 @@ async function fetchDetail(rel) {
         usages.push({
           callerMethod,
           filename: snip.filename,
-          sites: uniq.slice(0, MAX_SITES).map((s) => ({ ...s, html: buildCallWindow(snip.html, base, s.line) })),
+          // Im Aufrufer-Fenster ALLE Methoden der Beziehung markieren: im Kontext stehen oft
+          // weitere Aufrufe derselben Kante, die dann ihre eigene Farbe tragen.
+          sites: uniq
+            .slice(0, MAX_SITES)
+            .map((s) => ({ ...s, html: markMethodCalls(buildCallWindow(snip.html, base, s.line), colors) })),
           moreSites: Math.max(0, uniq.length - MAX_SITES),
         })
       } catch (e) {
@@ -330,8 +371,15 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                       @click.stop="goTo(r.consumer.id)"
                     >{{ r.consumer.class_name }}</button>
                   </span>
+                  <!-- Die Methoden-Chips sind zugleich die Legende der Zeile: dieselbe Farbe steht
+                       unten am Definitionsblock, an der Aufrufstelle und am Token im Code. -->
                   <span v-if="methodsOf(r).length" class="rel-methods">
-                    <span v-for="m in methodsOf(r).slice(0, 3)" :key="m.edgeId ?? m.method" class="rel-method">{{ m.method }}()</span>
+                    <span
+                      v-for="m in methodsOf(r).slice(0, 3)"
+                      :key="m.edgeId ?? m.method"
+                      class="rel-method"
+                      :style="mcVars(r, m.method)"
+                    >{{ m.method }}()</span>
                     <span v-if="methodsOf(r).length > 3" class="rel-more">+{{ methodsOf(r).length - 3 }}</span>
                   </span>
                   <Icon
@@ -375,7 +423,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
                     <template v-else-if="details[r.key]">
                       <!-- 1 · Definition -->
-                      <div v-for="d in details[r.key].defs" :key="`d-${d.name}`" class="rel-block">
+                      <div v-for="d in details[r.key].defs" :key="`d-${d.name}`" class="rel-block rel-block--mc" :style="mcVars(r, d.name)">
                         <!-- Herkunft: Package · Datei · Zeile, komplett anklickbar -> oeffnet die
                              Datei und markiert den ganzen Methodenbereich. -->
                         <button
@@ -384,9 +432,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                           :title="`Open ${d.filename || r.provider.class_name} at line ${d.startLine ?? '?'}`"
                           @click="goTo(r.provider.id, d.startLine, d.endLine)"
                         >
-                          <span class="rel-step">1</span>
+                          <span class="rel-step rel-step--mc">1</span>
                           <span class="rel-block-title">
-                            Comes from <b>{{ r.provider.class_name }}.{{ d.name }}()</b>
+                            Comes from <b>{{ r.provider.class_name }}.<span class="rel-mc-name">{{ d.name }}()</span></b>
                           </span>
                           <span class="rel-loc">
                             <span v-if="r.provider.package" class="rel-pkg">{{ r.provider.package }}</span>
@@ -426,7 +474,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                             <Icon icon="lucide:arrow-up-right" class="rel-loc-go" />
                           </span>
                         </button>
-                        <div v-for="(s, i) in u.sites" :key="i" class="rel-site">
+                        <!-- Farbe der Aufrufstelle = Farbe ihrer Methode (nur bei genau einer;
+                             s. siteVars). Sie faerbt den Streifen und die markierte Zeile. -->
+                        <div v-for="(s, i) in u.sites" :key="i" class="rel-site rel-site--mc" :style="siteVars(r, s)">
                           <div
                             class="edge-usage-code rel-clickable"
                             :title="`Open ${r.consumer.class_name} at line ${s.line}`"
@@ -436,7 +486,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                           <p class="rel-caption">
                             Line {{ s.line }}<template v-if="!s.lineExact"> (approx.)</template> — the highlighted line is where
                             <template v-for="(c, ci) in s.callees" :key="c">
-                              <template v-if="ci"> and </template><code>{{ c }}()</code>
+                              <template v-if="ci"> and </template><code class="rel-mc-code" :style="mcVars(r, c)">{{ c }}()</code>
                             </template>
                             <template v-if="s.callees.length > 1"> are</template><template v-else> is</template> called.
                             <button type="button" class="rel-jump" @click="goTo(r.consumer.id, s.line)">
@@ -604,13 +654,16 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   flex-wrap: wrap;
   gap: 3px;
 }
+/* Methoden-Chip in der Kopfzeile = Legende der Zeile. Traegt `--mc` (s. mcVars), faellt ohne
+   Zuordnung auf das bisherige gedaempfte Grau zurueck. */
 .rel-method {
   border-radius: 5px;
-  background: var(--color-surface-offset);
+  background: color-mix(in srgb, var(--mc, var(--color-text-muted)) 14%, transparent);
   padding: 0 5px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.625rem;
-  color: var(--color-text-muted);
+  font-weight: 600;
+  color: var(--mc, var(--color-text-muted));
 }
 .rel-more {
   font-size: 0.625rem;
@@ -646,6 +699,43 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 }
 .rel-block {
   margin-top: 10px;
+}
+/* Definitionsblock in der Farbe seiner Methode: schmaler Streifen links als gemeinsamer Anker zu
+   Chip, Aufrufstelle und Code-Token. Kein Rahmen, kein Kasten – die Zeile ist schon eingerueckt
+   genug, hier soll nur die Zugehoerigkeit sichtbar werden. */
+.rel-block--mc {
+  border-left: 3px solid var(--mc, transparent);
+  padding-left: 7px;
+  margin-left: -10px;
+}
+.rel-site--mc {
+  border-left: 3px solid var(--mc, transparent);
+  padding-left: 7px;
+  margin-left: -10px;
+}
+/* Doppelte Klasse fuer die Spezifitaet: `.rel-step` steht weiter unten in dieser Datei und
+   gewaenne bei gleichem Gewicht ueber die Reihenfolge. */
+.rel-step.rel-step--mc {
+  background: color-mix(in srgb, var(--mc, var(--color-text-muted)) 18%, transparent);
+  color: var(--mc, var(--color-text-muted));
+}
+.rel-mc-name {
+  color: var(--mc, inherit);
+}
+/* Die Code-Bloecke hier sind – anders als im Edge-Modal – NICHT immer dunkel: im Light-Mode
+   sitzen sie auf hellem Grund. `--mc-code` ist fuer github-dark gedacht und dort zu blass, also
+   die markierte Aufrufzeile auf die kraeftige UI-Farbe umbiegen. Eine Zeile statt einer zweiten
+   Regelmenge in style.css – die Container sind Template-Elemente, scoped greift. */
+.rel-site--mc .edge-usage-code,
+.rel-block--mc .edge-code {
+  --mc-code: var(--mc);
+}
+/* Methodenname in der Bildunterschrift: bei mehreren Aufrufen in einer Zeile ist DAS die
+   Zuordnung – der Streifen bleibt dort bewusst neutral. */
+.rel-mc-code {
+  background: color-mix(in srgb, var(--mc, var(--color-text-muted)) 16%, transparent) !important;
+  color: var(--mc, var(--color-text));
+  font-weight: 600;
 }
 .rel-block-head {
   display: flex;
