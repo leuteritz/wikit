@@ -140,24 +140,44 @@ const ROLE_META = {
 }
 const ROLE_ORDER = ['provider', 'consumer', 'hub', 'isolated']
 
-// Java-Elementtyp (`java_files.class_type` – vom Parser gesetzt). `class` ist der Normalfall und
-// bleibt neutral; Interface/Enum/Annotation tragen Farbe, weil genau ihre Abweichung die
-// Information ist. `record` kennt der Parser (noch) nicht, ist aber vorbereitet.
+// Was der Knoten IST (`java_files.stereotype`, sonst `class_type`). Die Achse beantwortet eine
+// Frage, also bleibt sie EIN Slot: der Chip zeigt den Charakter der Klasse, nicht bloss „class".
+// `class` ist dabei der Normalfall und bleibt neutral (ohne Rahmen) – Information ist die
+// ABWEICHUNG davon. Eine Datenklasse, eine Utility oder eine Exception liest man beim Überfliegen
+// anders als einen Service, und genau das soll die Karte zeigen.
 const TYPE_META = {
   class: { icon: 'lucide:box', label: 'Class', color: 'var(--color-type-class)' },
+  data: { icon: 'lucide:database', label: 'Data class', color: 'var(--color-type-data)' },
+  util: { icon: 'lucide:wrench', label: 'Utility', color: 'var(--color-type-util)' },
+  exception: { icon: 'lucide:alert-triangle', label: 'Exception', color: 'var(--color-type-exception)' },
+  abstract: { icon: 'lucide:layers', label: 'Abstract', color: 'var(--color-type-abstract)' },
   interface: { icon: 'lucide:component', label: 'Interface', color: 'var(--color-type-interface)' },
   enum: { icon: 'lucide:list', label: 'Enum', color: 'var(--color-type-enum)' },
   annotation: { icon: 'lucide:at-sign', label: 'Annotation', color: 'var(--color-type-annotation)' },
   record: { icon: 'lucide:braces', label: 'Record', color: 'var(--color-type-record)' },
 }
+// Datenträger: Karten dieser Art zeigen ihre FELDER statt der Methodenzahl – bei einer
+// Datenklasse ist „5 fields" die Aussage, „0 methods" wäre nur die Abwesenheit einer.
+const DATA_TYPES = new Set(['data', 'record'])
+// Kennzahl für den Badge rechts auf der Karte. Ohne bekannte Feldzahl (Altbestand, noch nicht neu
+// analysiert) bleibt es bei den Methoden – lieber die alte Aussage als eine erfundene 0.
+function nodeMetric(d) {
+  const useFields = DATA_TYPES.has(d.type) && d.fieldCount != null
+  const value = useFields ? d.fieldCount : d.methodCount
+  const unit = useFields ? 'field' : 'method'
+  return { value, label: `${value} ${unit}${value === 1 ? '' : 's'}` }
+}
 const TYPE_ORDER = ['class', 'interface', 'enum', 'annotation']
-// Unbekannter/fehlender class_type faellt auf `class` zurueck – nie auf undefined, sonst rendert
-// die Karte ohne Glyph.
-const typeOf = (t) => (t && TYPE_META[t] ? t : 'class')
+// `stereotype` ist NULL, solange eine Klasse nicht neu analysiert wurde -> auf `class_type`
+// zurückfallen, und Unbekanntes auf `class`; nie undefined, sonst rendert die Karte ohne Glyph.
+const typeOf = (f) => {
+  const t = typeof f === 'string' ? f : f?.stereotype || f?.class_type
+  return t && TYPE_META[t] ? t : 'class'
+}
 // Legenden-Reihenfolge: die vier kanonischen Java-Typen immer (sie koennen jederzeit auftauchen),
-// `record` nur, wenn es ihn im Ausschnitt wirklich gibt.
+// die Charakter-Verfeinerungen (data/util/…) nur, wenn es sie im Ausschnitt wirklich gibt.
 const legendTypes = computed(() => {
-  const seen = new Set((props.files || []).map((f) => typeOf(f.class_type)))
+  const seen = new Set((props.files || []).map((f) => typeOf(f)))
   return [...TYPE_ORDER, ...Object.keys(TYPE_META).filter((t) => !TYPE_ORDER.includes(t) && seen.has(t))]
 })
 
@@ -723,9 +743,12 @@ const layout = computed(() => {
         isMatch: searchActive.value && matchIdSet.value.has(f.id),
         isContext: searchActive.value && !matchIdSet.value.has(f.id),
         methodCount: f.method_count ?? (f.methods || []).length,
+        // Feldzahl der Datenträger (NULL bei noch nicht neu analysierten Klassen -> die Karte
+        // zeigt dann weiter die Methodenzahl statt einer erfundenen 0).
+        fieldCount: f.field_count ?? null,
         color: pkgColor.get(pkg),
         role: roleFor(id),
-        type: typeOf(f.class_type),
+        type: typeOf(f),
         analyzed: !!(f.description && f.description.trim()),
         version: f.version ?? 1,
       },
@@ -1366,9 +1389,9 @@ watch(
           <!-- Slot 2: WIE haengt es drin? Rolle + Umfang als eine Einheit (Glyph + Methodenzahl). -->
           <span
             class="vf-badge"
-            :title="`${ROLE_META[data.role].label} — ${ROLE_META[data.role].hint} · ${data.methodCount} methods`"
+            :title="`${ROLE_META[data.role].label} — ${ROLE_META[data.role].hint} · ${nodeMetric(data).label}`"
           >
-            <Icon :icon="ROLE_META[data.role].icon" class="vf-badge-ic" />{{ data.methodCount }}
+            <Icon :icon="ROLE_META[data.role].icon" class="vf-badge-ic" />{{ nodeMetric(data).value }}
           </span>
           <Handle type="source" :position="Position.Bottom" class="vf-handle" />
         </div>

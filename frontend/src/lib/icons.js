@@ -33,6 +33,9 @@ import unfoldVertical from '@iconify-icons/lucide/unfold-vertical'
 import loader2 from '@iconify-icons/lucide/loader-2'
 import check from '@iconify-icons/lucide/check'
 import alertTriangle from '@iconify-icons/lucide/alert-triangle'
+import database from '@iconify-icons/lucide/database'
+import wrench from '@iconify-icons/lucide/wrench'
+import layers from '@iconify-icons/lucide/layers'
 import refreshCw from '@iconify-icons/lucide/refresh-cw'
 import zoomIn from '@iconify-icons/lucide/zoom-in'
 import zoomOut from '@iconify-icons/lucide/zoom-out'
@@ -124,6 +127,11 @@ const ICONS = {
   // Java-Elementtypen im Graph: Interface = steckbarer Vertrag, Annotation = das @ selbst.
   'lucide:component': component,
   'lucide:at-sign': atSign,
+  // Klassen-Charakter: Datenklasse = Speicher, Utility = Werkzeug, abstrakt = Schichten
+  // (Exception nutzt das vorhandene alert-triangle, Record die braces).
+  'lucide:database': database,
+  'lucide:wrench': wrench,
+  'lucide:layers': layers,
   // „Hier geht es zur Quelle": Sprung-Affordanz an Herkunfts-/Nutzungsangaben.
   'lucide:arrow-up-right': arrowUpRight,
   'lucide:layout-grid': layoutGrid,

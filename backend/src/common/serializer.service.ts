@@ -13,6 +13,14 @@ import { JavaMethod } from '../entities/java-method.entity';
 import { Relation } from '../entities/relation.entity';
 import { Tag } from '../entities/tag.entity';
 
+// `safeJson(null, [])` liefert NULL, nicht den Fallback: `JSON.parse("null")` wirft nicht. Bei
+// Spalten, die im Altbestand leer sind (class_modifiers), muss das Ergebnis trotzdem ein Array
+// sein – der Client soll nicht jedes Feld auf null pruefen muessen.
+function jsonArray(value: unknown): string[] {
+  const parsed = safeJson<string[]>(value, []);
+  return Array.isArray(parsed) ? parsed : [];
+}
+
 // Wandelt DB-Zeilen in das exakte API-Format. Reads laufen ueber Repository/QueryBuilder
 // (TypeORM). Die JSON-Shapes muessen byte-genau dem alten backend/db.js entsprechen
 // (Frontend-Contract): siehe Tests in der README/Plan-Datei.
@@ -164,6 +172,13 @@ export class SerializerService {
         package: pkg,
         class_name: row.class_name,
         class_type: row.class_type,
+        // Charakter der Klasse + die Fakten dahinter. NULL bei Altbestand (erst bei erneuter
+        // Analyse gefuellt) -> das Frontend faellt dann auf `class_type` zurueck.
+        stereotype: row.stereotype ?? null,
+        class_modifiers: jsonArray(row.class_modifiers),
+        extends_name: row.extends_name ?? null,
+        field_count: row.field_count ?? null,
+        ctor_count: row.ctor_count ?? null,
         description: row.description ?? null,
         generated_at: row.generated_at ?? null,
         created_at: row.created_at,
@@ -258,6 +273,11 @@ export class SerializerService {
       package: pkg,
       class_name: row.class_name,
       class_type: row.class_type,
+      stereotype: row.stereotype ?? null,
+      class_modifiers: jsonArray(row.class_modifiers),
+      extends_name: row.extends_name ?? null,
+      field_count: row.field_count ?? null,
+      ctor_count: row.ctor_count ?? null,
       description: row.description ?? null,
       description_html: row.description_html ?? null,
       generated_at: row.generated_at ?? null,

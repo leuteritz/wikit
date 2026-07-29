@@ -33,6 +33,21 @@ async function insertChunked(repo: { insert: (rows: any[]) => Promise<any> }, ro
   }
 }
 
+// Die klassenbeschreibenden Spalten aus einem geparsten Typ – an drei Stellen gebraucht
+// (analyze, analyze-batch Insert + Overwrite-Update); getrennte Literale waeren dreimal die
+// Gelegenheit, ein neues Feld zu vergessen. `class_modifiers` ist JSON-als-TEXT (s. json.util).
+function classColumns(cls: any) {
+  return {
+    class_type: cls.class_type,
+    stereotype: cls.stereotype ?? null,
+    class_modifiers: JSON.stringify(cls.class_modifiers ?? []),
+    extends_name: cls.extends_name || null,
+    field_count: cls.field_count ?? 0,
+    ctor_count: cls.ctor_count ?? 0,
+    class_line: cls.class_line ?? null,
+  };
+}
+
 // java-parser (chevrotain) wirft bei einem Syntaxfehler eine mehrere Kilobyte lange Meldung
 // ("Expecting: one of these possible Token sequences: 1. … 157. …"). Fuer die UI bleibt davon
 // nur die Fundstelle uebrig – der Rest ist fuer den Nutzer wertlos.
@@ -86,9 +101,8 @@ export class JavaService {
         filename: name,
         pkg: parsed.package || null,
         class_name: cls.class_name,
-        class_type: cls.class_type,
         raw_source: source,
-        class_line: cls.class_line ?? null,
+        ...classColumns(cls),
       });
       fileId = res.identifiers[0].id as number;
 
@@ -274,9 +288,8 @@ export class JavaService {
             { id: existing.id },
             {
               filename: `${it.cls.class_name}.java`,
-              class_type: it.cls.class_type,
               raw_source: it.chunk,
-              class_line: it.cls.class_line ?? null,
+              ...classColumns(it.cls),
             },
           );
           await manager.getRepository(JavaMethod).delete({ file_id: existing.id });
@@ -296,9 +309,8 @@ export class JavaService {
           filename: `${it.cls.class_name}.java`,
           pkg: it.pkg,
           class_name: it.cls.class_name,
-          class_type: it.cls.class_type,
           raw_source: it.chunk,
-          class_line: it.cls.class_line ?? null,
+          ...classColumns(it.cls),
         });
         const fileId = res.identifiers[0].id as number;
 
@@ -442,7 +454,8 @@ export class JavaService {
   // Liste aller analysierten Dateien (ohne raw_source). COLLATE NOCASE -> Raw-SQL.
   async listFiles(): Promise<any[]> {
     const rows = await this.ds.query(
-      `SELECT id, article_id, filename, package, class_name, class_type, description, generated_at, created_at
+      `SELECT id, article_id, filename, package, class_name, class_type, stereotype, class_modifiers,
+              extends_name, field_count, ctor_count, description, generated_at, created_at
        FROM java_files ORDER BY class_name COLLATE NOCASE`,
     );
     return this.serializer.serializeJavaFileList(rows);

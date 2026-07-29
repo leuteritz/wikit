@@ -60,7 +60,15 @@ CREATE TABLE IF NOT EXISTS java_files (
   filename         TEXT NOT NULL,
   package          TEXT,
   class_name       TEXT NOT NULL,
-  class_type       TEXT CHECK(class_type IN ('class','interface','enum','annotation')),
+  -- Ohne CHECK: die zulaessigen Werte kommen aus dem Parser (jetzt inkl. 'record'), und ein
+  -- CHECK-Constraint laesst sich in SQLite nur ueber einen Tabellen-Rebuild aendern. Genau den
+  -- macht DatabaseService.migrateJavaFilesCheck() einmalig fuer bestehende DBs.
+  class_type       TEXT,
+  stereotype       TEXT,           -- Charakter der Klasse (data/util/exception/abstract/...)
+  class_modifiers  TEXT,           -- JSON-Array: ['public','abstract']
+  extends_name     TEXT,           -- einfacher Name der Oberklasse
+  field_count      INTEGER,        -- deklarierte Felder (Record: Komponenten)
+  ctor_count       INTEGER,        -- deklarierte Konstruktoren
   raw_source       TEXT NOT NULL,
   description      TEXT,           -- KI-Klassenbeschreibung (Markdown, Source of Truth)
   description_html TEXT,           -- gerenderte Beschreibung (Cache, server-seitig)
@@ -158,6 +166,11 @@ export const COLUMN_MIGRATIONS: Array<{ table: string; column: string; ddl: stri
   { table: 'java_files', column: 'description_html', ddl: 'ALTER TABLE java_files ADD COLUMN description_html TEXT' },
   { table: 'java_files', column: 'generated_at', ddl: 'ALTER TABLE java_files ADD COLUMN generated_at TEXT' },
   { table: 'java_files', column: 'class_line', ddl: 'ALTER TABLE java_files ADD COLUMN class_line INTEGER' },
+  { table: 'java_files', column: 'stereotype', ddl: 'ALTER TABLE java_files ADD COLUMN stereotype TEXT' },
+  { table: 'java_files', column: 'class_modifiers', ddl: 'ALTER TABLE java_files ADD COLUMN class_modifiers TEXT' },
+  { table: 'java_files', column: 'extends_name', ddl: 'ALTER TABLE java_files ADD COLUMN extends_name TEXT' },
+  { table: 'java_files', column: 'field_count', ddl: 'ALTER TABLE java_files ADD COLUMN field_count INTEGER' },
+  { table: 'java_files', column: 'ctor_count', ddl: 'ALTER TABLE java_files ADD COLUMN ctor_count INTEGER' },
   { table: 'java_methods', column: 'modifiers', ddl: 'ALTER TABLE java_methods ADD COLUMN modifiers TEXT' },
   { table: 'java_methods', column: 'body', ddl: 'ALTER TABLE java_methods ADD COLUMN body TEXT' },
   { table: 'java_methods', column: 'start_line', ddl: 'ALTER TABLE java_methods ADD COLUMN start_line INTEGER' },

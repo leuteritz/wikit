@@ -79,6 +79,13 @@
   --color-type-enum: var(--color-warning);
   --color-type-annotation: var(--color-thistle);
   --color-type-record: var(--color-beige);
+  /* Charakter-Verfeinerungen von `class`: dieselbe Achse, deshalb dieselbe Farbfamilie – nicht
+     etwa Rollen- oder Package-Hues. `data` und `record` liegen bewusst nah beieinander: beide
+     sind Datenträger, der Record ist nur die Sprachform davon. */
+  --color-type-data: var(--color-lavender);
+  --color-type-util: var(--color-success);
+  --color-type-exception: var(--color-danger);
+  --color-type-abstract: var(--color-beige);
 
   /* --- Methoden-Identitaetsfarben (Java-Edge-Panel) ------------------------------------------
      Eine Kante traegt oft mehrere Methoden: oben ihre Definition, unten ihre Aufrufstellen.

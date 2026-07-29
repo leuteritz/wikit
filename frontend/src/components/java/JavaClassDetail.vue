@@ -257,12 +257,34 @@ onBeforeUnmount(clearHighlights)
 // gesetzt), kein Hintergrund im Ruhezustand. Der Klick-Handler (`onParamClick`) kommt aus
 // lib/javaParams.js und wird mit dem Edge-Panel geteilt.
 
+// Charakter der Klasse (`stereotype`, s. deriveStereotype im Parser) statt des blossen
+// `class_type`: „Data class" sagt etwas, „class" nicht. Altbestand ohne Stereotyp faellt auf
+// class_type zurueck. Label in Worten, weil hier – anders als auf der Graph-Karte – Platz ist.
+const STEREOTYPE_LABEL = {
+  data: 'Data class',
+  util: 'Utility',
+  exception: 'Exception',
+  abstract: 'Abstract',
+  record: 'Record',
+  interface: 'Interface',
+  enum: 'Enum',
+  annotation: 'Annotation',
+  class: 'Class',
+}
+const classKind = computed(() => file.value?.stereotype || file.value?.class_type || '')
+const classKindLabel = computed(() => STEREOTYPE_LABEL[classKind.value] || classKind.value)
+
 const typeBadge = computed(() => ({
   class: 'badge-accent',
+  data: 'badge-accent',
+  util: 'badge-success',
+  abstract: 'badge-muted',
+  record: 'badge-accent',
+  exception: 'badge-danger',
   interface: 'badge-success',
   enum: 'badge-warning',
   annotation: 'badge-danger',
-}[file.value?.class_type] || 'badge-muted'))
+}[classKind.value] || 'badge-muted'))
 
 const methodCount = computed(() => file.value?.methods?.length || 0)
 const summarizedCount = computed(() => (file.value?.methods || []).filter((m) => m.summary_html).length)
@@ -326,7 +348,10 @@ async function copySource() {
 function buildMarkdown(f) {
   const lines = [`# ${f.class_name}`, '']
   if (f.package) lines.push(`**Package:** \`${f.package}\``, '')
-  lines.push(`**Type:** ${f.class_type}`, '')
+  // Charakter nur nennen, wenn er ueber `class_type` hinausgeht („class" ist keine Aussage).
+  const kind = f.stereotype && f.stereotype !== f.class_type ? `${f.class_type} · ${STEREOTYPE_LABEL[f.stereotype] || f.stereotype}` : f.class_type
+  lines.push(`**Type:** ${kind}`, '')
+  if (f.extends_name) lines.push(`**Extends:** \`${f.extends_name}\``, '')
   if (f.description) lines.push('', f.description, '')
   if (f.dependencies?.length) {
     lines.push('## Dependencies', '')
@@ -376,7 +401,7 @@ async function removeFile() {
     <header class="flex items-start gap-3 border-b border-[var(--color-border)] px-4 py-3">
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-2">
-          <span class="rounded px-1.5 py-0.5 text-3xs font-semibold uppercase" :class="typeBadge">{{ file?.class_type }}</span>
+          <span class="rounded px-1.5 py-0.5 text-3xs font-semibold uppercase" :class="typeBadge">{{ classKindLabel }}</span>
           <h2 class="truncate text-xl font-bold text-[var(--color-text)]">{{ file?.class_name }}</h2>
         </div>
         <p v-if="file?.package" class="truncate font-mono text-xs text-[var(--color-text-muted)]">{{ file.package }}</p>

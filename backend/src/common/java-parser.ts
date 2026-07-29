@@ -33,9 +33,28 @@ const METHOD_MODIFIERS = new Set([
   'volatile',
 ]);
 
+// Was der Knoten IST – eine Verfeinerung von `class_type`. Die vier Java-Elementtypen bleiben, was
+// sie sind; `class` wird nach seinem Charakter aufgeschluesselt, weil „class" allein nichts sagt:
+// eine Datenklasse (nur Felder + Konstruktor/Accessoren) liest man anders als einen Service.
+export type JavaStereotype =
+  | 'class'
+  | 'data' // Datenklasse/DTO: Felder + Konstruktor, hoechstens Accessoren
+  | 'util' // Utility: ausschliesslich statische Methoden
+  | 'exception' // erbt von …Exception/…Error/Throwable
+  | 'abstract' // abstrakte Klasse
+  | 'interface'
+  | 'enum'
+  | 'annotation'
+  | 'record';
+
 export interface JavaClassInfo {
   class_name: string;
-  class_type: 'class' | 'interface' | 'enum' | 'annotation';
+  class_type: 'class' | 'interface' | 'enum' | 'annotation' | 'record';
+  stereotype: JavaStereotype;
+  class_modifiers: string[]; // ['public','abstract'] – Quell-Reihenfolge
+  extends_name: string; // einfacher Name der Oberklasse ('' = keine)
+  field_count: number; // deklarierte Felder (Record: Komponenten)
+  ctor_count: number; // deklarierte Konstruktoren
   methods: JavaMethodInfo[];
   class_line: number; // 1-basierte Quellzeile des Klassennamens (fuer Sprung/Highlight)
 }
@@ -303,6 +322,64 @@ function extractMethods(typeNode: any, blocks: any[], source: string): JavaMetho
   return methods;
 }
 
+// --- Klassen-Charakter (Stereotyp) -------------------------------------------
+// Nur Java-Modifier, keine Annotationen (analog METHOD_MODIFIERS).
+const CLASS_MODIFIERS = new Set(['public', 'protected', 'private', 'abstract', 'static', 'final', 'sealed', 'non-sealed', 'strictfp']);
+
+// Methoden, die eine Datenklasse haben DARF, ohne aufzuhoeren eine zu sein: Accessoren nach
+// JavaBeans (`getX`/`setX`/`isX`/`hasX`), Builder-Idiome (`withX`, `builder`) und die
+// Object-/Comparable-Vertraege. Alles andere ist Logik -> keine reine Datenklasse mehr.
+const ACCESSOR_RE = /^(get|set|is|has|with)([A-Z_$]|$)/;
+const DATA_CONTRACT = new Set(['equals', 'hashCode', 'toString', 'compareTo', 'clone', 'builder', 'toBuilder', 'of', 'copy']);
+
+function isAccessorLike(m: JavaMethodInfo): boolean {
+  return ACCESSOR_RE.test(m.method_name) || DATA_CONTRACT.has(m.method_name);
+}
+
+// Erster Typname unterhalb eines Knotens (fuer `extends`), Typargumente ausgenommen: bei
+// `extends AbstractList<Foo>` wuerde ein simples dottedName „AbstractList.Foo" liefern und der
+// einfache Name waere `Foo`. Deshalb am ersten '<' abbrechen.
+function firstTypeName(node: any): string {
+  if (!node) return '';
+  const parts: string[] = [];
+  for (const t of collectTokens(node).sort((a: any, b: any) => a.startOffset - b.startOffset)) {
+    if (t.image === '<') break;
+    if (isIdent(t) || t.image === '.') parts.push(t.image);
+  }
+  return simpleName(parts.join(''));
+}
+
+// Charakter einer Klasse aus dem, was der Parser sicher weiss. Reihenfolge = Rangfolge: der
+// erste Treffer gewinnt, weil eine abstrakte Exception zuerst eine Exception ist und eine
+// abstrakte Klasse zuerst abstrakt (dort ist die Vererbung die Aussage, nicht der Inhalt).
+export function deriveStereotype(info: {
+  class_name: string;
+  class_type: string;
+  class_modifiers: string[];
+  extends_name: string;
+  field_count: number;
+  ctor_count: number;
+  methods: JavaMethodInfo[];
+}): JavaStereotype {
+  // Interface/Enum/Annotation/Record sind bereits eine eigene Aussage – nicht weiter aufteilen.
+  if (info.class_type !== 'class') return info.class_type as JavaStereotype;
+
+  const isThrowable = (n: string) => /(?:Exception|Error|Throwable)$/.test(n || '');
+  if (isThrowable(info.extends_name) || isThrowable(info.class_name)) return 'exception';
+  if (info.class_modifiers.includes('abstract')) return 'abstract';
+
+  const methods = info.methods || [];
+  // Utility: mindestens eine Methode und ALLE statisch (Konstruktoren stoeren nicht – der
+  // private Ctor ist genau das Idiom, das eine Utility-Klasse uninstanziierbar macht).
+  if (methods.length > 0 && methods.every((m) => (m.modifiers || []).includes('static'))) return 'util';
+
+  // Datenklasse: traegt Zustand (Felder oder Konstruktorparameter) und KEINE Logik.
+  const hasState = info.field_count > 0 || info.ctor_count > 0;
+  if (hasState && methods.every((m) => isAccessorLike(m))) return 'data';
+
+  return 'class';
+}
+
 // --- Haupteinstieg ------------------------------------------------------------
 
 // Liefert { package, imports:[fqn], classes:[{class_name,class_type,methods}], primary }.
@@ -327,7 +404,29 @@ export function parseJava(source: string): JavaParseResult {
     ...findAll(cst, 'normalInterfaceDeclaration').map((node) => ({ node, type: 'interface' as const })),
     ...findAll(cst, 'enumDeclaration').map((node) => ({ node, type: 'enum' as const })),
     ...findAll(cst, 'annotationTypeDeclaration').map((node) => ({ node, type: 'annotation' as const })),
+    // Records (Java 16) waren bisher gar nicht analysierbar: ohne diesen Eintrag fand `parseJava`
+    // in `record Point(int x, int y) {}` keinen Typ und die Analyse brach mit
+    // „No class, interface or enum found in the source" ab.
+    ...findAll(cst, 'recordDeclaration').map((node) => ({ node, type: 'record' as const })),
   ].sort((a, b) => minOffset(a.node) - minOffset(b.node));
+
+  // Klassen-Modifier haengen eine Ebene HOEHER (`classDeclaration`/`interfaceDeclaration`), nicht
+  // am Deklarationsknoten selbst. CST-Knoten kennen ihr Elternteil nicht -> ueber die DIREKTEN
+  // Kinder der Huellknoten zuordnen (nicht per findAll, das zoege innere Klassen mit hinein).
+  const modsByNode = new Map<any, string[]>();
+  for (const wrap of [...findAll(cst, 'classDeclaration'), ...findAll(cst, 'interfaceDeclaration')]) {
+    const mods = [...(wrap.children.classModifier || []), ...(wrap.children.interfaceModifier || [])]
+      .map((m: any) =>
+        collectTokens(m)
+          .sort((a: any, b: any) => a.startOffset - b.startOffset)
+          .map((t: any) => t.image)
+          .join(''),
+      )
+      .filter((m: string) => CLASS_MODIFIERS.has(m));
+    for (const key of ['normalClassDeclaration', 'enumDeclaration', 'recordDeclaration', 'normalInterfaceDeclaration', 'annotationTypeDeclaration']) {
+      for (const child of wrap.children[key] || []) modsByNode.set(child, mods);
+    }
+  }
 
   const classes = candidates
     .map(({ node, type }) => {
@@ -335,18 +434,33 @@ export function parseJava(source: string): JavaParseResult {
       const className = typeId
         ? collectTokens(typeId).find((t) => isIdent(t))?.image
         : null;
-      return {
-        class_name: className,
+      const methods = extractMethods(node, blocks, source);
+      // Felder: Deklaratoren zaehlen (`int a, b;` = 2). Beim Record sind es die Komponenten des
+      // Headers. Wie bei den Methoden greift `findAll` auch in innere Typen – dieselbe bewusste
+      // Unschaerfe wie im Rest der Datei, fuer die Charakter-Einordnung reicht sie.
+      const field_count =
+        type === 'record'
+          ? findAll(node, 'recordComponent').length
+          : findAll(node, 'fieldDeclaration').reduce((n, fd) => n + findAll(fd, 'variableDeclaratorId').length, 0);
+      const class_modifiers = modsByNode.get(node) || [];
+      const extends_name = firstTypeName(findFirst(node, 'classExtends'));
+      const base = {
+        class_name: className as string,
         class_type: type,
-        methods: extractMethods(node, blocks, source),
+        class_modifiers,
+        extends_name,
+        field_count,
+        ctor_count: findAll(node, 'constructorDeclaration').length,
+        methods,
         // Zeile des Klassennamens (typeIdentifier), sonst Knotenanfang.
         class_line: minLine(typeId || node),
       };
+      return { ...base, stereotype: deriveStereotype(base) };
     })
     .filter((c) => c.class_name) as JavaClassInfo[];
 
   if (!classes.length) {
-    throw new Error('No class, interface or enum found in the source');
+    throw new Error('No class, interface, enum or record found in the source');
   }
 
   return { package: pkg, imports, classes, primary: classes[0] };
@@ -755,6 +869,9 @@ export function parseJavaForEdges(source: string): JavaClassGraphInfo[] {
     // sind als Ziel relevant -> ebenfalls aufnehmen.
     ...findAll(cst, 'normalInterfaceDeclaration'),
     ...findAll(cst, 'annotationTypeDeclaration'),
+    // Records sind ganz normale Kanten-Teilnehmer: sie werden instanziiert, herumgereicht und
+    // ihre (auch generierten) Zugriffe erscheinen als Aufrufe.
+    ...findAll(cst, 'recordDeclaration'),
   ].sort((a, b) => minOffset(a) - minOffset(b));
 
   const infos: JavaClassGraphInfo[] = [];

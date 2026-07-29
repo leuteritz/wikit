@@ -22,6 +22,23 @@ export class JavaFile {
   @Column({ name: 'class_type', type: 'text', nullable: true })
   class_type: string | null;
 
+  // Charakter der Klasse (data/util/exception/abstract/... – s. deriveStereotype im Parser).
+  // NULL bei Altbestand: die Werte entstehen erst bei erneuter Analyse.
+  @Column({ type: 'text', nullable: true })
+  stereotype: string | null;
+
+  @Column({ name: 'class_modifiers', type: 'text', nullable: true })
+  class_modifiers: string | null; // JSON-Array
+
+  @Column({ name: 'extends_name', type: 'text', nullable: true })
+  extends_name: string | null;
+
+  @Column({ name: 'field_count', type: 'integer', nullable: true })
+  field_count: number | null;
+
+  @Column({ name: 'ctor_count', type: 'integer', nullable: true })
+  ctor_count: number | null;
+
   @Column({ name: 'raw_source', type: 'text' })
   raw_source: string;
 
