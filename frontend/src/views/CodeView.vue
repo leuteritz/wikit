@@ -201,6 +201,10 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
   clearTimeout(detectTimer)
   clearInterval(elapsedTimer)
+  // Beide Sucheingaben-Timer: ein spaeter feuernder Timer schriebe in Refs einer Ansicht, die es
+  // nicht mehr gibt.
+  clearTimeout(searchTimer)
+  clearTimeout(graphSearchTimer)
 })
 
 // --- Metriken (Command-Bar) ---
@@ -225,7 +229,27 @@ const tree = computed(() => buildPackageTree(treeFiles.value))
 // Treffer-IDs der Suche -> der Graph zeigt bei aktiver Suche genau diese Klassen (plus ihre
 // direkten Nachbarn als Kontext) statt weiter die volle Ebene. Bewusst aus der VOLLEN Trefferliste:
 // der Graph hat seinen eigenen Deckel und nennt die echte Trefferzahl, wenn sie zu gross ist.
-const searchMatchIds = computed(() => (searching.value ? filteredFiles.value.map((f) => f.id) : []))
+//
+// ZWEITE Stufe der Verzoegerung: die Liste ist billig, der Graph nicht – er legt fuer jedes neue
+// Ergebnis ein dagre-Layout neu auf. Waehrend man noch tippt, ist jedes Zwischenergebnis ohnehin
+// nicht das gesuchte; der Graph wartet deshalb, bis die Eingabe wirklich steht. Das Loslassen
+// (Filter leer) wirkt sofort – dort gibt es nichts zu berechnen, nur etwas wegzunehmen.
+const GRAPH_SEARCH_DELAY_MS = 240
+const graphMatchIds = ref([])
+const graphQuery = ref('')
+let graphSearchTimer = null
+watch([searching, filteredFiles], ([on, list]) => {
+  clearTimeout(graphSearchTimer)
+  if (!on) {
+    graphMatchIds.value = []
+    graphQuery.value = ''
+    return
+  }
+  graphSearchTimer = setTimeout(() => {
+    graphMatchIds.value = list.map((f) => f.id)
+    graphQuery.value = appliedSearch.value
+  }, GRAPH_SEARCH_DELAY_MS)
+})
 
 // Ab dieser Klassenzahl ist der Baum standardmaessig EINGEKLAPPT (nur die oberste Ebene offen).
 // Bei einer grossen Codebasis waeren es sonst tausende offene Zeilen – weder lesbar noch billig
@@ -1194,8 +1218,8 @@ function onResetPanels() {
           :focus-path="graphFocusPath"
           :focus-file-id="graphFocusFileId"
           :focus-token="graphFocusToken"
-          :match-ids="searchMatchIds"
-          :search-query="searching ? appliedSearch : ''"
+          :match-ids="graphMatchIds"
+          :search-query="graphQuery"
           @select="selectFile"
           @clear-search="search = ''"
         />

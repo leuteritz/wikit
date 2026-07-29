@@ -13,7 +13,7 @@
 //   1) Linien: Endpunkte (und damit der Pfad) horizontal auffaechern (fanOffset).
 //   2) Labels: zusaetzlich vertikal staffeln (labelStagger) statt rotieren – rotierte Labels
 //      sind schlechter lesbar; gestapelte, leicht versetzte Labels bleiben waagerecht lesbar.
-import { computed, ref } from 'vue'
+import { computed, ref, onUnmounted } from 'vue'
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from '@vue-flow/core'
 import { Icon } from '../../lib/icons.js'
 import { useJavaGraph } from '../../composables/useJavaGraph.js'
@@ -101,17 +101,30 @@ const { hoveredNode, hoveredEdge, setHoveredEdge, clearHoveredEdge } = useJavaGr
 const edgeColor = computed(() => d.value.edgeStyle?.stroke || 'var(--color-accent)')
 const isHovered = computed(() => hoveredEdge.value?.id === props.id)
 
+// Hover-ABSICHT, nicht blosse Beruehrung: wer die Maus quer ueber ein dichtes Kantenfeld zieht,
+// streift Dutzende Trefferflaechen und liess dabei den halben Graphen im Stroboskop auf- und
+// abblenden – jedes Aufleuchten schreibt den geteilten Zustand und laesst ALLE Knoten und Kanten
+// ihre Daempfung neu bewerten. Deshalb zaehlt eine Kante erst als gemeint, wenn die Maus kurz auf
+// ihr bleibt. Verlassen wirkt weiterhin sofort: eine Hervorhebung, die noch nachhaengt, waere ein
+// falscher Zustand, waehrend die Verzoegerung beim Eintreten nur ein spaeterer richtiger ist.
+const HOVER_INTENT_MS = 90
+let hoverTimer = null
 function onEdgeEnter() {
-  setHoveredEdge({
-    id: props.id,
-    sourceId: d.value.sourceId,
-    targetId: d.value.targetId,
-    color: edgeColor.value,
-  })
+  clearTimeout(hoverTimer)
+  hoverTimer = setTimeout(() => {
+    setHoveredEdge({
+      id: props.id,
+      sourceId: d.value.sourceId,
+      targetId: d.value.targetId,
+      color: edgeColor.value,
+    })
+  }, HOVER_INTENT_MS)
 }
 function onEdgeLeave() {
+  clearTimeout(hoverTimer)
   clearHoveredEdge(props.id)
 }
+onUnmounted(() => clearTimeout(hoverTimer))
 
 const dimmed = computed(() => {
   const h = hoveredNode.value

@@ -349,15 +349,40 @@ const searchActive = computed(
   () => !!props.searchQuery && props.matchIds.length > 0 && props.matchIds.length <= SEARCH_GRAPH_LIMIT,
 )
 const matchIdSet = computed(() => new Set(props.matchIds))
+const searchNeighbourIds = computed(() => {
+  const ids = matchIdSet.value
+  const out = new Set()
+  if (!searchActive.value) return out
+  for (const e of allClassEdges.value) {
+    if (ids.has(e.fromId) && !ids.has(e.toId)) out.add(e.toId)
+    if (ids.has(e.toId) && !ids.has(e.fromId)) out.add(e.fromId)
+  }
+  return out
+})
+// Kontext hilft – bis er das Ergebnis begraebt. „26 matches + 54 related" sind 80 Karten und ein
+// Kantenfeld, in dem man die gesuchten Klassen nicht mehr findet; genau der Zustand, den die Suche
+// beseitigen sollte. Der Kontext kommt deshalb nur von selbst, solange das Bild klein bleibt, und
+// ist sonst einen Klick entfernt (Chip in der Kopfzeile). Ein Override gilt fuer GENAU diese
+// Anfrage: die naechste faengt wieder bei der Automatik an, sonst schleppt man eine Entscheidung
+// mit, die zu einem anderen Ergebnis getroffen wurde.
+const CONTEXT_AUTO_LIMIT = 30
+const contextOverride = ref(null) // null = automatisch
+watch(
+  () => props.searchQuery,
+  () => {
+    contextOverride.value = null
+  },
+)
+const showSearchContext = computed(() => {
+  if (!searchActive.value) return false
+  if (contextOverride.value !== null) return contextOverride.value
+  return matchIdSet.value.size + searchNeighbourIds.value.size <= CONTEXT_AUTO_LIMIT
+})
 const searchScope = computed(() => {
   if (!searchActive.value) return null
-  const ids = new Set(matchIdSet.value)
-  const neighbours = new Set()
-  for (const e of allClassEdges.value) {
-    if (ids.has(e.fromId) && !ids.has(e.toId)) neighbours.add(e.toId)
-    if (ids.has(e.toId) && !ids.has(e.fromId)) neighbours.add(e.fromId)
-  }
-  const wanted = new Set([...ids, ...neighbours])
+  const ids = matchIdSet.value
+  const neighbours = searchNeighbourIds.value
+  const wanted = showSearchContext.value ? new Set([...ids, ...neighbours]) : ids
   return {
     files: (props.files || []).filter((f) => wanted.has(f.id)),
     matches: ids.size,
@@ -518,6 +543,11 @@ const layout = computed(() => {
   const showKind = (kind) => edgeFilter.value[kind] !== false
   const callPairs = new Set()
   const skipped = [] // Debug: Server-Kanten, die NICHT gezeichnet werden (Endpunkt nicht geladen)
+  // Im Suchmodus zaehlt nur, was einen TREFFER beruehrt. Wie die mitgezeigten Nachbarn
+  // untereinander zusammenhaengen, beantwortet eine Frage, die niemand gestellt hat – es waren
+  // aber die meisten Linien im Bild (und jede davon geht ins dagre-Layout ein, kostet also auch
+  // Rechenzeit). Der Kontext soll die Treffer erklaeren, nicht sich selbst.
+  const touchesMatch = (a, b) => !searchActive.value || matchIdSet.value.has(a) || matchIdSet.value.has(b)
   // Distinkte, referenzierte-aber-nicht-geladene Klassen (Kante hat nur EINEN geladenen Endpunkt).
   // Speist den Legenden-Hinweis „N external classes hidden" -> macht die stille Filterung sichtbar.
   const externalRefs = new Set()
@@ -557,6 +587,7 @@ const layout = computed(() => {
         })
       continue
     }
+    if (!touchesMatch(callerFile.id, definerFile.id)) continue
     const pairKey = `${callerFile.id}->${definerFile.id}`
     callPairs.add(pairKey)
     rolePairs.push({ source: `c:${definerFile.id}`, target: `c:${callerFile.id}` })
@@ -643,6 +674,7 @@ const layout = computed(() => {
         continue
       }
       if (target.id === f.id) continue
+      if (!touchesMatch(f.id, target.id)) continue
       if (callPairs.has(`${f.id}->${target.id}`)) continue
       callPairs.add(`${f.id}->${target.id}`)
       rolePairs.push({ source: `c:${target.id}`, target: `c:${f.id}` })
@@ -670,6 +702,19 @@ const layout = computed(() => {
           },
         },
       })
+    }
+  }
+
+  // 2a2) Rollen im Suchmodus aus ALLEN erkannten Beziehungen, nicht nur aus den gezeichneten.
+  //      Sonst behauptet die Karte einer Klasse mit drei Nutzern „no connections", nur weil deren
+  //      Nutzer gerade nicht im Bild sind – dieselbe Regel wie beim Kanten-Filter: wer weniger
+  //      Linien sieht, soll keine andere Bewertung der Klassen bekommen. Fremde Knoten-IDs stoeren
+  //      nicht, die Rolle wird nur fuer die gezeichneten Knoten abgefragt.
+  if (searchActive.value) {
+    const drawnIds = new Set(files.map((f) => f.id))
+    for (const e of allClassEdges.value) {
+      if (!drawnIds.has(e.fromId) && !drawnIds.has(e.toId)) continue
+      rolePairs.push({ source: `c:${e.fromId}`, target: `c:${e.toId}` })
     }
   }
 
@@ -762,7 +807,10 @@ const layout = computed(() => {
     ...files.map((f) => ({ id: `c:${f.id}`, width: nodeW, height: nodeH, group: f.package || '(default)' })),
   ]
   const distinctPkgs = new Set(layoutNodes.map((n) => n.group)).size
-  const clustered = !packageMode.value && groupByPackage.value && distinctPkgs > 1
+  // Im Suchmodus NICHT clustern: Treffer liegen quer ueber die Codebasis, das waeren zwanzig Zonen
+  // mit je einer Karte darin – Rahmen, die nichts zusammenfassen, dafuer ein dagre-Lauf je Zone
+  // plus Meta-Layout. Das Package steht ohnehin auf jeder Karte (Punkt + Text).
+  const clustered = !packageMode.value && !searchActive.value && groupByPackage.value && distinctPkgs > 1
   const placed = clustered
     ? layoutClustered({ nodes: layoutNodes, edges, nodesep: 60 * s, ranksep: 90 * s, scale: s })
     : layoutFlat({
@@ -974,17 +1022,29 @@ function edgeEndColor(nodeId) {
   if (!he || (he.sourceId !== nodeId && he.targetId !== nodeId)) return null
   return he.color || 'var(--color-accent)'
 }
+// Hover-ABSICHT, dieselbe Regel wie an der Kante (s. ManagedEdge): eine Karte gilt erst als
+// gemeint, wenn die Maus kurz auf ihr bleibt. Beim Queren eines dichten Feldes streift man sonst
+// zwanzig Karten in einer Sekunde, und jede davon laesst saemtliche Knoten und Kanten ihre
+// Daempfung neu bewerten – gemessen 20 Hauptthread-Blockaden auf einem einzigen Schwenk.
+const NODE_HOVER_INTENT_MS = 90
+let nodeHoverTimer = null
 function onNodeEnter({ node }) {
-  // Knoten schlaegt Kante: liegt die Maus auf einer Karte, ist die Karte gemeint. Ohne das
-  // Zuruecksetzen blieben beide Hervorhebungen gleichzeitig stehen und wuerden sich widersprechen.
-  setHoveredEdge(null)
-  setHoveredNode(node?.id || null)
+  clearTimeout(nodeHoverTimer)
+  const id = node?.id || null
+  nodeHoverTimer = setTimeout(() => {
+    // Knoten schlaegt Kante: liegt die Maus auf einer Karte, ist die Karte gemeint. Ohne das
+    // Zuruecksetzen blieben beide Hervorhebungen gleichzeitig stehen und wuerden sich widersprechen.
+    setHoveredEdge(null)
+    setHoveredNode(id)
+  }, NODE_HOVER_INTENT_MS)
 }
 function onNodeLeave() {
+  clearTimeout(nodeHoverTimer)
   setHoveredNode(null)
 }
 // Modul-State: beim Verlassen des Code-Tabs koennte sonst ein gedimmter Graph zurueckbleiben.
 onUnmounted(() => {
+  clearTimeout(nodeHoverTimer)
   setHoveredNode(null)
   setHoveredEdge(null)
 })
@@ -1625,10 +1685,22 @@ watch(
     <div v-if="files.length && searchActive" class="vf-breadcrumb">
       <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
       <span class="shrink-0 font-mono text-2xs text-[var(--color-text)]">“{{ searchQuery }}”</span>
-      <span class="vf-crumb-count">
-        {{ searchScope.matches }} match{{ searchScope.matches === 1 ? '' : 'es' }}
-        <template v-if="searchScope.related"> · +{{ searchScope.related }} related</template>
-      </span>
+      <span class="vf-crumb-count">{{ searchScope.matches }} match{{ searchScope.matches === 1 ? '' : 'es' }}</span>
+      <!-- Der Kontext ist eine Entscheidung, keine Nebenwirkung: die Zahl sagt, was dazukaeme
+           (bzw. was gerade dazukommt), der Klick schaltet um. -->
+      <button
+        v-if="searchScope.related"
+        type="button"
+        class="vf-crumb-toggle"
+        :class="{ 'is-on': showSearchContext }"
+        :title="showSearchContext
+          ? `Hide the ${searchScope.related} classes shown around the matches`
+          : `Also show the ${searchScope.related} classes that use or are used by the matches`"
+        @click="contextOverride = !showSearchContext"
+      >
+        <Icon :icon="showSearchContext ? 'lucide:eye' : 'lucide:eye-off'" class="h-3.5 w-3.5" />
+        +{{ searchScope.related }} related
+      </button>
       <button type="button" class="vf-crumb-toggle" title="Clear the filter and show all packages" @click="emit('clear-search')">
         <Icon icon="lucide:x" class="h-3.5 w-3.5" />
         Clear
@@ -2132,6 +2204,12 @@ watch(
 .vf-crumb-toggle:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+/* Umschalter im Zustand „aktiv" – gleiche Sprache wie die Werkzeuge im Dock (.vf-tool.is-on). */
+.vf-crumb-toggle.is-on {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
 }
 /* Bilanz der Umgebung: eigene Farbe (Aggregat-Ton), damit sie nicht als Teil der Klassenzahl des
    Ausschnitts gelesen wird – sie zaehlt genau das, was AUSSERHALB liegt. */

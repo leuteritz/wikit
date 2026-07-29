@@ -72,6 +72,8 @@ import layoutGrid from '@iconify-icons/lucide/layout-grid'
 import moreHorizontal from '@iconify-icons/lucide/more-horizontal'
 import packageIcon from '@iconify-icons/lucide/package'
 import mousePointerClick from '@iconify-icons/lucide/mouse-pointer-click'
+import eye from '@iconify-icons/lucide/eye'
+import eyeOff from '@iconify-icons/lucide/eye-off'
 
 // --- Phosphor (Duotone, fuer das Brand-Logo) ---
 import phBooksDuotone from '@iconify-icons/ph/books-duotone'
@@ -142,6 +144,8 @@ const ICONS = {
   'lucide:more-horizontal': moreHorizontal,
   'lucide:package': packageIcon,
   'lucide:mouse-pointer-click': mousePointerClick,
+  'lucide:eye': eye,
+  'lucide:eye-off': eyeOff,
   'ph:books-duotone': phBooksDuotone,
 }
 

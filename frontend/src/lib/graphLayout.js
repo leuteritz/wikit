@@ -71,31 +71,98 @@ export function layoutFlat({ nodes = [], edges = [], nodesep = 90, ranksep = 110
     linked.add(e.target)
   }
 
-  const g = new dagre.graphlib.Graph()
-  g.setGraph({ rankdir: 'TB', nodesep, ranksep, edgesep, marginx: 0, marginy: 0 })
-  g.setDefaultEdgeLabel(() => ({}))
-
-  const orphans = []
-  for (const n of nodes) {
-    if (linked.has(n.id)) g.setNode(n.id, { width: n.width, height: n.height })
-    else orphans.push(n)
-  }
-  for (const p of pairWeights(edges, (e) => byId.has(e.source) && byId.has(e.target))) {
-    g.setEdge(p.source, p.target, { weight: p.weight })
-  }
-  // Ohne Knoten kein Layout: dagre setzt die Graph-Groesse dann auf -Infinity (Maximum ueber eine
-  // leere Menge) – das ist truthy und wuerde alle folgenden Rechnungen unbrauchbar machen.
-  if (g.nodeCount()) dagre.layout(g)
-
+  const orphans = nodes.filter((n) => !linked.has(n.id))
   const finite = (v) => (Number.isFinite(v) ? v : 0)
   let width = 0
   let height = 0
+
+  // Zusammenhaengende TEILE getrennt layouten und nebeneinander legen. Warum nicht ein Lauf ueber
+  // alles: dagre kennt keine Komponenten und reiht unverbundene Teilgraphen in EINER Zeile
+  // aneinander. Eine Suche mit 26 Treffern, von denen jeder an seinen eigenen zwei Nachbarn haengt,
+  // ergab so ein 8000 px breites Band aus 26 Sternchen – fitView zoomte es auf Briefmarkengroesse.
+  // Bei genau einer Komponente aendert sich nichts (derselbe eine dagre-Lauf wie zuvor).
+  const parent = new Map(nodes.map((n) => [n.id, n.id]))
+  const find = (id) => {
+    let r = id
+    while (parent.get(r) !== r) r = parent.get(r)
+    while (parent.get(id) !== r) {
+      const next = parent.get(id)
+      parent.set(id, r)
+      id = next
+    }
+    return r
+  }
+  for (const e of edges) {
+    if (!byId.has(e.source) || !byId.has(e.target) || e.source === e.target) continue
+    const a = find(e.source)
+    const b = find(e.target)
+    if (a !== b) parent.set(a, b)
+  }
+  const components = new Map() // Wurzel -> Knoten[]
   for (const n of nodes) {
-    if (!g.hasNode(n.id)) continue
-    const nd = g.node(n.id)
-    pos.set(n.id, { x: finite(nd?.x), y: finite(nd?.y) })
-    width = Math.max(width, finite(nd?.x) + n.width / 2)
-    height = Math.max(height, finite(nd?.y) + n.height / 2)
+    if (!linked.has(n.id)) continue
+    const root = find(n.id)
+    if (!components.has(root)) components.set(root, [])
+    components.get(root).push(n)
+  }
+
+  // Je Komponente ein dagre-Lauf -> lokale Positionen + Boxmass.
+  const boxes = []
+  for (const list of components.values()) {
+    const inside = new Set(list.map((n) => n.id))
+    const g = new dagre.graphlib.Graph()
+    g.setGraph({ rankdir: 'TB', nodesep, ranksep, edgesep, marginx: 0, marginy: 0 })
+    g.setDefaultEdgeLabel(() => ({}))
+    for (const n of list) g.setNode(n.id, { width: n.width, height: n.height })
+    for (const p of pairWeights(edges, (e) => inside.has(e.source) && inside.has(e.target))) {
+      g.setEdge(p.source, p.target, { weight: p.weight })
+    }
+    // Ohne Knoten kein Layout: dagre setzt die Graph-Groesse dann auf -Infinity (Maximum ueber eine
+    // leere Menge) – das ist truthy und wuerde alle folgenden Rechnungen unbrauchbar machen.
+    if (g.nodeCount()) dagre.layout(g)
+    let w = 0
+    let h = 0
+    const local = new Map()
+    for (const n of list) {
+      if (!g.hasNode(n.id)) continue
+      const nd = g.node(n.id)
+      local.set(n.id, { x: finite(nd?.x), y: finite(nd?.y) })
+      w = Math.max(w, finite(nd?.x) + n.width / 2)
+      h = Math.max(h, finite(nd?.y) + n.height / 2)
+    }
+    boxes.push({ local, w, h })
+  }
+
+  if (boxes.length === 1) {
+    const b = boxes[0]
+    for (const [id, p] of b.local) pos.set(id, p)
+    width = b.w
+    height = b.h
+  } else if (boxes.length > 1) {
+    // Regalpackung: groesste Komponente zuerst (sie traegt die meiste Information und gehoert nach
+    // oben links), danach zeilenweise auffuellen bis zur Zielbreite. Die Zielbreite ist so gewaehlt,
+    // dass die Gesamtflaeche etwa die Form eines Bildschirms bekommt – ein Band waere so breit,
+    // dass fitView alles unlesbar klein zoomt, ein Turm genauso hoch.
+    const gapX = 70 * scale
+    const gapY = 70 * scale
+    boxes.sort((a, b) => b.w * b.h - a.w * a.h)
+    const area = boxes.reduce((sum, b) => sum + (b.w + gapX) * (b.h + gapY), 0)
+    const targetW = Math.max(boxes[0].w, Math.sqrt(area * 1.6))
+    let x = 0
+    let y = 0
+    let shelfH = 0
+    for (const b of boxes) {
+      if (x > 0 && x + b.w > targetW) {
+        x = 0
+        y += shelfH + gapY
+        shelfH = 0
+      }
+      for (const [id, p] of b.local) pos.set(id, { x: x + p.x, y: y + p.y })
+      x += b.w + gapX
+      shelfH = Math.max(shelfH, b.h)
+      width = Math.max(width, x - gapX)
+      height = Math.max(height, y + b.h)
+    }
   }
 
   // Raster der verbindungslosen Knoten: annaehernd quadratisch, unter dem verbundenen Teil. Die
@@ -107,10 +174,15 @@ export function layoutFlat({ nodes = [], edges = [], nodesep = 90, ranksep = 110
     const gapX = 48 * scale
     const colStep = ow + gapX
     const rowStep = oh + 40 * scale
-    // Mindestens annaehernd quadratisch – und breiter, wenn der verbundene Teil ohnehin Platz
-    // vorgibt. (Andersherum gedeckelt waere falsch: eine Zone mit einer einzigen Knotenspalte
-    // haette ihre uebrigen Klassen sonst zu einem endlosen Turm gestapelt.)
-    let cols = Math.ceil(Math.sqrt(orphans.length))
+    // Annaehernd quadratisch – aber in PIXELN, nicht in Knoten. Eine Karte ist gut dreimal so
+    // breit wie hoch; `sqrt(n)` Spalten ergaben deshalb eine Box im Verhaeltnis 3:1, und fitView
+    // musste sie auf die Breite herunterzoomen, bis die Klassennamen nicht mehr zu lesen waren
+    // (26 Treffer einer Suche: 6 Spalten, Zoom 0.46). Ueber das Seitenverhaeltnis gerechnet sind
+    // es 4 Spalten und fast volle Groesse – dieselbe Flaeche, nur in der Form des Bildschirms.
+    // Breiter wird das Raster weiterhin, wenn der verbundene Teil ohnehin Platz vorgibt.
+    // (Andersherum gedeckelt waere falsch: eine Zone mit einer einzigen Knotenspalte haette ihre
+    // uebrigen Klassen sonst zu einem endlosen Turm gestapelt.)
+    let cols = Math.max(1, Math.ceil(Math.sqrt((orphans.length * rowStep) / colStep)))
     if (width > 0) cols = Math.max(cols, Math.floor(width / colStep))
     const rows = Math.ceil(orphans.length / cols)
     const gridW = cols * colStep - gapX
