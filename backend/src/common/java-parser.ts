@@ -110,6 +110,19 @@ function isToken(x: any): boolean {
   return x && typeof x === 'object' && x.image !== undefined;
 }
 
+// Traegt das Token die Rolle eines Bezeichners? NICHT `tokenType.name === 'Identifier'` pruefen:
+// Javas *contextual keywords* (`record`, `yield`, `sealed`, `permits`, `open`, `module`, `to`,
+// `with`, …) sind an ihrer Stelle voellig normale Namen, java-parser lext sie aber als eigenen
+// Token-Typ (`Record`, `Yield`, …) und haengt ihn nur in die KATEGORIE `Identifier`. Wer den
+// Typnamen vergleicht, verliert sie – und zwar lautlos: `public int record(int days)` wurde als
+// Methode „days" gefuehrt (erster echter Identifier im Declarator = der Parametername), Felder
+// namens `record` fielen ganz weg und Aufrufe von `x.record(…)` erzeugten keine Graph-Kante.
+function isIdent(tok: any): boolean {
+  const tt = tok?.tokenType;
+  if (!tt) return false;
+  return tt.name === 'Identifier' || (tt.CATEGORIES || []).some((c: any) => c?.name === 'Identifier');
+}
+
 // Alle Leaf-Tokens eines Teilbaums (zur Offset-Sortierung mit startOffset).
 function collectTokens(node: any, acc: any[] = []): any[] {
   if (!isNode(node)) return acc;
@@ -180,7 +193,7 @@ function typeText(node: any): string {
 function dottedName(node: any): string {
   if (!node) return '';
   return collectTokens(node)
-    .filter((t) => t.tokenType?.name === 'Identifier')
+    .filter((t) => isIdent(t))
     .sort((a, b) => a.startOffset - b.startOffset)
     .map((t) => t.image)
     .join('.');
@@ -233,7 +246,7 @@ function extractMethods(typeNode: any, blocks: any[], source: string): JavaMetho
   for (const mNode of methodNodes) {
     const declarator = findFirst(mNode, 'methodDeclarator');
     if (!declarator) continue;
-    const nameTok = collectTokens(declarator).find((t) => t.tokenType?.name === 'Identifier');
+    const nameTok = collectTokens(declarator).find((t) => isIdent(t));
     if (!nameTok) continue;
 
     const result = findFirst(mNode, 'result');
@@ -261,14 +274,12 @@ function extractMethods(typeNode: any, blocks: any[], source: string): JavaMetho
       params.push({
         type: typeText(findFirst(p, 'unannType')),
         name:
-          collectTokens(findFirst(p, 'variableDeclaratorId') || p).find(
-            (t) => t.tokenType?.name === 'Identifier',
-          )?.image || '',
+          collectTokens(findFirst(p, 'variableDeclaratorId') || p).find((t) => isIdent(t))?.image || '',
       });
     }
     // Varargs (z. B. String... args)
     for (const p of findAll(declarator, 'variableArityParameter')) {
-      const idTok = collectTokens(p).filter((t) => t.tokenType?.name === 'Identifier');
+      const idTok = collectTokens(p).filter((t) => isIdent(t));
       params.push({
         type: typeText(findFirst(p, 'unannType')) + '...',
         name: idTok.length ? idTok[idTok.length - 1].image : '',
@@ -322,7 +333,7 @@ export function parseJava(source: string): JavaParseResult {
     .map(({ node, type }) => {
       const typeId = findAll(node, 'typeIdentifier').sort((a, b) => minOffset(a) - minOffset(b))[0];
       const className = typeId
-        ? collectTokens(typeId).find((t) => t.tokenType?.name === 'Identifier')?.image
+        ? collectTokens(typeId).find((t) => isIdent(t))?.image
         : null;
       return {
         class_name: className,
@@ -579,7 +590,7 @@ export function splitJavaSources(source: string): string[] {
 function classNameOf(typeNode: any): string | null {
   const typeId = findAll(typeNode, 'typeIdentifier').sort((a, b) => minOffset(a) - minOffset(b))[0];
   if (!typeId) return null;
-  return collectTokens(typeId).find((t) => t.tokenType?.name === 'Identifier')?.image || null;
+  return collectTokens(typeId).find((t) => isIdent(t))?.image || null;
 }
 
 // Alle in einem Typ-Knoten direkt deklarierten Methodennamen.
@@ -592,7 +603,7 @@ function definedMethodNames(typeNode: any): Set<string> {
   for (const mNode of methodNodes) {
     const declarator = findFirst(mNode, 'methodDeclarator');
     if (!declarator) continue;
-    const nameTok = collectTokens(declarator).find((t) => t.tokenType?.name === 'Identifier');
+    const nameTok = collectTokens(declarator).find((t) => isIdent(t));
     if (nameTok) names.add(nameTok.image);
   }
   return names;
@@ -605,7 +616,7 @@ function collectFields(typeNode: any): Record<string, string> {
     const type = simpleName(typeText(findFirst(fd, 'unannType')));
     if (!type) continue;
     for (const vdId of findAll(fd, 'variableDeclaratorId')) {
-      const id = collectTokens(vdId).find((t) => t.tokenType?.name === 'Identifier')?.image;
+      const id = collectTokens(vdId).find((t) => isIdent(t))?.image;
       if (id) fields[id] = type;
     }
   }
@@ -621,9 +632,7 @@ function methodScope(mNode: any, baseFields: Record<string, string>): Record<str
   if (declarator) {
     for (const p of findAll(declarator, 'variableParaRegularParameter')) {
       const type = simpleName(typeText(findFirst(p, 'unannType')));
-      const id = collectTokens(findFirst(p, 'variableDeclaratorId') || p).find(
-        (t) => t.tokenType?.name === 'Identifier',
-      )?.image;
+      const id = collectTokens(findFirst(p, 'variableDeclaratorId') || p).find((t) => isIdent(t))?.image;
       if (type && id) scope[id] = type;
     }
   }
@@ -634,7 +643,7 @@ function methodScope(mNode: any, baseFields: Record<string, string>): Record<str
       const type = simpleName(typeText(findFirst(lvd, 'localVariableType')));
       if (!type || type === 'var') continue;
       for (const vdId of findAll(lvd, 'variableDeclaratorId')) {
-        const id = collectTokens(vdId).find((t) => t.tokenType?.name === 'Identifier')?.image;
+        const id = collectTokens(vdId).find((t) => isIdent(t))?.image;
         if (id) scope[id] = type;
       }
     }
@@ -657,10 +666,10 @@ function resolveNewType(toks: any[], closeIdx: number): string | null {
   }
   if (i < 1) return null;
   const typeTok = toks[i - 1]; // Token direkt vor dem '('
-  if (!typeTok || typeTok.tokenType?.name !== 'Identifier') return null;
+  if (!typeTok || !isIdent(typeTok)) return null;
   // Links ueber Identifier/Dot laufen und ein vorangehendes `new` verlangen.
   let j = i - 2;
-  while (j >= 0 && (toks[j].tokenType?.name === 'Identifier' || toks[j].image === '.')) j--;
+  while (j >= 0 && (isIdent(toks[j]) || toks[j].image === '.')) j--;
   if (j >= 0 && toks[j].image === 'new') return typeTok.image;
   return null;
 }
@@ -699,7 +708,7 @@ function extractInvocations(mNode: any): JavaInvocation[] {
     if (t.image !== '(' || !callOpenOffsets.has(t.startOffset)) continue;
 
     const nameTok = toks[k - 1];
-    if (!nameTok || nameTok.tokenType?.name !== 'Identifier') continue; // super(...)/this(...) ausschliessen
+    if (!nameTok || !isIdent(nameTok)) continue; // super(...)/this(...) ausschliessen
     const method = nameTok.image;
     if (OBJECT_METHODS.has(method)) continue;
 
@@ -709,7 +718,7 @@ function extractInvocations(mNode: any): JavaInvocation[] {
     const dot = toks[k - 2];
     if (dot && dot.image === '.') {
       const r = toks[k - 3];
-      if (r && r.tokenType?.name === 'Identifier') {
+      if (r && isIdent(r)) {
         // Nur EINFACHE Empfaenger (recv.m()), keine Ketten a.b.m() (mehrdeutig).
         const before = toks[k - 4];
         if (!before || before.image !== '.') {
@@ -763,7 +772,7 @@ export function parseJavaForEdges(source: string): JavaClassGraphInfo[] {
     for (const mNode of methodNodes) {
       const declarator = findFirst(mNode, 'methodDeclarator');
       const nameTok = declarator
-        ? collectTokens(declarator).find((t) => t.tokenType?.name === 'Identifier')
+        ? collectTokens(declarator).find((t) => isIdent(t))
         : null;
       const scope = methodScope(mNode, fields);
       callers.push({
