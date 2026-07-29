@@ -101,19 +101,6 @@ function mcVars(name) {
   return methodColorVars(methodColors.value.get(name))
 }
 
-// Fokus auf EINE Methode: Hover (fluechtig) oder Klick auf den Legenden-Chip (bleibt stehen).
-// Alles, was nicht zu ihr gehoert, wird gedaempft – bei acht Aufrufstellen ist die Farbe allein
-// zwar zuordenbar, aber nicht mehr scanbar.
-const focusMethod = ref(null)
-const hoverMethod = ref(null)
-const activeMethod = computed(() => hoverMethod.value ?? focusMethod.value)
-function isDimmed(name) {
-  return !!activeMethod.value && activeMethod.value !== name
-}
-function toggleFocus(name) {
-  focusMethod.value = focusMethod.value === name ? null : name
-}
-
 // Shiki-Snippets der definierten Methoden (Quelle, lazy beim Oeffnen geladen).
 // Ein KOMBINIERTER, leerzeilenfreier Block (Signatur + Rumpf) je Methode, vom Backend gerendert.
 // methodName -> { loading, html, code, startLine, endLine, filename, signature, error }
@@ -246,8 +233,6 @@ watch(
   () => props.visible,
   (vis) => {
     confirmingDelete.value = null
-    focusMethod.value = null
-    hoverMethod.value = null
     if (vis) {
       window.addEventListener('keydown', onKeydown)
       loadSnippets()
@@ -305,24 +290,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                   <h2 class="truncate text-base font-bold text-[var(--color-text)]">{{ edge.toClass }}</h2>
                 </div>
 
-                <!-- Farb-Legende der Kante = zugleich Filter. Erst ab zwei Methoden sinnvoll: bei
-                     einer einzigen ist die Zuordnung trivial und der Chip nur Dekoration. -->
+                <!-- Farb-Legende der Kante: welche Farbe steht fuer welche Methode. Reine Anzeige,
+                     erst ab zwei Methoden sinnvoll – bei einer einzigen ist die Zuordnung trivial. -->
                 <div v-if="calleeList.length > 1" class="ml-auto flex flex-wrap items-center justify-end gap-1.5">
-                  <button
-                    v-for="c in calleeList"
-                    :key="c.name"
-                    type="button"
-                    class="mc-chip"
-                    :class="{ 'is-on': focusMethod === c.name, 'is-dim': isDimmed(c.name) }"
-                    :style="mcVars(c.name)"
-                    :title="focusMethod === c.name ? `Show all methods again` : `Focus “${c.name}()” – dim everything else`"
-                    @click="toggleFocus(c.name)"
-                    @mouseenter="hoverMethod = c.name"
-                    @mouseleave="hoverMethod = null"
-                  >
+                  <span v-for="c in calleeList" :key="c.name" class="mc-chip" :style="mcVars(c.name)">
                     <span class="mc-dot" />
                     <span class="truncate font-mono">{{ c.name }}</span>
-                  </button>
+                  </span>
                 </div>
               </div>
 
@@ -331,10 +305,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                   v-for="c in calleeList"
                   :key="c.name"
                   class="method-card overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-offset)]"
-                  :class="{ 'is-dim': isDimmed(c.name), 'is-active': activeMethod === c.name }"
                   :style="mcVars(c.name)"
-                  @mouseenter="hoverMethod = c.name"
-                  @mouseleave="hoverMethod = null"
                 >
                   <!-- Methoden-Header: Name + „Definiert in"-Sprung + (Datei · Zeilenbereich) +
                        Kopier-Button. Der Kopier-Button sitzt bewusst hier (nicht schwebend ueber dem
@@ -476,10 +447,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                       v-for="(site, i) in usageSnippets[grp.callerMethod]?.sites || []"
                       :key="i"
                       class="method-card overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-offset)]"
-                      :class="{ 'is-dim': isDimmed(site.calleeMethod), 'is-active': activeMethod === site.calleeMethod }"
                       :style="mcVars(site.calleeMethod)"
-                      @mouseenter="hoverMethod = site.calleeMethod"
-                      @mouseleave="hoverMethod = null"
                     >
                       <!-- Site-Header: Aufruf-Kette (aufrufende Methode → aufgerufene Methode) links,
                            in identischer Typo zum Quelle-Methoden-Header; (Datei · Zeile) + Öffnen-Button
@@ -550,18 +518,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
    (lib/javaMethodColors.js). Ohne gesetzte Variable faellt jede Regel auf den Akzent zurueck. */
 
 /* Karte einer Methode – oben ihre Definition, unten jede Aufrufstelle. Der linke Streifen ist der
-   gemeinsame Anker: gleiche Farbe = gleiche Methode, ueber die Panel-Haelften hinweg. */
+   gemeinsame Anker: gleiche Farbe = gleiche Methode, ueber die Panel-Haelften hinweg.
+   Bewusst OHNE Hover-/Fokus-Zustand: die Farbe traegt die Zuordnung allein, ein zusaetzliches
+   Daempfen der uebrigen Methoden hat das Panel nur unruhig gemacht. */
 .method-card {
   border-left: 3px solid var(--mc, var(--color-border));
-  transition: opacity 0.18s ease, box-shadow 0.18s ease;
-}
-.method-card.is-active {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--mc, var(--color-accent)) 45%, transparent);
-}
-/* Fokus auf eine Methode: alles Uebrige tritt zurueck, statt zu verschwinden – der Kontext
-   („es gibt noch drei weitere") bleibt sichtbar. */
-.is-dim {
-  opacity: 0.32;
 }
 
 .mc-badge {
@@ -573,29 +534,16 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   color: var(--mc, var(--color-accent));
 }
 
-/* Legende = Filter: Punkt + Name in der Methodenfarbe, Klick haelt den Fokus fest. */
+/* Legende: Punkt + Name in der Methodenfarbe. Reine Anzeige, nicht anklickbar. */
 .mc-chip {
-  @apply inline-flex min-w-0 max-w-[11rem] items-center gap-1.5 rounded-full px-2 py-0.5 text-2xs font-semibold transition;
+  @apply inline-flex min-w-0 max-w-[11rem] items-center gap-1.5 rounded-full px-2 py-0.5 text-2xs font-semibold;
   color: var(--mc, var(--color-accent));
   border: 1px solid color-mix(in srgb, var(--mc, var(--color-accent)) 40%, transparent);
   background-color: color-mix(in srgb, var(--mc, var(--color-accent)) 10%, transparent);
 }
-.mc-chip:hover {
-  background-color: color-mix(in srgb, var(--mc, var(--color-accent)) 20%, transparent);
-}
-.mc-chip.is-on {
-  background-color: color-mix(in srgb, var(--mc, var(--color-accent)) 22%, transparent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--mc, var(--color-accent)) 30%, transparent);
-}
 .mc-dot {
   @apply h-2 w-2 shrink-0 rounded-full;
   background-color: var(--mc, var(--color-accent));
-}
-@media (prefers-reduced-motion: reduce) {
-  .method-card,
-  .mc-chip {
-    transition: none;
-  }
 }
 
 /* Zentriertes Einblenden: Backdrop faded, Card skaliert sanft von 0.95 auf 1. */
