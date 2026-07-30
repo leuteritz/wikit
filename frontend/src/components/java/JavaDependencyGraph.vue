@@ -9,13 +9,18 @@
 //     statischer Aufruf ohne Methoden-Treffer -> violett gestrichelt, ohne Label, nicht klickbar.
 //     Fallback je Klassenpaar (nur wenn keine Call-Edge existiert).
 //   * Import-Edge: gestrichelt + gedaempft, ohne Label, nicht klickbar.
-// BEIDE Kantentypen rendern ueber dieselbe Custom-Kante (ManagedEdge): so greift fuer alle
+// ALLE DREI Kantenarten rendern ueber dieselbe Custom-Kante (ManagedEdge): so greift fuer alle
 // Kanten derselbe Faecher-Versatz + die Label-Staffelung -> parallele Kanten/Labels zwischen
 // denselben Knoten (auch Call vs. Import oder A->B/B->A) ueberlappen nicht mehr.
 // Knoten-Akzentfarbe = ROLLE im Abhaengigkeitsnetz (provider/consumer/hub/isolated, Streifen +
-// Badge + Ring); das Package steckt nur noch in einem kleinen Farbpunkt. Alles client-seitig aus
-// der Dateiliste (props.files enthaelt methods[].body + dependencies[]) -> kein Request, kein
-// Backend noetig. Icons via Iconify.
+// Badge + Ring); das Package steckt nur noch in einem kleinen Farbpunkt. Icons via Iconify.
+//
+// WOHER die Kanten kommen: Call und Uses sind server-berechnet und persistiert (java_edges,
+// java.service.ts – dort entsteht auch confidence) und liegen als `edges` im Composable
+// (useJavaGraph -> GET /api/java/edges). NUR die Import-Kanten baut diese Komponente selbst, aus
+// props.files[].dependencies. Methodenruempfe traegt die Dateiliste NICHT (der Listen-Serializer
+// liefert method_count + dependencies[]) – die holt das Edge-Panel lazy je Klasse ueber
+// useJavaAnalyzer().getFile bzw. api.getJavaMethodSnippet.
 import { computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { VueFlow, MarkerType, Handle, Position, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'

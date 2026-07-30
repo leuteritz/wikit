@@ -189,13 +189,6 @@ export class JavaController {
     return this.svc.summarize(id, body);
   }
 
-  // Klassen-Summary: schreibt description/description_html. Ollama-down -> 200 + Flag.
-  @Post('files/:id/summarize-class')
-  @HttpCode(200)
-  summarizeClass(@Param('id') id: string, @Body() body: any) {
-    return this.svc.summarizeClass(id, body);
-  }
-
   // Komplett-Reset (alle Klassen). Statische Route -> MUSS vor files/:id stehen, sonst faengt
   // :id den Aufruf ab. Optionale jobId schaltet den Fortschritts-Stream ein.
   @Delete('files')
