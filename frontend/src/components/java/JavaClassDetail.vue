@@ -9,6 +9,7 @@ import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
 import { useJavaQueue } from '../../composables/useJavaQueue.js'
 import { useJavaGraph } from '../../composables/useJavaGraph.js'
 import { useArticles } from '../../composables/useArticles.js'
+import BusyState from '../BusyState.vue'
 import JavaCodeEditor from './JavaCodeEditor.vue'
 import JavaDiffViewer from './JavaDiffViewer.vue'
 import { processMethodBody } from '../../lib/javaCode.js'
@@ -62,8 +63,11 @@ const versionsLoaded = ref(false)
 const versionsError = ref('')
 const openSources = ref({}) // versionId -> Quelltext (aufklappbar), null = laedt gerade
 
+const versionsStartedAt = ref(0)
+
 async function loadVersions() {
   versionsLoading.value = true
+  versionsStartedAt.value = Date.now()
   versionsError.value = ''
   try {
     versions.value = await getFileVersions(props.fileId)
@@ -115,37 +119,25 @@ watch(tab, (t) => {
 // `getFile` holt Methodenrümpfe, gerendertes Markdown UND den Rohquelltext; bei einer grossen
 // Klasse auf dem Pi dauert das spuerbar. Was dabei passiert, ist bekannt (die Liste kennt Name und
 // Methodenzahl) – also wird es auch gesagt, statt nur zu drehen.
-const loadElapsed = ref(0)
-let loadTimer = null
-const loadElapsedLabel = computed(() => (loadElapsed.value >= 900 ? `${(loadElapsed.value / 1000).toFixed(1)}s` : ''))
-const loadSlow = computed(() => loadElapsed.value >= 1500)
+// Uhr, Schwellen und Form liegen in `BusyState` – hier steht nur, WAS geladen wird.
+const loadStartedAt = ref(0)
 const loadingLabel = computed(() => {
   const name = listEntry.value?.class_name
   return name ? `Loading ${name}…` : 'Loading class…'
+})
+const loadingDetail = computed(() => {
+  const n = listEntry.value?.method_count
+  return n ? `${n} method(s) · source · rendered docs` : 'source · methods · rendered docs'
 })
 // Skelett in der Groessenordnung der echten Ansicht: so viele Zeilen, wie die Klasse Methoden hat
 // (gedeckelt), damit beim Eintreffen nichts springt.
 const loadingSkeletonRows = computed(() => Math.min(Math.max(methodCount.value || 3, 3), 8))
 
-function startLoadClock() {
-  clearInterval(loadTimer)
-  loadElapsed.value = 0
-  const t0 = Date.now()
-  loadTimer = setInterval(() => {
-    loadElapsed.value = Date.now() - t0
-  }, 100)
-}
-function stopLoadClock() {
-  clearInterval(loadTimer)
-  loadTimer = null
-}
-onBeforeUnmount(stopLoadClock)
-
 async function load() {
   loading.value = true
   error.value = ''
   file.value = null
-  startLoadClock()
+  loadStartedAt.value = Date.now()
   try {
     file.value = await getFile(props.fileId)
     // Kam der Sprung aus der globalen Suche, faehrt deren Begriff mit -> zuerst uebernehmen, damit
@@ -157,7 +149,6 @@ async function load() {
     error.value = e.message
   } finally {
     loading.value = false
-    stopLoadClock()
   }
 }
 
@@ -724,22 +715,15 @@ async function removeFile() {
       <!-- Ladezustand: sagt WAS geladen wird (aus der Klassenliste ist es bereits bekannt), WIE
            LANGE schon, und zeigt die Form der kommenden Ansicht als Skelett. Ein blosses
            „Loading…" liess das Panel bei einer grossen Klasse sekundenlang leer wirken. -->
-      <div v-if="loading" class="space-y-3">
-        <div class="flex items-center gap-2 text-sm text-[var(--color-text-muted)]">
-          <Icon icon="lucide:loader-2" class="h-4 w-4 shrink-0 animate-spin text-[var(--color-accent)]" />
-          <span>{{ loadingLabel }}</span>
-          <span v-if="loadElapsedLabel" class="ml-auto shrink-0 font-mono text-3xs tabular-nums opacity-70">{{ loadElapsedLabel }}</span>
-        </div>
-        <ul class="space-y-2">
-          <li v-for="n in loadingSkeletonRows" :key="n" class="flex items-center gap-2">
-            <span class="skeleton h-7 flex-1 rounded-lg" :style="{ animationDelay: `${n * 60}ms` }" />
-          </li>
-        </ul>
-        <p v-if="loadSlow" class="text-2xs text-[var(--color-text-muted)]">
-          Large classes carry their full source and every method body — this one has
-          {{ methodCount }} method(s).
-        </p>
-      </div>
+      <BusyState
+        v-if="loading"
+        variant="panel"
+        :title="loadingLabel"
+        :detail="loadingDetail"
+        hint="A class carries its full source and every method body — that is what takes the time."
+        :since="loadStartedAt"
+        :rows="loadingSkeletonRows"
+      />
       <div v-else-if="error" class="text-sm text-[var(--color-danger)]">{{ error }}</div>
 
       <template v-else-if="file">
@@ -866,13 +850,16 @@ async function removeFile() {
 
           <p v-if="versionsError" class="notice-warning mb-3 rounded-lg px-3 py-2 text-xs">{{ versionsError }}</p>
 
-          <!-- Skeleton beim Laden -->
-          <div v-if="versionsLoading && !versions.length" class="space-y-3">
-            <div v-for="n in 3" :key="n" class="animate-pulse rounded-xl border border-[var(--color-border)] p-3">
-              <div class="mb-3 h-4 w-1/3 rounded bg-[var(--color-surface-offset)]" />
-              <div class="h-24 rounded bg-[var(--color-surface-offset)]" />
-            </div>
-          </div>
+          <!-- Gleiche Wartemeldung wie ueberall sonst (BusyState), statt eines eigenen Pulses. -->
+          <BusyState
+            v-if="versionsLoading && !versions.length"
+            variant="panel"
+            title="Loading version history…"
+            detail="stored revisions with their diffs"
+            hint="Each revision keeps its own source — older classes with many revisions take a moment."
+            :since="versionsStartedAt"
+            :rows="3"
+          />
 
           <p
             v-else-if="versionsLoaded && !versions.length"
@@ -970,33 +957,6 @@ async function removeFile() {
 
 <style scoped>
 @reference "../../assets/style.css";
-
-/* Ladeskelett: ein wandernder Schimmer statt eines pulsierenden Blocks – er sagt „es kommt noch
-   etwas" in Leserichtung. Kein `filter`/`backdrop-filter` (s. Stolperfalle), nur ein
-   Farbverlauf, den `background-position` verschiebt. */
-.skeleton {
-  background-image: linear-gradient(
-    90deg,
-    var(--color-surface-offset) 0%,
-    color-mix(in srgb, var(--color-accent) 10%, var(--color-surface-offset)) 50%,
-    var(--color-surface-offset) 100%
-  );
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.4s ease-in-out infinite;
-}
-@keyframes skeleton-shimmer {
-  from {
-    background-position: 150% 0;
-  }
-  to {
-    background-position: -50% 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .skeleton {
-    animation: none;
-  }
-}
 
 .code-wrap {
   @apply relative;

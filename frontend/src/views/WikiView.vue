@@ -4,10 +4,12 @@
 import { ref, computed, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useArticles } from '../composables/useArticles.js'
+import BusyState from '../components/BusyState.vue'
 import { Icon } from '../lib/icons.js'
 
 const { articles, categories, loading, load } = useArticles()
 const filter = ref('')
+const startedAt = ref(Date.now())
 
 onMounted(load)
 
@@ -75,7 +77,8 @@ const groups = computed(() => {
       <span class="shrink-0 font-mono text-3xs text-[var(--color-text-muted)]">{{ filtered.length }} results</span>
     </div>
 
-    <p v-if="loading" class="text-sm text-[var(--color-text-muted)]">Loading…</p>
+    <!-- Gleiche Wartemeldung wie im Analyzer (components/BusyState.vue). -->
+    <BusyState v-if="loading" variant="panel" title="Loading articles…" detail="titles, categories and tags" :since="startedAt" :rows="4" />
 
     <!-- Gruppen -->
     <div v-else class="flex flex-col gap-8">

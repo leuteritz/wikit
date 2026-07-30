@@ -13,6 +13,7 @@ import { useJavaGraph } from '../composables/useJavaGraph.js'
 import { buildPackageTree, countClasses, filterClasses, LANGUAGES } from '../composables/useCodeAnalysis.js'
 import { usePanelResize } from '../composables/usePanelResize.js'
 import { useNotifications } from '../composables/useNotifications.js'
+import BusyState from '../components/BusyState.vue'
 import JavaCodeEditor from '../components/java/JavaCodeEditor.vue'
 import JavaDependencyGraph from '../components/java/JavaDependencyGraph.vue'
 import JavaClassDetail from '../components/java/JavaClassDetail.vue'
@@ -22,8 +23,10 @@ import { Icon } from '../lib/icons.js'
 import { detectJavaClasses } from '../lib/javaDetect.js'
 import { formatEta, formatDuration } from '../lib/format.js'
 
-const { files, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFileId, lastTargetLine, lastTargetEndLine, lastSearchQuery, lastSearchOpts, deleteFile, resetAll } =
+const { files, loading: filesLoading, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFileId, lastTargetLine, lastTargetEndLine, lastSearchQuery, lastSearchOpts, deleteFile, resetAll } =
   useJavaAnalyzer()
+// Startzeitpunkt fuer die Wartemeldung der Klassenliste (die Uhr laeuft in BusyState).
+const filesStartedAt = ref(Date.now())
 const { summary: queueSummary, enqueueMany, enqueueAllUnanalyzed, cancelJob, cancelAllJobs, progressFor, ensurePolling } =
   useJavaQueue()
 const { recomputeEdges, recomputing, recomputeProgress, resetEdges, edgeReturn, requestEdgeReturn, clearEdgeReturn } = useJavaGraph()
@@ -1327,8 +1330,22 @@ function onResetPanels() {
             </div>
           </li>
 
+          <!-- Erster Aufbau der Liste: dieselbe Wartemeldung wie ueberall sonst. Bei einigen
+               tausend Klassen kommt die Antwort nicht sofort, und ein leerer Baum sieht aus wie
+               „keine Klassen" – also genau die falsche Auskunft. -->
+          <li v-if="filesLoading && !files.length" class="px-3 py-4">
+            <BusyState
+              variant="panel"
+              title="Loading classes…"
+              detail="names, packages and relations"
+              hint="A large codebase takes a moment — the list carries every class with its package and dependencies."
+              :since="filesStartedAt"
+              :rows="5"
+            />
+          </li>
+
           <!-- Leerzustand: getrennt fuer "nichts geladen" und "Filter ohne Treffer". -->
-          <li v-if="!rows.length" class="px-3 py-10 text-center">
+          <li v-else-if="!rows.length" class="px-3 py-10 text-center">
             <template v-if="searching">
               <Icon icon="lucide:search" class="mx-auto mb-2 h-6 w-6 text-[var(--color-text-muted)] opacity-40" />
               <p class="text-xs text-[var(--color-text-muted)]">No class matches “{{ appliedSearch }}”.</p>

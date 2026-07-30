@@ -20,6 +20,7 @@ import { api } from '../lib/api.js'
 import { buildSearchRegex } from '../lib/codeSearch.js'
 import { buildCallWindow } from '../lib/javaCode.js'
 import { parseSearchQuery, wantsArticles, wantsCode, wantsSymbols, SEARCH_FACETS } from '../lib/searchQuery.js'
+import BusyState from './BusyState.vue'
 import CategoryBadge from './CategoryBadge.vue'
 import { Icon } from '../lib/icons.js'
 
@@ -123,14 +124,16 @@ const localClasses = computed(() => {
 const nameLoading = ref(false)
 const elapsed = ref(0)
 let elapsedTimer = null
-let startedAt = 0
+// Startzeitpunkt als ref, weil ihn auch `BusyState` bekommt (dort laeuft die Uhr fuer die Anzeige;
+// `elapsed` hier entscheidet nur, AB WANN ueberhaupt eine Meldung erscheint).
+const startedAt = ref(0)
 
 function startClock() {
   if (elapsedTimer) return
-  startedAt = Date.now()
+  startedAt.value = Date.now()
   elapsed.value = 0
   elapsedTimer = setInterval(() => {
-    elapsed.value = Date.now() - startedAt
+    elapsed.value = Date.now() - startedAt.value
   }, 100)
 }
 function stopClock() {
@@ -673,11 +676,13 @@ const shortPackage = (pkg) => pkg || 'default package'
               <div class="flex items-center gap-1.5 px-4 pb-1 pt-3 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
                 <Icon icon="lucide:code-2" class="h-3 w-3" /> Code
               </div>
-              <div class="flex items-center gap-2 px-4 py-2 text-xs text-[var(--color-text-muted)]">
-                <Icon icon="lucide:loader-2" class="h-3.5 w-3.5 animate-spin text-[var(--color-accent)]" />
-                <span>Reading source of {{ files.length }} classes…</span>
-                <span v-if="elapsedLabel" class="ml-auto font-mono text-3xs tabular-nums opacity-70">{{ elapsedLabel }}</span>
-              </div>
+              <BusyState
+                class="px-4"
+                :title="`Reading source of ${files.length} classes…`"
+                :detail="opts.regex ? 'regex: every class is read in order' : 'index first, full scan if it finds nothing'"
+                hint="The server reads stored sources line by line — narrow the term to make it shorter."
+                :since="startedAt"
+              />
             </template>
 
             <!-- Code: je Klasse eine Kopfzeile, darunter die einzelnen Fundstellen -->

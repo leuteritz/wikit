@@ -34,6 +34,7 @@ import { Icon } from '../../lib/icons.js'
 import { buildPackageLevel, buildNeighbourLevel, commonPackagePrefix, breadcrumbFor } from '../../lib/packageGraph.js'
 import { layoutFlat, layoutClustered } from '../../lib/graphLayout.js'
 import { parseGraphQuery, matchNode, matchEdge, GRAPH_QUERY_HELP } from '../../lib/graphQuery.js'
+import BusyState from '../BusyState.vue'
 import JavaEdgeDetailPanel from './JavaEdgeDetailPanel.vue'
 import JavaBundlePanel from './JavaBundlePanel.vue'
 import ManualEdgePanel from './ManualEdgePanel.vue'
@@ -245,17 +246,37 @@ function persistView() {
     /* ignore */
   }
 }
+// Auch die Umschalter des Docks werfen das Layout neu – bei einem grossen Ausschnitt dauert das
+// genauso lange wie ein Ebenenwechsel. Sie laufen deshalb durch dieselbe Meldung (s. withLayoutBusy).
 function toggleRelated() {
-  showRelated.value = !showRelated.value
-  persistView()
+  withLayoutBusy(
+    viewBusyInfo(
+      showRelated.value ? 'Hiding neighbours…' : 'Adding neighbours…',
+      showRelated.value ? 'redrawing without the surrounding packages' : 'pulling in what touches this level',
+    ),
+    () => {
+      showRelated.value = !showRelated.value
+      persistView()
+    },
+  )
 }
 function toggleGrouping() {
-  groupByPackage.value = !groupByPackage.value
-  persistView()
+  withLayoutBusy(
+    viewBusyInfo(
+      groupByPackage.value ? 'Ungrouping…' : 'Grouping by package…',
+      groupByPackage.value ? 'one layout over all classes' : 'one layout per package, then over the zones',
+    ),
+    () => {
+      groupByPackage.value = !groupByPackage.value
+      persistView()
+    },
+  )
 }
 function toggleEdgeKind(kind) {
-  edgeFilter.value = { ...edgeFilter.value, [kind]: !edgeFilter.value[kind] }
-  persistView()
+  withLayoutBusy(viewBusyInfo('Redrawing…', `${kind} edges ${edgeFilter.value[kind] ? 'off' : 'on'} — edges steer the layout`), () => {
+    edgeFilter.value = { ...edgeFilter.value, [kind]: !edgeFilter.value[kind] }
+    persistView()
+  })
 }
 // Beschriftung + Farbe der Filter-Pillen; die Farben spiegeln exakt die Kanten im Canvas.
 const EDGE_KINDS = [
@@ -494,9 +515,106 @@ const scopeClassCount = computed(() => {
   return files.filter((f) => f.package === base || String(f.package || '').startsWith(base + '.')).length
 })
 
+// --- Warten sichtbar machen ------------------------------------------------------------------
+// Das Layout (dagre) laeuft SYNCHRON in `layout` und blockiert dabei den Hauptthread: bei einem
+// Package mit einigen hundert Klassen passiert nach dem Klick erst sekundenlang nichts, dann steht
+// das neue Bild da. Ein Spinner, den man erst NACH der Rechnung setzt, waere unsichtbar – deshalb
+// laeuft jede Ebenen-Aenderung durch `withLayoutBusy`: Meldung setzen, zwei Frames abwarten (erst
+// dann hat der Browser sie wirklich gemalt), DANN die Aenderung ausloesen.
+const layoutBusy = ref(null) // { title, detail, hint, since } | null
+// Darunter ist die Rechnung so kurz, dass die Meldung nur aufblitzen wuerde.
+const BUSY_MIN_NODES = 120
+
+const twoFrames = () =>
+  new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+
+// Klassen unterhalb eines Pfades – die Zahl, die den Aufwand bestimmt UND die den Nutzer
+// interessiert („771 classes").
+function classesUnder(path) {
+  const list = props.files || []
+  if (!path) return list.length
+  return list.filter((f) => f.package === path || String(f.package || '').startsWith(path + '.')).length
+}
+function packagesUnder(path) {
+  const set = new Set()
+  for (const f of props.files || []) {
+    const pkg = f.package || ''
+    if (!path || pkg === path || pkg.startsWith(path + '.')) set.add(pkg || '(default)')
+  }
+  return set.size
+}
+
+// `info` beschreibt die Situation, `mutate` loest sie aus. Kleine Aenderungen laufen unveraendert
+// durch – ein Overlay fuer 30 ms ist Unruhe, keine Auskunft.
+async function withLayoutBusy(info, mutate) {
+  if (!info || info.nodes < BUSY_MIN_NODES) {
+    mutate()
+    return
+  }
+  layoutBusy.value = { ...info, since: Date.now() }
+  await nextTick()
+  await twoFrames()
+  mutate()
+  // Die schwere Arbeit passiert in Vues Re-Render – nach diesem Tick steht das neue Bild.
+  await nextTick()
+  await twoFrames()
+  layoutBusy.value = null
+}
+
+// Meldung fuer eine Aenderung AM AKTUELLEN Ausschnitt (Dock-Umschalter): der Aufwand haengt an
+// dem, was gerade gezeichnet ist.
+function viewBusyInfo(title, detail) {
+  const n = visibleFiles.value.length + (relatedNodes.value?.length || 0)
+  return {
+    nodes: n,
+    title,
+    detail: `${n} nodes on screen · ${detail}`,
+    hint: 'Placing nodes and routing edges — this runs in the browser, so the page stays still while it works.',
+  }
+}
+
+// Meldungstexte an EINER Stelle, damit „Opening …" ueberall gleich klingt.
+function levelBusyInfo(path) {
+  const classes = classesUnder(path)
+  const pkgs = packagesUnder(path)
+  const label = path ? path.split('.').pop() : 'all packages'
+  return {
+    nodes: classes,
+    title: `Opening ${label}…`,
+    detail: `${classes} classes · ${pkgs} package(s)`,
+    hint:
+      classes > CLASS_RENDER_LIMIT
+        ? `Large level: only the first ${CLASS_RENDER_LIMIT} classes are drawn — open a sub-package for the full picture.`
+        : 'Placing nodes and routing edges — this runs in the browser, so the page stays still while it works.',
+  }
+}
+
+// Umschalten zwischen Package-Karten und allen Klassen dieser Ebene – der teuerste Wechsel im
+// Graphen, weil aus einer Handvoll Kacheln hunderte Karten werden.
+function toggleShowClasses() {
+  const opening = !showClasses.value
+  const n = opening ? scopeClassCount.value : level.value.groups.length
+  withLayoutBusy(
+    {
+      nodes: opening ? n : 0, // Zurueck auf Packages ist immer billig
+      title: opening ? `Showing ${n} classes…` : 'Back to packages…',
+      detail: opening ? `laying out every class below ${basePath || 'the root'}` : '',
+      hint:
+        n > CLASS_RENDER_LIMIT
+          ? `Only the first ${CLASS_RENDER_LIMIT} classes are drawn — open a sub-package for the full picture.`
+          : 'Placing nodes and routing edges — this runs in the browser, so the page stays still while it works.',
+    },
+    () => {
+      showClasses.value = !showClasses.value
+    },
+  )
+}
+
 function drillTo(path) {
-  zoomPath.value = path
-  showClasses.value = false
+  withLayoutBusy(levelBusyInfo(path), () => {
+    zoomPath.value = path
+    showClasses.value = false
+  })
 }
 function drillUp() {
   const base = basePath.value
@@ -536,9 +654,14 @@ watch(
     if (props.focusPath != null) {
       const path = props.focusPath
       // Nur oeffnen, was zur Wurzel passt (der gemeinsame Praefix ist die oberste Ebene).
-      zoomPath.value = rootPath.value && !path.startsWith(rootPath.value) ? rootPath.value : path
-      // Ein konkretes Package im Baum meint die Klassen darin, nicht dessen Unterebene.
-      showClasses.value = false
+      const target = rootPath.value && !path.startsWith(rootPath.value) ? rootPath.value : path
+      // Genau der Fall aus der Beschwerde: ein Klick im Baum auf ein Package mit hunderten
+      // Klassen. Die Meldung gehoert vor die Rechnung, nicht danach.
+      withLayoutBusy(levelBusyInfo(target), () => {
+        zoomPath.value = target
+        // Ein konkretes Package im Baum meint die Klassen darin, nicht dessen Unterebene.
+        showClasses.value = false
+      })
     }
     if (props.focusFileId != null) pendingFocusNode.value = `c:${props.focusFileId}`
   },
@@ -1678,6 +1801,18 @@ watch(
       </div>
     </div>
 
+    <!-- Wartemeldung ueber dem Canvas. Sie wird VOR der Rechnung gesetzt und zwei Frames lang
+         gemalt, sonst kaeme sie nie ins Bild: dagre laeuft synchron und blockiert den Hauptthread
+         (s. withLayoutBusy). Gleiche Form wie in Palette, Klassen-Panel und Artikelansicht. -->
+    <BusyState
+      v-if="layoutBusy"
+      variant="overlay"
+      :title="layoutBusy.title"
+      :detail="layoutBusy.detail"
+      :hint="layoutBusy.hint"
+      :since="layoutBusy.since"
+    />
+
     <!-- Package-Zonen, Flaeche: liegt HINTER dem Canvas, damit Kanten und Knoten darueber laufen.
          Rein dekorativ (pointer-events: none) – geklickt wird die Kopfzeile im vorderen Layer. -->
     <div v-if="files.length && zones.length" class="vf-zonelayer" :style="viewportStyle">
@@ -2011,7 +2146,7 @@ watch(
           : scopeClassCount > CLASS_RENDER_LIMIT
             ? `Too many classes here (${scopeClassCount}) – open a package first`
             : 'Show all classes in this scope'"
-        @click="showClasses = !showClasses"
+        @click="toggleShowClasses"
       >
         <Icon :icon="showClasses ? 'lucide:package' : 'lucide:braces'" class="h-3.5 w-3.5" />
         {{ showClasses ? 'Packages' : 'Classes' }}

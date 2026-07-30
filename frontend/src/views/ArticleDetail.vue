@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { api } from '../lib/api.js'
 import { useArticles } from '../composables/useArticles.js'
 import ArticleView from '../components/ArticleView.vue'
+import BusyState from '../components/BusyState.vue'
 import TableOfContents from '../components/TableOfContents.vue'
 import JavaAnalysisPanel from '../components/java/JavaAnalysisPanel.vue'
 
@@ -15,6 +16,7 @@ const article = ref(null)
 const javaFile = ref(null)
 const loading = ref(true)
 const error = ref('')
+const startedAt = ref(Date.now())
 
 onMounted(async () => {
   try {
@@ -41,7 +43,16 @@ async function onDelete(a) {
 
 <template>
   <div class="px-5 py-8">
-    <div v-if="loading" class="mx-auto max-w-3xl text-sm text-[var(--color-text-muted)]">Loading…</div>
+    <!-- Gleiche Wartemeldung wie im Analyzer und in der Suche (components/BusyState.vue). -->
+    <BusyState
+      v-if="loading"
+      class="mx-auto max-w-3xl"
+      variant="panel"
+      title="Loading article…"
+      detail="rendered markdown · table of contents"
+      :since="startedAt"
+      :rows="4"
+    />
     <div v-else-if="error" class="mx-auto max-w-3xl">
       <p class="rounded-xl p-4 text-[var(--color-danger)]" style="background-color: color-mix(in srgb, var(--color-danger) 12%, transparent)">
         {{ error }}
