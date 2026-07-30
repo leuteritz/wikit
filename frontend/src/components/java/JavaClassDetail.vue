@@ -540,8 +540,8 @@ async function removeFile() {
       </button>
     </header>
 
-    <!-- Tabs + Code-Suche. Die drei Tabs bilden EINE Flex-Einheit: bei schmaler dritter Spalte
-         rutscht die Suchleiste sonst so um, dass „History" allein in einer Zeile steht. -->
+    <!-- Tabs + Code-Suche, zwei Zeilen. Die drei Tabs bilden EINE Flex-Einheit, damit sie in einer
+         schmalen dritten Spalte zusammenbleiben statt „History" allein umbrechen zu lassen. -->
     <div v-if="file" class="flex shrink-0 flex-wrap items-center gap-1 border-b border-[var(--color-border)] px-4 pt-2">
       <div class="flex items-center gap-1">
       <button
@@ -564,10 +564,13 @@ async function removeFile() {
       >History</button>
       </div>
 
-      <!-- Suche im Quelltext. Steht neben den Tabs, weil sie zu genau EINEM davon gehoert: Tippen
-           wechselt deshalb in den Source-Tab, statt still ins Leere zu suchen. -->
+      <!-- Suche im Quelltext. Steht unter den Tabs, weil sie zu genau EINEM davon gehoert: Tippen
+           wechselt deshalb in den Source-Tab, statt still ins Leere zu suchen. `w-full` gibt ihr
+           eine eigene Zeile ueber die volle Panelbreite – die Leiste traegt Feld, Zaehler,
+           Modus-Schalter und Navigation, und die draengen sich neben den Tabs auf jeder
+           Spaltenbreite. -->
       <div
-        class="mb-1 ml-auto flex min-w-0 max-w-[26rem] flex-1 basis-[20rem] flex-wrap items-center gap-0.5 rounded-lg border bg-[var(--color-surface)] px-1.5 py-0.5 transition"
+        class="mb-1 flex w-full min-w-0 flex-wrap items-center gap-0.5 rounded-lg border bg-[var(--color-surface)] px-1.5 py-0.5 transition"
         :class="searchFailed ? 'border-[var(--color-danger)]' : 'border-[var(--color-border)] focus-within:border-[var(--color-accent)]'"
       >
         <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
