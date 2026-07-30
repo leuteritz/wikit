@@ -2091,103 +2091,183 @@ watch(
       </button>
     </div>
 
-    <!-- Ebenen-Navigation: nur relevant, wenn ueberhaupt aggregiert wird. Der Pfad ist klickbar,
-         rechts steht, was der aktuelle Ausschnitt umfasst. -->
-    <!-- Suche steuert den Graph: Treffer + eine Hop-Ebene Kontext. Der Breadcrumb weicht solange
-         der Trefferbilanz – der Pfad waere hier keine gueltige Ortsangabe mehr. -->
-    <div v-if="files.length && searchActive" class="vf-breadcrumb">
-      <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
-      <span class="shrink-0 font-mono text-2xs text-[var(--color-text)]">“{{ searchQuery }}”</span>
-      <!-- Im Ego-Ausschnitt steht die Bilanz in der Leiste darunter – dort, wo man sie auch
-           bedient. Hier bliebe sie sonst unter dem Suchfeld oben rechts haengen. -->
-      <template v-if="!egoActive">
-        <span class="vf-crumb-count">{{ searchScope.matches }} match{{ searchScope.matches === 1 ? '' : 'es' }}</span>
-        <span v-if="searchScope.related && showSearchContext" class="vf-crumb-count">
-          +{{ searchScope.related }} related
-        </span>
-      </template>
-      <button type="button" class="vf-crumb-toggle" title="Clear the filter and show all packages" @click="emit('clear-search')">
-        <Icon icon="lucide:x" class="h-3.5 w-3.5" />
-        Clear
-      </button>
+    <!-- ===== Leiste links: WO bin ich, WAS ist im Bild ==========================================
+         Vorher lagen hier zwei bis drei horizontale Balken uebereinander – der Pfad wuchs mit jeder
+         Ebene nach rechts und lief irgendwann unter das Suchfeld oben rechts, die Ego-Leiste
+         darunter noch einmal. Vertikal waechst der Pfad dorthin, wo Platz ist (nach unten), liest
+         sich wie der Baum in der linken Spalte und kollidiert mit nichts. Eine Leiste, drei
+         Abschnitte: Ort · Bilanz · Ego-Regler. -->
+    <div v-if="files.length && (searchActive || level.groups.length || basePath)" class="vf-rail">
+      <!-- 1) Ort. Im Suchmodus ist der Ort die Anfrage: ein Pfad waere dort keine gueltige
+              Ortsangabe mehr (die Treffer liegen quer durch die Codebasis). -->
+      <div v-if="searchActive" class="vf-rail-sec">
+        <div class="vf-rail-head">
+          <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
+          <span class="min-w-0 flex-1 truncate font-mono text-2xs text-[var(--color-text)]">“{{ searchQuery }}”</span>
+          <button
+            type="button"
+            class="vf-rail-x"
+            v-tip="{ title: 'Clear the filter', hint: 'Back to the package level.' }"
+            @click="emit('clear-search')"
+          >
+            <Icon icon="lucide:x" class="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <div v-if="!egoActive" class="vf-rail-stats">
+          <span class="vf-crumb-count">{{ searchScope.matches }} match{{ searchScope.matches === 1 ? '' : 'es' }}</span>
+          <span v-if="searchScope.related && showSearchContext" class="vf-crumb-count">
+            +{{ searchScope.related }} related
+          </span>
+        </div>
+      </div>
+
+      <!-- Pfad als Stufen untereinander: jede Zeile eine Ebene, eingerueckt wie im Baum. Die
+           aktuelle traegt den Punkt und ist nicht klickbar – man steht ja schon dort. -->
+      <div v-else class="vf-rail-sec">
+        <button
+          v-for="(c, i) in breadcrumb"
+          :key="c.path || 'root'"
+          type="button"
+          class="vf-rail-step"
+          :class="{ 'is-current': c.path === basePath }"
+          :style="{ paddingLeft: `${6 + i * 10}px` }"
+          :disabled="c.path === basePath"
+          v-tip="c.path === basePath ? null : { title: `Open ${c.label}`, hint: 'One level up in the package tree.' }"
+          @click="drillTo(c.path)"
+        >
+          <Icon
+            :icon="c.path === basePath ? 'lucide:package-open' : 'lucide:chevron-right'"
+            class="vf-rail-stepic"
+          />
+          <span class="truncate">{{ c.label }}</span>
+        </button>
+        <div class="vf-rail-stats">
+          <span class="vf-crumb-count">{{ scopeClassCount }} classes</span>
+          <!-- Was die Umgebung beitraegt. Ohne diese Zeile waere nicht zu unterscheiden, was zum
+               geoeffneten Pfad gehoert und was nur danebensteht. -->
+          <span
+            v-if="relatedSummary"
+            class="vf-crumb-rel"
+            v-tip="{ title: 'Neighbours', hint: relatedSummary.classes
+              ? `${relatedSummary.relations} relations to ${relatedSummary.classes} classes outside this scope`
+              : `${relatedSummary.relations} relations to ${relatedSummary.packages} packages outside this scope` }"
+          >
+            <Icon icon="lucide:share-2" class="h-3 w-3" />
+            +{{ relatedSummary.classes || relatedSummary.packages }}
+            {{ relatedSummary.classes ? 'related' : relatedSummary.packages === 1 ? 'package' : 'packages' }}
+          </span>
+          <!-- Gedeckelte Umgebung: die uebrigen Nachbarn werden genannt, nicht verschwiegen. -->
+          <span
+            v-if="relatedSummary && relatedSummary.hiddenPackages"
+            class="vf-crumb-warn"
+            v-tip="{ title: `${relatedSummary.hiddenPackages} more packages`, hint: `${relatedSummary.hiddenRelations} relations to further packages are not drawn — open a smaller scope to see them.` }"
+          >
+            <Icon icon="lucide:alert-triangle" class="h-3 w-3" />
+            +{{ relatedSummary.hiddenPackages }} more
+          </span>
+          <!-- Zu unscharfe Suche: der Graph bleibt, wo er ist, statt hunderte Treffer zu markieren. -->
+          <span
+            v-if="searchTooBroad"
+            class="vf-crumb-warn"
+            v-tip="{ title: 'Too many matches', hint: 'Narrow the filter to focus the graph on them.' }"
+          >
+            <Icon icon="lucide:search" class="h-3 w-3" />
+            {{ matchIds.length }} matches
+          </span>
+          <!-- Abgeschnittener Ausschnitt: nie stillschweigend – sonst liest man einen
+               unvollstaendigen Graphen als vollstaendig. -->
+          <span
+            v-if="truncatedClasses"
+            class="vf-crumb-warn"
+            v-tip="{ title: `${truncatedClasses} classes hidden`, hint: `Only the first ${CLASS_RENDER_LIMIT} are drawn — open a package for the full picture.` }"
+          >
+            <Icon icon="lucide:alert-triangle" class="h-3 w-3" />
+            {{ truncatedClasses }} hidden
+          </span>
+        </div>
+      </div>
+
+      <!-- 2) Ego-Abschnitt: Bilanz der gefundenen Klasse + schrittweises Auf- und Zumachen.
+              Bei 132 Nachbarn ist weder „alle" noch „vierzig" die Antwort – die Frage ist, wieviel
+              man gerade sehen WILL. Stufenleiter statt Schieberegler: jeder Schritt kostet genau
+              ein Layout und ist ruecknehmbar. -->
+      <div v-if="egoActive" class="vf-rail-sec">
+        <div class="vf-rail-head">
+          <Icon icon="lucide:git-fork" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
+          <span class="vf-ego-label">
+            {{ egoLevel.relations }} relation{{ egoLevel.relations === 1 ? '' : 's' }}
+          </span>
+        </div>
+        <div class="vf-rail-stats">
+          <span class="vf-crumb-count">{{ egoLevel.neighbours }} class{{ egoLevel.neighbours === 1 ? '' : 'es' }}</span>
+          <span v-if="egoLevel.nodes.length" class="vf-crumb-count">
+            {{ egoLevel.aggregatedClasses }} in {{ egoLevel.nodes.length }} pkg
+          </span>
+          <span
+            v-if="egoLevel.hiddenPackages"
+            class="vf-crumb-warn"
+            v-tip="{ title: `${egoLevel.hiddenPackages} more packages`, hint: `${egoLevel.hiddenRelations} further relations are not drawn — raise the step or open a package.` }"
+          >
+            <Icon icon="lucide:alert-triangle" class="h-3 w-3" />
+            +{{ egoLevel.hiddenPackages }}
+          </span>
+        </div>
+
+        <template v-if="egoLevel.neighbours > EGO_STEPS[0]">
+          <div class="vf-ego-step">
+            <button
+              type="button"
+              class="vf-ego-btn"
+              :disabled="egoBudget <= egoSteps[0]"
+              v-tip="{ title: 'Show fewer', hint: 'One step down — the rest folds back into its packages.' }"
+              @click="stepEgo(-1)"
+            >
+              <Icon icon="lucide:minus" class="h-3.5 w-3.5" />
+            </button>
+            <span class="vf-ego-count">
+              <b>{{ egoLevel.cardCount }}</b>/{{ egoLevel.neighbours }}
+            </span>
+            <button
+              type="button"
+              class="vf-ego-btn"
+              :disabled="egoLevel.cardCount >= egoLevel.neighbours"
+              v-tip="{ title: 'Show more', hint: 'One step up — more neighbours become single cards.' }"
+              @click="stepEgo(1)"
+            >
+              <Icon icon="lucide:plus" class="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <!-- Die Stufen selbst: wer weiss, wieviel er sehen will, springt direkt hin. -->
+          <div class="vf-ego-ticks">
+            <button
+              v-for="s in egoSteps"
+              :key="s"
+              type="button"
+              class="vf-ego-tick"
+              :class="{ 'is-on': egoBudget === s }"
+              @click="egoBudget = s"
+            >{{ s === egoLevel.neighbours ? 'all' : s }}</button>
+          </div>
+        </template>
+
+        <!-- Aufgeklappte Packages: der Chip IST der Rueckweg – ihr Aggregatknoten ist ja weg. -->
+        <div v-if="egoLevel.expandedPaths.length" class="vf-rail-chips">
+          <button
+            v-for="p in egoLevel.expandedPaths"
+            :key="p"
+            type="button"
+            class="vf-ego-chip"
+            v-tip="{ title: `Collapse ${p}`, hint: 'Folds these classes back into one aggregate node.' }"
+            @click="toggleEgoPackage(p)"
+          >
+            <Icon icon="lucide:package-open" class="h-3 w-3 shrink-0" />
+            <span class="truncate">{{ p }}</span>
+            <Icon icon="lucide:x" class="h-3 w-3 shrink-0 opacity-60" />
+          </button>
+        </div>
+      </div>
     </div>
 
-    <!-- Schrittweise auf- und zumachen. Bei 132 Nachbarn ist weder „alle" noch „vierzig" die
-         Antwort – die Frage ist, wieviel man gerade sehen WILL. Deshalb eine Stufenleiter statt
-         eines Schalters: jeder Schritt kostet genau ein Layout und ist ruecknehmbar. Die Chips
-         darunter sind die aufgeklappten Packages – dort steht der Rueckweg, weil ihr Aggregat
-         nach dem Aufklappen nicht mehr im Bild ist. -->
-    <div v-if="egoActive" class="vf-egobar">
-      <Icon icon="lucide:git-fork" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
-      <!-- Die Bilanz der Klasse: wieviel haengt dran, und wieviel davon steht als Karte im Bild. -->
-      <span class="vf-ego-label">
-        {{ egoLevel.relations }} relation{{ egoLevel.relations === 1 ? '' : 's' }} ·
-        {{ egoLevel.neighbours }} class{{ egoLevel.neighbours === 1 ? '' : 'es' }}
-      </span>
-      <span v-if="egoLevel.nodes.length" class="vf-ego-label vf-ego-label--muted">
-        {{ egoLevel.aggregatedClasses }} in {{ egoLevel.nodes.length }} package{{ egoLevel.nodes.length === 1 ? '' : 's' }}
-      </span>
-      <span
-        v-if="egoLevel.hiddenPackages"
-        class="vf-crumb-warn"
-        v-tip="{ title: `${egoLevel.hiddenPackages} more packages`, hint: `${egoLevel.hiddenRelations} further relations are not drawn — raise the step or open a package.` }"
-      >
-        <Icon icon="lucide:alert-triangle" class="h-3 w-3" />
-        +{{ egoLevel.hiddenPackages }}
-      </span>
-      <template v-if="egoLevel.neighbours > EGO_STEPS[0]">
-      <span class="vf-ego-sep" />
-      <div class="vf-ego-step">
-        <button
-          type="button"
-          class="vf-ego-btn"
-          :disabled="egoBudget <= egoSteps[0]"
-          v-tip="{ title: 'Show fewer', hint: 'One step down — the rest folds back into its packages.' }"
-          @click="stepEgo(-1)"
-        >
-          <Icon icon="lucide:minus" class="h-3.5 w-3.5" />
-        </button>
-        <span class="vf-ego-count">
-          <b>{{ egoLevel.cardCount }}</b>/{{ egoLevel.neighbours }}
-        </span>
-        <button
-          type="button"
-          class="vf-ego-btn"
-          :disabled="egoLevel.cardCount >= egoLevel.neighbours"
-          v-tip="{ title: 'Show more', hint: 'One step up — more neighbours become single cards.' }"
-          @click="stepEgo(1)"
-        >
-          <Icon icon="lucide:plus" class="h-3.5 w-3.5" />
-        </button>
-      </div>
-      <!-- Die Stufen selbst: wer weiss, wieviel er sehen will, springt direkt hin. -->
-      <div class="vf-ego-ticks">
-        <button
-          v-for="s in egoSteps"
-          :key="s"
-          type="button"
-          class="vf-ego-tick"
-          :class="{ 'is-on': egoBudget === s }"
-          @click="egoBudget = s"
-        >{{ s === egoLevel.neighbours ? 'all' : s }}</button>
-      </div>
-      </template>
-      <template v-if="egoLevel.expandedPaths.length">
-        <span class="vf-ego-sep" />
-        <button
-          v-for="p in egoLevel.expandedPaths"
-          :key="p"
-          type="button"
-          class="vf-ego-chip"
-          v-tip="{ title: `Collapse ${p}`, hint: 'Folds these classes back into one aggregate node.' }"
-          @click="toggleEgoPackage(p)"
-        >
-          <Icon icon="lucide:package-open" class="h-3 w-3" />
-          {{ p }}
-          <Icon icon="lucide:x" class="h-3 w-3 opacity-60" />
-        </button>
-      </template>
-    </div>
 
     <!-- Suche IM Bild (oben rechts, die einzige freie Ecke). Sie aendert den Ausschnitt nicht –
          sie sagt, wo im aktuellen Graphen etwas steckt, und daempft den Rest. -->
@@ -2271,65 +2351,6 @@ watch(
       </span>
     </button>
 
-    <!-- Bedingung AUSGESCHRIEBEN statt `v-else-if`: die Kette haing vorher an der Schaltflaeche
-         darueber (Kontext-Umschalter), nicht an der Such-Kopfzeile – sobald der Umschalter
-         entfiel (Ego-Ausschnitt), erschien hier die Package-Kopfzeile ZUSAETZLICH zur Suche.
-         Ein `v-else-if` ueber drei fremde Geschwister hinweg ist keine Bedingung, die man liest. -->
-    <div v-if="files.length && !searchActive && (level.groups.length || basePath)" class="vf-breadcrumb">
-      <button
-        type="button"
-        class="vf-crumb-up"
-        :disabled="!basePath || basePath === rootPath"
-        title="One level up"
-        @click="drillUp"
-      >
-        <Icon icon="lucide:chevron-left" class="h-3.5 w-3.5" />
-      </button>
-      <div class="vf-crumbs">
-        <template v-for="(c, i) in breadcrumb" :key="c.path || 'root'">
-          <Icon v-if="i" icon="lucide:chevron-right" class="vf-crumb-sep" />
-          <button
-            type="button"
-            class="vf-crumb"
-            :class="{ 'vf-crumb--active': c.path === basePath }"
-            :disabled="c.path === basePath"
-            @click="drillTo(c.path)"
-          >
-            {{ c.label }}
-          </button>
-        </template>
-      </div>
-      <span class="vf-crumb-count">{{ scopeClassCount }} classes</span>
-      <!-- Was die Umgebung beitraegt. Ohne diese Zeile waere nicht zu unterscheiden, was zum
-           geoeffneten Pfad gehoert und was nur danebensteht. -->
-      <span v-if="relatedSummary" class="vf-crumb-rel" :title="relatedSummary.classes
-        ? `${relatedSummary.relations} relations to ${relatedSummary.classes} classes outside this scope`
-        : `${relatedSummary.relations} relations to ${relatedSummary.packages} packages outside this scope`">
-        <Icon icon="lucide:share-2" class="h-3 w-3" />
-        +{{ relatedSummary.classes || relatedSummary.packages }}
-        {{ relatedSummary.classes ? 'related' : relatedSummary.packages === 1 ? 'package' : 'packages' }}
-      </span>
-      <!-- Gedeckelte Umgebung: die uebrigen Nachbarn werden genannt, nicht verschwiegen. -->
-      <span
-        v-if="relatedSummary && relatedSummary.hiddenPackages"
-        class="vf-crumb-warn"
-        :title="`${relatedSummary.hiddenRelations} relations to ${relatedSummary.hiddenPackages} further packages are not drawn – open a smaller scope to see them`"
-      >
-        <Icon icon="lucide:alert-triangle" class="h-3 w-3" />
-        +{{ relatedSummary.hiddenPackages }} more
-      </span>
-      <!-- Zu unscharfe Suche: der Graph bleibt, wo er ist, statt hunderte Treffer zu markieren. -->
-      <span v-if="searchTooBroad" class="vf-crumb-warn" title="Narrow the filter to focus the graph on the matches">
-        <Icon icon="lucide:search" class="h-3 w-3" />
-        {{ matchIds.length }} matches – too broad
-      </span>
-      <!-- Abgeschnittener Ausschnitt: nie stillschweigend – sonst liest man einen unvollstaendigen
-           Graphen als vollstaendig. -->
-      <span v-if="truncatedClasses" class="vf-crumb-warn" :title="`Only the first ${CLASS_RENDER_LIMIT} classes are drawn – open a package for the full picture`">
-        <Icon icon="lucide:alert-triangle" class="h-3 w-3" />
-        {{ truncatedClasses }} hidden
-      </span>
-    </div>
 
     <!-- Canvas-Chrome unten: Werkzeuge links, Legende rechts. Beide schweben am unteren Rand,
          damit die obere Canvas-Haelfte (wo dagre die Wurzelknoten setzt) frei bleibt. -->
@@ -2707,26 +2728,7 @@ watch(
 }
 
 /* --- Ebenen-Navigation (Breadcrumb) ---------------------------------------------------- */
-/* --- Ego-Leiste: schrittweise auf- und zumachen ------------------------------------------
- * Zweite Zeile unter der Such-Kopfzeile. Deckender Hintergrund ohne `backdrop-filter` (s.
- * Stolperfalle „kein filter im Graphen") – die Breadcrumb darueber darf ihn haben, weil es sie
- * genau einmal gibt; hier waere ein zweiter Filter-Layer ueber derselben Flaeche unnoetig. */
-.vf-egobar {
-  position: absolute;
-  top: 52px;
-  left: 10px;
-  z-index: 5;
-  display: flex;
-  max-width: calc(100% - 20px);
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  border-radius: 10px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-2);
-  padding: 4px 8px;
-  box-shadow: 0 2px 10px rgb(0 0 0 / 0.08);
-}
+
 .vf-ego-label--muted {
   opacity: 0.75;
 }
@@ -2800,11 +2802,7 @@ watch(
   color: var(--color-accent);
   font-weight: 600;
 }
-.vf-ego-sep {
-  height: 1rem;
-  width: 1px;
-  background: var(--color-border);
-}
+
 /* Aufgeklapptes Package: der Chip IST der Rueckweg – sein Aggregatknoten ist ja verschwunden. */
 .vf-ego-chip {
   display: inline-flex;
@@ -2823,71 +2821,117 @@ watch(
   background: color-mix(in srgb, var(--color-accent) 22%, transparent);
 }
 
-.vf-breadcrumb {
+
+
+
+
+
+
+
+
+
+/* --- Leiste links: Ort, Bilanz, Ego-Regler – vertikal ------------------------------------
+ * Vorher lagen hier zwei bis drei horizontale Balken uebereinander: der Pfad wuchs mit jeder
+ * Ebene nach RECHTS und lief unter das Suchfeld oben rechts, die Ego-Leiste darunter noch einmal.
+ * Vertikal waechst der Pfad dorthin, wo Platz ist, liest sich wie der Baum in der linken Spalte
+ * und kollidiert mit nichts. Deckender Hintergrund ohne `backdrop-filter` (s. Stolperfalle
+ * „kein filter im Graphen"): das Element gibt es zwar nur einmal, aber es liegt ueber der
+ * gesamten Layoutflaeche und waere damit die groesste Offscreen-Textur im Bild. */
+.vf-rail {
   position: absolute;
   top: 10px;
   left: 10px;
   z-index: 5;
   display: flex;
+  width: 13.5rem;
   max-width: calc(100% - 20px);
+  max-height: calc(100% - 92px); /* Dock unten bleibt frei */
+  flex-direction: column;
+  overflow-y: auto;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.1);
+}
+/* Abschnitt = eine Aussage. Die Haarlinie trennt Ort von Bilanz von Reglern. */
+.vf-rail-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+}
+.vf-rail-sec + .vf-rail-sec {
+  border-top: 1px solid var(--color-border);
+}
+.vf-rail-head {
+  display: flex;
   align-items: center;
   gap: 6px;
-  border-radius: 10px;
-  border: 1px solid var(--color-border);
-  background: color-mix(in srgb, var(--color-surface-2) 92%, transparent);
-  padding: 4px 6px;
-  backdrop-filter: blur(6px);
-  box-shadow: 0 2px 10px rgb(0 0 0 / 0.08);
+  padding: 0 2px;
 }
-.vf-crumbs {
+.vf-rail-x {
+  display: grid;
+  height: 1.25rem;
+  width: 1.25rem;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 5px;
+  color: var(--color-text-muted);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.vf-rail-x:hover {
+  background: var(--color-surface-offset);
+  color: var(--color-text);
+}
+/* Eine Stufe des Pfades. Einzug = Tiefe (inline gesetzt), damit die Verschachtelung ohne
+   Trennzeichen lesbar ist – dieselbe Sprache wie der Package-Baum links. */
+.vf-rail-step {
   display: flex;
-  min-width: 0;
+  width: 100%;
   align-items: center;
-  gap: 2px;
-  overflow-x: auto;
-}
-.vf-crumb {
+  gap: 5px;
   border-radius: 6px;
-  padding: 2px 6px;
+  padding: 3px 6px;
+  text-align: left;
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
   font-size: 0.6875rem;
   color: var(--color-text-muted);
-  white-space: nowrap;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
-.vf-crumb:hover:not(:disabled) {
+.vf-rail-step:hover:not(:disabled) {
   background: var(--color-surface-offset);
   color: var(--color-text);
 }
-.vf-crumb--active {
+.vf-rail-step.is-current {
+  background: var(--color-accent-soft);
   font-weight: 600;
-  color: var(--color-text);
-}
-.vf-crumb-sep {
-  width: 12px;
-  height: 12px;
-  flex-shrink: 0;
-  color: var(--color-text-muted);
-  opacity: 0.5;
-}
-.vf-crumb-up {
-  display: grid;
-  height: 22px;
-  width: 22px;
-  flex-shrink: 0;
-  place-items: center;
-  border-radius: 6px;
-  color: var(--color-text-muted);
-  transition: background 0.15s ease, color 0.15s ease;
-}
-.vf-crumb-up:hover:not(:disabled) {
-  background: var(--color-surface-offset);
-  color: var(--color-text);
-}
-.vf-crumb-up:disabled {
-  opacity: 0.3;
+  color: var(--color-accent);
   cursor: default;
 }
+.vf-rail-stepic {
+  height: 0.75rem;
+  width: 0.75rem;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+/* Zahlen und Warnungen: umbrechend, weil die Leiste schmal ist und eine Zeile pro Aussage
+   ehrlicher liest als eine abgeschnittene. */
+.vf-rail-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 2px;
+}
+.vf-rail-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 2px;
+}
+.vf-rail-chips .vf-ego-chip {
+  max-width: 100%;
+}
+
 .vf-crumb-count {
   flex-shrink: 0;
   border-left: 1px solid var(--color-border);
@@ -2897,33 +2941,10 @@ watch(
   color: var(--color-text-muted);
   white-space: nowrap;
 }
-.vf-crumb-toggle {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 4px;
-  border-radius: 6px;
-  border: 1px solid var(--color-border);
-  padding: 2px 6px;
-  font-size: 0.6875rem;
-  font-weight: 500;
-  color: var(--color-text-muted);
-  transition: background 0.15s ease, color 0.15s ease;
-}
-.vf-crumb-toggle:hover:not(:disabled) {
-  background: var(--color-surface-offset);
-  color: var(--color-text);
-}
-.vf-crumb-toggle:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-/* Umschalter im Zustand „aktiv" – gleiche Sprache wie die Werkzeuge im Dock (.vf-tool.is-on). */
-.vf-crumb-toggle.is-on {
-  border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
-}
+
+
+
+
 /* --- Suche im gezeichneten Graphen (oben rechts) ---------------------------------------------
    Deckender Hintergrund, kein backdrop-filter (s. Stolperfalle „kein filter im Graphen"). */
 .vf-find {
