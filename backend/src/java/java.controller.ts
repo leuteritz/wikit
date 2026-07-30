@@ -75,6 +75,13 @@ export class JavaController {
     return this.svc.getMethodSnippet(fileId, methodName);
   }
 
+  // Alle Quelltexte als EIN Text (Export zum Kopieren + Wieder-Einlesen). Statische Route ->
+  // vor files/:id.
+  @Get('export')
+  exportAll() {
+    return this.svc.exportAll();
+  }
+
   // Zeilengenaue Suche im Quelltext ALLER Klassen (globale Suchpalette). Dieselben Schalter wie
   // die Suchleiste im Quellcode-Tab: case/word/regex. Statische Route -> vor files/:id.
   @Get('code-search')

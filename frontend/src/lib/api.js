@@ -118,6 +118,10 @@ export const api = {
       null,
       { silent: true },
     ),
+  // Alle Quelltexte als EIN Text + Kennzahlen (Export-Modal). Bewusst ein eigener Endpunkt und
+  // nicht `listJavaFiles`: die Liste traegt absichtlich KEINE Quelltexte.
+  exportJavaAll: () => http('GET', '/java/export'),
+
   // Zeilengenaue Suche im Quelltext aller Klassen (globale Suchpalette). Gleiche Schalter wie die
   // Suchleiste im Quellcode-Tab. `silent`: die Palette tippt – ein Toast je Anschlag waere eine
   // Kaskade; der Fehler steht dort an Ort und Stelle in der Ergebnisliste.

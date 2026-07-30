@@ -17,6 +17,7 @@ import BusyState from '../components/BusyState.vue'
 import JavaCodeEditor from '../components/java/JavaCodeEditor.vue'
 import JavaDependencyGraph from '../components/java/JavaDependencyGraph.vue'
 import JavaClassDetail from '../components/java/JavaClassDetail.vue'
+import JavaExportModal from '../components/java/JavaExportModal.vue'
 import JavaQueueModal from '../components/java/JavaQueueModal.vue'
 import JavaDetectedClasses from '../components/java/JavaDetectedClasses.vue'
 import { Icon } from '../lib/icons.js'
@@ -84,6 +85,7 @@ const analyzingAll = ref(false) // Spinner fuer "Run AI"
 const pendingReset = ref(false) // Komplett-Reset-Dialog offen?
 const resetting = ref(false) // Spinner waehrend des Komplett-Resets
 const queueOpen = ref(false) // KI-Queue-Modal offen?
+const exportOpen = ref(false) // Export-Modal (alle Klassen als ein Text) offen?
 
 // --- Fluechtige Rueckmeldungen ---------------------------------------------------------------
 // Laufen ueber den GLOBALEN Toast-Stapel (useNotifications + NotificationHost in App.vue). Vorher
@@ -957,6 +959,19 @@ function onResetPanels() {
                 {{ recomputeProgress.done }}/{{ recomputeProgress.total }}
               </span>
             </button>
+            <!-- Export steht bei den Werkzeugen, nicht bei den Primaeraktionen: er aendert nichts,
+                 er gibt nur heraus. Direkt neben „Delete all data" ist er ausserdem dort, wo man
+                 ihn braucht – vor dem Loeschen. -->
+            <button
+              type="button"
+              class="tool-btn"
+              :disabled="!files.length"
+              title="Export every class as one text — copy it, and paste it back to restore them"
+              aria-label="Export all classes"
+              @click="exportOpen = true"
+            >
+              <Icon icon="lucide:clipboard-copy" class="h-4 w-4 shrink-0" />
+            </button>
             <button
               type="button"
               class="tool-btn"
@@ -1642,6 +1657,7 @@ function onResetPanels() {
 
     <!-- KI-Queue-Modal (breit/langgezogen): aus der Command-Bar geoeffnet. -->
     <JavaQueueModal :open="queueOpen" @close="queueOpen = false" @select="onQueueSelect" />
+    <JavaExportModal :open="exportOpen" @close="exportOpen = false" />
   </div>
 </template>
 

@@ -79,6 +79,8 @@ import chevronUp from '@iconify-icons/lucide/chevron-up'
 import caseSensitive from '@iconify-icons/lucide/case-sensitive'
 import wholeWord from '@iconify-icons/lucide/whole-word'
 import regexIcon from '@iconify-icons/lucide/regex'
+import download from '@iconify-icons/lucide/download'
+import clipboardCopy from '@iconify-icons/lucide/clipboard-copy'
 
 // --- Phosphor (Duotone, fuer das Brand-Logo) ---
 import phBooksDuotone from '@iconify-icons/ph/books-duotone'
@@ -157,6 +159,8 @@ const ICONS = {
   'lucide:case-sensitive': caseSensitive,
   'lucide:whole-word': wholeWord,
   'lucide:regex': regexIcon,
+  'lucide:download': download,
+  'lucide:clipboard-copy': clipboardCopy,
   'ph:books-duotone': phBooksDuotone,
 }
 

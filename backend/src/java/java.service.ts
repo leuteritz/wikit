@@ -616,6 +616,76 @@ export class JavaService {
     };
   }
 
+  // Alle gespeicherten Quelltexte als EIN Text – zum Kopieren und, das ist der Zweck,
+  // zum Wieder-Einlesen ueber `analyze-batch`. Deshalb ist das Format **kein** eigenes:
+  // es ist genau das, was der Paste-Weg ohnehin versteht (verkettete Kompilationseinheiten;
+  // `package`/`import` nach einem Typ beginnt fuer `splitJavaSources` die naechste Datei).
+  //
+  // Der Kopf und die Package-Trenner sind Kommentare – und Kommentare vor einer
+  // `package`-Anweisung verwirft der Splitter (er setzt `segStart` zurueck). Sie sind also fuer
+  // Menschen da und stoeren den Rueckweg nicht. Sortiert wird nach Package und Klassenname, damit
+  // zwei Exporte derselben Datenlage denselben Text ergeben (diffbar).
+  async exportAll(): Promise<any> {
+    const rows = await this.ds.query(
+      `SELECT class_name, package, filename, raw_source
+       FROM java_files
+       ORDER BY package COLLATE NOCASE, class_name COLLATE NOCASE`,
+    );
+
+    // Gleiche FQCN doppelt: der Import behaelt beim Wieder-Einlesen ohnehin nur die erste (zwei
+    // Klassen mit demselben vollqualifizierten Namen kann es nicht geben). Wer sie hier
+    // mitschreibt, bekommt beim Rueckweg eine Warnung und eine andere Zahl als versprochen –
+    // also faellt die Dublette schon im Export weg, und das Modal sagt, wie viele es waren.
+    const seen = new Set<string>();
+    const unique = rows.filter((r: any) => {
+      const fqn = `${r.package || ''}.${r.class_name}`;
+      if (seen.has(fqn)) return false;
+      seen.add(fqn);
+      return true;
+    });
+    const duplicates = rows.length - unique.length;
+
+    const packages = new Set<string>();
+    const parts: string[] = [];
+    let lastPkg: string | null = null;
+    for (const r of unique) {
+      const pkg = r.package || '(default package)';
+      packages.add(pkg);
+      if (pkg !== lastPkg) {
+        parts.push(`// ${'─'.repeat(4)} ${pkg} ${'─'.repeat(Math.max(4, 60 - pkg.length))}`);
+        lastPkg = pkg;
+      }
+      parts.push(String(r.raw_source || '').replace(/\r\n?/g, '\n').trimEnd(), '');
+    }
+
+    const generatedAt = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    const head = [
+      '// ═══════════════════════════════════════════════════════════════════',
+      `// Wikit code export · ${unique.length} classes · ${packages.size} packages`,
+      `// ${generatedAt} UTC`,
+      duplicates ? `// ${duplicates} duplicate class name(s) skipped – only one per package is kept.` : '',
+      '//',
+      '// Paste this whole text back into "Add code" to restore every class.',
+      '// Everything above a package statement is a comment and is dropped on import.',
+      '// ═══════════════════════════════════════════════════════════════════',
+      '',
+    ]
+      .filter((l) => l !== '')
+      .join('\n')
+      .concat('\n');
+
+    const text = unique.length ? head + parts.join('\n') : '';
+    return {
+      text,
+      classes: unique.length,
+      duplicates,
+      packages: packages.size,
+      bytes: Buffer.byteLength(text, 'utf8'),
+      lines: text ? text.split('\n').length : 0,
+      generatedAt,
+    };
+  }
+
   // Fenster aus dem Quelltext einer Klasse, Shiki-gerendert (Vorschau der globalen Code-Suche).
   // Bewusst dieselbe Bauart wie getMethodSnippet: der Server highlightet, der Client schneidet mit
   // den vorhandenen DOM-Helfern (`buildCallWindow`) zurecht – kein zweiter Highlighter im Client.
