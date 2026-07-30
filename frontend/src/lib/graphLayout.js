@@ -234,7 +234,7 @@ export function layoutFlat({ nodes = [], edges = [], nodesep = 90, ranksep = 110
  */
 // Schlüssel der rahmenlosen Restgruppe. Ein NUL-Zeichen kann in keinem Package-Pfad vorkommen,
 // die Gruppe kann also nie mit einer echten kollidieren.
-const MISC_GROUP = ' misc'
+const MISC_GROUP = '\u0000misc'
 
 export function layoutClustered({ nodes = [], edges = [], nodesep = 70, ranksep = 90, scale = 1, minGroupSize = 1 } = {}) {
   const padX = ZONE_PAD_X * scale

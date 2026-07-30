@@ -779,7 +779,7 @@ export class JavaService {
     >();
     const put = (A: string, B: string, m: string | null, c: number, kind: string) => {
       if (!A || !B || A === B) return;
-      const key = `${A} ${B} ${m ?? ''} ${kind}`;
+      const key = `${A}\u0000${B}\u0000${m ?? ''}\u0000${kind}`;
       const prev = edges.get(key);
       if (!prev || c > prev.confidence) edges.set(key, { source: A, target: B, method: m, confidence: c, kind });
     };
@@ -819,7 +819,7 @@ export class JavaService {
           if (B) addUses(A, B);
           if (B && B !== A && definesMethod.get(B)?.has(m)) {
             put(A, B, m, 1.0, 'call');
-            pairHasCall.add(`${A} ${B}`);
+            pairHasCall.add(`${A}\u0000${B}`);
             continue;
           }
           // LOW-Fallback: unqualifizierter Aufruf, Methode in genau einer anderen Klasse.
@@ -829,7 +829,7 @@ export class JavaService {
               const others = [...defs].filter((c) => c !== A);
               if (others.length === 1) {
                 put(A, others[0], m, 0.5, 'call');
-                pairHasCall.add(`${A} ${others[0]}`);
+                pairHasCall.add(`${A}\u0000${others[0]}`);
               }
             }
           }
@@ -840,7 +840,7 @@ export class JavaService {
     // Struktur-Kanten (`uses`) nur, wo das Paar noch keine Methoden-Kante hat.
     for (const [A, targets] of usesTargets) {
       for (const B of targets) {
-        if (pairHasCall.has(`${A} ${B}`)) continue;
+        if (pairHasCall.has(`${A}\u0000${B}`)) continue;
         put(A, B, null, 1.0, 'uses');
       }
     }
@@ -849,7 +849,7 @@ export class JavaService {
     // Verworfene Auto-Kanten (Tombstones) merken -> NICHT neu erzeugen.
     const dismissedRows = await repo.find({ where: { is_manual: 0, dismissed: 1 } });
     const dismissedKeys = new Set(
-      dismissedRows.map((e) => `${e.source_class} ${e.target_class} ${e.method_name ?? ''} ${e.kind}`),
+      dismissedRows.map((e) => `${e.source_class}\u0000${e.target_class}\u0000${e.method_name ?? ''}\u0000${e.kind}`),
     );
 
     // Nur aktive Auto-Kanten ersetzen; manuelle und Tombstone-Zeilen bleiben stehen.
@@ -857,7 +857,7 @@ export class JavaService {
 
     const computed = [...edges.values()];
     const toInsert = computed
-      .filter((e) => !dismissedKeys.has(`${e.source} ${e.target} ${e.method ?? ''} ${e.kind}`))
+      .filter((e) => !dismissedKeys.has(`${e.source}\u0000${e.target}\u0000${e.method ?? ''}\u0000${e.kind}`))
       .map((e) => ({
         source_class: e.source,
         target_class: e.target,
