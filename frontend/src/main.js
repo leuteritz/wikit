@@ -14,7 +14,10 @@ import '@fontsource/ibm-plex-mono/600.css'
 import './assets/style.css'
 import './composables/useTheme.js' // initialisiert das Theme beim Laden
 import './lib/icons.js' // registriert alle Iconify-Icons OFFLINE (kein Laufzeit-Fetch)
+import { vTip } from './lib/tooltip.js'
 
 document.title = WIKI_TITLE
 
-createApp(App).use(router).mount('#app')
+// `v-tip` global: der erklaerende Hinweis gehoert zu Bedienelementen in jeder Ansicht, nicht zu
+// einer Komponente (s. lib/tooltip.js – ein gemeinsames Element am body).
+createApp(App).use(router).directive('tip', vTip).mount('#app')

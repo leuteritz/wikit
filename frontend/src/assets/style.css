@@ -212,6 +212,52 @@ html.dark .shiki span {
   font-weight: 700;
 }
 
+/* --- Hinweis am Bedienelement (`v-tip`, s. lib/tooltip.js) ------------------
+ * Ein einziges Element am <body>, per `position: fixed` platziert – so kann es kein
+ * `overflow: hidden` eines Vorfahren abschneiden (die Werkzeug-Gruppe der Code-Kopfzeile ist
+ * genau so ein Container). Deckende Flaeche, KEIN backdrop-filter: derselbe Grund wie im
+ * Graphen – ein Filter zwingt den Compositor zu einer Offscreen-Textur. */
+.tip {
+  position: fixed;
+  z-index: 60;
+  max-width: 17rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0.375rem 0.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.14);
+  pointer-events: none; /* der Hinweis darf den Klick auf den Knopf nie abfangen */
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.tip[data-side='above'] {
+  transform: translateY(2px);
+}
+.tip.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.tip-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--color-text);
+}
+.tip-hint {
+  font-size: 0.6875rem;
+  line-height: 1.35;
+  color: var(--color-text-muted);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tip {
+    transition: none;
+  }
+}
+
 /* --- Verwendung-Snippet (Java-Edge-Panel): Shiki + Gutter-Zeilennummern + ---
    markierte Aufrufzeile. Nur unter .edge-usage-code, damit normale Code-Bloecke
    (Artikel) voellig unberuehrt bleiben. */

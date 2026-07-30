@@ -933,9 +933,9 @@ function onResetPanels() {
             :class="queueActive
               ? 'border-[color-mix(in_srgb,var(--color-lavender)_40%,transparent)] bg-[var(--color-lavender-soft)] text-[var(--color-lavender)]'
               : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]'"
-            :title="runningQueueJob
-              ? `Analyzing ${runningQueueJob.className} – ${finishedQueueCount}/${queueSummary?.total ?? 0} classes done${queueEta ? `, ${queueEta} remaining` : ''}`
-              : 'Open the AI analysis queue'"
+            v-tip="runningQueueJob
+              ? { title: `Analyzing ${runningQueueJob.className}`, hint: `${finishedQueueCount} of ${queueSummary?.total ?? 0} classes done${queueEta ? ` · ${queueEta} remaining` : ''}` }
+              : { title: 'AI queue', hint: 'What is queued, running or finished — cancel single jobs or all of them.' }"
             @click="queueOpen = true"
           >
             <!-- Fuellbalken: liegt hinter dem Inhalt, waechst mit den erledigten Einheiten. -->
@@ -964,7 +964,7 @@ function onResetPanels() {
             type="button"
             class="action-btn inline-flex h-9 items-center gap-1.5 rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_35%,transparent)] bg-[var(--color-accent-soft)] px-2.5 text-[0.8125rem] font-semibold text-[var(--color-accent)] transition hover:bg-[color-mix(in_srgb,var(--color-accent)_22%,transparent)] disabled:cursor-not-allowed disabled:opacity-50"
             :disabled="analyzingAll"
-            title="Queue every not-yet-analyzed class and method for AI analysis"
+            v-tip="{ title: 'Run AI on everything new', hint: 'Queues every class and method that has no summary yet — runs in the background, you can keep working.' }"
             @click="analyzeAll"
           >
             <Icon
@@ -979,7 +979,7 @@ function onResetPanels() {
           <button
             type="button"
             class="action-btn inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 text-[0.8125rem] font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)]"
-            title="Parse new .java sources"
+            v-tip="{ title: 'Add code', hint: 'Paste or drop .java sources — several classes at once are split automatically.' }"
             @click="showNew = true"
           >
             <Icon icon="lucide:plus" class="h-4 w-4" />
@@ -998,7 +998,9 @@ function onResetPanels() {
               class="tool-btn relative isolate overflow-hidden"
               :class="recomputing ? 'is-busy' : ''"
               :disabled="recomputing || !files.length"
-              :title="recomputing ? recomputeTitle : 'Recompute all automatic class relations from the stored sources'"
+              v-tip="recomputing
+                ? { title: 'Recomputing…', hint: recomputeTitle }
+                : { title: 'Recompute relations', hint: 'Re-reads every stored source and rebuilds the automatic call, uses and import edges. Manual and dismissed edges stay.' }"
               aria-label="Recompute edges"
               @click="onRecomputeEdges"
             >
@@ -1032,7 +1034,7 @@ function onResetPanels() {
               type="button"
               class="tool-btn"
               :disabled="!files.length"
-              title="Export every class as one text — copy it, and paste it back to restore them"
+              v-tip="{ title: 'Export all classes', hint: 'One text with every stored source — copy or download it, paste it back to restore everything.' }"
               aria-label="Export all classes"
               @click="exportOpen = true"
             >
@@ -1042,7 +1044,9 @@ function onResetPanels() {
               type="button"
               class="tool-btn"
               :disabled="!isWide || !panelsDirty"
-              :title="panelsDirty ? 'Reset the three panels to their default widths' : 'Panel widths are already at their default'"
+              v-tip="panelsDirty
+                ? { title: 'Reset layout', hint: 'Puts the three columns back to their default widths.' }
+                : { title: 'Layout is at its default', hint: 'Drag a divider to change the column widths.' }"
               aria-label="Reset layout"
               @click="onResetPanels"
             >
@@ -1052,7 +1056,7 @@ function onResetPanels() {
               type="button"
               class="tool-btn tool-btn--danger"
               :disabled="resetting || !files.length"
-              title="Delete every analyzed class, relation and queue entry"
+              v-tip="{ title: 'Delete all data', hint: 'Removes every analyzed class, relation and queue entry. Export first if you want them back.' }"
               aria-label="Delete all data"
               @click="askReset"
             >
