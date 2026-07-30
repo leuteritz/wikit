@@ -672,8 +672,9 @@ function levelBusyInfo(path) {
 
 // Umschalten zwischen Package-Karten und allen Klassen dieser Ebene – der teuerste Wechsel im
 // Graphen, weil aus einer Handvoll Kacheln hunderte Karten werden.
-function toggleShowClasses() {
-  const opening = !showClasses.value
+function setShowClasses(value) {
+  if (showClasses.value === value) return
+  const opening = value
   const n = opening ? scopeClassCount.value : level.value.groups.length
   withLayoutBusy(
     {
@@ -686,7 +687,7 @@ function toggleShowClasses() {
           : 'Placing nodes and routing edges — this runs in the browser, so the page stays still while it works.',
     },
     () => {
-      showClasses.value = !showClasses.value
+      showClasses.value = value
     },
   )
 }
@@ -2328,39 +2329,63 @@ watch(
         <Icon icon="lucide:alert-triangle" class="h-3 w-3" />
         {{ truncatedClasses }} hidden
       </span>
-      <button
-        v-if="level.groups.length"
-        type="button"
-        class="vf-crumb-toggle"
-        :disabled="!showClasses && scopeClassCount > CLASS_RENDER_LIMIT"
-        :title="showClasses
-          ? 'Group by package'
-          : scopeClassCount > CLASS_RENDER_LIMIT
-            ? `Too many classes here (${scopeClassCount}) – open a package first`
-            : 'Show all classes in this scope'"
-        @click="toggleShowClasses"
-      >
-        <Icon :icon="showClasses ? 'lucide:package' : 'lucide:braces'" class="h-3.5 w-3.5" />
-        {{ showClasses ? 'Packages' : 'Classes' }}
-      </button>
     </div>
 
     <!-- Canvas-Chrome unten: Werkzeuge links, Legende rechts. Beide schweben am unteren Rand,
          damit die obere Canvas-Haelfte (wo dagre die Wurzelknoten setzt) frei bleibt. -->
     <div v-if="files.length" class="vf-dock vf-dock--left">
-      <button type="button" class="vf-tool" title="Zoom in" @click="zoomIn()">
+      <button
+        type="button"
+        class="vf-tool"
+        v-tip="{ title: 'Zoom in' }"
+        @click="zoomIn()"
+      >
         <Icon icon="lucide:zoom-in" class="h-4 w-4" />
       </button>
-      <button type="button" class="vf-tool" title="Zoom out" @click="zoomOut()">
+      <button type="button" class="vf-tool" v-tip="{ title: 'Zoom out' }" @click="zoomOut()">
         <Icon icon="lucide:zoom-out" class="h-4 w-4" />
       </button>
       <span class="vf-dock-sep" />
-      <button type="button" class="vf-tool" title="Fit to view" @click="fitView()">
+      <button type="button" class="vf-tool" v-tip="{ title: 'Fit to view', hint: 'Also on the 0 key.' }" @click="fitView()">
         <Icon icon="lucide:maximize" class="h-4 w-4" />
       </button>
-      <button type="button" class="vf-tool" title="Reset view" @click="resetView">
+      <button type="button" class="vf-tool" v-tip="{ title: 'Reset view', hint: 'Back to 100 % at the origin.' }" @click="resetView">
         <Icon icon="lucide:rotate-ccw" class="h-4 w-4" />
       </button>
+
+      <!-- Ebene: Packages oder Klassen. Der Umschalter stand am ENDE der Kopfzeile oben links –
+           und rutschte dort bei langen Pfaden unter das Suchfeld oben rechts. Er gehoert ohnehin
+           hierher: das Dock beantwortet „was wird gezeichnet?", die Kopfzeile „wo bin ich?".
+           Als Segment statt als Wechselknopf, weil ein Wechselknopf immer den ANDEREN Zustand
+           beschriftet – man liest „Classes" und ist in der Package-Ebene. -->
+      <template v-if="level.groups.length">
+        <span class="vf-dock-sep" />
+        <div class="vf-seg">
+          <button
+            type="button"
+            class="vf-seg-btn"
+            :class="{ 'is-on': !showClasses }"
+            v-tip="{ title: 'Package level', hint: 'One card per package — open one to go deeper.' }"
+            @click="setShowClasses(false)"
+          >
+            <Icon icon="lucide:package" class="h-3.5 w-3.5" />
+            Packages
+          </button>
+          <button
+            type="button"
+            class="vf-seg-btn"
+            :class="{ 'is-on': showClasses }"
+            :disabled="!showClasses && scopeClassCount > CLASS_RENDER_LIMIT"
+            v-tip="scopeClassCount > CLASS_RENDER_LIMIT && !showClasses
+              ? { title: `Too many classes here (${scopeClassCount})`, hint: `Open a package first — at most ${CLASS_RENDER_LIMIT} class cards are drawn.` }
+              : { title: 'Class level', hint: `Every class below this path (${scopeClassCount}) as its own card.` }"
+            @click="setShowClasses(true)"
+          >
+            <Icon icon="lucide:braces" class="h-3.5 w-3.5" />
+            Classes
+          </button>
+        </div>
+      </template>
       <!-- Zonen an/aus. Auf der Package-Ebene gibt es nichts zu gruppieren – dort ist jeder
            Knoten bereits ein Package. -->
       <template v-if="!packageMode">
@@ -2369,7 +2394,9 @@ watch(
           type="button"
           class="vf-tool"
           :class="{ 'is-on': groupByPackage }"
-          :title="groupByPackage ? 'Ungroup: lay out all classes together' : 'Group classes by package'"
+          v-tip="groupByPackage
+            ? { title: 'Grouped by package', hint: 'Click to lay out all classes in one run, without zones.' }
+            : { title: 'Group by package', hint: 'One layout per package, then over the zones — faster and easier to read.' }"
           @click="toggleGrouping"
         >
           <Icon icon="lucide:package" class="h-4 w-4" />
@@ -2383,11 +2410,11 @@ watch(
         class="vf-tool"
         :class="{ 'is-on': showRelated }"
         :disabled="!basePath || basePath === rootPath"
-        :title="!basePath || basePath === rootPath
-          ? 'Everything is inside this scope – nothing to relate to'
+        v-tip="!basePath || basePath === rootPath
+          ? { title: 'Nothing outside this scope', hint: 'You are at the top level — everything is already in the picture.' }
           : showRelated
-            ? 'Hide what this scope connects to outside itself'
-            : 'Show what this scope connects to outside itself'"
+            ? { title: 'Neighbours shown', hint: 'Click to hide what this scope connects to outside itself.' }
+            : { title: 'Show neighbours', hint: 'Draws what this scope uses and what uses it, outside itself.' }"
         @click="toggleRelated"
       >
         <Icon icon="lucide:share-2" class="h-4 w-4" />
@@ -2402,7 +2429,9 @@ watch(
         class="vf-chip"
         :class="{ 'is-off': !edgeFilter[k.key] }"
         :style="{ '--c': k.color }"
-        :title="edgeFilter[k.key] ? `Hide ${k.label.toLowerCase()}` : `Show ${k.label.toLowerCase()}`"
+        v-tip="edgeFilter[k.key]
+          ? { title: `Hide ${k.label.toLowerCase()}`, hint: 'Hidden edges also stop steering the layout.' }
+          : { title: `Show ${k.label.toLowerCase()}`, hint: 'Edges steer the layout — showing them changes the placement.' }"
         @click="toggleEdgeKind(k.key)"
       >
         <span class="vf-chip-line" />
@@ -3439,6 +3468,44 @@ watch(
   height: 12px;
   background: var(--color-accent);
 }
+/* --- Segment-Schalter im Dock: welche EBENE wird gezeichnet ------------------------------
+ * Zwei Segmente statt eines Wechselknopfes: ein Wechselknopf beschriftet immer den ANDEREN
+ * Zustand („Classes", waehrend man Packages sieht) – man liest ihn als Aussage ueber das Bild
+ * und liegt falsch. Hier ist beschriftet, was es gibt, und markiert, wo man steht. */
+.vf-seg {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  padding: 2px;
+}
+.vf-seg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.vf-seg-btn:hover:not(:disabled):not(.is-on) {
+  background: var(--color-surface-offset);
+  color: var(--color-text);
+}
+.vf-seg-btn.is-on {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+.vf-seg-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .vf-tool {
   display: grid;
   place-items: center;
