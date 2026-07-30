@@ -73,6 +73,38 @@ export class JavaController {
     return this.svc.getMethodSnippet(fileId, methodName);
   }
 
+  // Zeilengenaue Suche im Quelltext ALLER Klassen (globale Suchpalette). Dieselben Schalter wie
+  // die Suchleiste im Quellcode-Tab: case/word/regex. Statische Route -> vor files/:id.
+  @Get('code-search')
+  codeSearch(
+    @Query('q') q?: string,
+    @Query('case') caseSensitive?: string,
+    @Query('word') wholeWord?: string,
+    @Query('regex') regex?: string,
+    @Query('context') context?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.svc.codeSearch({
+      q,
+      caseSensitive: caseSensitive === '1',
+      wholeWord: wholeWord === '1',
+      regex: regex === '1',
+      context: context != null ? Number(context) : undefined,
+      limit: limit != null ? Number(limit) : undefined,
+    });
+  }
+
+  // Shiki-gehighlightetes Fenster um eine Quellzeile (Vorschau der globalen Code-Suche).
+  // Statische Route -> vor files/:id.
+  @Get('source-window')
+  sourceWindow(
+    @Query('fileId') fileId: string,
+    @Query('line') line: string,
+    @Query('context') context?: string,
+  ) {
+    return this.svc.getSourceWindow(fileId, line, context);
+  }
+
   // Fortschritt eines laufenden analyze-batch (SSE). Der Client erzeugt die jobId, oeffnet damit
   // diesen Stream und schickt sie im analyze-batch-Body mit. Statische Route -> vor keiner
   // parametrisierten Route in Konflikt, `:jobId` ist hier der einzige Parameter.

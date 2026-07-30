@@ -4,6 +4,8 @@ import { DataSource, EntityManager, In, IsNull } from 'typeorm';
 import { createPatch, structuredPatch } from 'diff';
 import { FtsService } from '../database/fts.service';
 import { safeJson } from '../common/json.util';
+import { CodeFormatterService } from '../common/code-formatter.service';
+import { buildSearchRegex, scanSource } from '../common/code-search.util';
 import { MarkdownService } from '../common/markdown.service';
 import { OllamaService } from '../common/ollama.service';
 import { SerializerService } from '../common/serializer.service';
@@ -32,6 +34,25 @@ async function insertChunked(repo: { insert: (rows: any[]) => Promise<any> }, ro
     await repo.insert(rows.slice(i, i + INSERT_CHUNK));
   }
 }
+
+// --- Globale Code-Suche (codeSearch) -----------------------------------------------------------
+// Kandidaten aus dem FTS-Index; grosszuegig, weil der Index Praefixe matcht und der exakte Scan
+// danach noch aussortiert.
+const CODE_SEARCH_CANDIDATES = 300;
+// Obergrenze des Vollscans (Regex/Interpunktion). Bei einer Codebasis mit einigen tausend Klassen
+// haengt daran, wie lange ein Tastendruck den Pi beschaeftigt – die Antwort schreibt an, wie viel
+// tatsaechlich gelesen wurde.
+const CODE_SEARCH_SCAN_LIMIT = 1500;
+// Zeitbudget je Anfrage. Greift vor dem Datei-Deckel, wenn einzelne Klassen sehr gross sind.
+const CODE_SEARCH_BUDGET_MS = 1200;
+// Wie viele Quelltexte auf einmal geladen werden (raw_source ist die groesste Spalte).
+const CODE_SEARCH_CHUNK = 60;
+const CODE_SEARCH_FILE_LIMIT = 25;
+const CODE_SEARCH_HITS_PER_FILE = 5;
+const CODE_SEARCH_CONTEXT = 2;
+// Kontextzeilen je Seite im Vorschau-Fenster (getSourceWindow); der Client schneidet daraus sein
+// endgueltiges Fenster (buildCallWindow haelt +-3 Nicht-Leerzeilen).
+const SOURCE_WINDOW_CONTEXT = 8;
 
 // Die klassenbeschreibenden Spalten aus einem geparsten Typ – an drei Stellen gebraucht
 // (analyze, analyze-batch Insert + Overwrite-Update); getrennte Literale waeren dreimal die
@@ -92,6 +113,7 @@ export class JavaService {
     private readonly markdown: MarkdownService,
     private readonly fts: FtsService,
     private readonly progress: JavaBatchProgressService,
+    private readonly formatter: CodeFormatterService,
   ) {}
 
   // Datei analysieren: parsen + speichern (ohne KI -> Graph erscheint sofort).
@@ -589,6 +611,183 @@ export class JavaService {
       className: file.class_name,
       methodName,
     };
+  }
+
+  // Fenster aus dem Quelltext einer Klasse, Shiki-gerendert (Vorschau der globalen Code-Suche).
+  // Bewusst dieselbe Bauart wie getMethodSnippet: der Server highlightet, der Client schneidet mit
+  // den vorhandenen DOM-Helfern (`buildCallWindow`) zurecht – kein zweiter Highlighter im Client.
+  // Eingerueckt wird wie im Quellcode-Tab der Klasse (`reindentJava`, Zeilenzahl bleibt konstant),
+  // damit die Vorschau und die Ansicht NACH dem Sprung dasselbe zeigen.
+  async getSourceWindow(fileIdParam: string, lineParam: string, contextParam?: string): Promise<any> {
+    const fileId = Number(fileIdParam);
+    const line = Number(lineParam);
+    if (!fileId || !Number.isFinite(line) || line < 1) {
+      throw new BadRequestException('fileId and line are required');
+    }
+    const file = await this.ds.getRepository(JavaFile).findOne({ where: { id: fileId } });
+    if (!file) throw new NotFoundException('File not found');
+
+    const context = Math.min(Math.max(Number(contextParam) || SOURCE_WINDOW_CONTEXT, 1), 40);
+    const lines = this.formatter.reindentJava(file.raw_source || '').split('\n');
+    const hitLine = Math.min(line, lines.length || 1);
+    const startLine = Math.max(1, hitLine - context);
+    const endLine = Math.min(lines.length, hitLine + context);
+    const code = lines.slice(startLine - 1, endLine).join('\n');
+    const { html } = await this.markdown.renderMarkdown('```java\n' + code + '\n```');
+
+    return {
+      fileId,
+      className: file.class_name,
+      package: file.pkg || '',
+      filename: file.filename,
+      startLine,
+      endLine,
+      hitLine,
+      totalLines: lines.length,
+      html,
+    };
+  }
+
+  // Zeilengenaue Volltextsuche ueber ALLE gespeicherten Klassen – die globale Entsprechung der
+  // Suchleiste im Quellcode-Tab (gleiche Musterlogik, s. common/code-search.util.ts).
+  //
+  // Zwei Wege, nach Kosten gewaehlt:
+  //  * `index` – normale Anfrage: FTS5 nennt die Kandidaten (bm25), nur die werden gelesen. Das
+  //    sind ein paar Dutzend Quelltexte statt aller.
+  //  * `scan`  – Regex, reine Interpunktion (`->`, `!=`, die der FTS-Tokenizer wegwirft) oder ein
+  //    Index-Lauf ohne Treffer: Vollscan in Id-Reihenfolge. FTS5 kennt nur Token-PRAEFIXE, die
+  //    Suche hier beliebige Teilstrings – ohne diesen Rueckfall faende „ById" nichts, obwohl die
+  //    Suche in der geoeffneten Klasse `findById` findet.
+  //
+  // Gedeckelt wird nach Dateien UND nach Zeit; was nicht gelesen wurde, steht als `scannedFiles`/
+  // `truncated` in der Antwort und wird angeschrieben – ein stiller Deckel liest sich wie „nichts
+  // weiter gefunden".
+  async codeSearch(params: {
+    q?: string;
+    caseSensitive?: boolean;
+    wholeWord?: boolean;
+    regex?: boolean;
+    context?: number;
+    limit?: number;
+  }): Promise<any> {
+    const query = (params.q || '').toString();
+    const empty = {
+      query,
+      mode: 'index',
+      files: [],
+      totalFiles: 0,
+      totalMatches: 0,
+      scannedFiles: 0,
+      truncated: false,
+    };
+    if (!query.trim()) return empty;
+
+    const { re, error } = buildSearchRegex({
+      query,
+      caseSensitive: !!params.caseSensitive,
+      wholeWord: !!params.wholeWord,
+      regex: !!params.regex,
+    });
+    if (!re) throw new BadRequestException(error || 'Invalid search pattern');
+
+    const maxFiles = Math.min(Math.max(Number(params.limit) || CODE_SEARCH_FILE_LIMIT, 1), 60);
+    const context = Math.min(Math.max(Number(params.context ?? CODE_SEARCH_CONTEXT), 0), 8);
+    const repo = this.ds.getRepository(JavaFile);
+    const totalFiles = await repo.count();
+
+    // Kandidaten (Index-Weg) oder alle Ids (Scan-Weg).
+    let mode: 'index' | 'scan' = 'scan';
+    let ids: number[] = [];
+    if (!params.regex) {
+      ids = await this.fts.candidateJavaFileIds(query, CODE_SEARCH_CANDIDATES);
+      if (ids.length) mode = 'index';
+    }
+    if (mode === 'scan') ids = await this.allFileIds(repo);
+
+    let result = await this.scanFiles(repo, ids, re, { context, maxFiles });
+    // Index-Weg ohne Treffer -> der Praefix-Index hat die Frage nicht beantwortet, nicht die
+    // Codebasis. Einmal vollstaendig nachsehen, statt „no results" zu behaupten.
+    if (mode === 'index' && !result.files.length) {
+      mode = 'scan';
+      result = await this.scanFiles(repo, await this.allFileIds(repo), re, { context, maxFiles });
+    }
+
+    return {
+      query,
+      mode,
+      totalFiles,
+      scannedFiles: result.scanned,
+      truncated: result.truncated,
+      totalMatches: result.files.reduce((sum, f) => sum + f.matchCount, 0),
+      files: result.files,
+    };
+  }
+
+  // Alle Ids in stabiler Reihenfolge – gedeckelt, damit der Vollscan nicht unbegrenzt waechst.
+  private async allFileIds(repo: any): Promise<number[]> {
+    const rows = await repo.find({
+      select: { id: true },
+      order: { id: 'ASC' },
+      take: CODE_SEARCH_SCAN_LIMIT,
+    });
+    return rows.map((r: any) => r.id);
+  }
+
+  // Quelltexte blockweise nachladen und scannen. Blockweise, weil `raw_source` die mit Abstand
+  // groesste Spalte ist: eine Codebasis mit einigen tausend Klassen als EIN SELECT waeren zig MB
+  // im Speicher, obwohl nach den ersten Treffern ohnehin Schluss ist.
+  private async scanFiles(
+    repo: any,
+    ids: number[],
+    re: RegExp,
+    { context, maxFiles }: { context: number; maxFiles: number },
+  ): Promise<{ files: any[]; scanned: number; truncated: boolean }> {
+    const files: any[] = [];
+    const deadline = Date.now() + CODE_SEARCH_BUDGET_MS;
+    let scanned = 0;
+    let truncated = false;
+
+    for (let i = 0; i < ids.length; i += CODE_SEARCH_CHUNK) {
+      if (files.length >= maxFiles || Date.now() > deadline) {
+        truncated = i < ids.length;
+        break;
+      }
+      const chunk = ids.slice(i, i + CODE_SEARCH_CHUNK);
+      const rows = await repo.find({
+        where: { id: In(chunk) },
+        // `pkg` ist das Property, die Spalte heisst `package` (reserviertes Wort, s. Entity).
+        select: { id: true, filename: true, class_name: true, pkg: true, raw_source: true },
+      });
+      // Reihenfolge der Kandidaten (bm25 bzw. Id) wiederherstellen – `IN` gibt sie nicht zurueck.
+      const byId = new Map<number, any>(rows.map((r: any) => [r.id, r]));
+      for (const id of chunk) {
+        const row = byId.get(id);
+        if (!row) continue;
+        scanned++;
+        const { hits, total } = scanSource(row.raw_source || '', re, {
+          context,
+          maxHits: CODE_SEARCH_HITS_PER_FILE,
+        });
+        if (!total) continue;
+        files.push({
+          fileId: row.id,
+          className: row.class_name,
+          package: row.pkg || '',
+          filename: row.filename,
+          matchCount: total,
+          capped: total > hits.length,
+          hits,
+        });
+        if (files.length >= maxFiles) {
+          truncated = true;
+          break;
+        }
+      }
+      // parseJava-Regel sinngemaess: eine lange Schleife blockiert den Event-Loop komplett.
+      await breathe();
+    }
+
+    return { files, scanned, truncated };
   }
 
   // Fallback-Zeilenermittlung fuer Bestandsdaten ohne gespeicherte start_line:

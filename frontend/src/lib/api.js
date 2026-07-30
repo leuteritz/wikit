@@ -118,6 +118,24 @@ export const api = {
       null,
       { silent: true },
     ),
+  // Zeilengenaue Suche im Quelltext aller Klassen (globale Suchpalette). Gleiche Schalter wie die
+  // Suchleiste im Quellcode-Tab. `silent`: die Palette tippt – ein Toast je Anschlag waere eine
+  // Kaskade; der Fehler steht dort an Ort und Stelle in der Ergebnisliste.
+  searchJavaCode: (q, { caseSensitive = false, wholeWord = false, regex = false } = {}) =>
+    http(
+      'GET',
+      `/java/code-search?q=${encodeURIComponent(q)}&case=${caseSensitive ? 1 : 0}` +
+        `&word=${wholeWord ? 1 : 0}&regex=${regex ? 1 : 0}`,
+      null,
+      { silent: true },
+    ),
+  // Shiki-gehighlightetes Fenster um eine Quellzeile (Vorschau der Suchpalette).
+  // `silent`: die Vorschau zeigt bereits den unformatierten Ausschnitt aus dem Suchergebnis.
+  getJavaSourceWindow: (fileId, line) =>
+    http('GET', `/java/source-window?fileId=${encodeURIComponent(fileId)}&line=${encodeURIComponent(line)}`, null, {
+      silent: true,
+    }),
+
   deleteJavaFile: (id) => http('DELETE', `/java/files/${id}`),
 
   // Versionsverlauf (Changelog) einer Klasse. Liste = ohne Quelltext (Diff + KI-Summary);

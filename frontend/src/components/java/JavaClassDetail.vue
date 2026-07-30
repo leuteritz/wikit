@@ -28,6 +28,11 @@ const props = defineProps({
   // Optionale Ziel-End-Zeile: ist sie gesetzt (> targetLine), wird der GESAMTE Methodenbereich
   // (targetLine..targetEndLine) markiert statt nur einer Zeile (Edge-Panel „Definiert in").
   targetEndLine: { type: Number, default: null },
+  // Suche, die den Sprung ausgeloest hat (globale Suchpalette): `{ query, opts }`. Sie landet
+  // unveraendert in der Suchleiste dieses Panels – wer nach einem Wort gesucht hat, sucht nach dem
+  // Sprung nicht neu, sondern blaettert weiter. Der aktive Treffer ist der, auf den gesprungen
+  // wurde (s. applyHandoffSearch), nicht der erste der Datei.
+  handoffSearch: { type: Object, default: null },
 })
 const emit = defineEmits(['close', 'changed'])
 
@@ -112,6 +117,9 @@ async function load() {
   file.value = null
   try {
     file.value = await getFile(props.fileId)
+    // Kam der Sprung aus der globalen Suche, faehrt deren Begriff mit -> zuerst uebernehmen, damit
+    // die Trefferliste steht, bevor die Zielzeile angesteuert wird.
+    applyHandoffSearch()
     // Falls beim Oeffnen bereits eine Zielzeile vorliegt (Such-Sprung/Edge-Panel) -> ansteuern.
     if (props.targetLine) applyTargetLine()
   } catch (e) {
@@ -413,6 +421,33 @@ function onSelectWord({ text, from }) {
   // liegt, statt am Dateianfang.
   searchCursor.value = Math.max(0, indexAtOrAfter(matches.value, from))
 }
+
+// Zeichen-Offset des Anfangs einer (1-basierten) Zeile im angezeigten Quelltext. `reindentJava`
+// laesst die Zeilenzahl unveraendert, deshalb passt eine Zeilennummer aus dem Rohquelltext (Server)
+// hier 1:1.
+function offsetOfLine(text, line) {
+  if (!line || line < 2) return 0
+  let pos = 0
+  for (let i = 1; i < line; i++) {
+    const nl = text.indexOf('\n', pos)
+    if (nl === -1) return pos
+    pos = nl + 1
+  }
+  return pos
+}
+
+// Suche aus der globalen Palette uebernehmen. Gleiche Regel wie bei `onSelectWord`: der Treffer,
+// den man angeklickt hat, wird zum AKTIVEN – „weiter" setzt dort fort, wo der Blick liegt, statt
+// am Dateianfang. Die Schalter kommen mit, sonst faende die Klasse etwas anderes als die Palette.
+function applyHandoffSearch() {
+  const handoff = props.handoffSearch
+  if (!handoff?.query || !file.value) return
+  searchOpts.value = { caseSensitive: false, wholeWord: false, regex: false, ...(handoff.opts || {}) }
+  search.value = handoff.query
+  tab.value = 'source'
+  searchCursor.value = Math.max(0, indexAtOrAfter(matches.value, offsetOfLine(displaySource.value, props.targetLine)))
+}
+watch(() => props.handoffSearch, applyHandoffSearch)
 
 // Ctrl/Cmd+F im offenen Klassen-Panel: Suchfeld statt Browser-Suche (die faende nur den sichtbaren
 // Ausschnitt des virtualisierten Editors). Liegt der Fokus in einem ANDEREN Eingabefeld – etwa dem

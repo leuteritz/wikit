@@ -21,6 +21,13 @@ const state = reactive({
   // Methodenbereich (lastTargetLine..lastTargetEndLine) statt nur einer Zeile (Edge-Panel
   // „Definiert in"). Wird ebenfalls nach Verbrauch genullt.
   lastTargetEndLine: null,
+  // Optionale Suchanfrage fuer den Hand-off (globale Suche -> CodeView -> Klassen-Panel): der
+  // Begriff, mit dem der Treffer gefunden wurde, steht danach in der Suchleiste des Quellcode-Tabs.
+  // Ohne das faenge man in der geoeffneten Klasse wieder bei null an, obwohl man gerade nach genau
+  // diesem Wort gesucht hat. `lastSearchOpts` traegt die Schalter (Case/Wort/Regex) mit, sonst
+  // faende die Klasse etwas anderes als die Palette. Beide werden nach Verbrauch genullt.
+  lastSearchQuery: null,
+  lastSearchOpts: null,
 })
 
 async function fetchFiles() {
@@ -145,6 +152,8 @@ export function useJavaAnalyzer() {
         state.lastFileId = null
         state.lastTargetLine = null
         state.lastTargetEndLine = null
+        state.lastSearchQuery = null
+        state.lastSearchOpts = null
         state.error = ''
       } finally {
         es?.close()

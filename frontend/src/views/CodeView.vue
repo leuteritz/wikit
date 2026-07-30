@@ -22,7 +22,7 @@ import { Icon } from '../lib/icons.js'
 import { detectJavaClasses } from '../lib/javaDetect.js'
 import { formatEta, formatDuration } from '../lib/format.js'
 
-const { files, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFileId, lastTargetLine, lastTargetEndLine, deleteFile, resetAll } =
+const { files, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFileId, lastTargetLine, lastTargetEndLine, lastSearchQuery, lastSearchOpts, deleteFile, resetAll } =
   useJavaAnalyzer()
 const { summary: queueSummary, enqueueMany, enqueueAllUnanalyzed, cancelJob, cancelAllJobs, progressFor, ensurePolling } =
   useJavaQueue()
@@ -45,6 +45,9 @@ const inputMode = ref('paste') // 'paste' = Editor | 'file' = .java-Datei(en) ho
 const selectedFileId = ref(null)
 const activeTargetLine = ref(null) // Ziel-Quellzeile fuer das Detail-Panel (Such-Sprung)
 const activeTargetEndLine = ref(null) // Ziel-End-Zeile -> markiert den gesamten Methodenbereich
+// Suchbegriff + Schalter aus der globalen Suche: gehen unveraendert an die Suchleiste des
+// Klassen-Panels weiter, damit man dort weitersucht, statt neu anzufangen.
+const handoffSearch = ref(null)
 const search = ref('') // was im Feld steht – reagiert sofort auf jeden Tastendruck
 // …und was daraus tatsaechlich gefiltert wird. Getrennt, weil an EINEM Tastendruck der halbe
 // Bildschirm haengt: Trefferliste, Package-Baum, alle Baumzeilen und der Graph (der bei wenigen
@@ -155,9 +158,16 @@ function consumeHandoff() {
   selectedFileId.value = lastFileId.value
   activeTargetLine.value = lastTargetLine.value
   activeTargetEndLine.value = lastTargetEndLine.value
+  // Die Suche gehoert zum Sprung: ein neues Objekt je Hand-off, damit das Panel auch dann reagiert,
+  // wenn zweimal hintereinander nach demselben Wort gesprungen wird.
+  handoffSearch.value = lastSearchQuery.value
+    ? { query: lastSearchQuery.value, opts: { ...(lastSearchOpts.value || {}) } }
+    : null
   lastFileId.value = null
   lastTargetLine.value = null
   lastTargetEndLine.value = null
+  lastSearchQuery.value = null
+  lastSearchOpts.value = null
 }
 
 // Reagiert auch, wenn /code bereits gemountet ist (z. B. Klick auf einen Edge-Panel-Link).
@@ -1355,6 +1365,7 @@ function onResetPanels() {
             :file-id="selectedFileId"
             :target-line="activeTargetLine"
             :target-end-line="activeTargetEndLine"
+            :handoff-search="handoffSearch"
             @close="onDetailClose"
           />
           <div

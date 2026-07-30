@@ -116,6 +116,30 @@ export class FtsService {
     }
   }
 
+  // Kandidaten fuer die zeilengenaue Code-Suche: liefert NUR die java_files.id, nach bm25
+  // sortiert. Der eigentliche Treffer entsteht danach beim exakten Zeilen-Scan (Case/ganzes
+  // Wort/Regex kann FTS5 nicht) – dieser Aufruf beantwortet nur „welche Klassen ueberhaupt
+  // anfassen?" und haelt den Scan damit von tausenden Quelltexten fern.
+  // Bewusst ein Ueberschuss (FTS5 matcht Token-Praefixe, die Suche danach beliebige Teilstrings):
+  // findet der Scan darin nichts, faellt der Aufrufer auf den Vollscan zurueck.
+  async candidateJavaFileIds(q: string, limit = 300): Promise<number[]> {
+    const match = this.buildMatch(q);
+    if (!match) return [];
+    try {
+      const rows = await this.dataSource.query(
+        `SELECT rowid AS id
+         FROM java_fts
+         WHERE java_fts MATCH ?
+         ORDER BY bm25(java_fts)
+         LIMIT ?`,
+        [match, limit],
+      );
+      return rows.map((r: any) => Number(r.id)).filter((n: number) => Number.isFinite(n));
+    } catch {
+      return [];
+    }
+  }
+
   // Methoden-genaue Code-Suche: matcht Methodennamen (LIKE, COLLATE NOCASE) und liefert die
   // Zeilennummer mit -> das Frontend springt direkt zur Methode (Such-Sprung + Highlight).
   // Kein FTS noetig (gezielter Namens-Treffer), bewusst SQLite-Raw analog searchJavaFiles.
