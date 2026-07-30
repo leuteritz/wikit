@@ -37,7 +37,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'changed'])
 
 const router = useRouter()
-const { getFile, deleteFile, linkArticle, userContext, getFileVersions, getVersionSource } = useJavaAnalyzer()
+const { files, getFile, deleteFile, linkArticle, userContext, getFileVersions, getVersionSource } = useJavaAnalyzer()
 const { lastEvent, progressFor, enqueueClass } = useJavaQueue()
 const { create } = useArticles()
 const { edges: serverEdges, highlightedCall, toggleHighlightedCall, clearHighlightedCall, highlightedDef, toggleHighlightedDef, clearHighlightedDef } = useJavaGraph()
@@ -111,10 +111,41 @@ watch(tab, (t) => {
   if (t === 'history' && !versionsLoaded.value && !versionsLoading.value) loadVersions()
 })
 
+// --- Ladeauskunft --------------------------------------------------------------------------
+// `getFile` holt Methodenrümpfe, gerendertes Markdown UND den Rohquelltext; bei einer grossen
+// Klasse auf dem Pi dauert das spuerbar. Was dabei passiert, ist bekannt (die Liste kennt Name und
+// Methodenzahl) – also wird es auch gesagt, statt nur zu drehen.
+const loadElapsed = ref(0)
+let loadTimer = null
+const loadElapsedLabel = computed(() => (loadElapsed.value >= 900 ? `${(loadElapsed.value / 1000).toFixed(1)}s` : ''))
+const loadSlow = computed(() => loadElapsed.value >= 1500)
+const loadingLabel = computed(() => {
+  const name = listEntry.value?.class_name
+  return name ? `Loading ${name}…` : 'Loading class…'
+})
+// Skelett in der Groessenordnung der echten Ansicht: so viele Zeilen, wie die Klasse Methoden hat
+// (gedeckelt), damit beim Eintreffen nichts springt.
+const loadingSkeletonRows = computed(() => Math.min(Math.max(methodCount.value || 3, 3), 8))
+
+function startLoadClock() {
+  clearInterval(loadTimer)
+  loadElapsed.value = 0
+  const t0 = Date.now()
+  loadTimer = setInterval(() => {
+    loadElapsed.value = Date.now() - t0
+  }, 100)
+}
+function stopLoadClock() {
+  clearInterval(loadTimer)
+  loadTimer = null
+}
+onBeforeUnmount(stopLoadClock)
+
 async function load() {
   loading.value = true
   error.value = ''
   file.value = null
+  startLoadClock()
   try {
     file.value = await getFile(props.fileId)
     // Kam der Sprung aus der globalen Suche, faehrt deren Begriff mit -> zuerst uebernehmen, damit
@@ -126,6 +157,7 @@ async function load() {
     error.value = e.message
   } finally {
     loading.value = false
+    stopLoadClock()
   }
 }
 
@@ -280,7 +312,13 @@ const STEREOTYPE_LABEL = {
   annotation: 'Annotation',
   class: 'Class',
 }
-const classKind = computed(() => file.value?.stereotype || file.value?.class_type || '')
+// Was schon bekannt ist, muss nicht geladen werden: die Klassenliste liegt im Store (App.vue laedt
+// sie), und darin stehen Name, Package, Charakter und Methodenzahl. Waehrend `getFile` laeuft,
+// rendert der Kopf daraus – statt leer zu bleiben und beim Eintreffen zu springen.
+const listEntry = computed(() => files.value.find((f) => f.id === props.fileId) || null)
+const head = computed(() => file.value || listEntry.value)
+
+const classKind = computed(() => head.value?.stereotype || head.value?.class_type || '')
 const classKindLabel = computed(() => STEREOTYPE_LABEL[classKind.value] || classKind.value)
 
 const typeBadge = computed(() => ({
@@ -295,7 +333,9 @@ const typeBadge = computed(() => ({
   annotation: 'badge-danger',
 }[classKind.value] || 'badge-muted'))
 
-const methodCount = computed(() => file.value?.methods?.length || 0)
+// Geladen: die echten Methoden. Waehrend des Ladens: die Zahl aus der Liste – dieselbe Zahl, nur
+// frueher, und der Kopf springt beim Eintreffen nicht.
+const methodCount = computed(() => file.value?.methods?.length ?? listEntry.value?.method_count ?? 0)
 const summarizedCount = computed(() => (file.value?.methods || []).filter((m) => m.summary_html).length)
 
 // Signatur als String (Header-Chip + Wiki-Export). Modifier voranstellen, analog zum Backend
@@ -541,9 +581,9 @@ async function removeFile() {
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-2">
           <span class="rounded px-1.5 py-0.5 text-3xs font-semibold uppercase" :class="typeBadge">{{ classKindLabel }}</span>
-          <h2 class="truncate text-xl font-bold text-[var(--color-text)]">{{ file?.class_name }}</h2>
+          <h2 class="truncate text-xl font-bold text-[var(--color-text)]">{{ head?.class_name }}</h2>
         </div>
-        <p v-if="file?.package" class="truncate font-mono text-xs text-[var(--color-text-muted)]">{{ file.package }}</p>
+        <p v-if="head?.package" class="truncate font-mono text-xs text-[var(--color-text-muted)]">{{ head.package }}</p>
         <div v-if="file" class="mt-1.5 flex flex-wrap items-center gap-1.5">
           <span class="rounded-md bg-[var(--color-surface-offset)] px-1.5 py-0.5 text-3xs font-medium text-[var(--color-text-muted)]">
             {{ methodCount }} method(s)
@@ -681,7 +721,25 @@ async function removeFile() {
     </div>
 
     <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-      <div v-if="loading" class="text-sm text-[var(--color-text-muted)]">Loading…</div>
+      <!-- Ladezustand: sagt WAS geladen wird (aus der Klassenliste ist es bereits bekannt), WIE
+           LANGE schon, und zeigt die Form der kommenden Ansicht als Skelett. Ein blosses
+           „Loading…" liess das Panel bei einer grossen Klasse sekundenlang leer wirken. -->
+      <div v-if="loading" class="space-y-3">
+        <div class="flex items-center gap-2 text-sm text-[var(--color-text-muted)]">
+          <Icon icon="lucide:loader-2" class="h-4 w-4 shrink-0 animate-spin text-[var(--color-accent)]" />
+          <span>{{ loadingLabel }}</span>
+          <span v-if="loadElapsedLabel" class="ml-auto shrink-0 font-mono text-3xs tabular-nums opacity-70">{{ loadElapsedLabel }}</span>
+        </div>
+        <ul class="space-y-2">
+          <li v-for="n in loadingSkeletonRows" :key="n" class="flex items-center gap-2">
+            <span class="skeleton h-7 flex-1 rounded-lg" :style="{ animationDelay: `${n * 60}ms` }" />
+          </li>
+        </ul>
+        <p v-if="loadSlow" class="text-2xs text-[var(--color-text-muted)]">
+          Large classes carry their full source and every method body — this one has
+          {{ methodCount }} method(s).
+        </p>
+      </div>
       <div v-else-if="error" class="text-sm text-[var(--color-danger)]">{{ error }}</div>
 
       <template v-else-if="file">
@@ -912,6 +970,33 @@ async function removeFile() {
 
 <style scoped>
 @reference "../../assets/style.css";
+
+/* Ladeskelett: ein wandernder Schimmer statt eines pulsierenden Blocks – er sagt „es kommt noch
+   etwas" in Leserichtung. Kein `filter`/`backdrop-filter` (s. Stolperfalle), nur ein
+   Farbverlauf, den `background-position` verschiebt. */
+.skeleton {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-surface-offset) 0%,
+    color-mix(in srgb, var(--color-accent) 10%, var(--color-surface-offset)) 50%,
+    var(--color-surface-offset) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
 
 .code-wrap {
   @apply relative;

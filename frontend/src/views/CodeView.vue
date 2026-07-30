@@ -35,7 +35,10 @@ const {
   isDragging,
   activeKey,
   isDirty: panelsDirty,
+  isFocused: panelsFocused,
   startDrag,
+  focusRight,
+  releaseFocus,
   reset: resetPanels,
 } = usePanelResize()
 
@@ -162,6 +165,10 @@ function consumeHandoff() {
   handoffSearch.value = lastSearchQuery.value
     ? { query: lastSearchQuery.value, opts: { ...(lastSearchOpts.value || {}) } }
     : null
+  // Kam der Sprung aus der globalen Suche (nur die schickt eine Suche mit), will man den CODE
+  // lesen – dafuer macht das Panel vorübergehend auf. Zurueckgegeben wird beim Schliessen oder
+  // beim naechsten Klick in Graph/Baum (s. selectFile/onDetailClose).
+  if (handoffSearch.value) focusRight()
   lastFileId.value = null
   lastTargetLine.value = null
   lastTargetEndLine.value = null
@@ -393,6 +400,11 @@ function openPathInTree(path) {
 
 function onGraphNavigate(path) {
   activePath.value = path || null
+  // Wer im Graphen eine Ebene wechselt (Package-Karte, Zonenkopf, Breadcrumb), arbeitet wieder mit
+  // dem Bild – die fuer einen Suchtreffer geliehene Panelbreite gehoert dann zurueck. Der Emit
+  // laeuft zwar auch einmal beim Mount (`immediate`), aber da ist nie etwas geliehen: der Sprung
+  // aus der Suche kommt spaeter und veraendert `basePath` nicht.
+  releaseFocus()
   // Kam die Ebene aus dem Baum, ist dessen Zustand bereits die Absicht des Nutzers – dann nur die
   // Markierung nachziehen, nicht die Faltung.
   const fromTree = treeDrivenPath !== null && treeDrivenPath === path
@@ -665,6 +677,10 @@ function selectFile(id) {
   // Manuelle Auswahl -> evtl. ausstehende Such-Zielzeile verwerfen (kein Fehl-Highlight).
   activeTargetLine.value = null
   activeTargetEndLine.value = null
+  // …und die geliehene Panelbreite zurueckgeben: wer im Graphen oder im Baum weiterklickt,
+  // arbeitet wieder mit dem Bild, nicht mit dem Code eines Suchtreffers.
+  releaseFocus()
+  handoffSearch.value = null
   selectedFileId.value = id
 }
 
@@ -699,6 +715,9 @@ async function confirmDelete() {
 }
 async function onDetailClose(payload) {
   if (payload?.deleted) await fetchFiles()
+  // Panel zu -> geliehene Breite zurueck in die Ursprungsposition.
+  releaseFocus()
+  handoffSearch.value = null
   selectedFileId.value = null
 }
 
@@ -1167,9 +1186,12 @@ function onResetPanels() {
     </Teleport>
 
     <!-- 3-Spalten-Layout (ab lg per Drag verschiebbar; darunter einspaltig gestapelt). -->
+    <!-- `panel-grid` animiert die Spaltenbreiten – aber NUR, wenn nicht gezogen wird: waehrend
+         eines Drags muss die Kante an der Maus kleben, eine Uebergangszeit machte daraus ein
+         Nachziehen. Gebraucht wird die Animation fuer das Aufmachen nach einem Suchtreffer. -->
     <div
       class="grid min-h-0 flex-1 p-4"
-      :class="isWide ? '' : 'grid-cols-1 gap-4'"
+      :class="[isWide ? 'panel-grid' : 'grid-cols-1 gap-4', isDragging ? 'is-dragging' : '']"
       :style="isWide ? { gridTemplateColumns: gridTemplate } : null"
     >
       <!-- Spalte 1: Suche + Package-Tree -->
@@ -1690,6 +1712,19 @@ function onResetPanels() {
 }
 
 /* Eintraege des Overflow-Menues (gleiche Geometrie, Farbe unterscheidet nur die Gefahr). */
+/* --- Spaltenbreiten: Uebergang beim Aufmachen, hart beim Ziehen ------------------------- */
+.panel-grid {
+  transition: grid-template-columns 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.panel-grid.is-dragging {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel-grid {
+    transition: none;
+  }
+}
+
 /* --- Werkzeug-Gruppe der Command-Bar --------------------------------------------------- *
  * Ein Rahmen, Haarlinien dazwischen: die drei Aktionen lesen sich als EIN Element und nicht
  * als drei weitere Knoepfe neben den Primaeraktionen. Die Trennlinie sitzt an den Knoepfen

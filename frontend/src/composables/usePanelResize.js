@@ -49,6 +49,15 @@ export function usePanelResize() {
   const isDragging = ref(false)
   const activeKey = ref(null) // 'left' | 'right' | null -> hebt den gezogenen Divider hervor
 
+  // --- Geliehene Breite --------------------------------------------------------------------
+  // Wer aus der globalen Suche in eine Klasse springt, will den CODE lesen und nicht den Graphen –
+  // das Panel macht dafuer vorübergehend auf. `borrowed` haelt die Aufteilung, die vorher galt:
+  // eine geliehene Ansicht ist KEINE Einstellung, sie wird deshalb auch nicht persistiert und
+  // beim Schliessen (oder beim naechsten Klick in Graph/Baum) vollstaendig zurueckgegeben.
+  const borrowed = ref(null)
+  const FOCUS_RIGHT = 52 // ~ die Haelfte: genug fuer eine Codezeile ohne Umbruch, Graph bleibt sichtbar
+  const isFocused = computed(() => borrowed.value !== null)
+
   const isDirty = computed(
     () =>
       Math.abs(widths.left - DEFAULTS.left) > 0.5 ||
@@ -110,6 +119,9 @@ export function usePanelResize() {
   // which: 'left' = Divider zwischen Spalte 1/2, 'right' = zwischen Spalte 2/3.
   function startDrag(which, e) {
     e.preventDefault() // verhindert Textselektion waehrend des Ziehens
+    // Wer selbst zieht, uebernimmt: die geliehene Breite wird zu SEINER Breite (inkl. persist beim
+    // Loslassen). Ein spaeteres Zurueckspringen waere hier ein Zustand, den niemand mehr erwartet.
+    borrowed.value = null
     const gridEl = e.currentTarget.parentElement
     const rect = gridEl.getBoundingClientRect()
     const availablePx = Math.max(1, rect.width - 2 * RESIZER_PX) // px-Raum fuer die 100 fr
@@ -130,7 +142,32 @@ export function usePanelResize() {
     window.addEventListener('mouseup', stopDrag)
   }
 
+  // Detail-Panel vorübergehend breit machen. Der Platz kommt zuerst aus der MITTE (dort steht der
+  // Graph, den man in diesem Moment nicht liest) und erst danach von links; die 10-%-Klemmgrenze
+  // gilt weiter. Ist rechts ohnehin breit genug, passiert nichts – dann gibt es auch nichts
+  // zurueckzugeben.
+  function focusRight() {
+    if (!isWide.value || widths.right >= FOCUS_RIGHT) return false
+    if (!borrowed.value) borrowed.value = { ...widths }
+    const need = FOCUS_RIGHT - widths.right
+    const fromCenter = Math.min(need, Math.max(0, widths.center - MIN))
+    const fromLeft = Math.min(need - fromCenter, Math.max(0, widths.left - MIN))
+    widths.center -= fromCenter
+    widths.left -= fromLeft
+    widths.right += fromCenter + fromLeft
+    return true
+  }
+
+  // Zurueck in die Ursprungsposition. Ohne geliehene Breite ein No-op – der Aufrufer muss also
+  // nicht wissen, ob ueberhaupt etwas geliehen wurde.
+  function releaseFocus() {
+    if (!borrowed.value) return
+    Object.assign(widths, borrowed.value)
+    borrowed.value = null
+  }
+
   function reset() {
+    borrowed.value = null
     Object.assign(widths, DEFAULTS)
     persist()
   }
@@ -141,5 +178,17 @@ export function usePanelResize() {
     stopDrag() // Sicherheit, falls waehrend eines Drags unmounted
   })
 
-  return { widths, gridTemplate, isWide, isDragging, activeKey, isDirty, startDrag, reset }
+  return {
+    widths,
+    gridTemplate,
+    isWide,
+    isDragging,
+    activeKey,
+    isDirty,
+    isFocused,
+    startDrag,
+    focusRight,
+    releaseFocus,
+    reset,
+  }
 }
