@@ -309,6 +309,10 @@ export function buildEgoLevel({
   cardLimit = 40,
   nodeLimit = 10,
   rootPath = '',
+  // Packages, die der Nutzer aufgeklappt hat: ihre Klassen werden IMMER als Karten gezeichnet,
+  // unabhaengig von der Rangfolge, und sie bekommen kein Aggregat mehr. So laesst sich der
+  // Ausschnitt schrittweise oeffnen, statt nur zwischen „40" und „alles" zu wechseln.
+  expandedPaths = null,
 } = {}) {
   const empty = {
     cardIds: new Set(),
@@ -351,8 +355,16 @@ export function buildEgoLevel({
       b[1].relations - a[1].relations ||
       String(byId.get(a[0])?.class_name).localeCompare(String(byId.get(b[0])?.class_name)),
   )
-  const cardIds = new Set(ranked.slice(0, cardLimit).map(([id]) => id))
-  const rest = ranked.slice(cardLimit)
+  const expanded = expandedPaths instanceof Set ? expandedPaths : new Set(expandedPaths || [])
+  const isExpanded = (id) => expanded.size > 0 && expanded.has(byId.get(id)?.package || DEFAULT_PACKAGE)
+  const cardIds = new Set()
+  const rest = []
+  ranked.forEach(([id, s], i) => {
+    // Aufgeklappte Packages zaehlen NICHT gegen das Kartenbudget: wer ein Package oeffnet, will es
+    // ganz sehen – sonst waere die Haelfte davon wieder im Aggregat, das man gerade aufgeloest hat.
+    if (i < cardLimit || isExpanded(id)) cardIds.add(id)
+    else rest.push([id, s])
+  })
 
   // 3) Rest je Package zusammenfassen.
   const label = (path) => {
@@ -415,6 +427,10 @@ export function buildEgoLevel({
     aggregatedClasses: kept.reduce((sum, n) => sum + n.classCount, 0),
     hiddenPackages: hidden.length,
     hiddenRelations: hidden.reduce((sum, n) => sum + n.relations, 0),
+    // Fuer die Bedienung: wieviele Nachbarn stehen als Karte im Bild, und welche Packages sind
+    // aufgeklappt (die Leiste zeigt sie als abwaehlbare Chips).
+    cardCount: cardIds.size,
+    expandedPaths: [...expanded].filter((p) => ranked.some(([id]) => (byId.get(id)?.package || DEFAULT_PACKAGE) === p)),
   }
 }
 

@@ -20,6 +20,7 @@ import braces from '@iconify-icons/lucide/braces'
 import listChecks from '@iconify-icons/lucide/list-checks'
 import share2 from '@iconify-icons/lucide/share-2'
 import plus from '@iconify-icons/lucide/plus'
+import minus from '@iconify-icons/lucide/minus'
 import upload from '@iconify-icons/lucide/upload'
 import trash2 from '@iconify-icons/lucide/trash-2'
 import chevronDown from '@iconify-icons/lucide/chevron-down'
@@ -95,6 +96,7 @@ const ICONS = {
   'lucide:list-checks': listChecks,
   'lucide:share-2': share2,
   'lucide:plus': plus,
+  'lucide:minus': minus,
   'lucide:upload': upload,
   'lucide:trash-2': trash2,
   'lucide:chevron-down': chevronDown,

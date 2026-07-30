@@ -418,19 +418,55 @@ watch(
 // (s. lib/packageGraph.js → buildEgoLevel).
 const EGO_CARD_LIMIT = 40 // so viele Nachbarn als einzelne Karten, danach Aggregate
 const EGO_NODE_LIMIT = 10 // hoechstens so viele Aggregatknoten
+// Schrittweise auf- und zumachen – in Stufen statt „40 oder alles". Die Leiter ist fest, weil eine
+// freie Zahl (Schieberegler) bei jedem Zwischenwert ein neues Layout kostet und niemand 63 Karten
+// als Absicht formuliert. Was ueber der Nachbarzahl liegt, wird ausgeblendet.
+const EGO_STEPS = [8, 20, 40, 80, 160, 400]
+const egoBudget = ref(EGO_CARD_LIMIT) // Kartenbudget der aktuellen Anfrage
+const egoExpanded = ref(new Set()) // aufgeklappte Nachbar-Packages (Pfad)
+
 const egoCenterId = computed(() =>
   searchActive.value && props.matchIds.length === 1 ? props.matchIds[0] : null,
 )
+// Jede neue Suche faengt bei der Voreinstellung an: eine mitgeschleppte Aufklapp-Entscheidung
+// gehoerte zu einem anderen Ergebnis (dieselbe Regel wie beim Kontext-Override).
+watch([() => props.searchQuery, egoCenterId], () => {
+  egoBudget.value = EGO_CARD_LIMIT
+  egoExpanded.value = new Set()
+})
 const egoLevel = computed(() =>
   buildEgoLevel({
     files: props.files || [],
     classEdges: allClassEdges.value,
     centerId: egoCenterId.value,
-    cardLimit: EGO_CARD_LIMIT,
+    cardLimit: egoBudget.value,
     nodeLimit: EGO_NODE_LIMIT,
     rootPath: rootPath.value,
+    expandedPaths: egoExpanded.value,
   }),
 )
+// Stufen, die es bei DIESER Klasse ueberhaupt gibt: alles oberhalb der Nachbarzahl waere derselbe
+// Ausschnitt unter anderem Namen. Die letzte Stufe ist immer „alle".
+const egoSteps = computed(() => {
+  const total = egoLevel.value.neighbours
+  const steps = EGO_STEPS.filter((s) => s < total)
+  return [...steps, total]
+})
+function stepEgo(dir) {
+  const steps = egoSteps.value
+  const i = steps.findIndex((s) => s >= egoBudget.value)
+  const next = steps[Math.min(steps.length - 1, Math.max(0, (i < 0 ? steps.length - 1 : i) + dir))]
+  if (next != null) egoBudget.value = next
+}
+// Ein Aggregat aufklappen heisst: DIESES Package als Karten zeigen. Der Weg zurueck ist der Chip in
+// der Leiste – ein zweiter Klick auf den Knoten geht nicht, weil er danach nicht mehr da ist.
+function toggleEgoPackage(path) {
+  const next = new Set(egoExpanded.value)
+  const key = path || '(default)'
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  egoExpanded.value = next
+}
 const egoActive = computed(() => egoCenterId.value != null && egoLevel.value.neighbours > 0)
 
 const showSearchContext = computed(() => {
@@ -1412,6 +1448,13 @@ function onNodeClick({ node }) {
   // Ein Nachbar-Aggregat traegt keinen eigenen Inhalt, sondern einen Ort: der Klick oeffnet ihn –
   // damit ist der Weg aus einem Package zu seinem Gegenueber ein einziger Klick.
   if (node?.type === 'pkg') {
+    // Im Ego-Ausschnitt steht ein Aggregat fuer „und diese hier haengen auch dran". Ein Klick
+    // loest genau DAS auf – schrittweise, statt in eine andere Ebene zu springen und den
+    // Ausschnitt zu verlassen, um den es gerade geht.
+    if (egoActive.value && node.data?.related) {
+      toggleEgoPackage(node.data.path || '')
+      return
+    }
     drillTo(node.data?.path || '')
     return
   }
@@ -2054,24 +2097,9 @@ watch(
     <div v-if="files.length && searchActive" class="vf-breadcrumb">
       <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
       <span class="shrink-0 font-mono text-2xs text-[var(--color-text)]">“{{ searchQuery }}”</span>
-      <!-- Ein einziger Treffer bekommt seine eigene Bilanz: nicht „1 match", sondern was an dieser
-           Klasse haengt und wieviel davon im Bild steht. Genau danach hat man gesucht. -->
-      <template v-if="egoActive">
-        <span class="vf-crumb-count">{{ searchScope.ego.relations }} relations</span>
-        <span class="vf-crumb-count">{{ searchScope.ego.neighbours }} classes</span>
-        <span v-if="searchScope.ego.nodes.length" class="vf-crumb-count">
-          {{ searchScope.ego.aggregatedClasses }} in {{ searchScope.ego.nodes.length }} package{{ searchScope.ego.nodes.length === 1 ? '' : 's' }}
-        </span>
-        <span
-          v-if="searchScope.ego.hiddenPackages"
-          class="vf-crumb-warn"
-          :title="`${searchScope.ego.hiddenRelations} relations to ${searchScope.ego.hiddenPackages} further packages are not drawn`"
-        >
-          <Icon icon="lucide:alert-triangle" class="h-3 w-3" />
-          +{{ searchScope.ego.hiddenPackages }} more
-        </span>
-      </template>
-      <template v-else>
+      <!-- Im Ego-Ausschnitt steht die Bilanz in der Leiste darunter – dort, wo man sie auch
+           bedient. Hier bliebe sie sonst unter dem Suchfeld oben rechts haengen. -->
+      <template v-if="!egoActive">
         <span class="vf-crumb-count">{{ searchScope.matches }} match{{ searchScope.matches === 1 ? '' : 'es' }}</span>
         <span v-if="searchScope.related && showSearchContext" class="vf-crumb-count">
           +{{ searchScope.related }} related
@@ -2081,6 +2109,83 @@ watch(
         <Icon icon="lucide:x" class="h-3.5 w-3.5" />
         Clear
       </button>
+    </div>
+
+    <!-- Schrittweise auf- und zumachen. Bei 132 Nachbarn ist weder „alle" noch „vierzig" die
+         Antwort – die Frage ist, wieviel man gerade sehen WILL. Deshalb eine Stufenleiter statt
+         eines Schalters: jeder Schritt kostet genau ein Layout und ist ruecknehmbar. Die Chips
+         darunter sind die aufgeklappten Packages – dort steht der Rueckweg, weil ihr Aggregat
+         nach dem Aufklappen nicht mehr im Bild ist. -->
+    <div v-if="egoActive" class="vf-egobar">
+      <Icon icon="lucide:git-fork" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
+      <!-- Die Bilanz der Klasse: wieviel haengt dran, und wieviel davon steht als Karte im Bild. -->
+      <span class="vf-ego-label">
+        {{ egoLevel.relations }} relation{{ egoLevel.relations === 1 ? '' : 's' }} ·
+        {{ egoLevel.neighbours }} class{{ egoLevel.neighbours === 1 ? '' : 'es' }}
+      </span>
+      <span v-if="egoLevel.nodes.length" class="vf-ego-label vf-ego-label--muted">
+        {{ egoLevel.aggregatedClasses }} in {{ egoLevel.nodes.length }} package{{ egoLevel.nodes.length === 1 ? '' : 's' }}
+      </span>
+      <span
+        v-if="egoLevel.hiddenPackages"
+        class="vf-crumb-warn"
+        v-tip="{ title: `${egoLevel.hiddenPackages} more packages`, hint: `${egoLevel.hiddenRelations} further relations are not drawn — raise the step or open a package.` }"
+      >
+        <Icon icon="lucide:alert-triangle" class="h-3 w-3" />
+        +{{ egoLevel.hiddenPackages }}
+      </span>
+      <template v-if="egoLevel.neighbours > EGO_STEPS[0]">
+      <span class="vf-ego-sep" />
+      <div class="vf-ego-step">
+        <button
+          type="button"
+          class="vf-ego-btn"
+          :disabled="egoBudget <= egoSteps[0]"
+          v-tip="{ title: 'Show fewer', hint: 'One step down — the rest folds back into its packages.' }"
+          @click="stepEgo(-1)"
+        >
+          <Icon icon="lucide:minus" class="h-3.5 w-3.5" />
+        </button>
+        <span class="vf-ego-count">
+          <b>{{ egoLevel.cardCount }}</b>/{{ egoLevel.neighbours }}
+        </span>
+        <button
+          type="button"
+          class="vf-ego-btn"
+          :disabled="egoLevel.cardCount >= egoLevel.neighbours"
+          v-tip="{ title: 'Show more', hint: 'One step up — more neighbours become single cards.' }"
+          @click="stepEgo(1)"
+        >
+          <Icon icon="lucide:plus" class="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <!-- Die Stufen selbst: wer weiss, wieviel er sehen will, springt direkt hin. -->
+      <div class="vf-ego-ticks">
+        <button
+          v-for="s in egoSteps"
+          :key="s"
+          type="button"
+          class="vf-ego-tick"
+          :class="{ 'is-on': egoBudget === s }"
+          @click="egoBudget = s"
+        >{{ s === egoLevel.neighbours ? 'all' : s }}</button>
+      </div>
+      </template>
+      <template v-if="egoLevel.expandedPaths.length">
+        <span class="vf-ego-sep" />
+        <button
+          v-for="p in egoLevel.expandedPaths"
+          :key="p"
+          type="button"
+          class="vf-ego-chip"
+          v-tip="{ title: `Collapse ${p}`, hint: 'Folds these classes back into one aggregate node.' }"
+          @click="toggleEgoPackage(p)"
+        >
+          <Icon icon="lucide:package-open" class="h-3 w-3" />
+          {{ p }}
+          <Icon icon="lucide:x" class="h-3 w-3 opacity-60" />
+        </button>
+      </template>
     </div>
 
     <!-- Suche IM Bild (oben rechts, die einzige freie Ecke). Sie aendert den Ausschnitt nicht –
@@ -2573,6 +2678,122 @@ watch(
 }
 
 /* --- Ebenen-Navigation (Breadcrumb) ---------------------------------------------------- */
+/* --- Ego-Leiste: schrittweise auf- und zumachen ------------------------------------------
+ * Zweite Zeile unter der Such-Kopfzeile. Deckender Hintergrund ohne `backdrop-filter` (s.
+ * Stolperfalle „kein filter im Graphen") – die Breadcrumb darueber darf ihn haben, weil es sie
+ * genau einmal gibt; hier waere ein zweiter Filter-Layer ueber derselben Flaeche unnoetig. */
+.vf-egobar {
+  position: absolute;
+  top: 52px;
+  left: 10px;
+  z-index: 5;
+  display: flex;
+  max-width: calc(100% - 20px);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  padding: 4px 8px;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.08);
+}
+.vf-ego-label--muted {
+  opacity: 0.75;
+}
+.vf-ego-label {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+/* Der Zaehler steht ZWISCHEN den Knoepfen: „wieviel von wieviel" ist die Aussage, die Knoepfe
+   sind nur ihre beiden Richtungen. */
+.vf-ego-step {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  padding: 1px 2px;
+}
+.vf-ego-btn {
+  display: grid;
+  height: 1.25rem;
+  width: 1.25rem;
+  place-items: center;
+  border-radius: 5px;
+  color: var(--color-text-muted);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.vf-ego-btn:hover:not(:disabled) {
+  background: var(--color-surface-offset);
+  color: var(--color-text);
+}
+.vf-ego-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.vf-ego-count {
+  min-width: 3.25rem;
+  text-align: center;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+}
+.vf-ego-count b {
+  font-weight: 600;
+  color: var(--color-text);
+}
+/* Die Stufen als Skala: wer weiss, wieviel er sehen will, springt direkt hin. */
+.vf-ego-ticks {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.vf-ego-tick {
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  color: var(--color-text-muted);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.vf-ego-tick:hover {
+  background: var(--color-surface-offset);
+  color: var(--color-text);
+}
+.vf-ego-tick.is-on {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+.vf-ego-sep {
+  height: 1rem;
+  width: 1px;
+  background: var(--color-border);
+}
+/* Aufgeklapptes Package: der Chip IST der Rueckweg – sein Aggregatknoten ist ja verschwunden. */
+.vf-ego-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
+  background: var(--color-accent-soft);
+  padding: 1px 7px;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  color: var(--color-accent);
+  transition: background-color 0.15s ease;
+}
+.vf-ego-chip:hover {
+  background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+}
+
 .vf-breadcrumb {
   position: absolute;
   top: 10px;
