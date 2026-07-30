@@ -381,8 +381,10 @@ export class JavaService {
         savedIds.push(fileId);
       }
 
-      // Einmalig nach allen Schreibvorgaengen: Call-Edges global neu berechnen.
-      await this.recomputeAutoEdges(manager);
+      // Einmalig nach allen Schreibvorgaengen: Call-Edges global neu berechnen. Mit `jobId`, damit
+      // der Fortschrittsbalken auch diese Phase zeigt – bei einem Massen-Import ist sie der
+      // laengste Abschnitt nach dem Speichern.
+      await this.recomputeAutoEdges(manager, jobId);
     });
 
     // 6) KI-Zusammenfassung je geaenderter Version im Hintergrund nachtragen (blockiert die
@@ -944,7 +946,10 @@ export class JavaService {
   // wie es Klassen gibt (Aufraeumen s. recomputeAutoEdges) – er ist eine Beschleunigung, kein Zustand.
   private edgeParseCache = new Map<number, { hash: string; infos: JavaClassGraphInfo[] }>();
 
-  private async recomputeAutoEdges(manager: EntityManager): Promise<void> {
+  // `jobId` schaltet den Live-Fortschritt ein (derselbe SSE-Strom wie analyze-batch/Reset). Die
+  // Meldungen kommen aus dem Parse-Lauf, weil dort die Zeit vergeht – Kanten rechnen und schreiben
+  // sind danach Millisekunden. Ohne jobId aendert sich nichts (emit ignoriert null).
+  private async recomputeAutoEdges(manager: EntityManager, jobId?: string | null): Promise<void> {
     const files = await manager.getRepository(JavaFile).find();
 
     const definesMethod = new Map<string, Set<string>>(); // Klasse -> definierte Methoden
@@ -957,6 +962,7 @@ export class JavaService {
     for (const id of this.edgeParseCache.keys()) if (!liveIds.has(id)) this.edgeParseCache.delete(id);
 
     let scanned = 0;
+    this.progress.emit(jobId, { phase: 'edges', done: 0, total: files.length });
     for (const f of files) {
       // Der Parser ist der teure Teil dieser Funktion – und sie laeuft nach JEDEM Schreibvorgang
       // (analyze, analyze-batch, delete) einmal ueber die GESAMTE Codebasis. Gemessen ~6 ms je
@@ -976,10 +982,19 @@ export class JavaService {
           infos = []; // Parse-Fehler tolerieren (z. B. unvollstaendiger Code)
         }
         this.edgeParseCache.set(f.id, { hash, infos });
-        // Ein Parse-Lauf ueber tausende Dateien blockiert den Event-Loop komplett: waehrenddessen
-        // antwortet der Server auf NICHTS – auch nicht auf das Queue-Polling, das die Oberflaeche
-        // am Leben haelt. Dieselbe Regel wie in analyzeBatch (YIELD_EVERY).
-        if (++scanned % YIELD_EVERY === 0) await breathe();
+      }
+      // Melden und Luft holen gehoeren ZUSAMMEN und stehen ausserhalb des Cache-Zweigs:
+      //  * Ein Lauf ueber tausende Dateien blockiert den Event-Loop komplett – waehrenddessen
+      //    antwortet der Server auf NICHTS, auch nicht auf das Queue-Polling (Regel wie in
+      //    analyzeBatch, YIELD_EVERY).
+      //  * Und ein `emit` ohne freien Event-Loop erreicht niemanden: die SSE-Antwort wird erst
+      //    geschrieben, wenn der Stapel leer ist. Stand die Atempause nur im Cache-Miss-Zweig,
+      //    kamen bei warmem Cache ALLE Ereignisse erst nach getaner Arbeit an – also nie.
+      // Gezaehlt werden ALLE Dateien (auch die aus dem Cache), sonst stuende der Balken still,
+      // waehrend die Neuberechnung laengst durchlaeuft.
+      if (++scanned % YIELD_EVERY === 0) {
+        this.progress.emit(jobId, { phase: 'edges', done: scanned, total: files.length });
+        await breathe();
       }
       for (const info of infos) {
         classNames.add(info.class_name);
@@ -1000,6 +1015,10 @@ export class JavaService {
         parsed.push(info);
       }
     }
+
+    // Parse durch – ab hier ist es Rechnen und Schreiben (Millisekunden). Der Balken steht damit
+    // auf voll, waehrend der Rest laeuft, statt kurz vor Schluss haengenzubleiben.
+    this.progress.emit(jobId, { phase: 'edges', done: files.length, total: files.length });
 
     // Vererbung: Klasse -> Ober-Typen (extends + implements). Ein unqualifizierter Aufruf, den
     // die Klasse selbst nicht definiert, landet zuerst bei einem Vorfahren – nicht bei einer
@@ -1175,11 +1194,20 @@ export class JavaService {
   // Manueller Trigger: alle Auto-Call-Edges neu berechnen + persistieren. Sinnvoll nach
   // Massen-Imports, bei denen Kanten ueber mehrere Analyse-Laeufe hinweg evtl. unvollstaendig
   // sind. Manuelle/verworfene Kanten bleiben erhalten. Eigene Transaktion (kein Aufrufer-Kontext).
-  async recomputeEdges(): Promise<{ recomputed: true; count: number }> {
-    await this.ds.transaction(async (manager) => {
-      await this.recomputeAutoEdges(manager);
-    });
+  // Optionale `jobId` -> Live-Fortschritt ueber denselben SSE-Strom wie analyze-batch/Reset.
+  // `done` wird auch im Fehlerfall gemeldet: ein Balken, der ohne Abschluss stehenbleibt, ist
+  // schlimmer als gar keiner – der Client wuerde ewig auf das Ende warten.
+  async recomputeEdges(jobId?: string | null): Promise<{ recomputed: true; count: number }> {
+    try {
+      await this.ds.transaction(async (manager) => {
+        await this.recomputeAutoEdges(manager, jobId);
+      });
+    } catch (e) {
+      this.progress.emit(jobId, { phase: 'error', message: (e as Error)?.message || 'Recompute failed' });
+      throw e;
+    }
     const count = await this.ds.getRepository(JavaEdge).count({ where: { dismissed: 0 } });
+    this.progress.emit(jobId, { phase: 'done', done: count, total: count });
     return { recomputed: true, count };
   }
 

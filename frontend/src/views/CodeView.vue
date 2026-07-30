@@ -26,7 +26,7 @@ const { files, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFile
   useJavaAnalyzer()
 const { summary: queueSummary, enqueueMany, enqueueAllUnanalyzed, cancelJob, cancelAllJobs, progressFor, ensurePolling } =
   useJavaQueue()
-const { recomputeEdges, recomputing, resetEdges, edgeReturn, requestEdgeReturn, clearEdgeReturn } = useJavaGraph()
+const { recomputeEdges, recomputing, recomputeProgress, resetEdges, edgeReturn, requestEdgeReturn, clearEdgeReturn } = useJavaGraph()
 const { push, clearAll: clearNotifications } = useNotifications()
 // Verschiebbare Spaltenbreiten des 3-Spalten-Layouts (Drag-to-Resize + Reset).
 const {
@@ -431,6 +431,19 @@ function hl(name) {
   }
   return parts
 }
+
+// Fortschritt des Recompute in der Kopfzeile. `null`, solange nichts gemeldet wurde (der Balken
+// bleibt dann weg, statt bei 0 % zu stehen und Stillstand zu behaupten).
+const recomputePercent = computed(() => {
+  const p = recomputeProgress.value
+  if (!p || !p.total) return null
+  return Math.min(100, Math.round((p.done / p.total) * 100))
+})
+const recomputeTitle = computed(() => {
+  const p = recomputeProgress.value
+  if (!p || !p.total) return 'Recomputing class relations…'
+  return `Recomputing class relations – ${p.done} of ${p.total} classes read`
+})
 
 // Alle Auto-Call-Edges serverseitig neu berechnen + persistieren. Der Graph rendert aus dem
 // geteilten useJavaGraph()-edges-Ref und aktualisiert sich nach recomputeEdges() automatisch.
@@ -892,15 +905,35 @@ function onResetPanels() {
                  Codebasen (erster Lauf, kalter Parse-Cache) deutlich laenger als ein Klick-Feedback. -->
             <button
               type="button"
-              class="tool-btn"
+              class="tool-btn relative isolate overflow-hidden"
               :class="recomputing ? 'is-busy' : ''"
               :disabled="recomputing || !files.length"
-              :title="recomputing ? 'Recomputing class relations…' : 'Recompute all automatic class relations from the stored sources'"
+              :title="recomputing ? recomputeTitle : 'Recompute all automatic class relations from the stored sources'"
               aria-label="Recompute edges"
               @click="onRecomputeEdges"
             >
+              <!-- Fuellbalken hinter dem Inhalt – dieselbe Sprache wie der AI-Queue-Chip: der
+                   Knopf IST die Anzeige, kein zweites Element daneben. -->
+              <span
+                v-if="recomputePercent !== null"
+                class="absolute inset-y-0 left-0 -z-10 bg-[color-mix(in_srgb,var(--color-accent)_22%,transparent)] transition-[width] duration-300 ease-out"
+                :style="{ width: recomputePercent + '%' }"
+              />
               <Icon :icon="recomputing ? 'lucide:loader-2' : 'lucide:git-branch'" class="h-4 w-4 shrink-0" :class="recomputing ? 'animate-spin' : ''" />
-              <span v-if="recomputing" class="text-[0.8125rem] font-medium">Recomputing…</span>
+              <!-- Das Wort erst ab 2xl: darunter wuerde der wachsende Knopf die Kopfzeile in eine
+                   zweite Zeile drucken – ein Layoutsprung mitten im Lauf. Die Zahl daneben sagt
+                   ohnehin mehr, und der Tooltip nennt den ganzen Satz. -->
+              <span v-if="recomputing" class="hidden whitespace-nowrap text-[0.8125rem] font-medium 2xl:inline">
+                Recomputing<template v-if="!recomputeProgress">…</template>
+              </span>
+              <!-- Zahl wie Wort erst ab 2xl. Der Grund ist gemessen und nicht verhandelbar: bei
+                   1280 hat die Zeile null Reserve – schon +28 px (das blosse Prozent) drucken sie
+                   in eine zweite Zeile, und ein Layoutsprung mitten im Lauf ist teurer als die
+                   Zahl. Darunter traegt der Fuellbalken „es laeuft und wie weit", die Zahlen
+                   stehen im Tooltip. `tabular-nums`, damit die Breite nicht bei jedem Tick springt. -->
+              <span v-if="recomputeProgress" class="hidden shrink-0 font-mono text-2xs tabular-nums opacity-80 2xl:inline">
+                {{ recomputeProgress.done }}/{{ recomputeProgress.total }}
+              </span>
             </button>
             <button
               type="button"

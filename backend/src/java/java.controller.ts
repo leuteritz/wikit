@@ -49,10 +49,12 @@ export class JavaController {
 
   // Alle Auto-Call-Edges neu berechnen + persistieren (nach Massen-Imports). Statische Route ->
   // vor edges/:id, sonst faengt :id "recompute" ab.
+  // Optionale jobId im Body -> Live-Fortschritt ueber `analyze-progress/:jobId` (derselbe Strom
+  // wie analyze-batch und der Reset; der Client oeffnet ihn, bevor er hier anklopft).
   @Post('edges/recompute')
   @HttpCode(200)
-  recomputeEdges() {
-    return this.svc.recomputeEdges();
+  recomputeEdges(@Body() body: any) {
+    return this.svc.recomputeEdges(body?.jobId || null);
   }
 
   @Patch('edges/:id')

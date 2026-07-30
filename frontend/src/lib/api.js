@@ -150,7 +150,8 @@ export const api = {
   updateJavaEdge: (id, data) => http('PATCH', `/java/edges/${id}`, data),
   deleteJavaEdge: (id) => http('DELETE', `/java/edges/${id}`),
   // Alle Auto-Call-Edges neu berechnen + persistieren (nach Massen-Imports).
-  recomputeJavaEdges: () => http('POST', '/java/edges/recompute'),
+  // `jobId` (optional) schaltet den Fortschritts-Stream ein (javaAnalyzeProgressUrl).
+  recomputeJavaEdges: (jobId = null) => http('POST', '/java/edges/recompute', { jobId }),
 
   summarizeJavaMethod: (id, data) => http('POST', `/java/methods/${id}/summarize`, data),
   linkJavaArticle: (id, data) => http('PUT', `/java/files/${id}`, data),

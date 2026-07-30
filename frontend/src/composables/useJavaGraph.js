@@ -9,6 +9,10 @@ import { api } from '../lib/api.js'
 const edges = ref([])
 const loading = ref(false)
 const recomputing = ref(false)
+// Fortschritt des laufenden Recompute: { done, total } | null. Der erste Lauf nach einem Import
+// parst jede Klasse einmal (der Cache im Backend ist dann kalt) und dauert bei einigen tausend
+// Klassen Minuten – ein Spinner ohne Zahl ist da nicht von „haengt" zu unterscheiden.
+const recomputeProgress = ref(null)
 const error = ref('')
 
 // Aktuell „aufleuchtende" Call-Edge: gesetzt, wenn im Code-Tab (JavaClassDetail) ein Methodenname
@@ -81,9 +85,37 @@ async function fetchEdges() {
 // Alle Auto-Call-Edges im Backend neu berechnen + persistieren, danach neu laden.
 async function recomputeEdges() {
   recomputing.value = true
+  recomputeProgress.value = null
   error.value = ''
+  // Fortschritts-Stream wie bei analyze-batch/Reset: Client erzeugt die jobId, oeffnet den Strom
+  // und schickt sie mit. Reine Zugabe – faellt der Stream aus (Proxy, alter Server), laeuft die
+  // Neuberechnung unveraendert weiter, nur ohne Zahlen.
+  const jobId = `e${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+  let es = null
   try {
-    const res = await api.recomputeJavaEdges()
+    es = new EventSource(api.javaAnalyzeProgressUrl(jobId))
+    es.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data)
+        // Nur die Kanten-Phase zaehlt hier; 'done' beendet die Anzeige (die Zahl darin ist die
+        // Kantenzahl, nicht die Klassenzahl – sie in denselben Balken zu kippen waere ein Sprung).
+        if (msg?.phase === 'edges') recomputeProgress.value = { done: msg.done ?? 0, total: msg.total ?? 0 }
+        else if (msg?.phase === 'done' || msg?.phase === 'error') recomputeProgress.value = null
+      } catch {
+        /* unlesbares Event ignorieren */
+      }
+    }
+    es.onerror = () => {}
+    // Kurz warten, bis die Verbindung steht – sonst geht der erste Tick (0/total) verloren.
+    await new Promise((resolve) => {
+      es.addEventListener('open', resolve, { once: true })
+      setTimeout(resolve, 400)
+    })
+  } catch {
+    es = null
+  }
+  try {
+    const res = await api.recomputeJavaEdges(jobId)
     await fetchEdges()
     // --- Debug (F12): zeigt, was die Neuberechnung erzeugt hat ---
     try {
@@ -115,7 +147,9 @@ async function recomputeEdges() {
     error.value = e.message
     throw e
   } finally {
+    es?.close()
     recomputing.value = false
+    recomputeProgress.value = null
   }
 }
 
@@ -124,6 +158,7 @@ export function useJavaGraph() {
     edges,
     loading,
     recomputing,
+    recomputeProgress,
     error,
     highlightedCall,
     setHighlightedCall(payload) {
