@@ -1240,6 +1240,15 @@ function applyHint(prefix) {
   findField.value?.focus()
 }
 
+// Tastatur-Zugriff von aussen (CodeView routet die Kuerzel – EIN Handler, EINE Regel).
+// Bewusst Methoden statt eines Props: „fokussiere jetzt" ist ein Ereignis, kein Zustand; als
+// Prop braeuchte es einen Zaehler wie bei `focusToken`, nur um dasselbe zweimal ausloesen zu koennen.
+function focusFind() {
+  findField.value?.focus()
+  findField.value?.select()
+}
+defineExpose({ focusFind, fitToView: () => fitView({ padding: 0.18, maxZoom: 1.15, duration: 200 }), drillUp })
+
 // Canvas-Raster: ein einzelnes Linienraster, das mit dem Viewport wandert und beim Pannen
 // Orientierung gibt. Deckkraft so gewaehlt, dass es als Gefuege lesbar bleibt, ohne mit den
 // Knoten zu konkurrieren. Feste rgba-Werte statt color-mix: die Farbe landet als SVG-Attribut,

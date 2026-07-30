@@ -23,6 +23,7 @@ import JavaDetectedClasses from '../components/java/JavaDetectedClasses.vue'
 import { Icon } from '../lib/icons.js'
 import { detectJavaClasses } from '../lib/javaDetect.js'
 import { formatEta, formatDuration } from '../lib/format.js'
+import { isTypingTarget } from '../lib/shortcuts.js'
 
 const { files, loading: filesLoading, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFileId, lastTargetLine, lastTargetEndLine, lastSearchQuery, lastSearchOpts, deleteFile, resetAll } =
   useJavaAnalyzer()
@@ -49,6 +50,11 @@ const {
 const source = ref('')
 const filename = ref('')
 const inputMode = ref('paste') // 'paste' = Editor | 'file' = .java-Datei(en) hochladen
+// Ziele der Tastenkuerzel: Filterfeld (/), Graph (0, Alt+←, Ctrl+Shift+F) und das Klassen-Panel
+// (Ctrl+F). Sie liegen hier, weil CodeView die Kuerzel routet – s. onKeydown.
+const filterInput = ref(null)
+const graphRef = ref(null)
+const detailRef = ref(null)
 const selectedFileId = ref(null)
 const activeTargetLine = ref(null) // Ziel-Quellzeile fuer das Detail-Panel (Such-Sprung)
 const activeTargetEndLine = ref(null) // Ziel-End-Zeile -> markiert den gesamten Methodenbereich
@@ -201,6 +207,47 @@ function onKeydown(e) {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && showNew.value && !analyzing.value && !pendingConflicts.value) {
     e.preventDefault()
     analyze()
+    return
+  }
+
+  const mod = e.ctrlKey || e.metaKey
+  const key = (e.key || '').toLowerCase()
+  const typing = isTypingTarget(document.activeElement)
+
+  // --- Suchen: EINE Regel, an EINER Stelle ----------------------------------------------------
+  // Ctrl+F trifft, was im Blick ist: ist eine Klasse offen, deren Quelltext; sonst den Graphen.
+  // Ctrl+Shift+F meint immer den Graphen. `preventDefault` schaltet dabei Chromes eigene Suche ab –
+  // die faende im virtualisierten Editor ohnehin nur den sichtbaren Ausschnitt und im Graphen
+  // (SVG/Canvas-Karten) praktisch nichts.
+  if (mod && key === 'f' && !e.altKey) {
+    const wantGraph = e.shiftKey || !detailRef.value?.isReady?.()
+    e.preventDefault()
+    if (wantGraph) graphRef.value?.focusFind?.()
+    else detailRef.value?.focusSearch?.()
+    return
+  }
+
+  if (typing || mod || e.altKey) {
+    // Alt+Pfeil-links geht eine Package-Ebene hoch – auch das nur, wenn niemand tippt.
+    if (!typing && e.altKey && !mod && e.key === 'ArrowLeft') {
+      e.preventDefault()
+      graphRef.value?.drillUp?.()
+    }
+    return
+  }
+
+  // `/` springt in den Klassenfilter (wie in GitHub/GitLab). Ohne Modifier – deshalb erst hier,
+  // hinter der Tipp-Pruefung.
+  if (e.key === '/') {
+    e.preventDefault()
+    filterInput.value?.focus()
+    filterInput.value?.select()
+    return
+  }
+  // `0` passt den Graphen ins Bild.
+  if (e.key === '0') {
+    e.preventDefault()
+    graphRef.value?.fitToView?.()
   }
 }
 
@@ -1222,9 +1269,10 @@ function onResetPanels() {
             <div class="relative min-w-0 flex-1">
               <Icon icon="lucide:search" class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]" />
               <input
+                ref="filterInput"
                 v-model="search"
                 type="text"
-                placeholder="Filter classes…"
+                placeholder="Filter classes…  /"
                 class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 pl-8 pr-7 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
               />
               <button
@@ -1397,6 +1445,7 @@ function onResetPanels() {
       <!-- Spalte 2: Graph -->
       <div class="min-h-[55vh] lg:min-h-0">
         <JavaDependencyGraph
+          ref="graphRef"
           :files="files"
           :selected-id="selectedFileId"
           :focus-path="graphFocusPath"
@@ -1443,6 +1492,7 @@ function onResetPanels() {
              Zurueck-Knopf darueber Platz belegt. -->
         <div class="min-h-0 flex-1">
           <JavaClassDetail
+            ref="detailRef"
             v-if="selectedFileId"
             :key="selectedFileId"
             :file-id="selectedFileId"

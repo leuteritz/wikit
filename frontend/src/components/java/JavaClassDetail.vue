@@ -480,25 +480,17 @@ function applyHandoffSearch() {
 }
 watch(() => props.handoffSearch, applyHandoffSearch)
 
-// Ctrl/Cmd+F im offenen Klassen-Panel: Suchfeld statt Browser-Suche (die faende nur den sichtbaren
-// Ausschnitt des virtualisierten Editors). Liegt der Fokus in einem ANDEREN Eingabefeld – etwa dem
-// Klassenfilter der linken Spalte –, bleibt das Kuerzel unangetastet.
-function onGlobalKey(e) {
-  if ((e.key || '').toLowerCase() !== 'f' || !(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return
-  if (!file.value) return
-  const el = document.activeElement
-  if (el && el !== searchInput.value && /^(input|textarea)$/i.test(el.tagName)) return
-  e.preventDefault()
-  focusSearch()
-}
+// Quelltext-Suche fokussieren (Ctrl/Cmd+F). Der Tastendruck selbst wird NICHT hier abgefangen:
+// die Regel „offene Klasse zuerst, sonst der Graph" braucht beide Seiten und liegt deshalb in
+// CodeView – sonst entscheiden zwei window-Listener dasselbe und man kann nicht mehr sagen, welcher
+// gewinnt. Hier steht nur, was passiert, wenn die Entscheidung auf dieses Panel faellt.
 async function focusSearch() {
   tab.value = 'source'
   await nextTick()
   searchInput.value?.focus()
   searchInput.value?.select()
 }
-onMounted(() => window.addEventListener('keydown', onGlobalKey))
-onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKey))
+defineExpose({ focusSearch, isReady: () => !!file.value })
 
 // Klassenwechsel: die Suche gehoerte zur vorherigen Datei.
 watch(() => props.fileId, () => {
