@@ -30,6 +30,15 @@ const highlightedDef = ref(null)
 // Vue Flow neu geschrieben werden (bei einigen hundert Kanten sichtbar traege).
 const hoveredNode = ref(null)
 
+// Identitaetsfarbe je Nachbar des gehoverten Knotens: `Map<nodeId, CSS-Farbe>` | null.
+// Ein Hub hat schnell ein Dutzend Nachbarn, und bisher trugen alle Linien dorthin dieselbe
+// Art-Farbe (call/uses/import) – welche Linie zu welcher Karte gehoert, war in einem dichten Feld
+// nicht mehr abzulesen. Die Karte am Ende einer Linie und die Linie selbst tragen deshalb dieselbe
+// Farbe. Berechnet wird sie EINMAL beim Betreten des Knotens (der Graph kennt die Nachbarschaft,
+// s. `neighbourPalette` in JavaDependencyGraph) und liegt aus demselben Grund hier wie
+// `hoveredNode`: ManagedEdge liest sie selbst, statt dass der Kanten-Store neu geschrieben wird.
+const hoverPalette = ref(null)
+
 // Gegenstueck fuer die KANTE unter der Maus: `{ id, sourceId, targetId, color }` | null.
 // Eine Kante ist eine Aussage ueber ZWEI Klassen – wer sie ansieht, will wissen, welche beiden.
 // Deshalb hebt der Graph beim Hover die Linie UND ihre beiden Endpunkte hervor und daempft den
@@ -154,8 +163,12 @@ export function useJavaGraph() {
     },
     // --- Hover-Fokus (Graph) ------------------------------------------------------------------
     hoveredNode,
-    setHoveredNode(nodeId) {
+    hoverPalette,
+    // Palette und Knoten immer zusammen setzen: eine Farbzuordnung ohne den Knoten, zu dem sie
+    // gehoert, waere ein Zustand, den niemand mehr aufloest.
+    setHoveredNode(nodeId, palette = null) {
       hoveredNode.value = nodeId
+      hoverPalette.value = nodeId ? palette : null
     },
     hoveredEdge,
     setHoveredEdge(payload) {

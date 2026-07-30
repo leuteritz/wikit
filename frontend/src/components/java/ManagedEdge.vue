@@ -93,7 +93,22 @@ const d = computed(() => props.data || {})
 // Zeigt die Maus auf einen Knoten, bleiben nur dessen eigene Kanten stehen; alles andere faellt
 // fast auf null. Der Zustand kommt aus dem Composable, NICHT ueber `data`: sonst muesste der
 // Parent bei jeder Mausbewegung saemtliche Kanten neu in den Vue-Flow-Store schreiben.
-const { hoveredNode, hoveredEdge, setHoveredEdge, clearHoveredEdge, graphQuery, graphHitNodes } = useJavaGraph()
+const { hoveredNode, hoverPalette, hoveredEdge, setHoveredEdge, clearHoveredEdge, graphQuery, graphHitNodes } =
+  useJavaGraph()
+
+// Knoten-Hover: die Linie traegt die Identitaetsfarbe des Nachbarn an ihrem ANDEREN Ende – genau
+// die Farbe, die dort auch die Karte traegt (Palette: `neighbourPalette` in JavaDependencyGraph).
+// Vorher trugen alle Linien eines Hubs dieselbe Art-Farbe und liefen im dichten Feld ineinander;
+// welche Linie an welcher Karte endet, war nicht mehr zu sehen. Die Kantenart geht dabei nicht
+// verloren: sie steckt in der Strichform (durchgezogen = call, gestrichelt = uses/import), und die
+// Faerbung gilt nur, solange die Maus steht.
+const neighbourColor = computed(() => {
+  const h = hoveredNode.value
+  const palette = hoverPalette.value
+  if (!h || !palette) return null
+  const other = d.value.sourceId === h ? d.value.targetId : d.value.targetId === h ? d.value.sourceId : null
+  return other ? palette.get(other) || null : null
+})
 
 // --- Suche im Graphen ---------------------------------------------------------------------------
 // Die Kante prueft sich selbst (statt dass der Parent bei jedem Tastendruck den Kanten-Store neu
@@ -115,7 +130,10 @@ const findDimmed = computed(() => !!findQuery.value && !isFindHit.value)
 // Die Linie selbst ist 2 px schmal und damit kaum zu treffen. Darum liegt ein unsichtbarer,
 // breiter Pfad darueber, der nur die Maus einsammelt (`me-hit`) – dasselbe Muster, das Vue Flow
 // intern fuer seine Standardkanten nutzt.
-const edgeColor = computed(() => d.value.edgeStyle?.stroke || 'var(--color-accent)')
+// Eine Quelle fuer Linie, Schein, Richtungspunkt und Label: steht die Maus auf einem Knoten, ist
+// das die Nachbarfarbe, sonst die Farbe der Kantenart.
+const kindColor = computed(() => d.value.edgeStyle?.stroke || 'var(--color-accent)')
+const edgeColor = computed(() => neighbourColor.value || kindColor.value)
 const isHovered = computed(() => hoveredEdge.value?.id === props.id)
 
 // Hover-ABSICHT, nicht blosse Beruehrung: wer die Maus quer ueber ein dichtes Kantenfeld zieht,
@@ -133,7 +151,10 @@ function onEdgeEnter() {
       id: props.id,
       sourceId: d.value.sourceId,
       targetId: d.value.targetId,
-      color: edgeColor.value,
+      // Bewusst die ART-Farbe: der Kanten-Hover ist ein eigener Zustand und faerbt seine beiden
+      // Endpunkte in der Farbe DIESER Kante – eine Nachbarfarbe aus einem gerade verlassenen
+      // Knoten-Hover wuerde hier nur nachhaengen.
+      color: kindColor.value,
     })
   }, HOVER_INTENT_MS)
 }
@@ -158,15 +179,21 @@ const focused = computed(() => (!!hoveredNode.value || !!hoveredEdge.value) && !
 const pathStyle = computed(() => {
   // Die Transition steht inline, nicht im <style>: BaseEdge rendert mehrere Wurzelelemente, an die
   // sich weder eine Klasse noch ein scoped-Selektor zuverlaessig haengen laesst.
-  const base = { transition: 'opacity 0.15s ease, stroke-width 0.15s ease', ...(d.value.edgeStyle || {}) }
+  const base = {
+    transition: 'opacity 0.15s ease, stroke-width 0.15s ease, stroke 0.15s ease',
+    ...(d.value.edgeStyle || {}),
+  }
   if (dimmed.value) return { ...base, opacity: 0.07 }
+  // Knoten-Hover: Identitaetsfarbe des Nachbarn statt der Art-Farbe (s. neighbourColor). Gilt auch
+  // im Suchmodus – Hover schlaegt Suche, dieselbe Vorrangregel wie bei der Daempfung.
+  const tint = neighbourColor.value ? { stroke: neighbourColor.value } : null
   // Direkt gehoverte Kante: kraeftiger als der blosse Nachbarschafts-Fokus. Der Schein kommt NICHT
   // von `filter: drop-shadow` (s. .me-glow unten), sondern von zwei breiteren Pfaden darunter.
   if (isHovered.value) return { ...base, opacity: 1, strokeWidth: (base.strokeWidth || 2) + 1.4 }
   // Suchtreffer: kraeftig wie eine gehoverte Kante, aber ohne deren Extra-Breite – bei zwanzig
   // Treffern gleichzeitig waere das ein Balkenbild.
-  if (isFindHit.value) return { ...base, opacity: 1, strokeWidth: (base.strokeWidth || 2) + 0.7 }
-  if (focused.value) return { ...base, opacity: 1, strokeWidth: (base.strokeWidth || 2) + 0.7 }
+  if (isFindHit.value) return { ...base, ...tint, opacity: 1, strokeWidth: (base.strokeWidth || 2) + 0.7 }
+  if (focused.value) return { ...base, ...tint, opacity: 1, strokeWidth: (base.strokeWidth || 2) + 0.7 }
   return base
 })
 
@@ -178,6 +205,10 @@ const pathStyle = computed(() => {
 // hoverte (stehen blieb nur, was einen eigenen Layer hat: Legende, Dock, Breadcrumb).
 // Zwei breitere, halbtransparente Pfade unter der Linie sehen praktisch gleich aus und sind
 // gewoehnliche Vektor-Zeichnungen ohne Zwischentextur.
+// Das Label sitzt an der Linie und ist damit der dritte Ort derselben Aussage – es traegt die
+// Nachbarfarbe mit, sonst bliebe genau in der Bildmitte ein neutral gerahmtes Kaestchen stehen.
+const tinted = computed(() => !!neighbourColor.value && !dimmed.value)
+
 const baseWidth = computed(() => Number(d.value.edgeStyle?.strokeWidth) || 2)
 const glowing = computed(() => isHovered.value || !!d.value.isHighlighted || isFindHit.value)
 // Nur die „aufleuchtende" Kante (Code-Tab-Klick) pulsiert – beim Hover waere Bewegung unruhig.
@@ -234,7 +265,12 @@ const pulsing = computed(() => !!d.value.isHighlighted && !isHovered.value)
   <EdgeLabelRenderer v-if="d.kind === 'aggregate'">
     <div
       class="me-label me-label--agg"
-      :class="{ 'me-label--dim': dimmed, 'me-label--hot': isHovered, 'me-label--find': isFindHit && !isHovered }"
+      :class="{
+        'me-label--dim': dimmed,
+        'me-label--hot': isHovered,
+        'me-label--find': isFindHit && !isHovered,
+        'me-label--tint': tinted,
+      }"
       :style="{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`, '--edge': edgeColor }"
       :title="`${d.count} class-to-class relation${d.count === 1 ? '' : 's'} bundled here — click to list them`"
       @mouseenter="onEdgeEnter"
@@ -278,6 +314,7 @@ const pulsing = computed(() => !!d.value.isHighlighted && !isHovered.value)
         'me-label--dim': dimmed,
         'me-label--hot': isHovered,
         'me-label--find': isFindHit && !isHovered,
+        'me-label--tint': tinted,
       }"
       :style="{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`, '--edge': edgeColor }"
       title="Show details"
@@ -432,6 +469,15 @@ const pulsing = computed(() => !!d.value.isHighlighted && !isHovered.value)
 .me-label--agg:hover {
   border-color: var(--color-thistle);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-thistle) 30%, transparent);
+}
+/* Knoten-Hover: das Label uebernimmt die Identitaetsfarbe seiner Kante – Linie, Beschriftung und
+   die Karte am anderen Ende sind damit eine Aussage. Bewusst schwaecher als `--hot` (kein Ring,
+   gemischter Rahmen): gehovert ist genau EINE Kante, im Nachbarschafts-Fokus stehen oft zwanzig,
+   und zwanzig leuchtende Kaesten waeren wieder das Bild, das der Fokus aufloesen soll. Steht NACH
+   `--agg`, damit auch das Aggregat-Label seine Nachbarfarbe traegt. */
+.me-label--tint:not(.me-label--hot) {
+  border-color: color-mix(in srgb, var(--edge) 60%, var(--color-border));
+  color: var(--edge);
 }
 /* Kleiner Pfeil als Affordanz „hier geht es weiter" – erscheint erst beim Hover, damit das Label
    im Ruhezustand nur die Zahl zeigt. */

@@ -79,6 +79,7 @@ const {
   highlightedDef,
   clearHighlightedDef,
   hoveredNode,
+  hoverPalette,
   setHoveredNode,
   hoveredEdge,
   setHoveredEdge,
@@ -1152,9 +1153,38 @@ function isDimmed(nodeId) {
   if (he) return he.sourceId !== nodeId && he.targetId !== nodeId
   return false
 }
-// Endpunkt der gehoverten Kante -> Ring in DEREN Farbe (nicht in der Rollenfarbe): Linie, Label
-// und beide Karten tragen dieselbe Farbe und sind damit als eine Aussage lesbar.
-function edgeEndColor(nodeId) {
+// --- Identitaetsfarbe je Nachbar -------------------------------------------------------------
+// Sechs Farben aus derselben Familie, die im Edge-Panel die Methoden auseinanderhaelt (`--mc-*`,
+// s. lib/javaMethodColors.js). Bewusst kein siebter Farbraum: die Frage ist dieselbe – „welches
+// dieser gleichartigen Dinge ist welches?" – und die Tokens sind bereits fuer beide Themes gesetzt.
+const HOVER_COLORS = ['var(--mc-0)', 'var(--mc-1)', 'var(--mc-2)', 'var(--mc-3)', 'var(--mc-4)', 'var(--mc-5)']
+
+// Nachbarn eines Knotens reihum einfaerben – nach ihrer LAGE im Bild, nicht nach ihrer Id: bei mehr
+// als sechs Nachbarn wiederholen sich die Farben, und dann sollen die Wiederholungen moeglichst
+// weit auseinander liegen. Zwei gleichfarbige Linien direkt nebeneinander waeren genau die
+// Verwechslung, die die Faerbung aufloesen soll.
+function neighbourPalette(nodeId) {
+  const ns = neighbours.value.get(nodeId)
+  if (!ns?.size) return null
+  const pos = new Map(layout.value.nodes.map((n) => [n.id, n.position]))
+  const sorted = [...ns].sort((a, b) => {
+    const pa = pos.get(a) || { x: 0, y: 0 }
+    const pb = pos.get(b) || { x: 0, y: 0 }
+    return pa.x - pb.x || pa.y - pb.y
+  })
+  return new Map(sorted.map((id, i) => [id, HOVER_COLORS[i % HOVER_COLORS.length]]))
+}
+
+// Farbe, die eine Karte im Hover-Fokus traegt (Rahmen + Ring; der Streifen bleibt die ROLLE – was
+// eine Klasse im Netz ist, aendert sich durch einen Hover nicht). Zwei Faelle, eine Regel: die
+// Karte traegt die Farbe der Linie, die zu ihr fuehrt.
+// - Hover auf einer KANTE: ihre beiden Endpunkte in deren Farbe.
+// - Hover auf einem KNOTEN: jeder Nachbar in seiner Identitaetsfarbe, dieselbe wie die Linie
+//   dorthin. Der gehoverte Knoten selbst bleibt neutral – er ist der Bezugspunkt, nicht eines der
+//   unterschiedenen Dinge; eine siebte Farbe in der Mitte wuerde nur eine Zuordnung vortaeuschen.
+function focusColor(nodeId) {
+  const h = hoveredNode.value
+  if (h) return h === nodeId ? null : hoverPalette.value?.get(nodeId) || null
   const he = hoveredEdge.value
   if (!he || (he.sourceId !== nodeId && he.targetId !== nodeId)) return null
   return he.color || 'var(--color-accent)'
@@ -1172,7 +1202,9 @@ function onNodeEnter({ node }) {
     // Knoten schlaegt Kante: liegt die Maus auf einer Karte, ist die Karte gemeint. Ohne das
     // Zuruecksetzen blieben beide Hervorhebungen gleichzeitig stehen und wuerden sich widersprechen.
     setHoveredEdge(null)
-    setHoveredNode(id)
+    // Die Palette entsteht genau hier, einmal je Hover – nicht als computed pro Karte: sie haengt
+    // an der Nachbarschaft, und die aendert sich waehrend eines Hovers nicht.
+    setHoveredNode(id, id ? neighbourPalette(id) : null)
   }, NODE_HOVER_INTENT_MS)
 }
 function onNodeLeave() {
@@ -1689,11 +1721,11 @@ watch(
               'vf-card--match': data.isMatch,
               'vf-card--context': data.isContext,
               'vf-card--dim': isDimmed(`c:${data.fileId}`),
-              'vf-card--edge-end': !!edgeEndColor(`c:${data.fileId}`),
+              'vf-card--focus': !!focusColor(`c:${data.fileId}`),
               'vf-card--find': findNodeHitSet.has(`c:${data.fileId}`),
             },
           ]"
-          :style="{ '--pkg': data.color, '--edge': edgeEndColor(`c:${data.fileId}`) }"
+          :style="{ '--pkg': data.color, '--edge': focusColor(`c:${data.fileId}`) }"
         >
           <Handle type="target" :position="Position.Top" class="vf-handle" />
           <span class="vf-strip" />
@@ -1744,10 +1776,10 @@ watch(
           :class="{
             'vf-pkgcard--related': data.related,
             'vf-card--dim': isDimmed(`p:${data.path}`),
-            'vf-card--edge-end': !!edgeEndColor(`p:${data.path}`),
+            'vf-card--focus': !!focusColor(`p:${data.path}`),
             'vf-card--find': findNodeHitSet.has(`p:${data.path}`),
           }"
-          :style="{ '--pkg': data.color, '--edge': edgeEndColor(`p:${data.path}`) }"
+          :style="{ '--pkg': data.color, '--edge': focusColor(`p:${data.path}`) }"
           :title="data.related
             ? `${data.path || '(default)'} — outside this scope, ${data.relations} relation${data.relations === 1 ? '' : 's'}. Click to open.`
             : `${data.path} — click to open`"
@@ -2131,7 +2163,8 @@ watch(
           </div>
           <p class="legend-hint">
             Arrows point from the definition to the class using it.<br />
-            Hover a class to isolate its connections.
+            Hover a class to isolate its connections —<br />
+            each neighbour shares a colour with the line leading to it.
           </p>
 
           <div class="legend-head mt-1.5">Badges &amp; states</div>
@@ -3096,11 +3129,13 @@ watch(
 .vf-card--dim:hover {
   opacity: 0.14;
 }
-/* Endpunkt der gehoverten Kante. Ring + Schein in der FARBE DER KANTE (nicht der Rolle): so
-   gehoeren Linie, Label und die zwei Karten sichtbar zusammen, und man liest in einem Blick,
-   welche beiden Klassen die Beziehung eigentlich verbindet. Der Ring liegt aussen (box-shadow),
-   veraendert also keine Kartengroesse – ein Aufklappen beim Hover wuerde das Layout verspringen
-   lassen und die Maus womoeglich gleich wieder aus der Kante schieben. */
+/* Karte im Hover-Fokus. Ring + Schein in der FARBE DER LINIE, die zu ihr fuehrt (nicht der Rolle):
+   beim Kanten-Hover ist das die Farbe der Kante, beim Knoten-Hover die Identitaetsfarbe dieses
+   Nachbarn (s. focusColor/neighbourPalette im Script). So gehoeren Linie, Label und Karte sichtbar
+   zusammen, und bei einem Hub mit zwoelf Nachbarn ist ablesbar, welche Linie an welcher Karte
+   endet. Der Ring liegt aussen (box-shadow), veraendert also keine Kartengroesse – ein Aufklappen
+   beim Hover wuerde das Layout verspringen lassen und die Maus womoeglich gleich wieder aus der
+   Kante schieben. */
 /* Treffer der Graph-Suche: Gold-Familie wie jeder andere Suchtreffer in Wikit (`mark` in
    style.css, Treffer im Quelltext). Ring per box-shadow – eine Karte, die beim Suchen ihre Groesse
    aendert, verschoebe das ganze Layout. Die Rollenfarbe am Streifen bleibt sichtbar: WAS der Knoten
@@ -3113,8 +3148,8 @@ watch(
   z-index: 1;
 }
 
-.vf-card--edge-end,
-.vf-pkgcard.vf-card--edge-end {
+.vf-card--focus,
+.vf-pkgcard.vf-card--focus {
   border-color: var(--edge);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--edge) 45%, transparent),
     0 8px 22px color-mix(in srgb, var(--edge) 30%, transparent);
