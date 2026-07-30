@@ -78,7 +78,6 @@ const analyzingAll = ref(false) // Spinner fuer "Run AI"
 const pendingReset = ref(false) // Komplett-Reset-Dialog offen?
 const resetting = ref(false) // Spinner waehrend des Komplett-Resets
 const queueOpen = ref(false) // KI-Queue-Modal offen?
-const menuOpen = ref(false) // Overflow-Menue der Command-Bar
 
 // --- Fluechtige Rueckmeldungen ---------------------------------------------------------------
 // Laufen ueber den GLOBALEN Toast-Stapel (useNotifications + NotificationHost in App.vue). Vorher
@@ -184,10 +183,6 @@ watch(lastFileId, (v) => {
 // ohne technischen Grund – bei einem Import, der Minuten braucht, eine ziemlich teure.
 function onKeydown(e) {
   if (e.key === 'Escape') {
-    if (menuOpen.value) {
-      menuOpen.value = false
-      return
-    }
     if (showNew.value && !pendingConflicts.value) showNew.value = false
     return
   }
@@ -440,7 +435,6 @@ function hl(name) {
 // Alle Auto-Call-Edges serverseitig neu berechnen + persistieren. Der Graph rendert aus dem
 // geteilten useJavaGraph()-edges-Ref und aktualisiert sich nach recomputeEdges() automatisch.
 async function onRecomputeEdges() {
-  menuOpen.value = false
   try {
     const res = await recomputeEdges()
     setNotice(`${res?.count ?? 0} edge(s) recomputed.`)
@@ -697,7 +691,6 @@ async function onDetailClose(payload) {
 
 // --- Komplett-Reset: alle Klassen + Kanten + Queue dauerhaft entfernen ---
 function askReset() {
-  menuOpen.value = false
   pendingReset.value = true
 }
 function cancelReset() {
@@ -738,7 +731,6 @@ async function confirmReset() {
 }
 
 function onResetPanels() {
-  menuOpen.value = false
   resetPanels()
 }
 </script>
@@ -891,41 +883,45 @@ function onResetPanels() {
             Add code
           </button>
 
-          <!-- Overflow: selten genutzt + destruktiv, damit die Bar ruhig bleibt. -->
-          <div class="relative">
+          <!-- Werkzeuge der Ansicht als EINE Gruppe: sie standen hinter einem ⋯-Menue, das man
+               erst oeffnen musste, um zu sehen, was es ueberhaupt gibt. Sichtbar, aber als ein
+               Element gesetzt (ein Rahmen, Haarlinien dazwischen) – drei einzelne Knoepfe neben
+               „Run AI" und „Add code" haetten sechs gleichrangige Bedienelemente ergeben. -->
+          <div class="tool-group inline-flex h-9 items-stretch overflow-hidden rounded-lg border border-[var(--color-border)]">
+            <!-- Laeuft es, traegt der Knopf seinen Zustand als Text: der Lauf dauert bei grossen
+                 Codebasen (erster Lauf, kalter Parse-Cache) deutlich laenger als ein Klick-Feedback. -->
             <button
               type="button"
-              class="action-btn grid h-9 w-9 place-items-center rounded-lg border border-[var(--color-border)] text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
-              :class="menuOpen ? 'bg-[var(--color-surface-offset)] text-[var(--color-text)]' : ''"
-              title="More actions"
-              aria-label="More actions"
-              :aria-expanded="menuOpen"
-              @click="menuOpen = !menuOpen"
+              class="tool-btn"
+              :class="recomputing ? 'is-busy' : ''"
+              :disabled="recomputing || !files.length"
+              :title="recomputing ? 'Recomputing class relations…' : 'Recompute all automatic class relations from the stored sources'"
+              aria-label="Recompute edges"
+              @click="onRecomputeEdges"
             >
-              <Icon icon="lucide:more-horizontal" class="h-4 w-4" />
+              <Icon :icon="recomputing ? 'lucide:loader-2' : 'lucide:git-branch'" class="h-4 w-4 shrink-0" :class="recomputing ? 'animate-spin' : ''" />
+              <span v-if="recomputing" class="text-[0.8125rem] font-medium">Recomputing…</span>
             </button>
-            <!-- Klick-ausserhalb faengt ein transparenter Backdrop ab (kein globaler Listener). -->
-            <div v-if="menuOpen" class="fixed inset-0 z-40" @click="menuOpen = false" />
-            <Transition name="pop">
-              <div
-                v-if="menuOpen"
-                class="absolute right-0 top-11 z-50 w-60 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1 shadow-xl"
-              >
-                <button type="button" class="menu-item" :disabled="recomputing || !files.length" @click="onRecomputeEdges">
-                  <Icon :icon="recomputing ? 'lucide:loader-2' : 'lucide:git-branch'" class="h-4 w-4 shrink-0" :class="recomputing ? 'animate-spin' : ''" />
-                  <span class="flex-1 text-left">Recompute edges</span>
-                </button>
-                <button type="button" class="menu-item" :disabled="!isWide || !panelsDirty" @click="onResetPanels">
-                  <Icon icon="lucide:layout-grid" class="h-4 w-4 shrink-0" />
-                  <span class="flex-1 text-left">Reset layout</span>
-                </button>
-                <div class="my-1 h-px bg-[var(--color-border)]" />
-                <button type="button" class="menu-item menu-item--danger" :disabled="resetting || !files.length" @click="askReset">
-                  <Icon icon="lucide:trash-2" class="h-4 w-4 shrink-0" />
-                  <span class="flex-1 text-left">Delete all data</span>
-                </button>
-              </div>
-            </Transition>
+            <button
+              type="button"
+              class="tool-btn"
+              :disabled="!isWide || !panelsDirty"
+              :title="panelsDirty ? 'Reset the three panels to their default widths' : 'Panel widths are already at their default'"
+              aria-label="Reset layout"
+              @click="onResetPanels"
+            >
+              <Icon icon="lucide:layout-grid" class="h-4 w-4 shrink-0" />
+            </button>
+            <button
+              type="button"
+              class="tool-btn tool-btn--danger"
+              :disabled="resetting || !files.length"
+              title="Delete every analyzed class, relation and queue entry"
+              aria-label="Delete all data"
+              @click="askReset"
+            >
+              <Icon :icon="resetting ? 'lucide:loader-2' : 'lucide:trash-2'" class="h-4 w-4 shrink-0" :class="resetting ? 'animate-spin' : ''" />
+            </button>
           </div>
         </div>
       </div>
@@ -1661,22 +1657,39 @@ function onResetPanels() {
 }
 
 /* Eintraege des Overflow-Menues (gleiche Geometrie, Farbe unterscheidet nur die Gefahr). */
-.menu-item {
-  @apply flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[0.8125rem] font-medium transition;
+/* --- Werkzeug-Gruppe der Command-Bar --------------------------------------------------- *
+ * Ein Rahmen, Haarlinien dazwischen: die drei Aktionen lesen sich als EIN Element und nicht
+ * als drei weitere Knoepfe neben den Primaeraktionen. Die Trennlinie sitzt an den Knoepfen
+ * (border-left ab dem zweiten), damit die Gruppe ohne Zusatz-Markup auskommt. */
+.tool-btn {
+  @apply inline-flex items-center gap-2 px-2.5 transition;
+  color: var(--color-text-muted);
+}
+.tool-btn + .tool-btn {
+  border-left: 1px solid var(--color-border);
+}
+.tool-btn:hover:not(:disabled) {
+  background: var(--color-surface-offset);
   color: var(--color-text);
 }
-.menu-item:hover:not(:disabled) {
-  background: var(--color-surface-offset);
-}
-.menu-item:disabled {
+.tool-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
-.menu-item--danger {
-  color: var(--color-danger);
+/* Laufender Vorgang: der Knopf traegt den Akzent, solange er arbeitet – „disabled + grau" sieht
+   aus wie „geht nicht", nicht wie „laeuft gerade". */
+.tool-btn.is-busy,
+.tool-btn.is-busy:disabled {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  opacity: 1;
+  cursor: progress;
 }
-.menu-item--danger:hover:not(:disabled) {
+/* Destruktiv erst beim Hover: in Ruhe ist sie so gedaempft wie ihre Nachbarn, weil Rot als
+   Dauerzustand in der Kopfzeile eine Warnung waere, die niemanden mehr erreicht. */
+.tool-btn--danger:hover:not(:disabled) {
   background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+  color: var(--color-danger);
 }
 
 /* --- Package-Baum: Einrueckung ueber echte Fuehrungslinien statt padding-left ---------- *
