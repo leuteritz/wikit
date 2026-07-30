@@ -972,6 +972,33 @@ export class JavaService {
       }
     }
 
+    // Vererbung: Klasse -> Ober-Typen (extends + implements). Ein unqualifizierter Aufruf, den
+    // die Klasse selbst nicht definiert, landet zuerst bei einem Vorfahren – nicht bei einer
+    // beliebigen anderen Klasse, die zufaellig denselben Methodennamen traegt.
+    const superTypes = new Map<string, Set<string>>();
+    for (const info of parsed) {
+      let s = superTypes.get(info.class_name);
+      if (!s) {
+        s = new Set();
+        superTypes.set(info.class_name, s);
+      }
+      for (const t of info.superTypes || []) s.add(t);
+    }
+    // Kette hochlaufen, mit Besuchsmarkierung: zyklische Vererbung gibt es in gueltigem Java nicht,
+    // in halb analysiertem Bestand aber sehr wohl (zwei gleichnamige Klassen aus zwei Paketen).
+    const resolveInherited = (A: string, m: string): string | null => {
+      const seen = new Set<string>([A]);
+      const stack = [...(superTypes.get(A) || [])];
+      while (stack.length) {
+        const s = stack.pop() as string;
+        if (!s || seen.has(s)) continue;
+        seen.add(s);
+        if (definesMethod.get(s)?.has(m)) return s;
+        for (const up of superTypes.get(s) || []) stack.push(up);
+      }
+      return null;
+    };
+
     const edges = new Map<
       string,
       { source: string; target: string; method: string | null; confidence: number; kind: string }
@@ -1021,8 +1048,38 @@ export class JavaService {
             pairHasCall.add(`${A}\u0000${B}`);
             continue;
           }
-          // LOW-Fallback: unqualifizierter Aufruf, Methode in genau einer anderen Klasse.
+          // Unqualifizierter Aufruf (`m(…)`, `this.m(…)`, `super.m(…)`) – in Javas Reihenfolge
+          // aufloesen, statt sofort zu raten. Vorher sprang die Berechnung direkt zur Heuristik
+          // und erzeugte damit Kanten fuer Aufrufe, die die Klasse selbst beantwortet.
           if (inv.receiver === null) {
+            // 1. Eigene Methode: ein unqualifizierter Aufruf bindet in Java IMMER zuerst an die
+            //    eigene Klasse – dann gibt es hier gar keine Beziehung nach draussen.
+            //    `super.m()` meint ausdruecklich die Oberklasse und ist ausgenommen.
+            if (!inv.viaSuper && definesMethod.get(A)?.has(m)) continue;
+            // 2. Geerbt: der Vorfahre, der `m` definiert. Kein Raten – das steht im Code.
+            const inherited = resolveInherited(A, m);
+            if (inherited) {
+              put(A, inherited, m, 1.0, 'call');
+              pairHasCall.add(`${A}\u0000${inherited}`);
+              continue;
+            }
+            // `super.m()` ohne analysierten Vorfahren: das Ziel ist bekannt (die Oberklasse), nur
+            // nicht vorhanden. Eine geratene Kante waere hier nachweislich falsch.
+            if (inv.viaSuper) continue;
+            // 3. Statischer Import – der einzige legale Weg zu einer FREMDEN Klasse ohne Empfaenger.
+            const imported = info.staticImports?.[m];
+            const target =
+              imported && classNames.has(imported)
+                ? imported
+                : (info.staticWildcardTypes || []).find((c) => definesMethod.get(c)?.has(m)) || null;
+            if (target) {
+              put(A, target, m, 1.0, 'call');
+              pairHasCall.add(`${A}\u0000${target}`);
+              continue;
+            }
+            // 4. Rest: Methode in genau EINER anderen Klasse -> geraten, LOW („Please review").
+            //    Bleibt drin, weil Vererbung auch ueber NICHT analysierte Klassen laeuft
+            //    (Framework-Basisklassen) und der Treffer dann oft stimmt – aber eben nur oft.
             const defs = methodToClasses.get(m);
             if (defs) {
               const others = [...defs].filter((c) => c !== A);

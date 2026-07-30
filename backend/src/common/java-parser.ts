@@ -73,6 +73,10 @@ export interface JavaInvocation {
   method: string;
   receiver: string | null;
   receiverIsNew: boolean; // true bei `new Type().m()` -> receiver ist der Typ
+  // true bei `super.m()`. Steht wie `this.m()` ohne aufloesbaren Empfaenger da, meint aber das
+  // GEGENTEIL: nicht die eigene Klasse, sondern ausdruecklich die Oberklasse. Ohne diese
+  // Unterscheidung waere ein `super.m()` in einer ueberschreibenden Methode ein Selbstaufruf.
+  viaSuper: boolean;
   line: number;
 }
 
@@ -91,6 +95,15 @@ export interface JavaClassGraphInfo {
   // lokale Variablen-/Rueckgabetypen + `new X()`. Basis fuer `uses`-Kanten (Typ-Bezug
   // ohne Methoden-Treffer), gegen die geladenen Klassennamen gefiltert in der Neuberechnung.
   referencedTypes: Set<string>;
+  // Ober-Typen (extends + implements, einfache Namen). Ein unqualifizierter Aufruf, den die
+  // Klasse selbst nicht definiert, kann GEERBT sein – dann ist der Vorfahre das Ziel und nichts
+  // zu raten.
+  superTypes: string[];
+  // Statische Imports der Kompilationseinheit: Methodenname -> Klasse (`import static X.m`) bzw.
+  // Klassen aus `import static X.*`. Sie sind der EINZIGE Weg, auf dem ein unqualifizierter Aufruf
+  // legal in einer fremden Klasse landet – ohne sie ist jede solche Kante geraten.
+  staticImports: Record<string, string>;
+  staticWildcardTypes: string[];
 }
 
 // Object-Methoden sind nie ein Kanten-Trigger: gemeinsames Ueberschreiben von
@@ -774,6 +787,21 @@ function definedMethodNames(typeNode: any): Set<string> {
   return names;
 }
 
+// Ober-Typen eines Typs als einfache Namen: `extends` (Klasse/Interface) + `implements`.
+// `firstTypeName` je Listeneintrag, NICHT `findAll(node,'classType')` ueber den ganzen Knoten:
+// `extends Base<String>` enthaelt `String` als verschachtelten classType und der waere sonst ein
+// Vorfahre. Generics brechen in `firstTypeName` ohnehin am `<` ab.
+function superTypeNames(typeNode: any): string[] {
+  const names: string[] = [];
+  const ext = findFirst(typeNode, 'classExtends') || findFirst(typeNode, 'interfaceExtends');
+  const extList = ext ? findAll(ext, 'interfaceType') : [];
+  if (extList.length) for (const t of extList) names.push(firstTypeName(t));
+  else if (ext) names.push(firstTypeName(ext)); // `extends Base` (Klasse) hat keine Liste
+  const impl = findFirst(typeNode, 'classImplements');
+  if (impl) for (const t of findAll(impl, 'interfaceType')) names.push(firstTypeName(t));
+  return names.filter(Boolean);
+}
+
 // (Bezeichner -> einfacher Typ) aus Feld-Deklarationen des Typs.
 function collectFields(typeNode: any): Record<string, string> {
   const fields: Record<string, string> = {};
@@ -879,11 +907,15 @@ function extractInvocations(mNode: any): JavaInvocation[] {
 
     let receiver: string | null = null;
     let receiverIsNew = false;
+    let viaSuper = false;
 
     const dot = toks[k - 2];
     if (dot && dot.image === '.') {
       const r = toks[k - 3];
-      if (r && isIdent(r)) {
+      if (r && r.image === 'super') {
+        // `super.m()`: kein aufloesbarer Bezeichner, aber ausdruecklich NICHT die eigene Klasse.
+        viaSuper = true;
+      } else if (r && isIdent(r)) {
         // Nur EINFACHE Empfaenger (recv.m()), keine Ketten a.b.m() (mehrdeutig).
         const before = toks[k - 4];
         if (!before || before.image !== '.') {
@@ -900,10 +932,10 @@ function extractInvocations(mNode: any): JavaInvocation[] {
           receiverIsNew = true;
         }
       }
-      // r.image === 'this'/'super' -> Selbstaufruf, receiver bleibt null
+      // r.image === 'this' -> Selbstaufruf, receiver bleibt null
     }
 
-    invocations.push({ method, receiver, receiverIsNew, line: nameTok.startLine ?? 1 });
+    invocations.push({ method, receiver, receiverIsNew, viaSuper, line: nameTok.startLine ?? 1 });
   }
   return invocations;
 }
@@ -912,6 +944,21 @@ function extractInvocations(mNode: any): JavaInvocation[] {
 // je Methode Scope + erkannte Aufrufe). Basis fuer die globale Kanten-Neuberechnung.
 export function parseJavaForEdges(source: string): JavaClassGraphInfo[] {
   const cst: any = parse(source);
+
+  // Statische Imports der Kompilationseinheit (gelten fuer JEDEN Typ darin).
+  const staticImports: Record<string, string> = {};
+  const staticWildcardTypes: string[] = [];
+  for (const imp of findAll(cst, 'importDeclaration')) {
+    const toks = collectTokens(imp);
+    if (!toks.some((t) => t.tokenType?.name === 'Static')) continue;
+    const parts = dottedName(imp).split('.').filter(Boolean);
+    if (parts.length < 2) continue;
+    if (toks.some((t) => t.tokenType?.name === 'Star')) {
+      staticWildcardTypes.push(parts[parts.length - 1]); // import static X.*
+    } else {
+      staticImports[parts[parts.length - 1]] = parts[parts.length - 2]; // import static X.m
+    }
+  }
 
   const candidates = [
     ...findAll(cst, 'normalClassDeclaration'),
@@ -961,7 +1008,16 @@ export function parseJavaForEdges(source: string): JavaClassGraphInfo[] {
     // Instanziierungen ausserhalb von Methodenruempfen (Feld-Initialisierer etc.).
     for (const t of collectNewTypes(node)) referencedTypes.add(t);
 
-    infos.push({ class_name, definedMethods: definedMethodNames(node), fields, callers, referencedTypes });
+    infos.push({
+      class_name,
+      definedMethods: definedMethodNames(node),
+      fields,
+      callers,
+      referencedTypes,
+      superTypes: superTypeNames(node),
+      staticImports,
+      staticWildcardTypes,
+    });
   }
   return infos;
 }
