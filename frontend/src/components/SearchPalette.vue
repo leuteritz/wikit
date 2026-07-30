@@ -29,16 +29,22 @@ const emit = defineEmits(['close'])
 const router = useRouter()
 const { articles } = useArticles()
 const { run } = useSearch(articles)
-const { lastFileId, lastTargetLine, lastSearchQuery, lastSearchOpts } = useJavaAnalyzer()
+const { files, lastFileId, lastTargetLine, lastSearchQuery, lastSearchOpts } = useJavaAnalyzer()
 
 // Namenssuche ist billig, die Zeilensuche im Quelltext liest Quelltexte – daher zwei Stufen
 // (dieselbe Staffelung wie Klassenfilter/Graph in CodeView).
-const NAME_DEBOUNCE_MS = 180
-const CODE_DEBOUNCE_MS = 260
+const NAME_DEBOUNCE_MS = 140
+const CODE_DEBOUNCE_MS = 240
 const PREVIEW_DEBOUNCE_MS = 120
-// Artikel bleiben oben, damit ein Titel-Treffer weiterhin der erste Eintrag ist. Sind Codetreffer
-// da, reicht eine Handvoll: sonst steht der Code, um den es geht, unter zwanzig Artikeln.
-const ARTICLES_WITH_CODE = 5
+// Ab hier ist ein Warten sichtbar. Darunter blitzt eine Ladezeile nur auf und macht die Suche
+// unruhiger, als sie ist.
+const SPINNER_AFTER_MS = 250
+// Artikel stehen unter den Klassen: „wie heisst die Klasse" ist die haeufigste Frage an diese
+// Palette. Sind Codetreffer da, reicht eine Handvoll Artikel – sonst steht der Code, um den es
+// geht, unter zwanzig Artikeln.
+const ARTICLES_WITH_CODE = 4
+// Sofort-Treffer aus der geladenen Klassenliste. Mehr als das waeren Namen, die niemand mehr liest.
+const CLASS_LIMIT = 8
 
 const query = ref('')
 const active = ref(0)
@@ -75,6 +81,69 @@ const articleHits = computed(() => {
   return run(q)
 })
 
+// --- Klassennamen: sofort, ohne Request -----------------------------------------------------
+// Die Klassenliste liegt bereits im Store (App.vue laedt sie fuer den Nav-Zaehler) – jeder
+// Klassenname ist also schon da, waehrend Server-Anfragen noch unterwegs sind. Genau das war die
+// Beschwerde: „ich tippe einen Klassennamen und warte". Vier Stufen, damit der EXAKTE Name oben
+// steht und nicht irgendeine Klasse, die ihn zufaellig enthaelt.
+function rankClass(f, t, scope) {
+  const name = (f.class_name || '').toLowerCase()
+  const pkg = (f.package || '').toLowerCase()
+  if (scope === 'package') return pkg.includes(t) ? 2 : -1
+  if (name === t) return 0
+  if (name.startsWith(t)) return 1
+  if (name.includes(t)) return 2
+  // Der volle Pfad zaehlt nur ausserhalb von `c:` – dort ist ausdruecklich der Klassenname gemeint.
+  if (scope !== 'class' && (pkg.includes(t) || `${pkg}.${name}`.includes(t))) return 3
+  return -1
+}
+
+const localClasses = computed(() => {
+  const scope = parsed.value.scope
+  if (scope === 'method' || !wantsSymbols(scope)) return []
+  const t = term.value.trim().toLowerCase()
+  if (!t) return []
+  const hits = []
+  for (const f of files.value) {
+    const rank = rankClass(f, t, scope)
+    if (rank >= 0) hits.push({ f, rank })
+  }
+  hits.sort(
+    (a, b) =>
+      a.rank - b.rank ||
+      a.f.class_name.length - b.f.class_name.length ||
+      a.f.class_name.localeCompare(b.f.class_name),
+  )
+  return hits.slice(0, CLASS_LIMIT)
+})
+
+// Wartezeit sichtbar machen, statt sie nur zu haben: `elapsed` laeuft, solange irgendetwas
+// unterwegs ist. Auf einem Pi dauert die erste Quelltextsuche ueber ein paar tausend Klassen
+// spuerbar – ein Spinner ohne Zahl ist dann nicht von „haengt" zu unterscheiden.
+const nameLoading = ref(false)
+const elapsed = ref(0)
+let elapsedTimer = null
+let startedAt = 0
+
+function startClock() {
+  if (elapsedTimer) return
+  startedAt = Date.now()
+  elapsed.value = 0
+  elapsedTimer = setInterval(() => {
+    elapsed.value = Date.now() - startedAt
+  }, 100)
+}
+function stopClock() {
+  clearInterval(elapsedTimer)
+  elapsedTimer = null
+  elapsed.value = 0
+}
+// Der Spinner erscheint erst nach SPINNER_AFTER_MS: bei einer Antwort in 40 ms waere er ein
+// Aufblitzen, das die Suche unruhiger macht, als sie ist.
+const busy = computed(() => nameLoading.value || codeLoading.value)
+const showBusy = computed(() => busy.value && elapsed.value >= SPINNER_AFTER_MS)
+const elapsedLabel = computed(() => (elapsed.value >= 1000 ? `${(elapsed.value / 1000).toFixed(1)}s` : ''))
+
 let nameTimer = null
 let codeTimer = null
 let nameToken = 0
@@ -89,12 +158,23 @@ watch([term, () => parsed.value.scope, opts], ([q, scope]) => {
     codeResult.value = null
     codeError.value = ''
     codeLoading.value = false
+    nameLoading.value = false
+    stopClock()
     nameToken++
     codeToken++
     return
   }
 
-  if (wantsSymbols(scope)) {
+  // `c:` und `p:` beantwortet die geladene Klassenliste vollstaendig – kein Request, keine
+  // Wartezeit. Der Server traegt dort nur Treffer bei, die im QUELLTEXT stehen, und genau die
+  // sind bei einer Namensfacette nicht gemeint.
+  const needsNames = wantsSymbols(scope) && scope !== 'class' && scope !== 'package'
+  const needsCode = wantsCode(scope) && !patternError.value
+  if (needsNames || needsCode) startClock()
+  else stopClock()
+
+  if (needsNames) {
+    nameLoading.value = true
     nameTimer = setTimeout(async () => {
       const token = ++nameToken
       try {
@@ -103,13 +183,20 @@ watch([term, () => parsed.value.scope, opts], ([q, scope]) => {
         symbolHits.value = rows.filter((r) => r.type === 'java_file' || r.type === 'java_entity')
       } catch {
         if (token === nameToken) symbolHits.value = []
+      } finally {
+        if (token === nameToken) nameLoading.value = false
       }
     }, NAME_DEBOUNCE_MS)
   } else {
     symbolHits.value = []
+    nameLoading.value = false
   }
 
-  if (wantsCode(scope) && !patternError.value) {
+  if (needsCode) {
+    // Das alte Ergebnis gehoert zur alten Eingabe: es stehenzulassen zeigt Treffer mit
+    // Markierungen eines Begriffs, nach dem gerade nicht mehr gesucht wird. Die Ladezeile an
+    // seiner Stelle sagt stattdessen, was laeuft.
+    codeResult.value = null
     codeLoading.value = true
     codeTimer = setTimeout(async () => {
       const token = ++codeToken
@@ -132,6 +219,12 @@ watch([term, () => parsed.value.scope, opts], ([q, scope]) => {
   }
 }, { deep: true })
 
+// Uhr anhalten, sobald nichts mehr laeuft – nicht im `finally` der Anfragen, weil dort die je
+// ANDERE noch unterwegs sein kann.
+watch(busy, (running) => {
+  if (!running) stopClock()
+})
+
 // --- Eine Liste, EIN Index -----------------------------------------------------------------
 // Gruppen werden gerendert, navigiert wird flach: jeder Eintrag traegt seinen globalen Index
 // (`idx`), damit Tastatur und Maus nie auseinanderlaufen koennen.
@@ -144,6 +237,46 @@ const results = computed(() => {
   }
   const scope = parsed.value.scope
   const t = term.value.toLowerCase()
+
+  // 1. Klassennamen – ZUERST und ohne Request. Wer einen Klassennamen tippt, meint fast immer
+  //    diese Klasse; sie unter Artikeln und Codezeilen zu begraben (und dafuer auf zwei
+  //    Server-Antworten zu warten) war die eigentliche Beschwerde.
+  const localIds = new Set()
+  const classes = localClasses.value.map(({ f, rank }) => {
+    localIds.add(f.id)
+    return add({
+      kind: 'class',
+      exact: rank === 0,
+      fileId: f.id,
+      line: f.class_line || 1,
+      name: f.class_name,
+      package: f.package || '',
+      classType: f.stereotype || f.class_type || 'class',
+      methodCount: f.method_count ?? null,
+      fieldCount: f.field_count ?? null,
+    })
+  })
+
+  // 2. Was der Server zusaetzlich findet, sind Klassen, deren QUELLTEXT passt – kein Namenstreffer.
+  //    Sie stehen darunter und sagen das auch (`viaSource`), sonst sieht es wie ein zweiter
+  //    Namenstreffer aus.
+  const serverClasses =
+    scope === 'class' || scope === 'package' || scope === 'method'
+      ? []
+      : symbolHits.value
+          .filter((r) => r.type === 'java_file' && !localIds.has(r.fileId ?? r.id))
+          .slice(0, 6)
+          .map((r) =>
+            add({
+              kind: 'class',
+              viaSource: true,
+              fileId: r.fileId ?? r.id,
+              line: r.lineNumber || 1,
+              name: r.name,
+              package: r.package || '',
+              snippet: r.snippet || '',
+            }),
+          )
 
   const arts = articleHits.value
   const codeFilesRaw = codeResult.value?.files || []
@@ -165,19 +298,6 @@ const results = computed(() => {
     ),
   }))
 
-  // Die Namenssuche liefert Klassen und Methoden gemischt; die Praefixe schraenken auf genau eine
-  // Achse ein (`c:` will Klassennamen, nicht „Klasse, in deren Quelltext das Wort vorkommt").
-  const classes = symbolHits.value
-    .filter((r) => r.type === 'java_file')
-    .filter((r) => {
-      if (scope === 'class') return (r.name || '').toLowerCase().includes(t)
-      if (scope === 'package') return (r.package || '').toLowerCase().includes(t)
-      if (scope === 'method') return false
-      return true
-    })
-    .slice(0, 12)
-    .map((r) => add({ kind: 'class', item: r }))
-
   const methods =
     scope === 'class' || scope === 'package'
       ? []
@@ -186,7 +306,7 @@ const results = computed(() => {
           .slice(0, 12)
           .map((r) => add({ kind: 'method', item: r }))
 
-  return { flat, articleItems, codeFiles, classes, methods }
+  return { flat, classes, serverClasses, articleItems, codeFiles, methods }
 })
 
 const flatItems = computed(() => results.value.flat)
@@ -196,23 +316,35 @@ const counter = computed(() => {
   if (patternError.value) return 'Invalid regex'
   if (!term.value) return ''
   const parts = []
+  const names = results.value.classes.length + results.value.serverClasses.length
+  if (names) parts.push(`${names} ${names === 1 ? 'class' : 'classes'}`)
+  if (results.value.methods.length) parts.push(`${results.value.methods.length} methods`)
   const code = codeResult.value
-  if (code?.totalMatches) {
-    parts.push(`${code.files.length}${code.truncated ? '+' : ''} ${code.files.length === 1 ? 'class' : 'classes'}`)
-    parts.push(`${code.totalMatches} in code`)
-  }
-  const names = results.value.classes.length + results.value.methods.length
-  if (names) parts.push(`${names} names`)
+  if (code?.totalMatches) parts.push(`${code.totalMatches} in code`)
   if (results.value.articleItems.length) parts.push(`${results.value.articleItems.length} articles`)
   return parts.join(' · ')
 })
 
+// Wer wartet, will wissen worauf. Die Quelltextsuche ist die teure – sie wird deshalb beim Namen
+// genannt, statt „Searching…" zu behaupten, wenn nur noch sie laeuft.
+const busyLabel = computed(() => {
+  if (codeLoading.value && nameLoading.value) return 'Searching names and source…'
+  if (codeLoading.value) return 'Searching source code…'
+  if (nameLoading.value) return 'Searching names…'
+  return ''
+})
+
 // Was NICHT gelesen wurde, gehoert angeschrieben – ein stiller Deckel liest sich wie „mehr gibt es
-// nicht". Der Regex-Weg kann den FTS-Index nicht nutzen und scannt der Reihe nach.
+// nicht". Und auch der vollstaendige Lauf sagt es: „12 Treffer" beantwortet nicht, ob in 30 oder in
+// 2600 Klassen gesucht wurde. Der Regex-/Interpunktions-Weg kann den FTS-Index nicht nutzen und
+// liest der Reihe nach – deshalb steht dabei, welcher Weg es war.
 const scanNote = computed(() => {
   const code = codeResult.value
-  if (!code || !code.truncated) return ''
-  return `Stopped after ${code.scannedFiles} of ${code.totalFiles} classes — narrow the search for the rest.`
+  if (!code || !code.totalFiles) return ''
+  if (code.truncated) {
+    return `Stopped after ${code.scannedFiles} of ${code.totalFiles} classes — narrow the search for the rest.`
+  }
+  return `${code.scannedFiles} of ${code.totalFiles} classes read · ${code.mode === 'scan' ? 'full scan' : 'index'}`
 })
 
 // --- Vorschau ------------------------------------------------------------------------------
@@ -223,10 +355,22 @@ const preview = ref(null)
 let previewTimer = null
 let previewToken = 0
 
-const previewKey = (item) => (item?.fileId && item?.line ? `${item.fileId}:${item.line}` : '')
+// Ziel der Vorschau: Klassen- und Code-Treffer tragen Datei und Zeile direkt, Methoden-Treffer
+// bringen sie aus der Namenssuche in `item` mit (`lineNumber`). Beides hier aufloesen, sonst blieb
+// die Vorschau bei Methodentreffern leer.
+const previewTarget = (item) => {
+  const fileId = item?.fileId ?? item?.item?.fileId ?? null
+  const line = item?.line ?? item?.item?.lineNumber ?? null
+  return fileId && line ? { fileId, line } : null
+}
+const previewKey = (item) => {
+  const t = previewTarget(item)
+  return t ? `${t.fileId}:${t.line}` : ''
+}
 
 watch(activeItem, (item) => {
   clearTimeout(previewTimer)
+  const target = previewTarget(item)
   const key = previewKey(item)
   if (!key) {
     preview.value = null
@@ -240,11 +384,11 @@ watch(activeItem, (item) => {
   previewTimer = setTimeout(async () => {
     const token = ++previewToken
     try {
-      const win = await api.getJavaSourceWindow(item.fileId, item.line)
+      const win = await api.getJavaSourceWindow(target.fileId, target.line)
       if (token !== previewToken) return
       // Server liefert reines Shiki-HTML, der Client schneidet daraus sein Fenster und markiert die
       // Fundzeile – dieselben DOM-Helfer wie im Edge-/Bundle-Panel, kein zweiter Highlighter.
-      const entry = { ...win, html: buildCallWindow(win.html, win.startLine, item.line) }
+      const entry = { ...win, html: buildCallWindow(win.html, win.startLine, target.line) }
       previewCache.set(key, entry)
       preview.value = entry
     } catch {
@@ -265,7 +409,13 @@ watch(() => props.open, async (open) => {
     inputEl.value?.focus()
   }
 })
-watch(flatItems, () => { active.value = 0 })
+// Die Auswahl haengt an der EINGABE, nicht an der Ergebnisliste: die Liste waechst nachtraeglich
+// (erst Klassen, dann Namen, dann Code), und ein `watch(flatItems)` haette die Markierung bei jeder
+// eintreffenden Antwort wieder nach oben gerissen – auch wenn man laengst weitergeblaettert hat.
+watch(term, () => { active.value = 0 })
+watch(flatItems, (list) => {
+  if (active.value > list.length - 1) active.value = Math.max(0, list.length - 1)
+})
 onUnmounted(() => {
   clearTimeout(nameTimer)
   clearTimeout(codeTimer)
@@ -281,11 +431,11 @@ function go(entry) {
     return
   }
   // Handoff wie Queue/Edge-Panel -> Code: CodeView waehlt die Klasse und springt in die Zeile.
-  // Neu ist die Suche selbst: sie faehrt mit und steht danach in der Suchleiste der Klasse, also
-  // laeuft „weiter" dort ab dem Treffer, den man angeklickt hat – statt bei null anzufangen.
-  const item = entry.kind === 'code' ? entry : entry.item
-  lastFileId.value = entry.kind === 'code' ? entry.fileId : item.fileId ?? item.id
-  lastTargetLine.value = entry.kind === 'code' ? entry.line : item.lineNumber ?? null
+  // Die Suche faehrt mit und steht danach in der Suchleiste der Klasse, also laeuft „weiter" dort
+  // ab dem Treffer, den man angeklickt hat – statt bei null anzufangen.
+  // Klassen- und Code-Treffer tragen fileId/line direkt, Methoden-Treffer stecken in `item`.
+  lastFileId.value = entry.fileId ?? entry.item?.fileId ?? entry.item?.id ?? null
+  lastTargetLine.value = entry.line ?? entry.item?.lineNumber ?? null
   if (term.value) {
     lastSearchQuery.value = term.value
     lastSearchOpts.value = { ...opts.value }
@@ -376,12 +526,21 @@ const shortPackage = (pkg) => pkg || 'default package'
             @focus="focused = true"
             @blur="focused = false"
           />
+          <!-- Solange etwas laeuft, steht hier WAS laeuft und WIE LANGE schon – nicht nur ein
+               drehender Kreis. Ist alles da, treten die Zaehler an dieselbe Stelle. -->
           <span
-            v-if="counter"
+            v-if="showBusy"
+            class="hidden shrink-0 items-center gap-1.5 whitespace-nowrap font-mono text-3xs text-[var(--color-text-muted)] sm:flex"
+          >
+            <Icon icon="lucide:loader-2" class="h-3.5 w-3.5 shrink-0 animate-spin text-[var(--color-accent)]" />
+            {{ busyLabel }}
+            <span v-if="elapsedLabel" class="tabular-nums opacity-70">{{ elapsedLabel }}</span>
+          </span>
+          <span
+            v-else-if="counter"
             class="hidden shrink-0 whitespace-nowrap font-mono text-3xs tabular-nums sm:block"
             :class="patternError ? 'text-[var(--color-danger)]' : 'text-[var(--color-text-muted)]'"
           >{{ counter }}</span>
-          <Icon v-if="codeLoading" icon="lucide:loader-2" class="h-3.5 w-3.5 shrink-0 animate-spin text-[var(--color-text-muted)]" />
           <span class="mx-0.5 h-4 w-px shrink-0 bg-[var(--color-border)]" />
           <button
             v-for="o in SEARCH_TOGGLES"
@@ -428,6 +587,60 @@ const shortPackage = (pkg) => pkg || 'default package'
               class="mx-4 mb-1 mt-1 rounded-lg border border-[var(--color-danger)] px-3 py-1.5 text-2xs text-[var(--color-danger)]"
             >{{ patternError ? `No code search: ${patternError}` : codeError }}</p>
 
+            <!-- Klassen zuerst: der Namenstreffer steht ohne Request sofort da (die Klassenliste
+                 liegt im Store), waehrend Namens- und Quelltextsuche noch unterwegs sind. -->
+            <template v-if="results.classes.length || results.serverClasses.length">
+              <div class="flex items-center gap-1.5 px-4 pb-1 pt-2 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
+                <Icon icon="lucide:braces" class="h-3 w-3" /> Classes
+              </div>
+              <button
+                v-for="entry in results.classes"
+                :key="`k-${entry.idx}`"
+                type="button"
+                :data-sp-active="entry.idx === active ? '1' : null"
+                class="flex w-full items-center gap-3 px-4 py-1.5 text-left transition"
+                :class="entry.idx === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-surface-offset)]'"
+                @mouseenter="active = entry.idx"
+                @click="go(entry)"
+              >
+                <Icon icon="lucide:braces" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-1.5">
+                    <span class="truncate text-sm font-medium text-[var(--color-text)]">{{ entry.name }}</span>
+                    <!-- „Genau so heisst sie" ist die Antwort auf die haeufigste Frage an diese
+                         Palette – sie gehoert an den Treffer, nicht nur in die Sortierung. -->
+                    <span
+                      v-if="entry.exact"
+                      class="shrink-0 rounded bg-[var(--color-accent-soft)] px-1.5 font-mono text-3xs font-semibold text-[var(--color-accent)]"
+                    >exact</span>
+                  </div>
+                  <div class="truncate font-mono text-3xs text-[var(--color-text-muted)]">{{ shortPackage(entry.package) }}</div>
+                </div>
+                <span class="shrink-0 font-mono text-3xs text-[var(--color-text-muted)]">
+                  {{ entry.classType }}<template v-if="entry.methodCount"> · {{ entry.methodCount }}m</template>
+                </span>
+              </button>
+              <!-- Server-Treffer: passen im QUELLTEXT, nicht im Namen. Ohne diesen Hinweis saehen
+                   sie wie ein zweiter Namenstreffer aus. -->
+              <button
+                v-for="entry in results.serverClasses"
+                :key="`ks-${entry.idx}`"
+                type="button"
+                :data-sp-active="entry.idx === active ? '1' : null"
+                class="flex w-full items-center gap-3 px-4 py-1.5 text-left transition"
+                :class="entry.idx === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-surface-offset)]'"
+                @mouseenter="active = entry.idx"
+                @click="go(entry)"
+              >
+                <Icon icon="lucide:braces" class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
+                <div class="min-w-0 flex-1">
+                  <span class="truncate text-sm text-[var(--color-text)]">{{ entry.name }}</span>
+                  <div class="truncate font-mono text-3xs text-[var(--color-text-muted)]">{{ shortPackage(entry.package) }}</div>
+                </div>
+                <span class="shrink-0 font-mono text-3xs text-[var(--color-text-muted)] opacity-70">in source</span>
+              </button>
+            </template>
+
             <!-- Artikel -->
             <template v-if="results.articleItems.length">
               <div class="flex items-center gap-1.5 px-4 pb-1 pt-2 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
@@ -452,6 +665,19 @@ const shortPackage = (pkg) => pkg || 'default package'
                 </div>
                 <CategoryBadge :category="entry.article.category" size="xs" />
               </button>
+            </template>
+
+            <!-- Laeuft noch etwas, steht das DORT, wo die Treffer erscheinen werden – sonst wirkt
+                 die Liste fertig, obwohl der teuerste Teil noch unterwegs ist. -->
+            <template v-if="codeLoading && showBusy">
+              <div class="flex items-center gap-1.5 px-4 pb-1 pt-3 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
+                <Icon icon="lucide:code-2" class="h-3 w-3" /> Code
+              </div>
+              <div class="flex items-center gap-2 px-4 py-2 text-xs text-[var(--color-text-muted)]">
+                <Icon icon="lucide:loader-2" class="h-3.5 w-3.5 animate-spin text-[var(--color-accent)]" />
+                <span>Reading source of {{ files.length }} classes…</span>
+                <span v-if="elapsedLabel" class="ml-auto font-mono text-3xs tabular-nums opacity-70">{{ elapsedLabel }}</span>
+              </div>
             </template>
 
             <!-- Code: je Klasse eine Kopfzeile, darunter die einzelnen Fundstellen -->
@@ -482,29 +708,10 @@ const shortPackage = (pkg) => pkg || 'default package'
                   />
                 </button>
               </div>
-              <p v-if="scanNote" class="px-4 pb-1 pt-0.5 text-3xs text-[var(--color-text-muted)]">{{ scanNote }}</p>
             </template>
-
-            <!-- Klassen (Namenstreffer) -->
-            <template v-if="results.classes.length">
-              <div class="flex items-center gap-1.5 px-4 pb-1 pt-3 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
-                <Icon icon="lucide:braces" class="h-3 w-3" /> Classes
-              </div>
-              <button
-                v-for="entry in results.classes"
-                :key="`k-${entry.idx}`"
-                type="button"
-                :data-sp-active="entry.idx === active ? '1' : null"
-                class="flex w-full items-center gap-3 px-4 py-1.5 text-left transition"
-                :class="entry.idx === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-surface-offset)]'"
-                @mouseenter="active = entry.idx"
-                @click="go(entry)"
-              >
-                <Icon icon="lucide:braces" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
-                <span class="truncate text-sm text-[var(--color-text)]">{{ entry.item.name }}</span>
-                <span class="ml-auto truncate font-mono text-3xs text-[var(--color-text-muted)]">{{ entry.item.package }}</span>
-              </button>
-            </template>
+            <!-- Steht auch OHNE Codetreffer da: „nichts im Code" ist eine Aussage ueber den Lauf,
+                 und die gehoert mit dem Umfang zusammen, in dem gesucht wurde. -->
+            <p v-if="scanNote && !codeLoading" class="px-4 pb-1 pt-1 font-mono text-3xs text-[var(--color-text-muted)] opacity-80">{{ scanNote }}</p>
 
             <!-- Methoden (zeilengenauer Sprung) -->
             <template v-if="results.methods.length">
@@ -553,14 +760,16 @@ const shortPackage = (pkg) => pkg || 'default package'
 
             <template v-else-if="activeItem">
               <div class="flex items-baseline gap-2 border-b border-[var(--color-border)] px-5 py-2.5">
+                <!-- Kopf der Vorschau aus EINEM Zugriff: Code- und Klassentreffer tragen ihre
+                     Felder direkt, Methodentreffer stecken in `item`. -->
                 <span class="truncate text-sm font-semibold text-[var(--color-text)]">
-                  {{ activeItem.kind === 'code' ? activeItem.className : (activeItem.item.className || activeItem.item.name) }}
+                  {{ activeItem.className || activeItem.name || activeItem.item?.className || activeItem.item?.name }}
                 </span>
                 <span class="truncate font-mono text-3xs text-[var(--color-text-muted)]">
-                  {{ shortPackage(activeItem.kind === 'code' ? activeItem.package : activeItem.item.package) }}
+                  {{ shortPackage(activeItem.package ?? activeItem.item?.package) }}
                 </span>
                 <span v-if="previewKey(activeItem)" class="ml-auto shrink-0 font-mono text-3xs text-[var(--color-text-muted)]">
-                  L{{ activeItem.line ?? activeItem.item.lineNumber }}
+                  L{{ activeItem.line ?? activeItem.item?.lineNumber }}
                 </span>
               </div>
               <div class="min-h-0 flex-1 overflow-auto px-5 py-4">
@@ -597,8 +806,21 @@ const shortPackage = (pkg) => pkg || 'default package'
             <span class="text-[var(--color-danger)]">Code search failed</span>
             <p class="mt-1 font-mono text-2xs">{{ codeError }}</p>
           </template>
-          <template v-else-if="codeLoading">Searching…</template>
-          <template v-else-if="term">No results for “{{ term }}”.</template>
+          <template v-else-if="busy">
+            <span class="inline-flex items-center gap-2">
+              <Icon icon="lucide:loader-2" class="h-4 w-4 animate-spin text-[var(--color-accent)]" />
+              {{ busyLabel || 'Searching…' }}
+            </span>
+            <p v-if="elapsedLabel" class="mt-1 font-mono text-2xs tabular-nums opacity-70">{{ elapsedLabel }}</p>
+          </template>
+          <!-- „Nichts gefunden" ist erst dann wahr, wenn auch feststeht, WO gesucht wurde. -->
+          <template v-else-if="term">
+            No results for “{{ term }}”.
+            <p v-if="codeResult" class="mt-1 text-2xs opacity-70">
+              Searched {{ codeResult.scannedFiles }} of {{ codeResult.totalFiles }} classes
+              ({{ codeResult.mode === 'scan' ? 'full scan' : 'indexed' }}), {{ articles.length }} articles.
+            </p>
+          </template>
           <template v-else>Type to search articles, classes and source code…</template>
         </div>
       </div>

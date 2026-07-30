@@ -179,6 +179,9 @@ export class SerializerService {
         extends_name: row.extends_name ?? null,
         field_count: row.field_count ?? null,
         ctor_count: row.ctor_count ?? null,
+        // Zeile der Klassendeklaration: die globale Suche trifft Klassennamen ohne Request in
+        // dieser Liste und springt damit an die Deklaration statt an den Dateianfang.
+        class_line: row.class_line ?? null,
         description: row.description ?? null,
         generated_at: row.generated_at ?? null,
         created_at: row.created_at,

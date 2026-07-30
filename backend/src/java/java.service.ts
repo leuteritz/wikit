@@ -537,7 +537,7 @@ export class JavaService {
   async listFiles(): Promise<any[]> {
     const rows = await this.ds.query(
       `SELECT id, article_id, filename, package, class_name, class_type, stereotype, class_modifiers,
-              extends_name, field_count, ctor_count, description, generated_at, created_at
+              extends_name, field_count, ctor_count, class_line, description, generated_at, created_at
        FROM java_files ORDER BY class_name COLLATE NOCASE`,
     );
     return this.serializer.serializeJavaFileList(rows);
