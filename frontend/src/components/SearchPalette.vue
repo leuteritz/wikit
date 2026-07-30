@@ -11,7 +11,7 @@
 // Die Vorschau rechts ist der eigentliche Zweck: ein Treffer im Code ohne seinen Code ist nur die
 // Behauptung, dass es ihn gibt. Sie zeigt sofort den Ausschnitt aus dem Suchergebnis (kommt ohne
 // zweiten Request mit) und tauscht ihn gegen das server-gehighlightete Fenster, sobald das da ist.
-import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useArticles } from '../composables/useArticles.js'
 import { useSearch } from '../composables/useSearch.js'
@@ -24,8 +24,19 @@ import BusyState from './BusyState.vue'
 import CategoryBadge from './CategoryBadge.vue'
 import { Icon } from '../lib/icons.js'
 
-const props = defineProps({ open: { type: Boolean, default: false } })
+const props = defineProps({
+  open: { type: Boolean, default: false },
+  // 'modal' = Strg+K ueber der Seite · 'inline' = eingebettete Karte (Landing Page).
+  // Der Unterschied ist der RAHMEN, nicht das Verhalten: Suche, Rangfolge, Tastatur und der Sprung
+  // in die Code-Ansicht sind in beiden Faellen derselbe Code.
+  variant: { type: String, default: 'modal' },
+})
 const emit = defineEmits(['close'])
+
+const isModal = computed(() => props.variant === 'modal')
+// Inline ist immer offen – ein Suchfeld, das erst „geoeffnet" werden muss, waere auf einer Seite,
+// die es als Hauptangebot zeigt, ein Widerspruch.
+const visible = computed(() => isModal.value ? props.open : true)
 
 const router = useRouter()
 const { articles } = useArticles()
@@ -78,7 +89,10 @@ const codeError = ref('')
 const articleHits = computed(() => {
   if (!wantsArticles(parsed.value.scope)) return []
   const q = term.value
-  if (!q) return parsed.value.scope === 'all' ? articles.value.slice(0, 8) : []
+  // Ohne Eingabe zeigt das MODAL ein paar Einstiege (es ist sonst leer und ueberdeckt die Seite).
+  // Die eingebettete Karte tut das NICHT: sie steht in einer Seite, die schon Inhalt hat, und
+  // waere mit acht Artikeln im Ruhezustand hoeher als alles darunter.
+  if (!q) return isModal.value && parsed.value.scope === 'all' ? articles.value.slice(0, 8) : []
   return run(q)
 })
 
@@ -400,17 +414,24 @@ watch(activeItem, (item) => {
   }, PREVIEW_DEBOUNCE_MS)
 })
 
+// Jedes Oeffnen des Modals beginnt bei null – eine alte Eingabe waere beim naechsten Strg+K ein
+// Ergebnis auf eine Frage von vorgestern. Die eingebettete Karte behaelt ihre Eingabe dagegen
+// (sie ist Teil der Seite) und faengt nur einmal den Fokus ab, weil sie das Hauptangebot ist.
 watch(() => props.open, async (open) => {
-  if (open) {
-    query.value = ''
-    active.value = 0
-    symbolHits.value = []
-    codeResult.value = null
-    codeError.value = ''
-    preview.value = null
-    await nextTick()
-    inputEl.value?.focus()
-  }
+  if (!isModal.value || !open) return
+  query.value = ''
+  active.value = 0
+  symbolHits.value = []
+  codeResult.value = null
+  codeError.value = ''
+  preview.value = null
+  await nextTick()
+  inputEl.value?.focus()
+})
+onMounted(async () => {
+  if (isModal.value) return
+  await nextTick()
+  inputEl.value?.focus()
 })
 // Die Auswahl haengt an der EINGABE, nicht an der Ergebnisliste: die Liste waechst nachtraeglich
 // (erst Klassen, dann Namen, dann Code), und ein `watch(flatItems)` haette die Markierung bei jeder
@@ -459,6 +480,8 @@ function onKeydown(e) {
   if (e.key === 'ArrowDown') { e.preventDefault(); move(1) }
   else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1) }
   else if (e.key === 'Enter') { e.preventDefault(); go(activeItem.value) }
+  // Esc leert das eingebettete Feld (das Modal schliesst stattdessen – das erledigt App.vue).
+  else if (e.key === 'Escape' && !isModal.value && query.value) { e.stopPropagation(); query.value = '' }
 }
 
 function toggleOpt(key) {
@@ -503,13 +526,24 @@ const shortPackage = (pkg) => pkg || 'default package'
 </script>
 
 <template>
-  <Transition name="fade">
+  <!-- ZWEI Rahmen, EINE Palette: als Modal (Strg+K) liegt sie ueber der Seite, `inline` steht sie
+       als Karte auf der Landing Page. Alles darunter – Trefferliste, Vorschau, Tastatur, Sprung –
+       ist identisch, weil es dasselbe Markup ist. Zwei Kopien haetten spaetestens beim naechsten
+       Feld auseinandergelegen. -->
+  <Transition :name="isModal ? 'fade' : ''">
     <div
-      v-if="open"
-      class="fixed inset-0 z-50 flex items-start justify-center bg-black/40 px-4 pt-[10vh] backdrop-blur-sm"
-      @click.self="emit('close')"
+      v-if="visible"
+      :class="isModal
+        ? 'fixed inset-0 z-50 flex items-start justify-center bg-black/40 px-4 pt-[10vh] backdrop-blur-sm'
+        : 'w-full'"
+      @click.self="isModal && emit('close')"
     >
-      <div class="flex max-h-[76vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-surface-2)] shadow-2xl">
+      <div
+        class="sp-card flex w-full flex-col overflow-hidden border bg-[var(--color-surface-2)]"
+        :class="isModal
+          ? 'max-h-[76vh] max-w-5xl rounded-2xl border-[var(--color-border-strong)] shadow-2xl'
+          : 'sp-inline max-h-[62vh] rounded-2xl border-[var(--color-border)] shadow-xl'"
+      >
         <!-- Kopfzeile: Feld, Zaehler, Modus-Schalter. Die Schalter sind dieselben wie in der
              Suchleiste des Quellcode-Tabs (gleiche Icons, gleiche Bedeutung) – sie betreffen die
              Zeilensuche im Code, Namen und Artikel bleiben unberuehrt. -->
@@ -560,7 +594,13 @@ const shortPackage = (pkg) => pkg || 'default package'
           >
             <Icon :icon="o.icon" class="h-3.5 w-3.5" />
           </button>
-          <kbd class="ml-1 hidden shrink-0 rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-3xs text-[var(--color-text-muted)] sm:block">ESC</kbd>
+          <!-- Im Modal schliesst ESC, eingebettet leert es nur – dort steht deshalb das Kuerzel,
+               das dorthin FUEHRT (Strg K), nicht das, was hier passiert. -->
+          <kbd v-if="isModal" class="ml-1 hidden shrink-0 rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-3xs text-[var(--color-text-muted)] sm:block">ESC</kbd>
+          <span v-else class="ml-1 hidden shrink-0 items-center gap-1 sm:flex">
+            <kbd class="rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-3xs text-[var(--color-text-muted)]">Ctrl</kbd>
+            <kbd class="rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-3xs text-[var(--color-text-muted)]">K</kbd>
+          </span>
         </div>
 
         <!-- Facetten: stehen nicht in einem Tooltip, den niemand oeffnet, sondern erscheinen im
@@ -581,7 +621,10 @@ const shortPackage = (pkg) => pkg || 'default package'
 
         <div v-if="flatItems.length" class="flex min-h-0 flex-1">
           <!-- Ergebnisliste -->
-          <div class="min-h-0 w-full shrink-0 overflow-y-auto py-2 lg:w-[24rem] lg:border-r lg:border-[var(--color-border)]">
+          <div
+            class="sp-list min-h-0 w-full shrink-0 overflow-y-auto py-2"
+            :class="isModal ? 'lg:w-[24rem] lg:border-r lg:border-[var(--color-border)]' : ''"
+          >
             <!-- Warum die Code-Gruppe fehlt. Ohne diese Zeile verschwindet sie bei einer halb
                  getippten Regex kommentarlos, waehrend Artikel und Namen weiter dastehen – das
                  liest sich wie „im Code kommt es nicht vor". -->
@@ -743,7 +786,14 @@ const shortPackage = (pkg) => pkg || 'default package'
           </div>
 
           <!-- Vorschau: was der markierte Treffer wirklich ist -->
-          <div class="hidden min-h-0 flex-1 flex-col lg:flex">
+          <!-- Vorschau: im Modal ab `lg`, eingebettet erst ab `2xl`. Der Unterschied ist gemessen,
+               nicht geschaetzt: die eingebettete Karte steht in einer Spalte der Landing Page und
+               ist bei 1920 nur ~670 px breit – Liste (384) und Codevorschau darin waeren beide zu
+               eng. Ab 2xl hat die Karte ~1000 px, dann traegt die zweite Spalte.
+               `min-w-0` ist Pflicht: ein Flex-Kind schrumpft sonst nicht unter die Breite seines
+               Inhalts, und der Codeblock (bewusst ohne eigenen Overflow-Container, s. `.edge-code`)
+               schob die Vorschau aus der Karte heraus, wo sie abgeschnitten wurde. -->
+          <div class="sp-preview hidden min-h-0 min-w-0 flex-1 flex-col" :class="isModal ? 'lg:flex' : ''">
             <template v-if="activeItem?.kind === 'article'">
               <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
                 <div class="flex items-center gap-2">
@@ -802,7 +852,13 @@ const shortPackage = (pkg) => pkg || 'default package'
           </div>
         </div>
 
-        <div v-else class="px-4 py-10 text-center text-sm text-[var(--color-text-muted)]">
+        <!-- Leerzustand: im Modal eine ganze Flaeche, eingebettet nur eine Zeile – dort ist die
+             Karte Teil der Seite und darf im Ruhezustand nicht die Hoehe von acht Treffern haben. -->
+        <div
+          v-else
+          class="text-center text-[var(--color-text-muted)]"
+          :class="isModal ? 'px-4 py-10 text-sm' : 'px-4 py-4 text-xs'"
+        >
           <template v-if="patternError">
             <span class="text-[var(--color-danger)]">Invalid regular expression</span>
             <p class="mt-1 font-mono text-2xs">{{ patternError }}</p>
@@ -838,6 +894,28 @@ const shortPackage = (pkg) => pkg || 'default package'
 
 .fade-enter-active, .fade-leave-active { transition: opacity 0.15s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+/* --- Zweite Spalte nach KARTENBREITE, nicht nach Fensterbreite -------------------------------
+   Das Modal darf sich am Viewport orientieren (es nimmt ihn ganz ein), die eingebettete Karte
+   nicht: sie steht in einer Spalte der Landing Page und ist bei 1920 nur ~670 px breit – gemessen.
+   Eine `2xl:`-Regel haette dort die Vorschau eingeblendet, wo kein Platz fuer sie ist. Container-
+   Query fragt das Einzig-Richtige: wie breit ist DIESE Karte. */
+.sp-inline {
+  container-type: inline-size;
+}
+/* 48rem sind je nach Root-Schriftgroesse 768–960 px (die App skaliert sie mit der Fensterbreite,
+   s. „Schriftgroessen nie in px"). Gemessen: bei 1920 ist die Karte ~670 px breit (Liste allein),
+   bei 2560 ~1010 px (Liste + Vorschau). Genau die Grenze, die man sehen will. */
+@container (min-width: 48rem) {
+  .sp-inline .sp-list {
+    width: 20rem;
+    flex-shrink: 0;
+    border-right: 1px solid var(--color-border);
+  }
+  .sp-inline .sp-preview {
+    display: flex;
+  }
+}
 
 /* Treffer tragen die Gold-Familie von `mark` (style.css) – dieselbe Farbe wie jeder andere
    Suchtreffer in Wikit (Quelltext-Suche, Graph-Suche). */

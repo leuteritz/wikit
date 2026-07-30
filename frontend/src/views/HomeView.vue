@@ -11,6 +11,7 @@ import { useArticles } from '../composables/useArticles.js'
 import { WIKI_TITLE, WIKI_ICON } from '../config.js'
 import JavaCodeEditor from '../components/java/JavaCodeEditor.vue'
 import MeshBackground from '../components/MeshBackground.vue'
+import SearchPalette from '../components/SearchPalette.vue'
 import { Icon } from '../lib/icons.js'
 
 const router = useRouter()
@@ -80,28 +81,53 @@ function openClass(id) {
     <!-- Hintergrund: animiertes Constellation-Netz (Canvas, eigene Komponente) -->
     <MeshBackground />
 
-    <div class="relative z-10 mx-auto grid max-w-6xl items-center gap-10 px-5 py-12 lg:min-h-full lg:grid-cols-[1.3fr_1fr] lg:gap-14 lg:py-0">
-      <!-- ===== Links: Primaeraktion ===== -->
-      <section class="reveal min-w-0">
+    <div class="relative z-10 mx-auto max-w-6xl px-5 py-10 lg:py-12">
+      <!-- ===== Kopf: Titel + Suche, ueber die volle Breite ==================================
+           Die Suche steht ueber Upload und Paste, weil die haeufigste Frage an eine gefuellte
+           Instanz „wo ist X?" ist und nicht „wie kommt Neues rein?" – und sie spannt ueber BEIDE
+           Spalten, weil sie in einer Spalte gemessen nur ~750 px breit waere: zu wenig fuer
+           Trefferliste UND Codevorschau nebeneinander. Der Titel bleibt gross darueber, der
+           Mesh-Hintergrund ringsum sichtbar (die Karte schwebt darauf, statt ihn zuzudecken). -->
+      <section class="reveal mx-auto max-w-3xl text-center">
         <p class="mb-3 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
           <Icon icon="lucide:terminal" class="h-3.5 w-3.5 text-[var(--color-accent)]" />
           Local code intelligence · no cloud, no login
         </p>
 
-        <h1 class="flex items-center gap-3 font-mono text-4xl font-semibold tracking-tight text-[var(--color-text)] sm:text-5xl">
+        <h1 class="flex items-center justify-center gap-3 font-mono text-4xl font-semibold tracking-tight text-[var(--color-text)] sm:text-5xl">
           <Icon :icon="WIKI_ICON" class="shrink-0 text-[var(--color-accent)]" />
           <span class="text-[var(--color-accent)]">{{ WIKI_TITLE }}</span><span class="blink font-normal text-[var(--color-accent)]">_</span>
         </h1>
-        <p class="mt-3 max-w-xl text-[0.9375rem] leading-relaxed text-[var(--color-text-muted)]">
+        <p class="mx-auto mt-3 max-w-xl text-[0.9375rem] leading-relaxed text-[var(--color-text-muted)]">
           A self-hosted knowledge base for developers: author notes in
           <span class="font-medium text-[var(--color-text)]">Markdown</span>, parse
           <span class="font-medium text-[var(--color-text)]">Java</span> locally into a class graph
           with per-method AI summaries, and connect everything in a
           <span class="font-medium text-[var(--color-text)]">knowledge graph</span>.
         </p>
+      </section>
 
+      <!-- DIESELBE Komponente wie hinter Strg+K (`variant="inline"`): gleiche Rangfolge, gleiche
+           Tastatur, gleicher Sprung in die Code-Ansicht – nur ohne den dunklen Ueberzug. -->
+      <div class="reveal mx-auto mt-7 max-w-5xl">
+        <SearchPalette variant="inline" />
+        <p class="mt-2 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-1 text-center text-2xs text-[var(--color-text-muted)]">
+          <Icon icon="lucide:search" class="h-3 w-3 text-[var(--color-accent)]" />
+          Classes, methods, source lines and articles — a hit opens the class in the analyzer, with
+          the graph and the package tree following along.
+          <span class="inline-flex items-center gap-1">
+            <kbd class="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-1 font-mono text-3xs">Ctrl</kbd>
+            <kbd class="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-1 font-mono text-3xs">K</kbd>
+            anywhere
+          </span>
+        </p>
+      </div>
+
+      <!-- ===== Darunter: Einlesen (links) · Zahlen und Einstiege (rechts) ===== -->
+      <div class="mt-10 grid gap-10 lg:grid-cols-[1.3fr_1fr] lg:gap-14">
+      <section class="reveal min-w-0">
         <!-- Upload-Karte -->
-        <div class="mt-7">
+        <div>
           <div
             class="group relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-9 text-center transition"
             :class="dragging
@@ -287,6 +313,7 @@ function openClass(id) {
           </RouterLink>
         </div>
       </aside>
+      </div>
     </div>
   </div>
 </template>

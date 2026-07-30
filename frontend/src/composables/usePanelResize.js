@@ -55,7 +55,9 @@ export function usePanelResize() {
   // eine geliehene Ansicht ist KEINE Einstellung, sie wird deshalb auch nicht persistiert und
   // beim Schliessen (oder beim naechsten Klick in Graph/Baum) vollstaendig zurueckgegeben.
   const borrowed = ref(null)
-  const FOCUS_RIGHT = 52 // ~ die Haelfte: genug fuer eine Codezeile ohne Umbruch, Graph bleibt sichtbar
+  // 44 statt der Haelfte: deutlich breiter als der Normalzustand (30 %), aber der Graph behaelt
+  // gut ein Drittel und bleibt damit lesbar – auf 52 % schrumpfte er auf einen Streifen.
+  const FOCUS_RIGHT = 44
   const isFocused = computed(() => borrowed.value !== null)
 
   const isDirty = computed(

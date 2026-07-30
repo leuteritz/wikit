@@ -176,6 +176,21 @@ function consumeHandoff() {
   handoffSearch.value = lastSearchQuery.value
     ? { query: lastSearchQuery.value, opts: { ...(lastSearchOpts.value || {}) } }
     : null
+  // Ein Treffer ist ein ORT, nicht nur eine Datei: der Graph faehrt die Klasse an und der Baum
+  // deckt ihren Pfad auf. Vorher stand rechts das Panel, waehrend Graph und Baum weiter irgendwo
+  // anders standen – man wusste, WAS man gefunden hatte, aber nicht, wo es liegt. Gilt fuer beide
+  // Eingaenge gleich (Strg+K und das Suchfeld der Landing Page laufen ueber denselben Hand-off).
+  const target = files.value.find((f) => f.id === selectedFileId.value)
+  if (target) {
+    // Der Graph meldet den Ebenenwechsel als `navigate` zurueck – und DAS wuerde die eben
+    // geliehene Panelbreite sofort wieder abgeben (dort steht „wer im Graphen navigiert, ist beim
+    // Bild"). Diese eine Meldung gehoert aber zum Sprung selbst, nicht zu einer Handlung des
+    // Nutzers: dieselbe Unterscheidung wie `treeDrivenPath` weiter unten.
+    handoffNavigating = true
+    focusGraphOnFile(target)
+    openPathInTree(target.package || '(default)')
+    nextTick(() => scrollTreeTo(`[data-fid="${target.id}"]`))
+  }
   // Kam der Sprung aus der globalen Suche (nur die schickt eine Suche mit), will man den CODE
   // lesen – dafuer macht das Panel vorübergehend auf. Zurueckgegeben wird beim Schliessen oder
   // beim naechsten Klick in Graph/Baum (s. selectFile/onDetailClose).
@@ -365,6 +380,9 @@ const graphFocusToken = ref(0) // erzwingt eine Reaktion auch bei gleichem Ziel 
 // Ebene zurueck (auch die, die er von hier bekommen hat) – ohne diese Notiz wuerde ein Zuklappen
 // im Baum als Graph-Navigation zurueckkommen und den Ordner sofort wieder aufklappen.
 let treeDrivenPath = null
+// Der Graph faehrt beim Sprung aus der Suche die gefundene Klasse an und meldet das als
+// `navigate`. Diese eine Meldung stammt vom Sprung, nicht vom Nutzer – s. consumeHandoff.
+let handoffNavigating = false
 
 function focusGraphOnPackage(path) {
   graphFocusFileId.value = null
@@ -453,10 +471,11 @@ function openPathInTree(path) {
 function onGraphNavigate(path) {
   activePath.value = path || null
   // Wer im Graphen eine Ebene wechselt (Package-Karte, Zonenkopf, Breadcrumb), arbeitet wieder mit
-  // dem Bild – die fuer einen Suchtreffer geliehene Panelbreite gehoert dann zurueck. Der Emit
-  // laeuft zwar auch einmal beim Mount (`immediate`), aber da ist nie etwas geliehen: der Sprung
-  // aus der Suche kommt spaeter und veraendert `basePath` nicht.
-  releaseFocus()
+  // dem Bild – die fuer einen Suchtreffer geliehene Panelbreite gehoert dann zurueck. Kam die
+  // Meldung dagegen vom Sprung selbst (der Graph faehrt die gefundene Klasse an), ist sie KEINE
+  // Handlung des Nutzers und darf die Breite nicht wieder einkassieren.
+  if (handoffNavigating) handoffNavigating = false
+  else releaseFocus()
   // Kam die Ebene aus dem Baum, ist dessen Zustand bereits die Absicht des Nutzers – dann nur die
   // Markierung nachziehen, nicht die Faltung.
   const fromTree = treeDrivenPath !== null && treeDrivenPath === path
@@ -1455,6 +1474,7 @@ function onResetPanels() {
           :search-query="graphQuery"
           @select="selectFileFromGraph"
           @navigate="onGraphNavigate"
+          @pane-click="releaseFocus"
           @clear-search="search = ''"
         />
       </div>

@@ -58,7 +58,7 @@ const props = defineProps({
 // `navigate` = „der Graph zeigt jetzt diese Ebene" (Package-Pfad, leerer String = oberste Ebene).
 // Gegenrichtung zu focusPath: der Baum links ist die Ortsangabe und darf nicht stehenbleiben,
 // waehrend man sich hier durch die Packages klickt.
-const emit = defineEmits(['select', 'clear-search', 'navigate'])
+const emit = defineEmits(['select', 'clear-search', 'navigate', 'pane-click'])
 
 const { theme } = useTheme()
 // `viewport` wird fuer den Zonen-Layer gebraucht: er liegt HINTER dem Canvas und muss dessen
@@ -100,6 +100,9 @@ const { scale: rootScale } = useRootScale()
 function clearHighlights() {
   clearHighlightedCall()
   clearHighlightedDef()
+  // Klick auf die freie Flaeche ist „ich bin wieder beim Bild": CodeView gibt daraufhin eine fuer
+  // einen Suchtreffer geliehene Panelbreite zurueck (s. usePanelResize.releaseFocus).
+  emit('pane-click')
 }
 
 // Custom-Edge-Typ registrieren.
