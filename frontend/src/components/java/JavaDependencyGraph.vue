@@ -31,8 +31,8 @@ import { useJavaGraph } from '../../composables/useJavaGraph.js'
 import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
 import { useRootScale } from '../../composables/useRootScale.js'
 import { Icon } from '../../lib/icons.js'
-import { buildPackageLevel, buildNeighbourLevel, commonPackagePrefix, breadcrumbFor } from '../../lib/packageGraph.js'
-import { layoutFlat, layoutClustered } from '../../lib/graphLayout.js'
+import { buildPackageLevel, buildNeighbourLevel, buildEgoLevel, commonPackagePrefix, breadcrumbFor } from '../../lib/packageGraph.js'
+import { layoutFlat, layoutClustered, layoutRadial } from '../../lib/graphLayout.js'
 import { parseGraphQuery, matchNode, matchEdge, GRAPH_QUERY_HELP } from '../../lib/graphQuery.js'
 import BusyState from '../BusyState.vue'
 import JavaEdgeDetailPanel from './JavaEdgeDetailPanel.vue'
@@ -409,8 +409,34 @@ watch(
     contextOverride.value = null
   },
 )
+// --- Ein einziger Treffer ist eine andere Frage ----------------------------------------------
+// „Wo ist DoaAddForm?" verlangt nicht eine Trefferliste, sondern DIESE Klasse mit ihren
+// Beziehungen. Bisher galt auch hier der Kontext-Deckel (automatisch nur bis 30 Knoten) – bei
+// einer gut vernetzten Klasse stand deshalb genau eine Karte ohne eine einzige Kante im Bild,
+// also nichts von dem, weswegen man gesucht hat. Der Ego-Ausschnitt zeigt stattdessen ALLES,
+// was an ihr haengt: die staerksten Nachbarn als Karten, den Rest je Package zusammengefasst
+// (s. lib/packageGraph.js → buildEgoLevel).
+const EGO_CARD_LIMIT = 40 // so viele Nachbarn als einzelne Karten, danach Aggregate
+const EGO_NODE_LIMIT = 10 // hoechstens so viele Aggregatknoten
+const egoCenterId = computed(() =>
+  searchActive.value && props.matchIds.length === 1 ? props.matchIds[0] : null,
+)
+const egoLevel = computed(() =>
+  buildEgoLevel({
+    files: props.files || [],
+    classEdges: allClassEdges.value,
+    centerId: egoCenterId.value,
+    cardLimit: EGO_CARD_LIMIT,
+    nodeLimit: EGO_NODE_LIMIT,
+    rootPath: rootPath.value,
+  }),
+)
+const egoActive = computed(() => egoCenterId.value != null && egoLevel.value.neighbours > 0)
+
 const showSearchContext = computed(() => {
   if (!searchActive.value) return false
+  // Im Ego-Ausschnitt IST die Umgebung die Antwort – sie ist keine Zugabe, die man abwaegt.
+  if (egoActive.value) return true
   if (contextOverride.value !== null) return contextOverride.value
   return matchIdSet.value.size + searchNeighbourIds.value.size <= CONTEXT_AUTO_LIMIT
 })
@@ -418,11 +444,22 @@ const searchScope = computed(() => {
   if (!searchActive.value) return null
   const ids = matchIdSet.value
   const neighbours = searchNeighbourIds.value
+  if (egoActive.value) {
+    const ego = egoLevel.value
+    const wanted = new Set([...ids, ...ego.cardIds])
+    return {
+      files: (props.files || []).filter((f) => wanted.has(f.id)),
+      matches: ids.size,
+      related: ego.neighbours,
+      ego,
+    }
+  }
   const wanted = showSearchContext.value ? new Set([...ids, ...neighbours]) : ids
   return {
     files: (props.files || []).filter((f) => wanted.has(f.id)),
     matches: ids.size,
     related: neighbours.size,
+    ego: null,
   }
 })
 
@@ -456,17 +493,22 @@ const insideKeys = computed(() =>
   packageMode.value ? level.value.keyByFileId : new Map(scopeFiles.value.map((f) => [f.id, `c:${f.id}`])),
 )
 const neighbourhood = computed(() =>
-  buildNeighbourLevel({
-    files: props.files || [],
-    classEdges: allClassEdges.value,
-    // Im Suchmodus und bei abgeschalteter Umgebung: leerer basePath -> die Funktion liefert nichts.
-    // Die Suche bringt ihre eigene Nachbarschaft mit; zwei Kontextbegriffe gleichzeitig waeren
-    // nicht mehr lesbar.
-    basePath: searchActive.value || !showRelated.value ? '' : basePath.value,
-    insideKeys: insideKeys.value,
-    rootPath: rootPath.value,
-    limit: RELATED_NODE_LIMIT,
-  }),
+  // Der Ego-Ausschnitt bringt seine eigene Umgebung mit (Aggregate der ueberzaehligen Nachbarn) –
+  // dieselbe Form wie hier, damit Kanten, Farben, Legende und das Buendel-Panel unveraendert damit
+  // arbeiten. Deshalb ein Zweig und keine zweite Rendering-Strecke.
+  egoActive.value
+    ? egoLevel.value
+    : buildNeighbourLevel({
+        files: props.files || [],
+        classEdges: allClassEdges.value,
+        // Im Suchmodus und bei abgeschalteter Umgebung: leerer basePath -> die Funktion liefert
+        // nichts. Die Suche bringt ihre eigene Nachbarschaft mit; zwei Kontextbegriffe
+        // gleichzeitig waeren nicht mehr lesbar.
+        basePath: searchActive.value || !showRelated.value ? '' : basePath.value,
+        insideKeys: insideKeys.value,
+        rootPath: rootPath.value,
+        limit: RELATED_NODE_LIMIT,
+      }),
 )
 // Nachbarklassen als eigene Knoten – nur im Klassenmodus und nur, solange es wenige sind.
 const relatedFiles = computed(() => {
@@ -964,7 +1006,16 @@ const layout = computed(() => {
   const searchClustered = searchActive.value && showSearchContext.value
   const clustered =
     !packageMode.value && groupByPackage.value && distinctPkgs > 1 && (!searchActive.value || searchClustered)
-  const placed = clustered
+  // Der Ego-Ausschnitt ist ein Stern – dort hat dagre nichts zu schichten (jede Kante geht zur
+  // Mitte) und legte alle Nachbarn in EINE Reihe. Ringe statt Reihen, s. layoutRadial.
+  const placed = egoActive.value
+    ? layoutRadial({
+        centerId: `c:${egoCenterId.value}`,
+        ring: layoutNodes.filter((n) => n.id !== `c:${egoCenterId.value}` && n.id.startsWith('c:')),
+        outer: layoutNodes.filter((n) => n.id.startsWith('p:')),
+        scale: s,
+      })
+    : clustered
     ? layoutClustered({
         nodes: layoutNodes,
         edges,
@@ -2003,10 +2054,29 @@ watch(
     <div v-if="files.length && searchActive" class="vf-breadcrumb">
       <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
       <span class="shrink-0 font-mono text-2xs text-[var(--color-text)]">“{{ searchQuery }}”</span>
-      <span class="vf-crumb-count">{{ searchScope.matches }} match{{ searchScope.matches === 1 ? '' : 'es' }}</span>
-      <span v-if="searchScope.related && showSearchContext" class="vf-crumb-count">
-        +{{ searchScope.related }} related
-      </span>
+      <!-- Ein einziger Treffer bekommt seine eigene Bilanz: nicht „1 match", sondern was an dieser
+           Klasse haengt und wieviel davon im Bild steht. Genau danach hat man gesucht. -->
+      <template v-if="egoActive">
+        <span class="vf-crumb-count">{{ searchScope.ego.relations }} relations</span>
+        <span class="vf-crumb-count">{{ searchScope.ego.neighbours }} classes</span>
+        <span v-if="searchScope.ego.nodes.length" class="vf-crumb-count">
+          {{ searchScope.ego.aggregatedClasses }} in {{ searchScope.ego.nodes.length }} package{{ searchScope.ego.nodes.length === 1 ? '' : 's' }}
+        </span>
+        <span
+          v-if="searchScope.ego.hiddenPackages"
+          class="vf-crumb-warn"
+          :title="`${searchScope.ego.hiddenRelations} relations to ${searchScope.ego.hiddenPackages} further packages are not drawn`"
+        >
+          <Icon icon="lucide:alert-triangle" class="h-3 w-3" />
+          +{{ searchScope.ego.hiddenPackages }} more
+        </span>
+      </template>
+      <template v-else>
+        <span class="vf-crumb-count">{{ searchScope.matches }} match{{ searchScope.matches === 1 ? '' : 'es' }}</span>
+        <span v-if="searchScope.related && showSearchContext" class="vf-crumb-count">
+          +{{ searchScope.related }} related
+        </span>
+      </template>
       <button type="button" class="vf-crumb-toggle" title="Clear the filter and show all packages" @click="emit('clear-search')">
         <Icon icon="lucide:x" class="h-3.5 w-3.5" />
         Clear
@@ -2074,8 +2144,9 @@ watch(
          sie weder zu sehen noch aus sich heraus zu verstehen. Deshalb eine eigene Schaltflaeche
          mittig ueber dem Graphen: Beschriftung sagt, was passiert, die Zeile darunter, was das
          bedeutet. Sie steht nur da, wenn es ueberhaupt Umgebung gibt. -->
+    <!-- Im Ego-Ausschnitt gibt es nichts abzuwaegen: dort IST die Umgebung die Antwort. -->
     <button
-      v-if="files.length && searchActive && searchScope.related"
+      v-if="files.length && searchActive && !egoActive && searchScope.related"
       type="button"
       class="vf-ctx-toggle"
       :class="{ 'is-on': showSearchContext }"
@@ -2094,7 +2165,11 @@ watch(
       </span>
     </button>
 
-    <div v-else-if="files.length && (level.groups.length || basePath)" class="vf-breadcrumb">
+    <!-- Bedingung AUSGESCHRIEBEN statt `v-else-if`: die Kette haing vorher an der Schaltflaeche
+         darueber (Kontext-Umschalter), nicht an der Such-Kopfzeile – sobald der Umschalter
+         entfiel (Ego-Ausschnitt), erschien hier die Package-Kopfzeile ZUSAETZLICH zur Suche.
+         Ein `v-else-if` ueber drei fremde Geschwister hinweg ist keine Bedingung, die man liest. -->
+    <div v-if="files.length && !searchActive && (level.groups.length || basePath)" class="vf-breadcrumb">
       <button
         type="button"
         class="vf-crumb-up"

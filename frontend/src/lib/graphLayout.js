@@ -336,3 +336,62 @@ export function layoutClustered({ nodes = [], edges = [], nodesep = 70, ranksep 
 
   return { pos, zones, width: meta.width, height: meta.height }
 }
+
+// --- Radial: EINE Klasse in der Mitte, ihre Nachbarn ringsum ---------------------------------
+//
+// Fuer den Ego-Ausschnitt (eine gesuchte Klasse + alles, was an ihr haengt) ist dagre das falsche
+// Werkzeug: es schichtet nach Kantenrichtung, und bei einem Stern liegen dann ALLE Nachbarn in
+// einer einzigen Reihe – gemessen ein 8000 px breites Band, das `fitView` auf Zoom 0.2 druecken
+// muss. Ein Stern hat aber gar keine Schichtung zu zeigen: jede Kante geht zur Mitte. Also Ringe.
+//
+// Ringgroesse aus dem Umfang: pro Ring passen `2πr / (breite + luecke)` Knoten. Der Radius waechst,
+// bis alle untergebracht sind – so bleibt der Abstand zwischen zwei Nachbarn konstant, egal ob es
+// fuenf oder hundertfuenfzig sind. Die Aggregate (breitere Karten) bekommen einen eigenen Ring
+// AUSSEN: sie stehen fuer „und da ist noch mehr", und das liest sich am Rand richtig.
+export function layoutRadial({
+  centerId = null,
+  ring = [], // [{ id, width, height }] – einzelne Nachbarn
+  outer = [], // [{ id, width, height }] – Aggregatknoten
+  scale = 1,
+} = {}) {
+  const pos = new Map()
+  if (centerId == null) return { pos, zones: [] }
+  pos.set(centerId, { x: 0, y: 0 })
+
+  const GAP = 26 * scale // Luft zwischen zwei Karten auf demselben Ring
+  const RING_GAP = 46 * scale // Luft zwischen zwei Ringen
+
+  // Knoten auf konzentrische Ringe verteilen; `startRadius` ist der Abstand des ersten Rings.
+  const placeRing = (list, startRadius) => {
+    let i = 0
+    let radius = startRadius
+    let maxBottom = startRadius
+    while (i < list.length) {
+      const w = Math.max(...list.slice(i).map((n) => n.width), 1)
+      const h = Math.max(...list.slice(i).map((n) => n.height), 1)
+      // Wieviele passen auf diesen Ring? Mindestens einer, sonst waechst der Radius ewig.
+      const capacity = Math.max(1, Math.floor((2 * Math.PI * radius) / (w + GAP)))
+      const count = Math.min(capacity, list.length - i)
+      // Beginnt oben (-90°) und laeuft im Uhrzeigersinn – dieselbe Leserichtung wie eine Uhr.
+      const step = (2 * Math.PI) / count
+      const offset = -Math.PI / 2
+      for (let k = 0; k < count; k++) {
+        const a = offset + k * step
+        pos.set(list[i + k].id, { x: Math.cos(a) * radius, y: Math.sin(a) * radius })
+      }
+      i += count
+      maxBottom = radius + h / 2
+      radius += h + RING_GAP
+    }
+    return { next: radius, bottom: maxBottom }
+  }
+
+  const first = ring.length ? Math.max(...ring.map((n) => Math.max(n.width, n.height))) * 1.15 : 240 * scale
+  const after = placeRing(ring, first)
+  if (outer.length) {
+    const gap = ring.length ? RING_GAP * 1.6 : 0
+    placeRing(outer, after.next + gap)
+  }
+
+  return { pos, zones: [] }
+}

@@ -327,6 +327,15 @@ watch([searching, filteredFiles], ([on, list]) => {
   graphSearchTimer = setTimeout(() => {
     graphMatchIds.value = list.map((f) => f.id)
     graphQuery.value = appliedSearch.value
+    // Genau EINE Klasse gefunden: dann ist die Suche beantwortet, und die Antwort gehoert
+    // aufgeschlagen. Vorher zeigte der Graph die Klasse, waehrend die rechte Spalte leer blieb –
+    // man musste den Treffer, den man gerade gefunden hatte, noch einmal anklicken.
+    // Nur, wenn nicht ohnehin schon etwas anderes offen ist, das der Nutzer selbst gewaehlt hat.
+    if (list.length === 1 && selectedFileId.value !== list[0].id) {
+      activeTargetLine.value = null
+      activeTargetEndLine.value = null
+      selectedFileId.value = list[0].id
+    }
   }, GRAPH_SEARCH_DELAY_MS)
 })
 

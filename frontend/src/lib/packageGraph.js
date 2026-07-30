@@ -286,6 +286,138 @@ export function buildNeighbourLevel({
   }
 }
 
+// --- Ego-Ausschnitt: EINE Klasse und alles, was an ihr haengt ---------------------------------
+//
+// Der Fall „ich suche eine Klasse" ist ein anderer als „ich suche ein Wort": gefragt ist nicht die
+// Trefferliste, sondern DIESE Klasse mit ihren Beziehungen. Die Suche zeigte dafuer bisher nur den
+// Treffer, sobald er viele Nachbarn hatte (der Kontext kam automatisch erst bis 30 Knoten) – also
+// genau dann nichts, wenn es am meisten zu sehen gaebe: eine Karte ohne eine einzige Kante.
+//
+// Diese Funktion baut den Ausschnitt in zwei Stufen, weil eine Darstellung nicht beides kann:
+//   * die staerksten `cardLimit` Nachbarn als EINZELNE Klassenkarten (ihre Kanten tragen
+//     Methodennamen und fuehren bis in den Code),
+//   * alle weiteren zusammengefasst je Package als Aggregatknoten mit Aggregatkante – bei 137
+//     Nachbarn ist „util · 41 relations" eine Aussage, 137 Karten sind es nicht.
+// „Staerkster" Nachbar = Summe der Kantengewichte: ein Aufruf wiegt mehr als eine Typnutzung, die
+// mehr als ein Import. Wer im Bild bleibt, soll der sein, mit dem die Klasse wirklich arbeitet.
+const EGO_KIND_WEIGHT = { call: 3, uses: 2, import: 1 }
+
+export function buildEgoLevel({
+  files = [],
+  classEdges = [],
+  centerId = null,
+  cardLimit = 40,
+  nodeLimit = 10,
+  rootPath = '',
+} = {}) {
+  const empty = {
+    cardIds: new Set(),
+    nodes: [],
+    edges: [],
+    keyByFileId: new Map(),
+    linkedIds: new Set(),
+    neighbours: 0,
+    relations: 0,
+    aggregatedClasses: 0,
+    hiddenPackages: 0,
+    hiddenRelations: 0,
+  }
+  const byId = new Map(files.map((f) => [f.id, f]))
+  if (centerId == null || !byId.has(centerId)) return empty
+
+  // 1) Nachbarn sammeln und gewichten.
+  // `provides`/`consumes` aus Sicht des NACHBARN – dieselbe Lesart wie bei den Umgebungs-Knoten
+  // eines Packages (Pfeil nach unten = liefert an den Ausschnitt, nach oben = nutzt ihn).
+  const stats = new Map() // fileId -> { weight, relations, provides, consumes }
+  let relations = 0
+  for (const e of classEdges) {
+    const other = e.fromId === centerId ? e.toId : e.toId === centerId ? e.fromId : null
+    if (other == null || other === centerId || !byId.has(other)) continue
+    const s = stats.get(other) || { weight: 0, relations: 0, provides: 0, consumes: 0 }
+    s.weight += EGO_KIND_WEIGHT[e.kind] ?? 1
+    s.relations++
+    if (e.toId === centerId) s.provides++
+    else s.consumes++
+    stats.set(other, s)
+    relations++
+  }
+  if (!stats.size) return { ...empty, neighbours: 0 }
+
+  // 2) Aufteilen: Karten vs. Aggregat. Sortiert nach Gewicht, bei Gleichstand nach Namen – damit
+  //    dieselbe Datenlage immer dasselbe Bild ergibt (sonst wechselt das Bild bei jedem Aufruf).
+  const ranked = [...stats.entries()].sort(
+    (a, b) =>
+      b[1].weight - a[1].weight ||
+      b[1].relations - a[1].relations ||
+      String(byId.get(a[0])?.class_name).localeCompare(String(byId.get(b[0])?.class_name)),
+  )
+  const cardIds = new Set(ranked.slice(0, cardLimit).map(([id]) => id))
+  const rest = ranked.slice(cardLimit)
+
+  // 3) Rest je Package zusammenfassen.
+  const label = (path) => {
+    if (!path) return DEFAULT_PACKAGE
+    if (rootPath && path === rootPath) return path
+    if (rootPath && path.startsWith(rootPath + '.')) return path.slice(rootPath.length + 1)
+    return path
+  }
+  const groups = new Map()
+  const keyByFileId = new Map()
+  for (const [id, s] of rest) {
+    const pkg = byId.get(id)?.package || DEFAULT_PACKAGE
+    const key = `p:${pkg}`
+    keyByFileId.set(id, key)
+    let g = groups.get(key)
+    if (!g) {
+      g = {
+        id: key,
+        path: pkg === DEFAULT_PACKAGE ? '' : pkg,
+        label: label(pkg),
+        classCount: 0,
+        // Jede Klasse hier beruehrt die Mitte per Definition – „linked" ist deshalb identisch mit
+        // `classCount`. Das Feld bleibt trotzdem, weil die Nachbar-Karte es rendert und beide
+        // Herkuenfte (Package-Umgebung und Ego) dieselbe Karte benutzen.
+        linkedCount: 0,
+        provides: 0,
+        consumes: 0,
+        relations: 0,
+        related: true,
+      }
+      groups.set(key, g)
+    }
+    g.classCount++
+    g.linkedCount++
+    g.relations += s.relations
+    g.provides += s.provides
+    g.consumes += s.consumes
+  }
+
+  // Nach Beziehungszahl deckeln: zehn Aggregate sind noch ein Bild, dreissig sind wieder eine
+  // Wolke. Was wegfaellt, wird gezaehlt und angeschrieben – nie stillschweigend.
+  const sorted = [...groups.values()].sort((a, b) => b.relations - a.relations || a.label.localeCompare(b.label))
+  const kept = sorted.slice(0, nodeLimit)
+  const hidden = sorted.slice(nodeLimit)
+  const keptIds = new Set(kept.map((n) => n.id))
+
+  return {
+    cardIds,
+    nodes: kept,
+    edges: kept.map((n) => ({
+      id: `ego:${centerId}:${n.id}`,
+      source: `c:${centerId}`,
+      target: n.id,
+      count: n.relations,
+    })),
+    keyByFileId: new Map([...keyByFileId].filter(([, key]) => keptIds.has(key))),
+    linkedIds: new Set(), // Nachbarkarten kommen im Ego-Modus aus `cardIds`, nicht von hier
+    neighbours: stats.size,
+    relations,
+    aggregatedClasses: kept.reduce((sum, n) => sum + n.classCount, 0),
+    hiddenPackages: hidden.length,
+    hiddenRelations: hidden.reduce((sum, n) => sum + n.relations, 0),
+  }
+}
+
 // Breadcrumb ab der Wurzel-Ebene: [{ label, path }]. Der erste Eintrag ist der gemeinsame
 // Praefix (dort beginnt die Navigation), danach folgt je Segment darunter ein Eintrag. Die
 // Segmente des Praefixes selbst tauchen NICHT einzeln auf – sie sind nicht anspringbar, weil
