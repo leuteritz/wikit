@@ -39,6 +39,7 @@ export const SHORTCUTS = [
   { id: 'help', keys: ['?'], scope: 'global', label: 'Keyboard shortcuts', hint: 'this list' },
   { id: 'goto-code', keys: ['g', 'c'], seq: true, scope: 'global', label: 'Go to Code', hint: 'press g, then c' },
   { id: 'goto-wiki', keys: ['g', 'w'], seq: true, scope: 'global', label: 'Go to Wiki', hint: 'press g, then w' },
+  { id: 'goto-bot', keys: ['g', 'b'], seq: true, scope: 'global', label: 'Go to Bot', hint: 'press g, then b' },
   { id: 'close', keys: ['esc'], scope: 'global', label: 'Close / clear', hint: 'modal, panel or search field' },
 
   // --- Code-Ansicht ---
@@ -55,6 +56,10 @@ export const SHORTCUTS = [
   { id: 'find-graph', keys: ['mod+shift+f'], scope: 'code', label: 'Find in graph', hint: 'always the graph field' },
   { id: 'analyze', keys: ['mod+enter'], scope: 'code', label: 'Run analysis', hint: 'inside “Add code”' },
 
+  // --- Bot-Bereich ---
+  { id: 'save', keys: ['mod+s'], scope: 'bot', label: 'Save settings', hint: 'writes only the changed fields' },
+  { id: 'run-prompt', keys: ['mod+enter'], scope: 'bot', label: 'Run the prompt', hint: 'in the playground' },
+
   // --- Graph ---
   { id: 'fit', keys: ['0'], scope: 'graph', label: 'Fit graph to view' },
   { id: 'up', keys: ['alt+left'], scope: 'graph', label: 'One package level up' },
@@ -69,17 +74,25 @@ export const SHORTCUTS = [
 // niemand mehr liest – der Rest steht in der Uebersicht (`?`).
 const SIDEBAR_IDS = {
   code: ['search', 'find', 'filter', 'fit', 'help'],
+  // Im Bot-Bereich ist „speichern" das Kuerzel, das man dort tatsaechlich braucht – die
+  // Navigationsfolgen stehen weiter in der Uebersicht.
+  bot: ['save', 'run-prompt', 'search', 'goto-code', 'help'],
   default: ['search', 'goto-code', 'goto-wiki', 'help'],
 }
 
 export function sidebarShortcuts(routePath) {
-  const ids = routePath.startsWith('/code') ? SIDEBAR_IDS.code : SIDEBAR_IDS.default
+  const ids = routePath.startsWith('/code')
+    ? SIDEBAR_IDS.code
+    : routePath.startsWith('/bot')
+      ? SIDEBAR_IDS.bot
+      : SIDEBAR_IDS.default
   return ids.map((id) => SHORTCUTS.find((s) => s.id === id)).filter(Boolean)
 }
 
 export const SHORTCUT_GROUPS = [
   { scope: 'global', title: 'Everywhere' },
   { scope: 'code', title: 'Code view' },
+  { scope: 'bot', title: 'Bot settings' },
   { scope: 'graph', title: 'Graph' },
   { scope: 'search', title: 'Search & result lists' },
 ]

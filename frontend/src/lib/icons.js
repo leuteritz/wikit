@@ -84,6 +84,19 @@ import wholeWord from '@iconify-icons/lucide/whole-word'
 import regexIcon from '@iconify-icons/lucide/regex'
 import download from '@iconify-icons/lucide/download'
 import clipboardCopy from '@iconify-icons/lucide/clipboard-copy'
+// --- Bot-Bereich (/bot): Ollama-Konfiguration ---
+import bot from '@iconify-icons/lucide/bot'
+import server from '@iconify-icons/lucide/server'
+import slidersHorizontal from '@iconify-icons/lucide/sliders-horizontal'
+import messageSquare from '@iconify-icons/lucide/message-square'
+import cpu from '@iconify-icons/lucide/cpu'
+import gauge from '@iconify-icons/lucide/gauge'
+import square from '@iconify-icons/lucide/square'
+import save from '@iconify-icons/lucide/save'
+import zap from '@iconify-icons/lucide/zap'
+import hardDrive from '@iconify-icons/lucide/hard-drive'
+import languages from '@iconify-icons/lucide/languages'
+import activity from '@iconify-icons/lucide/activity'
 
 // --- Phosphor (Duotone, fuer das Brand-Logo) ---
 import phBooksDuotone from '@iconify-icons/ph/books-duotone'
@@ -166,6 +179,19 @@ const ICONS = {
   'lucide:regex': regexIcon,
   'lucide:download': download,
   'lucide:clipboard-copy': clipboardCopy,
+  // Bot-Bereich: Navigation, die vier Abschnitte, Modellkatalog und die Metriken des Probelaufs.
+  'lucide:bot': bot,
+  'lucide:server': server,
+  'lucide:sliders-horizontal': slidersHorizontal,
+  'lucide:message-square': messageSquare,
+  'lucide:cpu': cpu,
+  'lucide:gauge': gauge,
+  'lucide:square': square,
+  'lucide:save': save,
+  'lucide:zap': zap,
+  'lucide:hard-drive': hardDrive,
+  'lucide:languages': languages,
+  'lucide:activity': activity,
   'ph:books-duotone': phBooksDuotone,
 }
 

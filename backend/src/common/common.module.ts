@@ -8,6 +8,7 @@ import { MarkdownService } from './markdown.service';
 import { OllamaService } from './ollama.service';
 import { SeedService } from './seed.service';
 import { SerializerService } from './serializer.service';
+import { SettingsService } from './settings.service';
 import { TagsService } from './tags.service';
 
 // Global: stellt Repositories (forFeature) + gemeinsame Services allen Feature-Modulen bereit.
@@ -22,6 +23,7 @@ import { TagsService } from './tags.service';
     MarkdownService,
     OllamaService,
     SerializerService,
+    SettingsService,
     TagsService,
     SeedService,
   ],
@@ -32,6 +34,7 @@ import { TagsService } from './tags.service';
     MarkdownService,
     OllamaService,
     SerializerService,
+    SettingsService,
     TagsService,
   ],
 })

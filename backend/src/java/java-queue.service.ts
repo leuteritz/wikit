@@ -8,6 +8,7 @@ import { MarkdownService } from '../common/markdown.service';
 import { OllamaService } from '../common/ollama.service';
 import { buildPromptContext } from '../common/prompt-context.util';
 import { SerializerService } from '../common/serializer.service';
+import { SettingsService } from '../common/settings.service';
 import { JavaFile } from '../entities/java-file.entity';
 import { JavaMethod } from '../entities/java-method.entity';
 
@@ -15,7 +16,10 @@ import { JavaMethod } from '../entities/java-method.entity';
 // Server (Map<fileId, QueueJob>): der Nutzer darf die Seite verlassen, die Queue laeuft weiter und
 // der Fortschritt bleibt ueber /api/java/queues abfragbar (Live-Tokens zusaetzlich per SSE).
 //
-// EIN sequentieller Worker fuer alle Jobs -> Ollama wird nie parallel angefragt (Pi-Schutz).
+// Standardmaessig EIN sequentieller Worker fuer alle Jobs -> Ollama wird nie parallel angefragt
+// (Pi-Schutz). Die Parallelitaet ist im Bot-Bereich einstellbar (bot.queue.concurrency): eine
+// Arbeitsmaschine mit kleinem Modell verkraftet mehr, ein Pi nicht. Der Default bleibt 1, damit
+// sich am Bestand nichts aendert, solange niemand es bewusst hochstellt.
 //
 // ATOMARE PRO-KLASSE-EINHEIT: Ein Job analysiert genau EINE Klasse vollstaendig. Reihenfolge
 // zwingend (1) alle Methoden, (2) DANACH die Klassen-Zusammenfassung. Der Map-Schluessel ist die
@@ -75,6 +79,9 @@ interface QueueJob {
   // Reload-Fallback im Frontend; der fluessige Live-Strom kommt per SSE (siehe live).
   liveText: string;
   tokenCount: number;
+  // Wie oft ein Schritt dieser Einheit wiederholt werden musste (Ollama lieferte nichts). Steht im
+  // Snapshot, weil eine stille Wiederholung sonst nur als laengere Laufzeit auffiele.
+  retried: number;
 }
 
 @Injectable()
@@ -82,7 +89,10 @@ export class JavaQueueService {
   // Schluessel = `${fileId}` -> genau eine atomare Analyse-Einheit pro Klasse.
   private jobs = new Map<string, QueueJob>();
   private worker: Array<() => Promise<void>> = [];
-  private processing = false;
+  // Wieviele Runner gerade laufen. Frueher ein Boolean -- mit einstellbarer Parallelitaet muss es
+  // eine Zahl sein, und `lastLimit` haelt die zuletzt gelesene Grenze fuer die (synchrone) ETA.
+  private activeRunners = 0;
+  private lastLimit = 1;
   // Cancel-Plumbing: laufende Ollama-Calls werden ueber den AbortController abgebrochen,
   // bereits eingereihte (noch nicht gestartete) Jobs ueber das cancelled-Set uebersprungen.
   private inflight = new Map<string, AbortController>();
@@ -97,6 +107,7 @@ export class JavaQueueService {
     private readonly markdown: MarkdownService,
     private readonly fts: FtsService,
     private readonly serializer: SerializerService,
+    private readonly settings: SettingsService,
   ) {}
 
   private key(fileId: number): string {
@@ -152,6 +163,7 @@ export class JavaQueueService {
       queuedAt: job.queuedAt,
       liveText: job.liveText,
       tokenCount: job.tokenCount,
+      retried: job.retried,
     };
   }
 
@@ -167,11 +179,15 @@ export class JavaQueueService {
   // knapp eine Sekunde Serverzeit ALLE 3 SEKUNDEN. Die Detailliste holt daher nur noch, wer sie
   // wirklich anzeigt (Queue-Modal).
   //
-  // ETA: Der Worker arbeitet strikt SEQUENTIELL, also ist die Restzeit direkt hochrechenbar.
-  // Bezugsgroesse ist die einzelne Einheit (je Methode ein Ollama-Call + ein Klassen-Schritt),
+  // ETA: Bezugsgroesse ist die einzelne Einheit (je Methode ein Ollama-Call + ein Klassen-Schritt),
   // nicht die Klasse – Klassen haben sehr unterschiedlich viele Methoden. Gemittelt wird ueber
   // die letzten ETA_WINDOW abgeschlossenen Jobs, damit die Schaetzung der aktuellen Maschinen-
   // last folgt statt einem Mittelwert seit Queue-Beginn.
+  //
+  // msPerUnit ist die WANDUHRZEIT einer Einheit. Laufen mehrere Klassen gleichzeitig
+  // (bot.queue.concurrency), ist der Durchsatz entsprechend hoeher – ohne die Division stuende
+  // bei Parallelitaet 4 die vierfache Restzeit da. Gelesen wird die zuletzt bekannte Grenze
+  // (`lastLimit`), weil summary() synchron ist und im Sekundentakt gepollt wird.
   summary(): any {
     const jobs = [...this.jobs.values()];
     let queued = 0;
@@ -224,7 +240,9 @@ export class JavaQueueService {
       if (units > 0) msPerUnit = ms / units;
     }
     const unitsLeft = Math.max(0, unitsTotal - unitsDone);
-    const etaMs = msPerUnit > 0 && (queued > 0 || running > 0) ? Math.round(msPerUnit * unitsLeft) : null;
+    const parallel = Math.max(1, this.lastLimit);
+    const etaMs =
+      msPerUnit > 0 && (queued > 0 || running > 0) ? Math.round((msPerUnit * unitsLeft) / parallel) : null;
 
     return {
       total: jobs.length,
@@ -239,6 +257,7 @@ export class JavaQueueService {
       unitsLeft,
       msPerUnit: Math.round(msPerUnit),
       etaMs,
+      parallel,
       current,
     };
   }
@@ -287,6 +306,7 @@ export class JavaQueueService {
       queuedAt: new Date().toISOString(),
       liveText: '',
       tokenCount: 0,
+      retried: 0,
     };
     this.jobs.set(key, job);
     this.cancelled.delete(key); // evtl. alter Cancel-Marker fuer diese Datei aufheben
@@ -417,21 +437,75 @@ export class JavaQueueService {
 
   // --- Worker-Steuerung -----------------------------------------------------
 
+  // Aktuell zulaessige Parallelitaet. Wird bei jeder Runde frisch gelesen, damit eine Aenderung
+  // im Bot-Bereich waehrend einer laufenden Queue greift und nicht erst beim naechsten Start.
+  private async limit(): Promise<number> {
+    const cfg = await this.settings.bot();
+    this.lastLimit = Math.max(1, Number(cfg.queue?.concurrency) || 1);
+    return this.lastLimit;
+  }
+
   private async process(): Promise<void> {
-    if (this.processing) return;
-    this.processing = true;
+    const limit = await this.limit();
+    while (this.activeRunners < limit && this.worker.length) {
+      this.activeRunners++;
+      void this.runner();
+    }
+  }
+
+  private async runner(): Promise<void> {
     try {
-      let task: (() => Promise<void>) | undefined;
-      while ((task = this.worker.shift())) {
+      for (;;) {
+        const task = this.worker.shift();
+        if (!task) break;
         try {
           await task();
         } catch {
           // Defensiv: job-interne Fehler sind dort bereits behandelt; Worker laeuft weiter.
         }
+        // Wurde die Parallelitaet waehrend des Laufs gesenkt, zieht sich der ueberzaehlige Runner
+        // nach seiner aktuellen Klasse zurueck -- sonst wirkte eine Senkung erst, wenn die Queue
+        // ohnehin leer ist.
+        if (this.activeRunners > (await this.limit())) break;
       }
     } finally {
-      this.processing = false;
+      this.activeRunners--;
     }
+  }
+
+  // Wartet, laesst sich aber vom Cancel unterbrechen -- ein Retry-Delay darf einen Abbruch nicht
+  // um Sekunden verzoegern.
+  private sleep(ms: number, signal: AbortSignal): Promise<void> {
+    if (ms <= 0 || signal.aborted) return Promise.resolve();
+    return new Promise((resolve) => {
+      const timer = setTimeout(done, ms);
+      function done() {
+        clearTimeout(timer);
+        signal.removeEventListener('abort', done);
+        resolve();
+      }
+      signal.addEventListener('abort', done, { once: true });
+    });
+  }
+
+  /**
+   * Einen Generierungsschritt mit Wiederholungen fahren. Ein leerer Rueckgabewert ist die einzige
+   * Art, wie Ollama "Timeout / nicht erreichbar" meldet (die Fallback-Kette liefert bewusst '')
+   * -- ohne Wiederholung hinterlaesst ein einzelner Aussetzer eine leere Beschreibung, die
+   * niemand mehr wiederfindet. Abgebrochene Laeufe werden nicht wiederholt.
+   */
+  private async withRetry(job: QueueJob, signal: AbortSignal, attempt: () => Promise<string>): Promise<string> {
+    const cfg = await this.settings.bot();
+    const retries = Math.max(0, Number(cfg.queue?.retries) || 0);
+    const delay = Math.max(0, Number(cfg.queue?.retryDelayMs) || 0);
+    let out = await attempt();
+    for (let i = 0; i < retries && !out && !signal.aborted; i++) {
+      job.retried++;
+      await this.sleep(delay, signal);
+      if (signal.aborted) break;
+      out = await attempt();
+    }
+    return out;
   }
 
   // --- Atomare Klassen-Einheit ----------------------------------------------
@@ -509,16 +583,20 @@ export class JavaQueueService {
         if (controller.signal.aborted) break;
         job.current = { id: m.id, name: m.method_name };
         try {
-          this.beginLive(job, m.method_name);
-          const summary = await this.ollama.generateMethodDescription(
-            {
-              className: file.class_name,
-              method: { ...m, parameters: safeJson(m.parameters, []) },
-              context,
-            },
-            controller.signal,
-            this.makeOnToken(job),
-          );
+          // beginLive gehoert IN den Versuch: ein Wiederholungslauf faengt sonst hinter dem
+          // Teiltext des gescheiterten an, und die Live-Anzeige zeigte zwei Anlaeufe als einen.
+          const summary = await this.withRetry(job, controller.signal, () => {
+            this.beginLive(job, m.method_name);
+            return this.ollama.generateMethodDescription(
+              {
+                className: file.class_name,
+                method: { ...m, parameters: safeJson(m.parameters, []) },
+                context,
+              },
+              controller.signal,
+              this.makeOnToken(job),
+            );
+          });
           this.live.next({ phase: 'done', key });
           if (controller.signal.aborted) break;
           if (!summary) job.ollamaUnavailable = true;
@@ -556,20 +634,22 @@ export class JavaQueueService {
           ? `${context}${context ? '\n\n' : ''}Analysierte Methoden dieser Klasse:\n${methodKnowledge}`
           : context;
 
-        this.beginLive(job, file.class_name);
-        const summary = await this.ollama.generateClassSummary(
-          {
-            classInfo: {
-              class_name: file.class_name,
-              class_type: file.class_type,
-              package: file.pkg,
-              methods: allMethods.map((m) => ({ method_name: m.method_name })),
+        const summary = await this.withRetry(job, controller.signal, () => {
+          this.beginLive(job, file.class_name);
+          return this.ollama.generateClassSummary(
+            {
+              classInfo: {
+                class_name: file.class_name,
+                class_type: file.class_type,
+                package: file.pkg,
+                methods: allMethods.map((m) => ({ method_name: m.method_name })),
+              },
+              context: classContext,
             },
-            context: classContext,
-          },
-          controller.signal,
-          this.makeOnToken(job),
-        );
+            controller.signal,
+            this.makeOnToken(job),
+          );
+        });
         this.live.next({ phase: 'done', key });
         if (!controller.signal.aborted) {
           if (!summary) job.ollamaUnavailable = true;

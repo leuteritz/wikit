@@ -7,6 +7,7 @@ import { sidebarShortcuts, keyChips, isTypingTarget } from './lib/shortcuts.js'
 import NotificationHost from './components/NotificationHost.vue'
 import { useArticles } from './composables/useArticles.js'
 import { useJavaAnalyzer } from './composables/useJavaAnalyzer.js'
+import { useBot } from './composables/useBot.js'
 import { useTheme } from './composables/useTheme.js'
 import { WIKI_TITLE, WIKI_ICON, WIKI_VERSION } from './config.js'
 import { Icon } from './lib/icons.js'
@@ -14,6 +15,10 @@ import { Icon } from './lib/icons.js'
 const { load, articles } = useArticles()
 const { files, fetchFiles } = useJavaAnalyzer()
 const { theme, toggle: toggleTheme } = useTheme()
+// Verbindungsstand des Bots. Er haengt an der Sidebar, weil die Frage „antwortet die KI ueberhaupt?"
+// jede Ansicht betrifft – ein Massenlauf gegen einen abgeschalteten Ollama-Server faellt sonst
+// erst auf, wenn die Beschreibungen leer bleiben.
+const { status: botStatus, statusLabel: botStatusLabel, startHealthWatch } = useBot()
 const route = useRoute()
 const router = useRouter()
 const searchOpen = ref(false)
@@ -26,6 +31,9 @@ const sidebarKeys = computed(() => sidebarShortcuts(route.path))
 // niemand tippt. Das Fenster ist kurz, sonst wird aus einem spaeteren `c` im Fliesstext eine
 // Navigation.
 const GOTO_WINDOW_MS = 1200
+// Die Ziele stehen als Tabelle da, damit ein weiterer Bereich eine Zeile ist und keine zweite
+// Bedingung im Handler (die dritte Verzweigung war der Punkt, an dem es eine wurde).
+const GOTO_TARGETS = { c: '/code', w: '/wiki', b: '/bot' }
 let gotoArmedAt = 0
 
 function onKey(e) {
@@ -54,10 +62,10 @@ function onKey(e) {
     return
   }
   if (gotoArmedAt && Date.now() - gotoArmedAt < GOTO_WINDOW_MS) {
-    const k = e.key.toLowerCase()
-    if (k === 'c' || k === 'w') {
+    const target = GOTO_TARGETS[e.key.toLowerCase()]
+    if (target) {
       e.preventDefault()
-      router.push(k === 'c' ? '/code' : '/wiki')
+      router.push(target)
     }
   }
   gotoArmedAt = 0
@@ -67,6 +75,7 @@ onMounted(() => {
   load()
   // Nur die Anzahl fuer den Nav-Badge – Fehler still (Code-Feature ist optional/leer moeglich).
   fetchFiles().catch(() => {})
+  startHealthWatch()
   window.addEventListener('keydown', onKey)
 })
 onUnmounted(() => window.removeEventListener('keydown', onKey))
@@ -75,7 +84,17 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
 const navLinks = computed(() => [
   { to: '/code', label: 'Code', icon: 'lucide:braces', count: files.value.length },
   { to: '/wiki', label: 'Wiki', icon: 'lucide:book-open', count: articles.value.length },
+  // Der Bot traegt keine Zahl, sondern einen Zustand: eine „3" waere hier keine Auskunft, die
+  // Frage ist „antwortet er?". Der Punkt sitzt an derselben Stelle wie die Zaehler daneben.
+  { to: '/bot', label: 'Bot', icon: 'lucide:bot', status: botStatus.value, title: botStatusLabel.value },
 ])
+
+const DOT_COLOR = {
+  online: 'var(--color-success)',
+  warn: 'var(--color-warning)',
+  offline: 'var(--color-danger)',
+  unknown: 'var(--color-text-muted)',
+}
 
 const isDark = computed(() => theme.value === 'dark')
 
@@ -128,15 +147,33 @@ function isActive(to) {
           :class="isActive(link.to)
             ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]'
             : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-offset)]'"
-          :title="link.label"
+          :title="link.title || link.label"
         >
           <span
             v-if="isActive(link.to)"
             class="absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-r bg-[var(--color-accent)]"
           />
-          <Icon :icon="link.icon" class="h-[18px] w-[18px] shrink-0" />
+          <span class="relative shrink-0">
+            <Icon :icon="link.icon" class="h-[18px] w-[18px]" />
+            <!-- In der schmalen Icon-Spalte gibt es keine Zeile fuer den Zustand – dort sitzt der
+                 Punkt am Symbol, damit die Auskunft auf jeder Breite ankommt. -->
+            <span
+              v-if="link.status"
+              class="absolute -right-1 -top-0.5 h-2 w-2 rounded-full ring-2 ring-[var(--color-surface-2)] lg:hidden"
+              :style="{ background: DOT_COLOR[link.status] }"
+            />
+          </span>
           <span class="hidden flex-1 lg:inline">{{ link.label }}</span>
           <span
+            v-if="link.status"
+            class="ml-auto hidden items-center gap-1.5 lg:flex"
+          >
+            <!-- Bewusst ohne Animation: ein Punkt, der dauerhaft pulsiert, ist nach zwei Minuten
+                 Arbeit nur noch Unruhe (dieselbe Zurueckhaltung wie beim „Add code"-Knopf). -->
+            <span class="h-2 w-2 rounded-full" :style="{ background: DOT_COLOR[link.status] }" />
+          </span>
+          <span
+            v-else
             class="hidden min-w-[24px] rounded px-1.5 py-0.5 text-center font-mono text-2xs lg:inline"
             :class="isActive(link.to) ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'"
           >{{ link.count }}</span>

@@ -54,6 +54,18 @@ CREATE VIRTUAL TABLE IF NOT EXISTS articles_fts USING fts5(
   tokenize = 'unicode61 remove_diacritics 2'
 );
 
+-- Persistente Einstellungen (aktuell: der Bot-Bereich unter /bot). Bewusst key/value statt einer
+-- Spalte je Feld: eine FEHLENDE Zeile heisst "nicht gesetzt" und laesst damit den Default aus der
+-- Env bzw. dem Code gelten. Genau diese Unterscheidung braucht der Reset-Knopf je Feld -- mit
+-- einem NULL-faehigen Spalten-Schema waere "leerer Prompt" und "kein eigener Prompt" dasselbe.
+-- value ist immer TEXT (Zahlen als Dezimalstring), die Typisierung leistet BOT_FIELDS.
+-- Hinweis: KEIN Semikolon in diesem Kommentar (SCHEMA wird beim Init daran gesplittet).
+CREATE TABLE IF NOT EXISTS settings (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS java_files (
   id               INTEGER PRIMARY KEY AUTOINCREMENT,
   article_id       INTEGER REFERENCES articles(id) ON DELETE SET NULL,

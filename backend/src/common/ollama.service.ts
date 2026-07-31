@@ -1,11 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { BotConfig, languageInstruction, ollamaOptions, renderPrompt } from './bot-config';
+import { SettingsService } from './settings.service';
 
 // Lokaler KI-Client gegen Ollama (kostenlos, kein API-Key, Raspberry-Pi-tauglich).
 // Bewusst async + mit hartem Timeout: ist Ollama nicht erreichbar, faellt der Aufrufer
-// sauber auf Javadoc/leeren String zurueck statt zu blockieren. 1:1 aus backend/ollama.js.
-const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434/api/generate';
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5-coder:3b';
-const TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS || 20000);
+// sauber auf Javadoc/leeren String zurueck statt zu blockieren.
+//
+// Host, Modell, Timeout, Generierungsparameter und die vier Prompt-Vorlagen kommen zur LAUFZEIT
+// aus dem SettingsService (Bot-Bereich unter /bot) -- frueher waren es Modul-Konstanten aus der
+// Env, also nur mit einem Server-Neustart zu aendern. Env bleibt der Default: wer nichts
+// einstellt, laeuft weiter mit OLLAMA_URL/OLLAMA_MODEL/OLLAMA_TIMEOUT_MS.
 
 interface MethodInput {
   method_name: string;
@@ -22,9 +26,42 @@ interface ClassInput {
   methods?: Array<{ method_name: string }>;
 }
 
+/** Was Ollama im abschliessenden NDJSON-Chunk ueber den Lauf berichtet (fuer den Playground). */
+export interface GenerateStats {
+  totalDurationMs: number;
+  loadDurationMs: number;
+  promptEvalCount: number;
+  evalCount: number;
+  evalDurationMs: number;
+  tokensPerSecond: number;
+}
+
+export interface GenerateResult {
+  text: string;
+  stats: GenerateStats | null;
+  /** Klartext-Grund bei Timeout/Nichterreichbarkeit. Die Doku-Pfade ignorieren ihn (Fallback-Kette). */
+  error: string | null;
+}
+
+/** Overrides fuer einen einzelnen Aufruf -- der Playground testet Werte, BEVOR sie gespeichert sind. */
+export interface GenerateOverrides {
+  host?: string;
+  model?: string;
+  timeoutMs?: number;
+  options?: Record<string, number>;
+}
+
+const ns = (v: any): number => (Number.isFinite(Number(v)) ? Number(v) / 1e6 : 0);
+
 @Injectable()
 export class OllamaService {
   private readonly logger = new Logger(OllamaService.name);
+
+  constructor(private readonly settings: SettingsService) {}
+
+  private generateUrl(host: string): string {
+    return `${(host || '').replace(/\/+$/, '')}/api/generate`;
+  }
 
   // Baut eine knappe Methoden-Signatur fuer den Prompt-Kontext.
   private signature(className: string, method: MethodInput): string {
@@ -32,24 +69,58 @@ export class OllamaService {
     return `${method.return_type || 'void'} ${className}.${method.method_name}(${params})`;
   }
 
-  // Optionaler Projekt-/Wissens-Kontext (z. B. Windchill) wird VOR den Code gestellt.
-  private contextBlock(context?: string): string {
-    const c = (context || '').trim();
+  // Projekt-/Wissens-Kontext fuer den {context}-Platzhalter. Zwei Quellen: der dauerhaft
+  // gespeicherte Projekt-Kontext (Bot-Bereich) und der Kontext dieses Laufs (RAG-Wissen +
+  // das Feld im Add-Code-Modal). Der gespeicherte steht vorn -- es sei denn, er steckt bereits
+  // im uebergebenen Text, sonst stuende er bei einem vorbelegten Feld zweimal im Prompt.
+  private contextBlock(cfg: BotConfig, context?: string): string {
+    const runtime = (context || '').trim();
+    const stored = (cfg.projectContext || '').trim();
+    const parts: string[] = [];
+    if (stored && !runtime.includes(stored)) parts.push(stored);
+    if (runtime) parts.push(runtime);
+    const c = parts.join('\n\n');
     return c ? `Projekt-Kontext (beachten, aber nicht woertlich wiederholen):\n${c}\n\n` : '';
   }
 
+  // Die Sprachanweisung haengt IMMER hinten an, unabhaengig von der Vorlage: wer sein Template
+  // umschreibt, soll die Sprache trotzdem ueber den Schalter steuern koennen.
+  private withLanguage(cfg: BotConfig, prompt: string): string {
+    return `${prompt}\n\n${languageInstruction(cfg.language)}`;
+  }
+
+  private stats(chunk: any): GenerateStats | null {
+    if (!chunk) return null;
+    const evalCount = Number(chunk.eval_count || 0);
+    const evalDurationMs = ns(chunk.eval_duration);
+    return {
+      totalDurationMs: Math.round(ns(chunk.total_duration)),
+      loadDurationMs: Math.round(ns(chunk.load_duration)),
+      promptEvalCount: Number(chunk.prompt_eval_count || 0),
+      evalCount,
+      evalDurationMs: Math.round(evalDurationMs),
+      tokensPerSecond: evalDurationMs > 0 ? Number((evalCount / (evalDurationMs / 1000)).toFixed(2)) : 0,
+    };
+  }
+
   // Token-Streaming-Variante: ruft Ollama mit `stream: true` auf und liefert pro Chunk den
-  // Delta-Text an `onToken` (fuer die Live-Anzeige in der KI-Queue). Akkumuliert den Volltext
-  // und gibt ihn getrimmt zurueck. '' bei Timeout/Fehler/Down (Fallback-Kette unveraendert).
+  // Delta-Text an `onToken` (fuer die Live-Anzeige in der KI-Queue).
   //
   // Wichtig: KEIN harter Gesamt-Timeout (eine lange Generierung wuerde sonst abgeschnitten),
   // sondern ein IDLE-Timeout, das pro empfangenem Chunk zurueckgesetzt wird. Externes `signal`
   // (z. B. Cancel aus der Queue) bricht den Stream ebenfalls ab.
   private async runStream(
+    cfg: BotConfig,
     prompt: string,
     onToken: (delta: string) => void,
     signal?: AbortSignal,
-  ): Promise<string> {
+    overrides?: GenerateOverrides,
+  ): Promise<GenerateResult> {
+    const url = this.generateUrl(overrides?.host || cfg.host);
+    const model = overrides?.model || cfg.model;
+    const timeoutMs = overrides?.timeoutMs || cfg.timeoutMs;
+    const options = overrides?.options ?? ollamaOptions(cfg);
+
     const controller = new AbortController();
     let timedOut = false;
     let idleTimer: NodeJS.Timeout | null = null;
@@ -58,7 +129,7 @@ export class OllamaService {
       idleTimer = setTimeout(() => {
         timedOut = true;
         controller.abort();
-      }, TIMEOUT_MS);
+      }, timeoutMs);
     };
     if (signal) {
       if (signal.aborted) controller.abort();
@@ -66,20 +137,23 @@ export class OllamaService {
     }
     resetIdle();
     try {
-      const res = await fetch(OLLAMA_URL, {
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: OLLAMA_MODEL, prompt, stream: true }),
+        body: JSON.stringify({ model, prompt, stream: true, ...(options ? { options } : {}) }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {
-        this.logger.warn(`Ollama HTTP ${res.status} ${res.statusText} (${OLLAMA_URL})`);
-        return '';
+        const detail = await res.text().catch(() => '');
+        const reason = `HTTP ${res.status} ${res.statusText}${detail ? ` – ${detail.slice(0, 200)}` : ''}`;
+        this.logger.warn(`Ollama ${reason} (${url})`);
+        return { text: '', stats: null, error: reason };
       }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let full = '';
       let buffer = '';
+      let final: any = null;
       // Ollama streamt NDJSON: eine JSON-Zeile pro Token-Chunk ({ response, done }).
       for (;;) {
         const { value, done } = await reader.read();
@@ -106,57 +180,99 @@ export class OllamaService {
               /* Anzeige-Callback darf den Stream nie kippen */
             }
           }
-          if (chunk.done) break;
+          if (chunk.done) {
+            final = chunk;
+            break;
+          }
         }
       }
-      return full.trim();
+      return { text: full.trim(), stats: this.stats(final), error: null };
     } catch (err: any) {
-      if (timedOut) this.logger.warn(`Ollama Idle-Timeout nach ${TIMEOUT_MS}ms (${OLLAMA_URL})`);
+      const reason = timedOut
+        ? `No output for ${timeoutMs} ms – the model may still be loading, or the timeout is too tight`
+        : signal?.aborted
+          ? 'Cancelled'
+          : `Cannot reach Ollama at ${url}: ${err?.message || err}`;
+      if (timedOut) this.logger.warn(`Ollama Idle-Timeout nach ${timeoutMs}ms (${url})`);
       else if (signal?.aborted) this.logger.debug('Ollama-Stream abgebrochen (Cancel)');
-      else this.logger.warn(`Ollama nicht erreichbar: ${err?.message || err} (${OLLAMA_URL})`);
-      return '';
+      else this.logger.warn(`Ollama nicht erreichbar: ${err?.message || err} (${url})`);
+      return { text: '', stats: null, error: reason };
     } finally {
       if (idleTimer) clearTimeout(idleTimer);
     }
   }
 
-  // Generischer, abgesicherter Aufruf an Ollama. Liefert '' bei Timeout/Fehler/Down.
-  // Ein optionales externes `signal` (z. B. Cancel aus der Analyse-Queue) bricht den
-  // laufenden fetch ab. Fehlerursachen werden geloggt (vorher still verschluckt), die
-  // Rueckgabe bleibt aber '' -> die Fallback-Kette beim Aufrufer aendert sich nicht.
-  private async run(prompt: string, signal?: AbortSignal): Promise<string> {
+  // Generischer, abgesicherter Aufruf an Ollama (nicht gestreamt). Liefert '' bei Timeout/Fehler.
+  private async run(
+    cfg: BotConfig,
+    prompt: string,
+    signal?: AbortSignal,
+    overrides?: GenerateOverrides,
+  ): Promise<GenerateResult> {
+    const url = this.generateUrl(overrides?.host || cfg.host);
+    const model = overrides?.model || cfg.model;
+    const timeoutMs = overrides?.timeoutMs || cfg.timeoutMs;
+    const options = overrides?.options ?? ollamaOptions(cfg);
+
     const controller = new AbortController();
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
       controller.abort();
-    }, TIMEOUT_MS);
+    }, timeoutMs);
     if (signal) {
       if (signal.aborted) controller.abort();
       else signal.addEventListener('abort', () => controller.abort(), { once: true });
     }
     try {
-      const res = await fetch(OLLAMA_URL, {
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: OLLAMA_MODEL, prompt, stream: false }),
+        body: JSON.stringify({ model, prompt, stream: false, ...(options ? { options } : {}) }),
         signal: controller.signal,
       });
       if (!res.ok) {
-        this.logger.warn(`Ollama HTTP ${res.status} ${res.statusText} (${OLLAMA_URL})`);
-        return '';
+        const detail = await res.text().catch(() => '');
+        const reason = `HTTP ${res.status} ${res.statusText}${detail ? ` – ${detail.slice(0, 200)}` : ''}`;
+        this.logger.warn(`Ollama ${reason} (${url})`);
+        return { text: '', stats: null, error: reason };
       }
       const data: any = await res.json();
-      return (data.response || '').trim();
+      return { text: (data.response || '').trim(), stats: this.stats(data), error: null };
     } catch (err: any) {
-      if (timedOut) this.logger.warn(`Ollama Timeout nach ${TIMEOUT_MS}ms (${OLLAMA_URL})`);
+      const reason = timedOut
+        ? `No answer within ${timeoutMs} ms`
+        : signal?.aborted
+          ? 'Cancelled'
+          : `Cannot reach Ollama at ${url}: ${err?.message || err}`;
+      if (timedOut) this.logger.warn(`Ollama Timeout nach ${timeoutMs}ms (${url})`);
       else if (signal?.aborted) this.logger.debug('Ollama-Aufruf abgebrochen (Cancel)');
-      else this.logger.warn(`Ollama nicht erreichbar: ${err?.message || err} (${OLLAMA_URL})`);
+      else this.logger.warn(`Ollama nicht erreichbar: ${err?.message || err} (${url})`);
       // Fallback beim Aufrufer.
-      return '';
+      return { text: '', stats: null, error: reason };
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /**
+   * Roher Aufruf mit vollem Ergebnis (Text + Metriken + Fehlergrund). Fuer den Playground im
+   * Bot-Bereich: dort ist der Grund einer leeren Antwort die eigentliche Auskunft, waehrend die
+   * Doku-Pfade unten nur den Text brauchen und bei '' auf Javadoc zurueckfallen.
+   */
+  async generate(params: {
+    prompt: string;
+    onToken?: (delta: string) => void;
+    signal?: AbortSignal;
+    overrides?: GenerateOverrides;
+    /** false = die Sprachanweisung NICHT anhaengen (der Playground schickt den Prompt so, wie er dasteht). */
+    withLanguage?: boolean;
+  }): Promise<GenerateResult> {
+    const cfg = await this.settings.bot();
+    const prompt = params.withLanguage === false ? params.prompt : this.withLanguage(cfg, params.prompt);
+    return params.onToken
+      ? this.runStream(cfg, prompt, params.onToken, params.signal, params.overrides)
+      : this.run(cfg, prompt, params.signal, params.overrides);
   }
 
   // Erzeugt eine kurze Wiki-Zusammenfassung (max. 3 Saetze) fuer eine Methode (nur Signatur+Javadoc).
@@ -170,14 +286,17 @@ export class OllamaService {
     method: MethodInput;
     context?: string;
   }): Promise<string> {
-    const sig = this.signature(className, method);
-    const javadoc = method.javadoc ? `\nVorhandener Javadoc:\n${method.javadoc}` : '';
-    const prompt =
-      this.contextBlock(context) +
-      `Du dokumentierst Java-Code fuer ein Wiki. Beschreibe die folgende Methode in maximal ` +
-      `drei kurzen Saetzen: was sie tut, die Bedeutung der Parameter und moegliche Ausnahmen. ` +
-      `Antworte nur mit der Beschreibung, ohne Code.\n\nSignatur:\n${sig}${javadoc}`;
-    return this.run(prompt);
+    const cfg = await this.settings.bot();
+    const prompt = renderPrompt(cfg.prompts.methodShort, {
+      context: this.contextBlock(cfg, context),
+      signature: this.signature(className, method),
+      javadoc: method.javadoc ? `\nVorhandener Javadoc:\n${method.javadoc}` : '',
+      className,
+      methodName: method.method_name,
+      returnType: method.return_type || 'void',
+    });
+    const { text } = await this.run(cfg, this.withLanguage(cfg, prompt));
+    return text;
   }
 
   // Detailliertere Methodenbeschreibung: nutzt zusaetzlich den geparsten Rumpf (body) und darf
@@ -195,17 +314,20 @@ export class OllamaService {
     signal?: AbortSignal,
     onToken?: (delta: string) => void,
   ): Promise<string> {
-    const sig = this.signature(className, method);
-    const javadoc = method.javadoc ? `\nVorhandener Javadoc:\n${method.javadoc}` : '';
+    const cfg = await this.settings.bot();
     const body = (method.body || '').trim();
-    const bodyBlock = body ? `\n\nImplementierung:\n\`\`\`java\n${body}\n\`\`\`` : '';
-    const prompt =
-      this.contextBlock(context) +
-      `Du dokumentierst Java-Code fuer ein technisches Wiki. Beschreibe die folgende Methode ` +
-      `praegnant (2-4 Saetze): Zweck, wichtige Parameter, Rueckgabe und nennenswerte Seiteneffekte ` +
-      `oder Ausnahmen. Nutze bei Bedarf kurze Markdown-Formatierung (z. B. \`code\`), aber keinen ` +
-      `kompletten Code-Block. Antworte nur mit der Beschreibung.\n\nSignatur:\n${sig}${javadoc}${bodyBlock}`;
-    return onToken ? this.runStream(prompt, onToken, signal) : this.run(prompt, signal);
+    const prompt = renderPrompt(cfg.prompts.method, {
+      context: this.contextBlock(cfg, context),
+      signature: this.signature(className, method),
+      javadoc: method.javadoc ? `\nVorhandener Javadoc:\n${method.javadoc}` : '',
+      body: body ? `\n\nImplementierung:\n\`\`\`java\n${body}\n\`\`\`` : '',
+      className,
+      methodName: method.method_name,
+      returnType: method.return_type || 'void',
+    });
+    const full = this.withLanguage(cfg, prompt);
+    const res = onToken ? await this.runStream(cfg, full, onToken, signal) : await this.run(cfg, full, signal);
+    return res.text;
   }
 
   // Kurze Klassenbeschreibung (Markdown): Zweck/Verantwortlichkeit der Klasse aus Name, Typ
@@ -221,20 +343,23 @@ export class OllamaService {
     signal?: AbortSignal,
     onToken?: (delta: string) => void,
   ): Promise<string> {
+    const cfg = await this.settings.bot();
     const fqn = classInfo.package ? `${classInfo.package}.${classInfo.class_name}` : classInfo.class_name;
     const methodList = (classInfo.methods || []).map((m) => m.method_name).join(', ');
-    const prompt =
-      this.contextBlock(context) +
-      `Du dokumentierst eine Java-${classInfo.class_type || 'class'} fuer ein technisches Wiki. ` +
-      `Beschreibe in 2-4 Saetzen die Verantwortlichkeit und den Zweck dieser Klasse. Antworte nur ` +
-      `mit der Beschreibung (Markdown erlaubt), ohne Methoden einzeln aufzuzaehlen.\n\n` +
-      `Klasse: ${fqn} (${classInfo.class_type || 'class'})\n` +
-      (methodList ? `Methoden: ${methodList}` : '');
-    return onToken ? this.runStream(prompt, onToken, signal) : this.run(prompt, signal);
+    const prompt = renderPrompt(cfg.prompts.class, {
+      context: this.contextBlock(cfg, context),
+      fqn,
+      className: classInfo.class_name,
+      classType: classInfo.class_type || 'class',
+      package: classInfo.package || '',
+      methods: methodList ? `Methoden: ${methodList}` : '',
+    });
+    const full = this.withLanguage(cfg, prompt);
+    const res = onToken ? await this.runStream(cfg, full, onToken, signal) : await this.run(cfg, full, signal);
+    return res.text;
   }
 
   // Zusammenfassung einer Klassen-Aenderung aus einem Unified-Diff (Changelog-Eintrag).
-  // Liefert eine knappe, stichpunktartige Beschreibung dessen, was sich geaendert hat.
   // '' bei Nichterreichbarkeit -> Aufrufer laesst ai_summary dann leer (Frontend-Fallback).
   async generateDiffSummary(
     {
@@ -248,14 +373,13 @@ export class OllamaService {
     },
     signal?: AbortSignal,
   ): Promise<string> {
-    const prompt =
-      this.contextBlock(context) +
-      `Du dokumentierst Aenderungen an Java-Code fuer ein technisches Wiki. Unten steht ein ` +
-      `Unified-Diff der Klasse ${className}. Fasse in wenigen kurzen Stichpunkten (Markdown-Liste ` +
-      `mit "-") zusammen, WAS sich gegenueber der Vorversion geaendert hat (z. B. neue/entfernte ` +
-      `Methoden, geaenderte Signaturen, angepasste Logik). Sei praegnant, keine Zeilennummern, ` +
-      `kein kompletter Code-Block. Antworte nur mit der Aufzaehlung.\n\n` +
-      `\`\`\`diff\n${diff}\n\`\`\``;
-    return this.run(prompt, signal);
+    const cfg = await this.settings.bot();
+    const prompt = renderPrompt(cfg.prompts.diff, {
+      context: this.contextBlock(cfg, context),
+      className,
+      diff,
+    });
+    const { text } = await this.run(cfg, this.withLanguage(cfg, prompt), signal);
+    return text;
   }
 }

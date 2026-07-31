@@ -12,8 +12,10 @@ import { JavaMethod } from './java-method.entity';
 import { JavaDependency } from './java-dependency.entity';
 import { JavaEdge } from './java-edge.entity';
 import { JavaFileVersion } from './java-file-version.entity';
+import { Setting } from './setting.entity';
 
 export const ALL_ENTITIES = [
+  Setting,
   Category,
   Article,
   Tag,

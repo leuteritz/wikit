@@ -206,4 +206,27 @@ export const api = {
   startJavaAnalysis: (articleId, data) => http('POST', `/analysis/${articleId}/start`, data),
   cancelJavaAnalysis: (articleId) => http('POST', `/analysis/${articleId}/cancel`),
   analysisStreamUrl: (articleId) => `${BASE}/analysis/stream/${articleId}`,
+
+  // --- Bot (Ollama-Konfiguration, /bot) -------------------------------------
+  // Eine Antwort traegt Stand, Defaults, Overrides UND die Feldbeschreibung (Grenzen/Hinweise) –
+  // deshalb baut das Formular seine Eingabefelder daraus, statt dieselben Grenzen zu wiederholen.
+  getBotSettings: () => http('GET', '/bot/settings'),
+  updateBotSettings: (data) => http('PUT', '/bot/settings', data),
+  // Ohne `paths` faellt ALLES auf Env/Code-Default zurueck (die Zeilen werden geloescht).
+  resetBotSettings: (paths = null) => http('POST', '/bot/settings/reset', paths ? { paths } : {}),
+  // `host`/`model` optional: pruefen, BEVOR gespeichert wird. `silent`, weil die Antwort den Grund
+  // bereits an Ort und Stelle anzeigt – ein Toast daneben waere dieselbe Meldung zweimal.
+  botHealth: ({ host = '', model = '' } = {}) => {
+    const q = new URLSearchParams()
+    if (host) q.set('host', host)
+    if (model) q.set('model', model)
+    const s = q.toString()
+    return http('GET', `/bot/health${s ? `?${s}` : ''}`, null, { silent: true })
+  },
+  botModels: (host = '') =>
+    http('GET', `/bot/models${host ? `?host=${encodeURIComponent(host)}` : ''}`, null, { silent: true }),
+  // Probelauf: erst den Strom oeffnen, dann starten (dieselbe Bauart wie analyze-progress).
+  startBotPlayground: (data) => http('POST', '/bot/playground', data),
+  cancelBotPlayground: (jobId) => http('POST', `/bot/playground/${encodeURIComponent(jobId)}/cancel`),
+  botPlaygroundStreamUrl: (jobId) => `${BASE}/bot/playground/${encodeURIComponent(jobId)}`,
 }
