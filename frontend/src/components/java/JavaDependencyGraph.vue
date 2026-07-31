@@ -472,6 +472,49 @@ function stepContext(dir) {
   const next = steps[Math.min(steps.length - 1, Math.max(0, (i < 0 ? steps.length - 1 : i) + dir))]
   if (next != null) contextOverride.value = next
 }
+
+// --- Der Regler: Rastpunkte auf einer Achse, nicht fuenf lose Chips --------------------------
+// Der Zug ueber die Achse darf GENAU EIN Layout kosten. Deshalb folgt waehrend der Geste nur die
+// Anzeige (`dragStep`), gesetzt wird erst beim Loslassen – ein dagre-Lauf je ueberfahrenem
+// Rastpunkt waere genau der Grund, aus dem hier Stufen stehen und kein freier Schieberegler.
+const trackEl = ref(null)
+const dragStep = ref(null)
+// Was der Regler ZEIGT (waehrend des Ziehens die Vorschau, sonst der wirkliche Wert).
+const shownBudget = computed(() => dragStep.value ?? contextBudget.value)
+const shownIndex = computed(() => {
+  const i = contextSteps.value.indexOf(shownBudget.value)
+  // Ein Wert zwischen zwei Stufen (nach einer Ergebnisaenderung moeglich) rastet nach unten ein.
+  return i >= 0 ? i : Math.max(0, contextSteps.value.findIndex((s) => s > shownBudget.value) - 1)
+})
+const trackFill = computed(() => {
+  const n = contextSteps.value.length
+  return n > 1 ? `${(shownIndex.value / (n - 1)) * 100}%` : '0%'
+})
+function stepAt(clientX) {
+  const el = trackEl.value
+  const steps = contextSteps.value
+  if (!el || steps.length < 2) return steps[0] ?? 0
+  const r = el.getBoundingClientRect()
+  const t = Math.min(1, Math.max(0, (clientX - r.left) / r.width))
+  return steps[Math.round(t * (steps.length - 1))]
+}
+function onTrackDown(e) {
+  e.preventDefault() // sonst waehlt der Zug die Beschriftungen aus statt zu regeln
+  dragStep.value = stepAt(e.clientX)
+  e.currentTarget.setPointerCapture?.(e.pointerId)
+}
+function onTrackMove(e) {
+  if (dragStep.value === null) return
+  dragStep.value = stepAt(e.clientX)
+}
+function onTrackUp() {
+  if (dragStep.value === null) return
+  const target = dragStep.value
+  dragStep.value = null
+  // Nur schreiben, wenn sich wirklich etwas aendert – sonst rechnet ein Klick auf die aktive
+  // Stufe ein Layout fuer dasselbe Bild.
+  if (target !== contextBudget.value) setContextBudget(target)
+}
 // Ein Aggregat aufklappen heisst: DIESES Package als Karten zeigen. Der Weg zurueck ist der Chip
 // in der Leiste – ein zweiter Klick auf den Knoten geht nicht, weil er danach nicht mehr da ist.
 function toggleContextPackage(path) {
@@ -2146,12 +2189,13 @@ watch(
             <Icon icon="lucide:x" class="h-3.5 w-3.5" />
           </button>
         </div>
-        <div class="vf-rail-stats">
-          <span class="vf-crumb-count">{{ searchScope.matches }} match{{ searchScope.matches === 1 ? '' : 'es' }}</span>
-          <span v-if="searchScope.relations" class="vf-crumb-count">
-            {{ searchScope.relations }} relation{{ searchScope.relations === 1 ? '' : 's' }}
-          </span>
-        </div>
+        <!-- Eine Zeile statt zweier gerahmter Zaehler: es ist EINE Aussage ueber das Ergebnis. -->
+        <p class="vf-rail-sub">
+          <b>{{ searchScope.matches }}</b> match{{ searchScope.matches === 1 ? '' : 'es' }}
+          <template v-if="searchScope.relations">
+            <span class="vf-dot">·</span><b>{{ searchScope.relations }}</b> relation{{ searchScope.relations === 1 ? '' : 's' }}
+          </template>
+        </p>
       </div>
 
       <!-- Pfad als Stufen untereinander: jede Zeile eine Ebene, eingerueckt wie im Baum. Die
@@ -2228,18 +2272,61 @@ watch(
       <div v-if="contextAvailable" class="vf-rail-sec">
         <div class="vf-rail-head">
           <Icon icon="lucide:git-fork" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
-          <span class="vf-ego-label">Context</span>
-          <span class="vf-ego-count">
-            <b>{{ contextLevel.cardCount }}</b>/{{ searchScope.related }}
+          <span class="vf-ctx-name">Context</span>
+          <span class="vf-ctx-val" :class="{ 'is-dragging': dragStep !== null }">
+            <b>{{ dragStep === null ? contextLevel.cardCount : shownBudget }}</b><i>/{{ searchScope.related }}</i>
           </span>
         </div>
-        <div class="vf-rail-stats">
-          <span class="vf-crumb-count">
-            {{ contextBudget ? 'related classes' : 'matches only' }}
-          </span>
-          <span v-if="contextLevel.nodes.length" class="vf-crumb-count">
-            {{ contextLevel.aggregatedClasses }} in {{ contextLevel.nodes.length }} pkg
-          </span>
+
+        <!-- Rastpunkte auf EINER Achse statt fuenf loser Chips: der zurueckgelegte Teil ist
+             gefuellt, also sieht man, wo auf der Skala man steht – nicht nur, welcher Chip gerade
+             leuchtet. Klicken, ziehen und Pfeiltasten fuehren zum selben Ergebnis; das Ziehen
+             schreibt erst beim Loslassen (ein Layout je Geste, s. `dragStep`). -->
+        <div
+          class="vf-track"
+          role="slider"
+          tabindex="0"
+          :aria-label="`How many of the ${searchScope.related} related classes to draw`"
+          :aria-valuemin="contextSteps[0]"
+          :aria-valuemax="searchScope.related"
+          :aria-valuenow="shownBudget"
+          :aria-valuetext="shownBudget ? `${shownBudget} of ${searchScope.related} as cards` : 'matches only'"
+          @pointerdown="onTrackDown"
+          @pointermove="onTrackMove"
+          @pointerup="onTrackUp"
+          @pointercancel="onTrackUp"
+          @keydown.left.prevent="stepContext(-1)"
+          @keydown.down.prevent="stepContext(-1)"
+          @keydown.right.prevent="stepContext(1)"
+          @keydown.up.prevent="stepContext(1)"
+          @keydown.home.prevent="setContextBudget(contextSteps[0])"
+          @keydown.end.prevent="setContextBudget(contextSteps[contextSteps.length - 1])"
+        >
+          <div ref="trackEl" class="vf-track-inner">
+            <span class="vf-track-rail"><span class="vf-track-fill" :style="{ width: trackFill }" /></span>
+            <span
+              v-for="(s, i) in contextSteps"
+              :key="s"
+              class="vf-track-stop"
+              :class="{ 'is-done': i < shownIndex, 'is-on': i === shownIndex }"
+              :style="{ left: contextSteps.length > 1 ? `${(i / (contextSteps.length - 1)) * 100}%` : '0%' }"
+            >
+              <i class="vf-track-dot" />
+              <em class="vf-track-lab">{{ s === searchScope.related ? 'all' : s }}</em>
+            </span>
+          </div>
+        </div>
+
+        <!-- Was die Stufe bedeutet – in Worten, nicht als zweite Zahlenreihe. -->
+        <p class="vf-rail-sub">
+          <template v-if="shownBudget">
+            <b>{{ shownBudget === searchScope.related ? 'all' : shownBudget }}</b> as cards
+            <template v-if="contextLevel.nodes.length">
+              <span class="vf-dot">·</span><b>{{ contextLevel.aggregatedClasses }}</b> in
+              {{ contextLevel.nodes.length }} package{{ contextLevel.nodes.length === 1 ? '' : 's' }}
+            </template>
+          </template>
+          <template v-else>matches only — no surrounding classes</template>
           <span
             v-if="contextLevel.hiddenPackages"
             class="vf-crumb-warn"
@@ -2248,44 +2335,7 @@ watch(
             <Icon icon="lucide:alert-triangle" class="h-3 w-3" />
             +{{ contextLevel.hiddenPackages }}
           </span>
-        </div>
-
-        <div class="vf-ego-step">
-          <button
-            type="button"
-            class="vf-ego-btn"
-            :disabled="contextBudget <= contextSteps[0]"
-            v-tip="{ title: 'Show less', hint: 'One step down — the rest folds back into its packages.' }"
-            @click="stepContext(-1)"
-          >
-            <Icon icon="lucide:minus" class="h-3.5 w-3.5" />
-          </button>
-          <span class="vf-ego-hint">{{ contextBudget ? `${contextBudget === searchScope.related ? 'all' : contextBudget} as cards` : 'no context' }}</span>
-          <button
-            type="button"
-            class="vf-ego-btn"
-            :disabled="contextBudget >= searchScope.related"
-            v-tip="{ title: 'Show more', hint: 'One step up — more neighbours become single cards.' }"
-            @click="stepContext(1)"
-          >
-            <Icon icon="lucide:plus" class="h-3.5 w-3.5" />
-          </button>
-        </div>
-        <!-- Die Stufen selbst: wer weiss, wieviel er sehen will, springt direkt hin. „0" ist das
-             frühere „Hide related" – jetzt die unterste Sprosse derselben Leiter. -->
-        <div class="vf-ego-ticks">
-          <button
-            v-for="s in contextSteps"
-            :key="s"
-            type="button"
-            class="vf-ego-tick"
-            :class="{ 'is-on': contextBudget === s }"
-            v-tip="s === 0
-              ? { title: 'Matches only', hint: 'Hides the surrounding classes entirely.' }
-              : { title: `${s === searchScope.related ? 'All' : s} neighbour${s === 1 ? '' : 's'} as cards`, hint: 'The rest stays in the picture as one node per package.' }"
-            @click="setContextBudget(s)"
-          >{{ s === searchScope.related ? 'all' : s }}</button>
-        </div>
+        </p>
 
         <!-- Aufgeklappte Packages: der Chip IST der Rueckweg – ihr Aggregatknoten ist ja weg. -->
         <div v-if="contextLevel.expandedPaths.length" class="vf-rail-chips">
@@ -2745,90 +2795,137 @@ watch(
 
 /* --- Ebenen-Navigation (Breadcrumb) ---------------------------------------------------- */
 
-.vf-ego-label--muted {
-  opacity: 0.75;
-}
-.vf-ego-label {
+/* --- Umgebungs-Regler: eine Achse mit Rastpunkten -------------------------------------------
+   Vorher waren das ein Zaehler, zwei ±-Knoepfe und eine Reihe loser Chips – vier Elemente fuer
+   eine Groesse. Als Achse ist die Menge selbst ablesbar: der gefuellte Teil sagt „so weit bin
+   ich", der offene „das ginge noch". Bedient wird per Klick, Zug und Pfeiltasten; geschrieben
+   wird beim Loslassen (ein dagre-Layout je Geste, nicht je ueberfahrenem Punkt). */
+.vf-ctx-name {
+  flex: 1;
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
   font-size: 0.625rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--color-text-muted);
 }
-/* Der Zaehler steht ZWISCHEN den Knoepfen: „wieviel von wieviel" ist die Aussage, die Knoepfe
-   sind nur ihre beiden Richtungen. */
-.vf-ego-step {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  border-radius: 8px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  padding: 1px 2px;
-}
-.vf-ego-btn {
-  display: grid;
-  height: 1.25rem;
-  width: 1.25rem;
-  place-items: center;
-  border-radius: 5px;
-  color: var(--color-text-muted);
-  transition: background-color 0.15s ease, color 0.15s ease;
-}
-.vf-ego-btn:hover:not(:disabled) {
-  background: var(--color-surface-offset);
-  color: var(--color-text);
-}
-.vf-ego-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-.vf-ego-count {
-  min-width: 3.25rem;
-  text-align: center;
+.vf-ctx-val {
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
   font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;
   color: var(--color-text-muted);
 }
-.vf-ego-count b {
-  font-weight: 600;
+.vf-ctx-val b {
+  font-size: 0.8125rem;
+  font-weight: 700;
   color: var(--color-text);
 }
-/* Zwischen den beiden Richtungsknoepfen steht, was die aktuelle Stufe BEDEUTET („20 as cards",
-   „no context") – die reine Zahl steht schon in der Kopfzeile des Abschnitts, und sie zweimal
-   nebeneinander zu zeigen hiesse, dieselbe Auskunft fuer zwei zu halten. */
-.vf-ego-hint {
-  min-width: 5.5rem;
-  text-align: center;
-  font-size: 0.6875rem;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-text-muted);
-}
-/* Die Stufen als Skala: wer weiss, wieviel er sehen will, springt direkt hin. */
-.vf-ego-ticks {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-.vf-ego-tick {
-  border-radius: 6px;
-  padding: 1px 6px;
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  font-size: 0.625rem;
-  color: var(--color-text-muted);
-  transition: background-color 0.15s ease, color 0.15s ease;
-}
-.vf-ego-tick:hover {
-  background: var(--color-surface-offset);
-  color: var(--color-text);
-}
-.vf-ego-tick.is-on {
-  background: var(--color-accent-soft);
+/* Waehrend des Ziehens ist die Zahl eine Vorschau, kein Zustand – sie traegt deshalb die
+   Akzentfarbe, bis losgelassen wird. */
+.vf-ctx-val.is-dragging b {
   color: var(--color-accent);
-  font-weight: 600;
 }
-
+.vf-track {
+  padding: 6px 12px 2px;
+  cursor: pointer;
+  touch-action: none; /* sonst scrollt die Geste die Leiste statt zu regeln */
+}
+.vf-track:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+.vf-track-inner {
+  position: relative;
+  height: 1.75rem;
+}
+.vf-track-rail {
+  position: absolute;
+  top: 3px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--color-border);
+}
+.vf-track-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-accent);
+  transition: width 0.18s ease;
+}
+.vf-track-stop {
+  position: absolute;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translateX(-50%);
+}
+.vf-track-dot {
+  height: 8px;
+  width: 8px;
+  border-radius: 999px;
+  border: 2px solid var(--color-border);
+  background: var(--color-surface-2);
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+.vf-track-stop.is-done .vf-track-dot {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+}
+/* Der aktuelle Punkt ist der Griff: groesser, gefuellt, mit Ring – erkennbar auch ohne Farbe. */
+.vf-track-stop.is-on .vf-track-dot {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  transform: scale(1.6);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+.vf-track-lab {
+  margin-top: 8px;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  /* Nicht kleiner: 0.625rem sind bei 16px-Root genau die 10px, die als Untergrenze fuer Meta-
+     Beschriftungen gelten (s. „Lesbarkeit auf grossen Schirmen"). 0.5625rem waeren dort 9px. */
+  font-size: 0.625rem;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  transition: color 0.15s ease;
+}
+.vf-track-stop.is-on .vf-track-lab {
+  font-weight: 700;
+  color: var(--color-accent);
+}
+.vf-track:hover .vf-track-dot {
+  border-color: var(--color-border-strong);
+}
+.vf-track:hover .vf-track-stop.is-done .vf-track-dot,
+.vf-track:hover .vf-track-stop.is-on .vf-track-dot {
+  border-color: var(--color-accent);
+}
+/* Fliesstext der Leiste: eine Aussage je Zeile, Zahlen hervorgehoben. Ersetzt die gerahmten
+   Einzelzaehler (`.vf-crumb-count`), die nebeneinander wie eine Werkzeugleiste aussahen. */
+.vf-rail-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+  padding: 0 4px;
+  font-size: 0.625rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+.vf-rail-sub b {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+.vf-dot {
+  opacity: 0.6;
+  padding: 0 1px;
+}
 /* Aufgeklapptes Package: der Chip IST der Rueckweg – sein Aggregatknoten ist ja verschwunden. */
 .vf-ego-chip {
   display: inline-flex;
