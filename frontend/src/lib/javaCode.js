@@ -125,6 +125,90 @@ export function buildCallWindow(html, bodyStartLine, siteLine) {
   }
 }
 
+// --- Treffer im gerenderten Shiki-Block markieren ---------------------------------------------
+//
+// Fuer die Suche INNERHALB der Klassenvorschau (Suchpalette). Sie arbeitet auf dem gemounteten
+// DOM, nicht auf einem HTML-String: die Query aendert sich bei jedem Tastendruck, und ein neuer
+// `v-html`-String waere jedes Mal ein kompletter Neuaufbau von bis zu 1500 Zeilen.
+//
+// Der Text, den `shikiText` liefert, ist die Bezugsgroesse der Offsets – dieselben `.line`-Elemente
+// in derselben Reihenfolge, mit `\n` verbunden. Damit kann die Trefferliste aus `findMatches`
+// stammen (dieselbe Musterlogik wie die Suchleiste im Source-Tab) und trotzdem exakt hier landen:
+// „3 von 12" kann nicht von dem abweichen, was leuchtet.
+const HIT_CLASS = 'cs-hit'
+
+export function shikiText(root) {
+  if (!root) return ''
+  return [...root.querySelectorAll('.line')].map((l) => l.textContent).join('\n')
+}
+
+export function clearMatches(root) {
+  if (!root) return
+  const parents = new Set()
+  for (const mark of root.querySelectorAll(`mark.${HIT_CLASS}`)) {
+    const p = mark.parentNode
+    if (!p) continue
+    while (mark.firstChild) p.insertBefore(mark.firstChild, mark)
+    p.removeChild(mark)
+    parents.add(p)
+  }
+  // Ohne `normalize()` zerfaellt der Text in immer mehr Knoten – jede Suche wuerde den Block
+  // weiter zersplittern.
+  for (const p of parents) p.normalize()
+}
+
+// `matches` = [{ from, to }] aus `findMatches` (Offsets in `shikiText(root)`).
+// Ein Treffer kann ueber mehrere Shiki-Spans laufen (`repo.findById(` ist in Tokens zerlegt) und
+// wird dann in mehrere <mark>-Stuecke zerlegt – sie tragen dieselbe Klasse, sehen also aus wie
+// eine zusammenhaengende Markierung.
+export function paintMatches(root, matches, activeIndex = -1) {
+  clearMatches(root)
+  if (!root || !matches?.length) return 0
+
+  // Textknoten mit ihrem Startoffset im selben Text, den `shikiText` liefert.
+  const spans = []
+  let offset = 0
+  const lines = [...root.querySelectorAll('.line')]
+  lines.forEach((line, i) => {
+    if (i > 0) offset += 1 // das `\n` zwischen zwei Zeilen
+    const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT)
+    let node
+    while ((node = walker.nextNode())) {
+      const len = node.nodeValue.length
+      if (len) spans.push({ node, start: offset, end: offset + len })
+      offset += len
+    }
+  })
+  if (!spans.length) return 0
+
+  // RUECKWAERTS: jedes `splitText` laesst den Originalknoten als VORDEREN Teil zurueck, damit
+  // bleiben die Offsets aller frueheren Treffer gueltig. Vorwaerts waere nach dem ersten Split
+  // jede weitere Zuordnung verschoben.
+  let painted = 0
+  for (let mi = matches.length - 1; mi >= 0; mi--) {
+    const m = matches[mi]
+    const pieces = spans.filter((s) => s.start < m.to && s.end > m.from)
+    if (!pieces.length) continue
+    painted++
+    for (let pi = pieces.length - 1; pi >= 0; pi--) {
+      const s = pieces[pi]
+      const node = s.node
+      if (!node.parentNode) continue
+      const from = Math.max(m.from, s.start) - s.start
+      const to = Math.min(m.to, s.end) - s.start
+      if (to <= from || from > node.nodeValue.length) continue
+      // Erst hinten abschneiden, dann vorne -> der mittlere Knoten IST der Treffer.
+      if (to < node.nodeValue.length) node.splitText(to)
+      const target = from > 0 ? node.splitText(from) : node
+      const mark = document.createElement('mark')
+      mark.className = mi === activeIndex ? `${HIT_CLASS} ${HIT_CLASS}--active` : HIT_CLASS
+      target.parentNode.replaceChild(mark, target)
+      mark.appendChild(target)
+    }
+  }
+  return painted
+}
+
 export function processMethodBody(html, { collapseBlank = false, signatureHtml = '' } = {}) {
   if (!html) return html
   try {

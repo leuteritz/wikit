@@ -20,8 +20,8 @@ import { useArticles } from '../composables/useArticles.js'
 import { useSearch } from '../composables/useSearch.js'
 import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { api } from '../lib/api.js'
-import { buildSearchRegex } from '../lib/codeSearch.js'
-import { addLineNumbers, buildCallWindow } from '../lib/javaCode.js'
+import { buildSearchRegex, findMatches, MATCH_LIMIT } from '../lib/codeSearch.js'
+import { addLineNumbers, buildCallWindow, paintMatches, clearMatches, shikiText } from '../lib/javaCode.js'
 import { parseSearchQuery, wantsArticles, wantsCode, wantsSymbols, SEARCH_FACETS, SEARCH_SCOPE_ALL } from '../lib/searchQuery.js'
 import BusyState from './BusyState.vue'
 import CategoryBadge from './CategoryBadge.vue'
@@ -446,22 +446,119 @@ watch(activeItem, (item) => {
   }, PREVIEW_DEBOUNCE_MS)
 })
 
-// Die markierte Zeile in den Blick holen. Bei der ganzen Klasse steht die Deklaration hinter
-// Package- und Import-Block, also unten aus dem Bild – und eine Vorschau, die man erst scrollen
-// muss, um zu sehen, worauf man gerade steht, ist keine. Gerechnet statt `scrollIntoView()`:
-// letzteres scrollt jeden Vorfahren mit, also auch die Seite hinter dem Modal.
+// Ein Element in den Blick holen, ohne die Seite hinter dem Modal zu bewegen (`scrollIntoView()`
+// scrollt jeden Vorfahren mit). Ein Drittel von oben: darueber bleibt Kontext stehen.
+function scrollPreviewTo(el) {
+  const box = previewBody.value
+  if (!box || !el) return
+  const delta = el.getBoundingClientRect().top - box.getBoundingClientRect().top
+  box.scrollTop = Math.max(0, box.scrollTop + delta - box.clientHeight / 3)
+}
+
+// Bei der ganzen Klasse steht die Deklaration hinter Package- und Import-Block, also unten aus dem
+// Bild – eine Vorschau, die man erst scrollen muss, um zu sehen, worauf man gerade steht, ist keine.
 watch(preview, async (p) => {
   await nextTick()
   const box = previewBody.value
   if (!box) return
   const line = p?.full ? box.querySelector('.line-highlight') : null
-  if (!line) {
-    box.scrollTop = 0
+  if (!line) box.scrollTop = 0
+  else scrollPreviewTo(line)
+})
+
+// --- Suche INNERHALB der gezeigten Klasse ----------------------------------------------------
+// Dieselbe Leiste wie im Source-Tab (`JavaClassDetail`) und dieselbe Musterlogik (`findMatches`
+// aus lib/codeSearch.js): Feld, Zaehler, drei Modus-Schalter, vor/zurueck. Wer eine Klasse in der
+// Palette liest, sucht darin dasselbe, was er im Quellcode-Tab suchen wuerde – zwei verschiedene
+// Suchen fuer denselben Text waeren zwei Ergebnisse auf eine Frage.
+//
+// Der Unterschied zum Source-Tab ist der Untergrund: dort CodeMirror mit Dokument-Offsets, hier
+// server-gerendertes Shiki-HTML. Die Bruecke ist `shikiText` – derselbe Text, aus dem die Offsets
+// stammen, gelesen aus genau den `.line`-Elementen, die auch markiert werden.
+const classQuery = ref('')
+const classOpts = ref({ caseSensitive: false, wholeWord: false, regex: false })
+// Freilaufender Zaehler; der Modulo unten macht das Umlaufen daraus (wie im Source-Tab).
+const classCursor = ref(0)
+const classInput = ref(null)
+const previewPlain = ref('')
+
+// Nur die GANZE Klasse ist ein Text, in dem man suchen kann. Ein Fenster von sieben Zeilen um eine
+// Fundstelle ist bereits die Antwort – eine Suche darin waere eine Suche im Suchergebnis.
+const classSearchable = computed(() => !!preview.value?.full && wantsFullClass(activeItem.value))
+
+const classResult = computed(() =>
+  classSearchable.value
+    ? findMatches(previewPlain.value, { query: classQuery.value, ...classOpts.value })
+    : { matches: [], capped: false, error: '' },
+)
+const classMatches = computed(() => classResult.value.matches)
+const classActive = computed(() => {
+  const n = classMatches.value.length
+  if (!n) return -1
+  return ((classCursor.value % n) + n) % n
+})
+const classCounter = computed(() => {
+  if (!classQuery.value) return ''
+  if (classResult.value.error) return 'Invalid regex'
+  if (!classMatches.value.length) return 'No results'
+  return `${classActive.value + 1}/${classMatches.value.length}${classResult.value.capped ? '+' : ''}`
+})
+const classCounterTitle = computed(() => {
+  if (classResult.value.error) return classResult.value.error
+  if (classResult.value.capped) return `Showing the first ${MATCH_LIMIT} matches`
+  return ''
+})
+const classFailed = computed(
+  () => !!classQuery.value && (!!classResult.value.error || !classMatches.value.length),
+)
+
+function setClassQuery(value) {
+  classQuery.value = value
+  classCursor.value = 0
+}
+function toggleClassOpt(key) {
+  classOpts.value = { ...classOpts.value, [key]: !classOpts.value[key] }
+  classCursor.value = 0
+}
+function stepClassMatch(delta) {
+  if (classMatches.value.length) classCursor.value += delta
+}
+function clearClassSearch() {
+  classQuery.value = ''
+  classCursor.value = 0
+}
+// Esc gibt den Fokus zurueck ans Hauptfeld: von dort kommt man weiter, aus einem geleerten
+// Unterfeld heraus nicht.
+function onClassSearchEsc() {
+  if (classQuery.value) clearClassSearch()
+  else inputEl.value?.focus()
+}
+
+// Der Klartext gehoert zum gerenderten Block – erst nach dem `v-html` lesbar.
+watch([preview, classSearchable], async () => {
+  await nextTick()
+  previewPlain.value = classSearchable.value ? shikiText(previewBody.value) : ''
+})
+
+// Die Klassensuche gehoert zu GENAU dieser Klasse (dieselbe Regel wie beim Klassenwechsel im
+// Source-Tab). Sie an den nächsten Treffer weiterzureichen hiesse, ein Ergebnis zu zeigen, nach
+// dem in dieser Klasse nie gefragt wurde.
+watch(activeItem, (item, prev) => {
+  if (item?.fileId !== prev?.fileId) clearClassSearch()
+})
+
+// Markieren + den aktiven Treffer anfahren. Beides zusammen, weil beides aus derselben
+// Trefferliste kommt – getrennt liefe der Zaehler irgendwann gegen eine andere Markierung.
+watch([classMatches, classActive, preview], async () => {
+  await nextTick()
+  const box = previewBody.value
+  if (!box) return
+  if (!classSearchable.value || !classMatches.value.length) {
+    clearMatches(box)
     return
   }
-  const delta = line.getBoundingClientRect().top - box.getBoundingClientRect().top
-  // Ein Drittel von oben: darueber bleiben Package/Imports sichtbar, darunter beginnt die Klasse.
-  box.scrollTop = Math.max(0, box.scrollTop + delta - box.clientHeight / 3)
+  paintMatches(box, classMatches.value, classActive.value)
+  scrollPreviewTo(box.querySelector('.cs-hit--active'))
 })
 
 // Jedes Oeffnen des Modals beginnt bei null – eine alte Eingabe waere beim naechsten Strg+K ein
@@ -475,6 +572,8 @@ watch(() => props.open, async (open) => {
   codeResult.value = null
   codeError.value = ''
   preview.value = null
+  previewPinned.value = false
+  clearClassSearch()
   await nextTick()
   inputEl.value?.focus()
 })
@@ -494,6 +593,7 @@ onUnmounted(() => {
   clearTimeout(nameTimer)
   clearTimeout(codeTimer)
   clearTimeout(previewTimer)
+  clearTimeout(hoverTimer)
 })
 
 // --- Navigation ----------------------------------------------------------------------------
@@ -510,11 +610,44 @@ function go(entry) {
   // Klassen- und Code-Treffer tragen fileId/line direkt, Methoden-Treffer stecken in `item`.
   lastFileId.value = entry.fileId ?? entry.item?.fileId ?? entry.item?.id ?? null
   lastTargetLine.value = entry.line ?? entry.item?.lineNumber ?? null
-  if (term.value) {
+  // Wer in der Vorschau schon IN dieser Klasse gesucht hat, meint beim Öffnen diesen Begriff –
+  // nicht den, mit dem er die Klasse gefunden hat. Die Suchleiste im Source-Tab bekommt deshalb
+  // die Klassensuche, sonst wie bisher die Palettensuche.
+  if (classQuery.value && classSearchable.value) {
+    lastSearchQuery.value = classQuery.value
+    lastSearchOpts.value = { ...classOpts.value }
+  } else if (term.value) {
     lastSearchQuery.value = term.value
     lastSearchOpts.value = { ...opts.value }
   }
   router.push('/code')
+}
+
+// --- Hover friert ein, sobald man nach rechts greift -----------------------------------------
+// Die Vorschau haengt am Hover ueber der Liste – der Weg zum Suchfeld der Klasse fuehrt aber quer
+// ueber andere Eintraege, und jeder davon tauschte die Vorschau aus, bevor man ankommt. Zwei
+// Regeln, zusammen:
+//
+//   * Beim Betreten der Vorschau-Spalte bleibt sie stehen; zurueck ueber der Liste zaehlt der
+//     Hover sofort wieder.
+//   * Ein Wechsel braucht 90 ms Verweilen – dieselbe Regel wie im Graphen („Hover ist eine
+//     Absicht, keine Beruehrung"). Das Pinnen allein reicht nicht: das Suchfeld sitzt oben
+//     rechts, die Liste unten links, der Weg dorthin ist diagonal und streift unterwegs jeden
+//     Eintrag dazwischen. Verlassen wirkt weiter sofort.
+//
+// Die Tastatur ist davon unberuehrt: wer ↑/↓ drueckt, meint einen Wechsel.
+const HOVER_INTENT_MS = 90
+const previewPinned = ref(false)
+let hoverTimer = null
+function hoverItem(idx) {
+  clearTimeout(hoverTimer)
+  if (previewPinned.value) return
+  hoverTimer = setTimeout(() => {
+    active.value = idx
+  }, HOVER_INTENT_MS)
+}
+function cancelHover() {
+  clearTimeout(hoverTimer)
 }
 
 function move(delta) {
@@ -726,6 +859,8 @@ const shortPackage = (pkg) => pkg || 'default package'
           <div
             class="sp-list min-h-0 w-full shrink-0 overflow-y-auto py-2"
             :class="isModal ? 'lg:w-[24rem] lg:border-r lg:border-[var(--color-border)]' : ''"
+            @mouseenter="previewPinned = false"
+            @mouseleave="cancelHover"
           >
             <!-- Warum die Code-Gruppe fehlt. Ohne diese Zeile verschwindet sie bei einer halb
                  getippten Regex kommentarlos, waehrend Artikel und Namen weiter dastehen – das
@@ -748,7 +883,7 @@ const shortPackage = (pkg) => pkg || 'default package'
                 :data-sp-active="entry.idx === active ? '1' : null"
                 class="flex w-full items-center gap-3 px-4 py-1.5 text-left transition"
                 :class="entry.idx === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-surface-offset)]'"
-                @mouseenter="active = entry.idx"
+                @mouseenter="hoverItem(entry.idx)"
                 @click="go(entry)"
               >
                 <Icon icon="lucide:braces" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
@@ -777,7 +912,7 @@ const shortPackage = (pkg) => pkg || 'default package'
                 :data-sp-active="entry.idx === active ? '1' : null"
                 class="flex w-full items-center gap-3 px-4 py-1.5 text-left transition"
                 :class="entry.idx === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-surface-offset)]'"
-                @mouseenter="active = entry.idx"
+                @mouseenter="hoverItem(entry.idx)"
                 @click="go(entry)"
               >
                 <Icon icon="lucide:braces" class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
@@ -801,7 +936,7 @@ const shortPackage = (pkg) => pkg || 'default package'
                 :data-sp-active="entry.idx === active ? '1' : null"
                 class="flex w-full items-center gap-3 px-4 py-2 text-left transition"
                 :class="entry.idx === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-surface-offset)]'"
-                @mouseenter="active = entry.idx"
+                @mouseenter="hoverItem(entry.idx)"
                 @click="go(entry)"
               >
                 <span class="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
@@ -848,7 +983,7 @@ const shortPackage = (pkg) => pkg || 'default package'
                   :data-sp-active="entry.idx === active ? '1' : null"
                   class="flex w-full items-center gap-2 px-4 py-1 text-left transition"
                   :class="entry.idx === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-surface-offset)]'"
-                  @mouseenter="active = entry.idx"
+                  @mouseenter="hoverItem(entry.idx)"
                   @click="go(entry)"
                 >
                   <span class="w-9 shrink-0 text-right font-mono text-3xs tabular-nums text-[var(--color-text-muted)]">{{ entry.line }}</span>
@@ -875,7 +1010,7 @@ const shortPackage = (pkg) => pkg || 'default package'
                 :data-sp-active="entry.idx === active ? '1' : null"
                 class="flex w-full items-start gap-3 px-4 py-1.5 text-left transition"
                 :class="entry.idx === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-surface-offset)]'"
-                @mouseenter="active = entry.idx"
+                @mouseenter="hoverItem(entry.idx)"
                 @click="go(entry)"
               >
                 <Icon icon="lucide:file-code" class="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-accent)]" />
@@ -895,7 +1030,11 @@ const shortPackage = (pkg) => pkg || 'default package'
                `min-w-0` ist Pflicht: ein Flex-Kind schrumpft sonst nicht unter die Breite seines
                Inhalts, und der Codeblock (bewusst ohne eigenen Overflow-Container, s. `.edge-code`)
                schob die Vorschau aus der Karte heraus, wo sie abgeschnitten wurde. -->
-          <div class="sp-preview hidden min-h-0 min-w-0 flex-1 flex-col" :class="isModal ? 'lg:flex' : ''">
+          <div
+            class="sp-preview hidden min-h-0 min-w-0 flex-1 flex-col"
+            :class="isModal ? 'lg:flex' : ''"
+            @mouseenter="previewPinned = true; cancelHover()"
+          >
             <template v-if="activeItem?.kind === 'article'">
               <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
                 <div class="flex items-center gap-2">
@@ -930,6 +1069,93 @@ const shortPackage = (pkg) => pkg || 'default package'
                 <span v-if="previewKey(activeItem)" class="ml-auto shrink-0 font-mono text-3xs text-[var(--color-text-muted)]">
                   L{{ activeItem.line ?? activeItem.item?.lineNumber }}<template v-if="preview?.full"> · {{ preview.totalLines }} lines</template>
                 </span>
+              </div>
+
+              <!-- Suche IN der gezeigten Klasse. Dieselbe Leiste und dieselbe Musterlogik wie im
+                   Source-Tab der Code-Ansicht (`JavaClassDetail`) – wer hier eine Klasse liest,
+                   sucht darin dasselbe, was er dort suchen wuerde. Eigene Zeile unter dem Kopf,
+                   aus demselben Grund wie dort: Feld, Zaehler, drei Schalter und die Navigation
+                   draengen sich neben einem Klassennamen auf jeder Spaltenbreite. -->
+              <div
+                v-if="classSearchable"
+                class="flex w-full min-w-0 flex-wrap items-center gap-0.5 border-b border-[var(--color-border)] px-5 py-1.5"
+              >
+                <div
+                  class="flex w-full min-w-0 flex-wrap items-center gap-0.5 rounded-lg border bg-[var(--color-surface)] px-1.5 py-0.5 transition"
+                  :class="classFailed ? 'border-[var(--color-danger)]' : 'border-[var(--color-border)] focus-within:border-[var(--color-accent)]'"
+                >
+                  <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
+                  <input
+                    ref="classInput"
+                    :value="classQuery"
+                    type="text"
+                    placeholder="Search in this class…"
+                    aria-label="Search in this class"
+                    spellcheck="false"
+                    class="min-w-[6rem] flex-1 bg-transparent py-0.5 text-xs text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
+                    @input="setClassQuery($event.target.value)"
+                    @keydown.enter.prevent.stop="stepClassMatch($event.shiftKey ? -1 : 1)"
+                    @keydown.esc.prevent.stop="onClassSearchEsc"
+                    @keydown.up.stop
+                    @keydown.down.stop
+                  />
+                  <span
+                    v-if="classQuery"
+                    class="shrink-0 whitespace-nowrap px-0.5 text-3xs tabular-nums"
+                    :class="classFailed ? 'text-[var(--color-danger)]' : 'text-[var(--color-text-muted)]'"
+                    :title="classCounterTitle"
+                  >{{ classCounter }}</span>
+
+                  <button
+                    v-for="o in SEARCH_TOGGLES"
+                    :key="`cs-${o.key}`"
+                    type="button"
+                    class="grid h-5 w-5 shrink-0 place-items-center rounded transition"
+                    :class="classOpts[o.key]
+                      ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)]'
+                      : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]'"
+                    :title="o.title.replace('(code search)', '(in this class)')"
+                    :aria-pressed="classOpts[o.key]"
+                    @mousedown.prevent
+                    @click="toggleClassOpt(o.key)"
+                  >
+                    <Icon :icon="o.icon" class="h-3.5 w-3.5" />
+                  </button>
+
+                  <div class="ml-auto flex shrink-0 items-center gap-0.5">
+                    <span class="mx-0.5 h-4 w-px shrink-0 bg-[var(--color-border)]" />
+                    <button
+                      type="button"
+                      class="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-40 disabled:hover:bg-transparent"
+                      title="Previous match (Shift+Enter)"
+                      :disabled="!classMatches.length"
+                      @mousedown.prevent
+                      @click="stepClassMatch(-1)"
+                    >
+                      <Icon icon="lucide:chevron-up" class="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      class="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-40 disabled:hover:bg-transparent"
+                      title="Next match (Enter)"
+                      :disabled="!classMatches.length"
+                      @mousedown.prevent
+                      @click="stepClassMatch(1)"
+                    >
+                      <Icon icon="lucide:chevron-down" class="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      v-if="classQuery"
+                      type="button"
+                      class="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+                      title="Clear search (Esc)"
+                      @mousedown.prevent
+                      @click="clearClassSearch"
+                    >
+                      <Icon icon="lucide:x" class="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
               </div>
               <div ref="previewBody" class="min-h-0 flex-1 overflow-auto px-5 py-4">
                 <!-- Server-gehighlighteter Ausschnitt: ganze Klasse beim Klassentreffer, sonst das
@@ -1052,5 +1278,21 @@ const shortPackage = (pkg) => pkg || 'default package'
 .search-fallback {
   white-space: pre;
   tab-size: 2;
+}
+
+/* --- Treffer der Suche IN der Klasse (paintMatches) ------------------------------------------
+   Dieselbe Gold-Familie wie jeder andere Suchtreffer in Wikit und dieselbe Trennung wie im
+   Source-Tab: aktiv vs. passiv unterscheiden Deckkraft und Ring, NICHT die Farbe – eine zweite
+   Hue waere eine zweite Bedeutung. `color: inherit` ist Pflicht, sonst zieht der Browser-Default
+   fuer `mark` (schwarz auf gelb) die Shiki-Farbe des umgebenden Tokens weg. */
+.sp-preview :deep(mark.cs-hit) {
+  background: color-mix(in srgb, var(--color-warning) 32%, transparent);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.sp-preview :deep(mark.cs-hit--active) {
+  background: color-mix(in srgb, var(--color-warning) 62%, transparent);
+  box-shadow: 0 0 0 1px var(--color-warning);
 }
 </style>
