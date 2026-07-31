@@ -44,6 +44,11 @@ export class SerializerService {
     // Ein Initialisierer-Block hat keine Signatur – sein gespeicherter Name IST die Schreibweise
     // im Quelltext (`static { }` / `{ }`). Klammern anzuhaengen waere kein Java.
     if (kind === 'initializer') return m.method_name;
+    // Ein Feld hat keine Parameterliste: `public static final String ACCEPT`. Ein `()` dahinter
+    // waere kein Java und liesse es wie eine parameterlose Methode aussehen.
+    if (kind === 'field') {
+      return `${(m.modifiers || []).join(' ')} ${m.return_type || ''} ${m.method_name}`.replace(/\s+/g, ' ').trim();
+    }
     const params = (m.parameters || []).map((p: any) => `${p.type} ${p.name}`.trim()).join(', ');
     const mods = (m.modifiers || []).join(' ');
     // Ein Konstruktor HAT keinen Rueckgabetyp; `void` waere dort nicht knapp, sondern falsch.

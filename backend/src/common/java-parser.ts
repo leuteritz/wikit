@@ -10,7 +10,11 @@ import { parse } from 'java-parser';
 // und bei einer Klasse, die ihre Abhaengigkeiten im Konstruktor verdrahtet, steht dort die
 // EINZIGE Benutzung einer importierten Klasse. Ohne sie behauptete der Graph „only imports X.
 // Nothing in the code uses it" ueber eine Klasse, die zwei Zeilen tiefer benutzt wird.
-export type JavaMemberKind = 'method' | 'constructor' | 'initializer';
+// `field` kam mit den Feld-Kanten dazu: `Http.GET` ist eine benannte, nachpruefbare Abhaengigkeit
+// wie ein Methodenaufruf – und ohne die Deklaration hier koennte das Kanten-Panel sie zwar
+// anschreiben, aber nicht belegen. Enum-Konstanten zaehlen mit (`Status.ACTIVE` ist derselbe
+// Zugriff auf ein statisches Feld).
+export type JavaMemberKind = 'method' | 'constructor' | 'initializer' | 'field';
 
 export interface JavaMethodInfo {
   method_name: string;
@@ -96,6 +100,16 @@ export interface JavaInvocation {
   line: number;
 }
 
+// Ein Zugriff auf ein FELD einer anderen Klasse (`Http.GET`, `conn.timeout`). Anders als ein
+// blosser Typbezug ist er benannt und nachpruefbar – deshalb bekommt er eine eigene Kantenart und
+// nicht nur ein `uses`. `type` ist der einfache Typname des Empfaengers, aufgeloest wird er wie
+// jeder andere Typname (Package/Import) in `recomputeAutoEdges`.
+export interface JavaFieldRef {
+  type: string;
+  field: string;
+  line: number;
+}
+
 export interface JavaCallerMethod {
   name: string;
   scope: Record<string, string>; // Bezeichner -> einfacher Typname (Felder + Parameter + lokale Vars)
@@ -115,6 +129,8 @@ export interface JavaClassGraphInfo {
   // Klasse selbst nicht definiert, kann GEERBT sein – dann ist der Vorfahre das Ziel und nichts
   // zu raten.
   superTypes: string[];
+  // Feldzugriffe auf andere Klassen – Basis der `field`-Kanten.
+  fieldRefs: JavaFieldRef[];
   // Statische Imports der Kompilationseinheit: Methodenname -> Klasse (`import static X.m`) bzw.
   // Klassen aus `import static X.*`. Sie sind der EINZIGE Weg, auf dem ein unqualifizierter Aufruf
   // legal in einer fremden Klasse landet – ohne sie ist jede solche Kante geraten.
@@ -234,17 +250,21 @@ function bodyText(bodyNode: any, source: string): string {
   return slice === ';' ? '' : slice;
 }
 
-// `default …` eines Annotationselements als Quelltext (leer, wenn es keinen Default gibt).
-// Gleiche Technik wie bodyText: Spannweite der Tokens aus dem Original schneiden, damit
-// Formatierung und Schreibweise erhalten bleiben.
-function defaultValueText(elementNode: any, source: string): string {
-  const def = findFirst(elementNode, 'defaultValue');
-  if (!def) return '';
-  const toks = collectTokens(def);
+// Spannweite eines Teilbaums aus dem Original schneiden – damit bleiben Formatierung und
+// Schreibweise erhalten. Basis fuer alles, was Quelltext zitiert (Default-Wert eines
+// Annotationselements, Initialisierer eines Feldes).
+function sliceNode(node: any, source: string): string {
+  if (!node) return '';
+  const toks = collectTokens(node);
   if (!toks.length) return '';
   const start = Math.min(...toks.map((t) => t.startOffset));
   const end = Math.max(...toks.map((t) => t.endOffset ?? t.startOffset));
   return source.slice(start, end + 1).trim();
+}
+
+// `default …` eines Annotationselements als Quelltext (leer, wenn es keinen Default gibt).
+function defaultValueText(elementNode: any, source: string): string {
+  return sliceNode(findFirst(elementNode, 'defaultValue'), source);
 }
 
 // Typ-Text aus den Tokens rekonstruieren (z. B. "List<String>", "int", "String[]").
@@ -471,6 +491,59 @@ function extractMethods(typeNode: any, blocks: any[], source: string): JavaMetho
       start_line: minLine(el),
       body_start_line: null,
       member_kind: 'method',
+    });
+  }
+
+  // Felder – Mitglieder ohne Rumpf. Der Initialisierer IST bei einer Konstante die Aussage
+  // (`= "Accept"`), deshalb wandert er ins `body`-Feld; einen Rumpf hat ein Feld ja nicht.
+  // `variableDeclarator` gibt es auch bei lokalen Variablen – deshalb nur die UNTER einer
+  // `fieldDeclaration`, nicht per findAll ueber den ganzen Typ.
+  for (const fd of findAll(typeNode, 'fieldDeclaration')) {
+    const type = typeText(findFirst(fd, 'unannType'));
+    const modifiers: string[] = [];
+    for (const tok of findAll(fd, 'fieldModifier')
+      .flatMap((node) => collectTokens(node))
+      .sort((a, b) => a.startOffset - b.startOffset)) {
+      const kw = (tok.image || '').toLowerCase();
+      if (METHOD_MODIFIERS.has(kw) && !modifiers.includes(kw)) modifiers.push(kw);
+    }
+    // Ein Javadoc steht vor der DEKLARATION, nicht vor jedem Deklarator: `int a, b;` teilt es.
+    const javadoc = javadocFor(minOffset(fd), blocks, source);
+    for (const vd of findAll(fd, 'variableDeclarator')) {
+      const idNode = findFirst(vd, 'variableDeclaratorId');
+      const nameTok = collectTokens(idNode || vd).find((t) => isIdent(t));
+      if (!nameTok) continue;
+      methods.push({
+        method_name: nameTok.image,
+        return_type: type,
+        parameters: [],
+        modifiers,
+        javadoc,
+        body: sliceNode(findFirst(vd, 'variableInitializer'), source),
+        start_line: minLine(idNode || vd),
+        body_start_line: null,
+        member_kind: 'field',
+      });
+    }
+  }
+
+  // Enum-Konstanten sind statische Felder ihres eigenen Typs – `Status.ACTIVE` ist derselbe
+  // Zugriff wie `Http.GET`. Ohne diesen Zweig fiele die haeufigste Konstante ueberhaupt weg.
+  for (const ec of findAll(typeNode, 'enumConstant')) {
+    const nameTok = collectTokens(ec).find((t) => isIdent(t));
+    if (!nameTok) continue;
+    methods.push({
+      method_name: nameTok.image,
+      return_type: classNameOf(typeNode) || '',
+      parameters: [],
+      // Implizit `public static final` – der Quelltext schreibt es nicht hin, und etwas
+      // hinzuschreiben, das dort nicht steht, waere geraten (wie bei den Annotationselementen).
+      modifiers: [],
+      javadoc: javadocFor(minOffset(ec), blocks, source),
+      body: '',
+      start_line: minLine(ec),
+      body_start_line: null,
+      member_kind: 'field',
     });
   }
 
@@ -915,7 +988,9 @@ function superTypeNames(typeNode: any): string[] {
   return names.filter(Boolean);
 }
 
-// (Bezeichner -> einfacher Typ) aus Feld-Deklarationen des Typs.
+// (Bezeichner -> einfacher Typ) aus Feld-Deklarationen des Typs. Zugleich die Liste, gegen die
+// ein Feldzugriff von aussen geprueft wird: nur was die Zielklasse wirklich deklariert, ergibt
+// eine `field`-Kante – sonst stuende ein erfundener Name am Pfeil.
 function collectFields(typeNode: any): Record<string, string> {
   const fields: Record<string, string> = {};
   for (const fd of findAll(typeNode, 'fieldDeclaration')) {
@@ -926,7 +1001,48 @@ function collectFields(typeNode: any): Record<string, string> {
       if (id) fields[id] = type;
     }
   }
+  // Enum-Konstanten sind statische Felder vom Typ des Enums selbst.
+  const own = classNameOf(typeNode) || '';
+  for (const ec of findAll(typeNode, 'enumConstant')) {
+    const id = collectTokens(ec).find((t) => isIdent(t))?.image;
+    if (id && !fields[id]) fields[id] = own;
+  }
   return fields;
+}
+
+// Feldzugriffe aus einem Teilbaum lesen. Kein eigener CST-Knoten dafuer -> Token-Pass ueber
+// `<Empfaenger> . <Name>`, mit drei Ausschluessen, die jeder fuer sich einen Fehltreffer verhindern:
+//
+//   * folgt `(`, ist es ein AUFRUF – der ist bereits abgedeckt und waere hier eine zweite Kante,
+//   * geht ein `.` VORAUS, ist der Empfaenger nicht die Wurzel der Kette (dieselbe Regel wie in
+//     `collectTypeMentions`) – damit faellt `efw.util.Http` als Empfaenger weg,
+//   * `this`/`super` sind Keywords und fallen schon durch `isIdent`.
+//
+// Ein folgendes `.` schliesst NICHT aus: `Status.ACTIVE.name()` ist ein echter Zugriff auf
+// ACTIVE, und `Foo.Nested.X` faellt ohnehin heraus, weil `Foo` kein Feld `Nested` deklariert –
+// diese Pruefung in `recomputeAutoEdges` ist der eigentliche Waechter, nicht die Token-Form.
+//
+// Der Empfaenger wird zuerst im Scope gesucht (Variable/Feld/Parameter -> ihr Typ) und erst dann
+// als Typname gelesen. Diese Reihenfolge ist wichtig: eine Variable verdeckt in Java einen
+// gleichnamigen Typ, und `scope` kennt die Variablen dieses Mitglieds.
+function extractFieldRefs(node: any, scope: Record<string, string>): JavaFieldRef[] {
+  if (!node) return [];
+  const toks = collectTokens(node).sort((a, b) => a.startOffset - b.startOffset);
+  const out: JavaFieldRef[] = [];
+  for (let i = 0; i + 2 < toks.length; i++) {
+    const recv = toks[i];
+    if (!isIdent(recv) || toks[i + 1]?.image !== '.') continue;
+    const member = toks[i + 2];
+    if (!isIdent(member)) continue;
+    if (toks[i + 3]?.image === '(') continue;
+    if (toks[i - 1]?.image === '.') continue;
+    // `arr.length` ist kein Feld einer analysierten Klasse, sondern Array-Syntax.
+    if (member.image === 'length') continue;
+    const type = scope[recv.image] || (/^[A-Z]/.test(recv.image) ? recv.image : '');
+    if (!type) continue;
+    out.push({ type, field: member.image, line: member.startLine ?? 1 });
+  }
+  return out;
 }
 
 // Scope eines Mitglieds: Felder + Parameter + lokale Variablen + catch-Parameter (mit Typ).
@@ -1204,6 +1320,15 @@ export function parseJavaForEdges(source: string): JavaClassGraphInfo[] {
 
     const callers: JavaCallerMethod[] = [];
     const referencedTypes = new Set<string>();
+    // Feldzugriffe, dedupliziert ueber Typ+Feld: dieselbe Konstante steht oft an mehreren Stellen,
+    // und die Kante gibt es trotzdem nur einmal. Die erste Fundstelle behaelt ihre Zeile.
+    const fieldRefSeen = new Map<string, JavaFieldRef>();
+    const addFieldRefs = (refs: JavaFieldRef[]) => {
+      for (const r of refs) {
+        const key = `${r.type}\u0000${r.field}`;
+        if (!fieldRefSeen.has(key)) fieldRefSeen.set(key, r);
+      }
+    };
     for (const member of members) {
       const bodyNode = bodyNodeOf(member.node);
       const scope = memberScope(member.declarator, bodyNode, fields);
@@ -1212,6 +1337,8 @@ export function parseJavaForEdges(source: string): JavaClassGraphInfo[] {
         scope,
         invocations: extractInvocations(bodyNode),
       });
+      // Mit dem Scope DIESES Mitglieds – nur hier ist bekannt, welchen Typ `conn` hat.
+      addFieldRefs(extractFieldRefs(bodyNode, scope));
       // Scope deckt Felder (gespreizt) + Parameter + lokale Variablen + catch-Parameter ab.
       for (const t of Object.values(scope)) referencedTypes.add(t);
       // Rueckgabetyp der Methode (Konstruktoren/Initialisierer haben keinen).
@@ -1234,6 +1361,9 @@ export function parseJavaForEdges(source: string): JavaClassGraphInfo[] {
     // „nothing in the code uses it" ueber die eigene Basisklasse.
     const superNames = superTypeNames(node);
     for (const t of superNames) referencedTypes.add(t);
+    // Zugriffe ausserhalb von Ruempfen (Feld-Initialisierer: `private String x = Http.GET;`).
+    // Scope ist dort nur die Feldliste – lokale Variablen gibt es an der Stelle nicht.
+    addFieldRefs(extractFieldRefs(node, fields));
 
     infos.push({
       class_name,
@@ -1242,6 +1372,7 @@ export function parseJavaForEdges(source: string): JavaClassGraphInfo[] {
       callers,
       referencedTypes,
       superTypes: superNames,
+      fieldRefs: [...fieldRefSeen.values()],
       staticImports,
       staticWildcardTypes,
     });

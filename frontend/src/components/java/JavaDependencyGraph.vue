@@ -143,7 +143,13 @@ const CLASS_RENDER_LIMIT = 400
 // vorher standen hier feste Hex-Werte, die im Dark-Mode neben den Tokens lagen.
 const CALL_COLOR = 'var(--color-accent)' // Methodenaufruf – der Hauptfall
 const REVIEW_COLOR = 'var(--color-warning)' // unsicher erkannt („Please review")
-const USES_COLOR = 'var(--color-cyan)' // Struktur-/Typ-Bezug (Feld, Parameter, new X())
+// Feldzugriff (`Http.GET`). Eigene Hue, weil die Kante etwas anderes sagt als die drei anderen:
+// sie benennt ein MITGLIED wie ein Aufruf, traegt aber kein Verhalten. Lavendel ist im
+// Kanten-Slot frei (Aufruf = Akzent, Typbezug = Cyan, Import = gedaempft, Buendel = Thistle,
+// Highlight = Gold) – dass es an einer Karte auch die Consumer-Rolle faerbt, stoert nicht:
+// das sind zwei Slots, die nie am selben Element sitzen.
+const FIELD_COLOR = 'var(--color-lavender)'
+const USES_COLOR = 'var(--color-cyan)' // Struktur-/Typ-Bezug (Parameter, Cast, new X())
 const IMPORT_COLOR = 'var(--color-text-muted)' // nur importiert, kein erkannter Zugriff
 const AGG_COLOR = 'var(--color-thistle)' // gebuendelte Package-Beziehungen (andere Ebene)
 const DEBUG_EDGES = true // Debug (F12): loggt geladene Klassen + nicht gezeichnete Server-Kanten
@@ -249,7 +255,9 @@ const groupByPackage = ref(true)
 // Welche Kantenarten werden gezeichnet? Gefilterte Kanten fallen auch aus dem LAYOUT heraus,
 // wirken also nicht mehr auf die Platzierung – sonst bliebe der Graph nach dem Ausblenden der
 // Imports genauso zerrissen wie vorher.
-const edgeFilter = ref({ call: true, uses: true, import: true })
+// `field` kam spaeter dazu: ein gespeicherter Zustand ohne den Schluessel wird per Spread
+// gemischt, der Default bleibt also `true` – niemand findet seine Feldkanten „verschwunden".
+const edgeFilter = ref({ call: true, field: true, uses: true, import: true })
 // Umgebung des Ausschnitts mitzeichnen. Default AN: ein geoeffnetes Package ohne seine Umgebung
 // sieht aus wie eine Insel – und beantwortet damit genau die Frage nicht, wegen der man es
 // geoeffnet hat. Abschaltbar, weil „nur dieses Package" beim Lesen einer einzelnen Ebene hilft.
@@ -309,6 +317,7 @@ function toggleEdgeKind(kind) {
 // Beschriftung + Farbe der Filter-Pillen; die Farben spiegeln exakt die Kanten im Canvas.
 const EDGE_KINDS = [
   { key: 'call', label: 'Calls', color: 'var(--color-accent)' },
+  { key: 'field', label: 'Fields', color: 'var(--color-lavender)' },
   { key: 'uses', label: 'Uses', color: 'var(--color-cyan)' },
   { key: 'import', label: 'Imports', color: 'var(--color-text-muted)' },
 ]
@@ -896,6 +905,9 @@ const layout = computed(() => {
   //    Methode strokeDasharray:'2 3', Akzent 70% Opacity, markerEnd.type = MarkerType.Arrow (hohl)
   //    statt ArrowClosed + Legendeneintrag. Bis dahin: Visualisierung + Legende unveraendert.
   const callGroups = new Map() // `${callerId}->${definerId}` -> { callerFile, definerFile, methods: [] }
+  // Feldzugriffe werden genauso gebuendelt: `Http.GET/PUT/POST` sind drei Kanten desselben Paares
+  // und ergaeben sonst drei parallele Linien mit je einem Wort daran.
+  const fieldGroups = new Map()
   for (const e of serverEdges.value || []) {
     const { consumer: callerFile, provider: definerFile } = endsOf(e, resolveHere) // A -> B
     if (!callerFile || !definerFile || callerFile.id === definerFile.id) {
@@ -934,6 +946,18 @@ const layout = computed(() => {
           // Kurz gestrichelt – deutlich anders als der Punktraster der Import-Kante.
           edgeStyle: { stroke: USES_COLOR, strokeWidth: 1.9, strokeDasharray: '5 3', cursor: 'default' },
         },
+      })
+      continue
+    }
+
+    // field-Kante = benannter Zugriff auf ein Feld der anderen Klasse -> eigene Gruppe.
+    if (e.kind === 'field') {
+      if (!showKind('field')) continue
+      if (!fieldGroups.has(pairKey)) fieldGroups.set(pairKey, { callerFile, definerFile, fields: [] })
+      fieldGroups.get(pairKey).fields.push({
+        edgeId: e.id,
+        method: e.method_name, // der Feldname – gleiche Form wie bei den Methoden, s. computeFieldEdgeData
+        isManual: !!e.is_manual,
       })
       continue
     }
@@ -989,6 +1013,36 @@ const layout = computed(() => {
         },
         onOpen: openEdgePanel,
         onDelete: onDeleteEdge,
+      },
+    })
+  }
+
+  // 1c) Je Klassenpaar EINE gebuendelte Feld-Kante. Durchgezogen wie ein Aufruf – es ist eine
+  //     konkrete, benannte Abhaengigkeit –, aber in eigener Farbe und ohne die Aufruf-Semantik
+  //     (kein „Please review": ein Feldzugriff wird nie geraten, die Zielklasse muss das Feld
+  //     deklarieren, sonst entsteht die Kante gar nicht).
+  for (const { callerFile, definerFile, fields } of fieldGroups.values()) {
+    edges.push({
+      id: `field:${definerFile.id}-${callerFile.id}`,
+      source: `c:${definerFile.id}`,
+      target: `c:${callerFile.id}`,
+      type: 'managed',
+      markerEnd: { type: MarkerType.ArrowClosed, color: FIELD_COLOR },
+      data: {
+        kind: 'field',
+        sourceId: `c:${definerFile.id}`,
+        targetId: `c:${callerFile.id}`,
+        methods: fields,
+        bundleCount: fields.length,
+        method: fields[0].method,
+        edgeId: fields.length === 1 ? fields[0].edgeId : null,
+        isManual: fields.every((f) => f.isManual),
+        fromClass: callerFile.class_name,
+        toClass: definerFile.class_name,
+        fromFileId: callerFile.id,
+        toFileId: definerFile.id,
+        edgeStyle: { stroke: FIELD_COLOR, strokeWidth: 2.1, cursor: 'pointer' },
+        onOpen: openEdgePanel,
       },
     })
   }
@@ -1694,6 +1748,73 @@ function computeCallEdgeData(callerFile, definerFile, methods, edgeMeta = {}) {
   }
 }
 
+// Dieselbe Rechnung wie `computeCallEdgeData`, nur fuer FELDER: gesucht wird der Feldname als
+// ganzes Wort statt als Aufruf mit Klammern. Zwei Unterschiede, beide notwendig:
+//   * Ein Feld hat keine Aufrufstelle, sondern eine ZUGRIFFSSTELLE – und die kann auch in einem
+//     Feld-Initialisierer stehen (`private String mode = Status.ACTIVE;`). Der Aufrufer ist dann
+//     selbst ein Feld, kein Methodenrumpf; das Panel muss ihn ohne `()` anschreiben.
+//   * „Please review" gibt es hier nicht: eine Feld-Kante entsteht nur, wenn die Zielklasse das
+//     Feld deklariert – geraten wird nichts.
+function computeFieldEdgeData(callerFile, definerFile, fields, edgeMeta = {}) {
+  const list = (fields || []).filter((f) => f && f.method)
+  const callSites = []
+  const panelMethods = []
+  for (const meta of list) {
+    const name = meta.method
+    const safe = String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const re = new RegExp(`(?<![\\w$])${safe}(?![\\w$])`, 'g')
+    for (const ca of callerFile.methods || []) {
+      const body = ca.body || ''
+      if (!body) continue
+      const base = ca.body_start_line ?? ca.start_line ?? null
+      const lineExact = ca.body_start_line != null
+      let m
+      while ((m = re.exec(body)) !== null) {
+        const relLine = (body.slice(0, m.index).match(/\n/g) || []).length
+        callSites.push({
+          callerMethod: ca.method_name,
+          callerIsField: (ca.member_kind || 'method') === 'field',
+          calleeMethod: name,
+          callerBody: body,
+          bodyStartLine: base,
+          line: base != null ? base + relLine : (ca.start_line ?? 1) + relLine,
+          lineExact,
+        })
+      }
+    }
+    const def = (definerFile.methods || []).find((mm) => mm.method_name === name)
+    panelMethods.push({
+      edgeId: meta.edgeId ?? null,
+      name,
+      signature: def ? buildFieldSignature(def) : '',
+      isManual: !!meta.isManual,
+      confidence: 1,
+      needsReview: false,
+    })
+  }
+  const single = panelMethods.length === 1
+  return {
+    kind: 'field',
+    bundleCount: panelMethods.length,
+    methods: panelMethods,
+    needsReview: false,
+    edgeId: single ? panelMethods[0].edgeId : null,
+    method: single ? panelMethods[0].name : null,
+    isManual: !!edgeMeta.isManual,
+    fromClass: callerFile.class_name,
+    toClass: definerFile.class_name,
+    fromFileId: callerFile.id,
+    toFileId: definerFile.id,
+    callSites,
+    callees: panelMethods.map((p) => p.name),
+    calleeSignatures: panelMethods.map((p) => ({ name: p.name, signature: p.signature })),
+  }
+}
+
+// Signatur eines Feldes: `public static final String ACCEPT` – ohne Klammern (s. Backend).
+const buildFieldSignature = (m) =>
+  `${(m.modifiers || []).join(' ')} ${m.return_type || ''} ${m.method_name}`.replace(/\s+/g, ' ').trim()
+
 // Gemeinsame Oeffnen-Logik fuer beide Pfade: Klick auf den SVG-Pfad (@edge-click) UND Klick auf
 // das Kanten-Label (data.onOpen in ManagedEdge). In try/catch gekapselt, damit ein Fehler im
 // Browser-Log sichtbar wird statt lautlos zu scheitern.
@@ -1717,8 +1838,10 @@ watch(
 async function openEdgePanel(d) {
   try {
     // Auto- UND manuelle Call-Kanten oeffnen das Modal (manuelle haben ggf. keine verifizierten
-    // Aufrufstellen -> der Verwendung-Abschnitt zeigt dann einen leeren Zustand).
-    if (!d || d.kind !== 'call') return
+    // Aufrufstellen -> der Verwendung-Abschnitt zeigt dann einen leeren Zustand). Feld-Kanten
+    // gehen denselben Weg: sie benennen ebenfalls ein Mitglied, nur ohne Klammern.
+    if (!d || (d.kind !== 'call' && d.kind !== 'field')) return
+    const isFieldEdge = d.kind === 'field'
     // Gebuendelte Kante traegt d.methods; Einzel-Fallback aus d.method (z. B. Modal-Edit-Reopen).
     const methodList = d.methods?.length
       ? d.methods
@@ -1741,7 +1864,7 @@ async function openEdgePanel(d) {
     edgePanelSince.value = Date.now()
     edgePanelLoading.value = true
     activeEdge.value = {
-      kind: 'call',
+      kind: d.kind,
       fromClass: callerFile.class_name,
       toClass: definerFile.class_name,
       fromFileId: callerFile.id,
@@ -1772,7 +1895,8 @@ async function openEdgePanel(d) {
       // Inzwischen eine andere Kante geklickt oder das Panel geschlossen -> dieses Ergebnis
       // gehoert zu einer Frage, die niemand mehr stellt.
       if (token !== edgeToken) return
-      activeEdge.value = computeCallEdgeData(
+      const compute = isFieldEdge ? computeFieldEdgeData : computeCallEdgeData
+      activeEdge.value = compute(
         { ...callerFile, methods: callerMethods },
         { ...definerFile, methods: definerMethods },
         methodList,
@@ -1826,7 +1950,10 @@ function relationsBetween(sourceKey, targetKey) {
       groups.set(k, g)
     }
     // Ein Paar kann mehrere Kantenarten haben – die staerkste Aussage gewinnt fuer das Badge.
-    if (kind === 'call' || (kind === 'uses' && g.kind === 'import')) g.kind = kind
+    // Die staerkste Aussage gewinnt fuer das Badge der Zeile: Aufruf > Feldzugriff > Typbezug >
+    // Import. Ein Paar kann mehrere Arten haben; die Zeile trägt aber nur eine Beschriftung.
+    const RANK = { call: 3, field: 2, uses: 1, import: 0 }
+    if ((RANK[kind] ?? 0) > (RANK[g.kind] ?? 0)) g.kind = kind
     if (method) g.methods.push(method)
   }
 
@@ -1862,7 +1989,7 @@ function relationsBetween(sourceKey, targetKey) {
     }
   }
 
-  const rank = { call: 0, uses: 1, import: 2 }
+  const rank = { call: 0, field: 1, uses: 2, import: 3 }
   return [...groups.values()].sort(
     (a, b) =>
       rank[a.kind] - rank[b.kind] ||
@@ -1896,7 +2023,9 @@ async function loadRelationDetail(rel) {
   const definerFile = filesById.value.get(rel?.provider?.id)
   if (!callerFile || !definerFile) return null
   const [callerMethods, definerMethods] = await Promise.all([methodsOf(callerFile.id), methodsOf(definerFile.id)])
-  return computeCallEdgeData(
+  // Feld-Beziehungen rechnen dieselbe Form, suchen aber den Namen OHNE Klammern.
+  const compute = rel.kind === 'field' ? computeFieldEdgeData : computeCallEdgeData
+  return compute(
     { ...callerFile, methods: callerMethods },
     { ...definerFile, methods: definerMethods },
     rel.methods || [],
@@ -1907,7 +2036,7 @@ async function loadRelationDetail(rel) {
 function openRelationCode(rel) {
   if (!rel?.methods?.length) return
   openEdgePanel({
-    kind: 'call',
+    kind: rel.kind === 'field' ? 'field' : 'call',
     fromFileId: rel.consumer.id, // Aufrufer
     toFileId: rel.provider.id, // Definition
     methods: rel.methods,
@@ -2654,8 +2783,12 @@ watch(
             <span><b>Uncertain</b> match — “Please review”</span>
           </div>
           <div class="legend-row">
+            <span class="legend-line" style="background: var(--color-lavender)" />
+            <span><b>Reads a field</b> — <code>Http.GET</code>, click for the code</span>
+          </div>
+          <div class="legend-row">
             <span class="legend-line legend-line--dashed" style="color: var(--color-cyan)" />
-            <span><b>Uses</b> the type — field, parameter, <code>new X()</code></span>
+            <span><b>Uses</b> the type — parameter, cast, <code>new X()</code></span>
           </div>
           <div class="legend-row">
             <span class="legend-line legend-line--dotted" style="color: var(--color-text-muted)" />

@@ -66,10 +66,11 @@ export class AnalysisService {
       return { queued: false, total: 0 };
     }
 
-    const methods = await this.ds.getRepository(JavaMethod).find({
-      where: { file_id: file.id },
-      order: { id: 'ASC' },
-    });
+    // Ohne Felder – sie sagen sich selbst, und eine KI-Zusammenfassung je Konstante waeren
+    // tausende Ollama-Laeufe fuer Einzeiler (dieselbe Regel wie in java-queue.service.ts).
+    const methods = (
+      await this.ds.getRepository(JavaMethod).find({ where: { file_id: file.id }, order: { id: 'ASC' } })
+    ).filter((m) => (m.member_kind || 'method') !== 'field');
     const total = methods.length;
 
     // Kontext = Nutzer-Kontext (Windchill o. ae.) + Wissen aus frueheren Analysen (Java-FTS).

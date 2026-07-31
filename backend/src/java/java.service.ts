@@ -1296,7 +1296,9 @@ export class JavaService {
       if (!prev || c > prev.confidence) edges.set(key, { source: A, target: B, method: m, confidence: c, kind });
     };
 
-    // Klassenpaare mit bereits erkannter Methoden-Kante -> kein zusaetzliches `uses` dafuer.
+    // Klassenpaare mit einer BENANNTEN Kante (Aufruf oder Feldzugriff) -> kein zusaetzliches
+    // `uses` dafuer. `uses` ist der Rueckfall fuer „Typbezug, aber kein Mitglied benannt";
+    // steht der Name schon am Pfeil, waere eine zweite, stummere Kante daneben nur Rauschen.
     const pairHasCall = new Set<string>();
     // Strukturell referenzierte Zielklassen je Quellklasse (Kandidaten fuer `uses`-Kanten).
     const usesTargets = new Map<string, { from: EdgeClass; targets: Map<string, EdgeClass> }>();
@@ -1315,6 +1317,20 @@ export class JavaService {
       // Typ-Bezuege (Feld-/Variablen-/Parameter-/Rueckgabetyp, new X(), statischer Zugriff, Cast,
       // instanceof, catch, throws, extends/implements) als `uses`-Kandidaten.
       for (const t of info.referencedTypes) addUses(A, resolveType(A, t));
+
+      // Feldzugriffe (`Http.GET`, `conn.timeout`) – eine eigene Kantenart, weil sie ein MITGLIED
+      // benennt und damit nachpruefbar ist, anders als ein blosser Typbezug. Bedingung: die
+      // Zielklasse deklariert das Feld auch. Ohne diese Pruefung stuende ein erfundener Name am
+      // Pfeil, sobald der Empfaenger falsch aufgeloest wurde.
+      for (const ref of info.fieldRefs || []) {
+        const B = resolveType(A, ref.type);
+        if (!B || B.fqcn === A.fqcn) continue;
+        addUses(A, B); // ein aufgeloester Empfaenger ist immer auch ein Typbezug
+        if (!Object.prototype.hasOwnProperty.call(B.info.fields, ref.field)) continue;
+        put(A, B, ref.field, 1.0, 'field');
+        pairHasCall.add(`${A.fqcn}\u0000${B.fqcn}`);
+      }
+
       for (const caller of info.callers) {
         for (const inv of caller.invocations) {
           const m = inv.method;

@@ -78,6 +78,12 @@ const KIND_META = {
     explain: (r, m) =>
       `${r.consumer.class_name} calls ${m} on ${r.provider.class_name}. That is a real dependency: change the method and ${r.consumer.class_name} has to follow.`,
   },
+  field: {
+    label: 'reads field',
+    color: 'var(--color-lavender)',
+    explain: (r, m) =>
+      `${r.consumer.class_name} reads ${m} on ${r.provider.class_name}. That is a real dependency: rename or remove the field and ${r.consumer.class_name} stops compiling.`,
+  },
   uses: {
     label: 'uses type',
     color: 'var(--color-cyan)',
@@ -107,7 +113,7 @@ const filtered = computed(() => {
 })
 // Bilanz im Kopf: wieviele der Beziehungen sind echte Aufrufe, wieviele nur Imports?
 const tally = computed(() => {
-  const t = { call: 0, uses: 0, import: 0 }
+  const t = { call: 0, field: 0, uses: 0, import: 0 }
   for (const r of relations.value) t[r.kind] = (t[r.kind] || 0) + 1
   return t
 })
@@ -136,9 +142,10 @@ function siteVars(rel, site) {
   return site.callees?.length === 1 ? mcVars(rel, site.callees[0]) : {}
 }
 const explainFor = (r) => {
-  const names = methodsOf(r).map((m) => `${m.method}()`)
+  // Ein Feld traegt keine Klammern – `ACCEPT()` waere kein Java.
+  const names = methodsOf(r).map((m) => (r.kind === 'field' ? m.method : `${m.method}()`))
   const list = names.length > 2 ? `${names.slice(0, 2).join(', ')} and ${names.length - 2} more` : names.join(' and ')
-  return KIND_META[r.kind].explain(r, list || 'a method')
+  return KIND_META[r.kind].explain(r, list || (r.kind === 'field' ? 'a field' : 'a method'))
 }
 
 // --- Code nachladen (lazy, einmal je Beziehung) ----------------------------------------------
@@ -349,6 +356,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                  calls" waere sonst kaum grammatisch sauber zu bekommen. -->
             <div class="mt-2 flex flex-wrap items-center gap-1.5">
               <span v-if="tally.call" class="tally" style="--k: var(--color-accent)">calls <b>{{ tally.call }}</b></span>
+              <span v-if="tally.field" class="tally" style="--k: var(--color-lavender)">fields <b>{{ tally.field }}</b></span>
               <span v-if="tally.uses" class="tally" style="--k: var(--color-cyan)">type usage <b>{{ tally.uses }}</b></span>
               <span v-if="tally.import" class="tally" style="--k: var(--color-text-muted)">import-only <b>{{ tally.import }}</b></span>
               <span class="tally tally--total">total <b>{{ relations.length }}</b></span>
@@ -415,7 +423,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                       :key="m.edgeId ?? m.method"
                       class="rel-method"
                       :style="mcVars(r, m.method)"
-                    >{{ m.method }}()</span>
+                    >{{ r.kind === 'field' ? m.method : m.method + '()' }}</span>
                     <span v-if="methodsOf(r).length > 3" class="rel-more">+{{ methodsOf(r).length - 3 }}</span>
                   </span>
                   <Icon

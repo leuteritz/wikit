@@ -22,7 +22,9 @@ import dagre from '@dagrejs/dagre'
 // Spalte und desto eher wird sie kurz und kreuzungsfrei gefuehrt. Genau die Reihenfolge, in der
 // die Kantentypen etwas aussagen: ein Methodenaufruf ist eine harte Kopplung, ein blosser Import
 // fast nichts. Vorher zaehlte jede Kante gleich – der Graph richtete sich nach den Imports aus.
-export const EDGE_WEIGHT = { call: 6, uses: 3, import: 1, aggregate: 4 }
+// `field` liegt knapp unter `call`: ein Feldzugriff benennt ein Mitglied und ist damit fast so
+// aussagekraeftig wie ein Aufruf – aber ein Aufruf traegt Verhalten, ein Feld nur einen Wert.
+export const EDGE_WEIGHT = { call: 6, field: 5, uses: 3, import: 1, aggregate: 4 }
 
 // Innenabstaende der Package-Zone. Oben mehr, weil dort die Kopfzeile der Zone sitzt.
 // Basiswerte bei 16px-Root; der `scale`-Parameter der Layouts zieht sie mit der Root-

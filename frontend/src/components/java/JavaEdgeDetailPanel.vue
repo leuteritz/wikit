@@ -81,6 +81,17 @@ const calleeList = computed(() => {
 // Namen der unsicher erkannten Methoden – die Aufrufstellen unten kennen nur ihren Callee-Namen.
 const unverified = computed(() => new Set(calleeList.value.filter((c) => c.needsReview).map((c) => c.name)))
 
+// Feld-Kante statt Aufruf-Kante. Dasselbe Panel, dieselbe Rechnung – nur zwei Dinge sind anders,
+// und beide wären als Text falsch, wenn man sie nicht unterscheidet: ein Feld trägt keine
+// Klammern (`ACCEPT`, nicht `ACCEPT()`), und es wird gelesen statt aufgerufen.
+const isField = computed(() => props.edge?.kind === 'field')
+const memberWord = computed(() => (isField.value ? 'field' : 'method'))
+// Name eines Mitglieds dieser Kante, so wie er im Java-Quelltext steht.
+const memberName = (n) => (isField.value ? n : `${n}()`)
+// Der AUFRUFER ist normalerweise eine Methode – bei einem Feld-Initialisierer
+// (`private String mode = Status.ACTIVE;`) aber selbst ein Feld. Dann ohne Klammern.
+const callerName = (name, isFieldCaller) => (isFieldCaller ? name : `${name}()`)
+
 // Aufrufstellen pro aufrufende Methode gruppieren (Anwender-Sektion). Jede Site traegt ihre
 // exakte Zeile + (relative) Position im Rumpf fuer das fokussierte Snippet.
 const callerGroups = computed(() => {
@@ -88,7 +99,7 @@ const callerGroups = computed(() => {
   const map = new Map()
   for (const cs of props.edge.callSites) {
     if (!map.has(cs.callerMethod)) {
-      map.set(cs.callerMethod, { callerMethod: cs.callerMethod, sites: [] })
+      map.set(cs.callerMethod, { callerMethod: cs.callerMethod, callerIsField: !!cs.callerIsField, sites: [] })
     }
     map.get(cs.callerMethod).sites.push(cs)
   }
@@ -326,8 +337,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               <BusyState
                 variant="panel"
                 :title="`Opening ${edge.toClass} → ${edge.fromClass}`"
-                :detail="`${calleeList.length} method${calleeList.length === 1 ? '' : 's'} · source of both classes`"
-                hint="Method bodies are fetched on click — the class list does not carry them, so this is one request per class."
+                :detail="`${calleeList.length} ${memberWord}${calleeList.length === 1 ? '' : 's'} · source of both classes`"
+                hint="Member bodies are fetched on click — the class list does not carry them, so this is one request per class."
                 :since="loadingSince"
                 :rows="Math.min(6, Math.max(2, calleeList.length * 2))"
               />
@@ -370,9 +381,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                     <!-- Farb-Badge = Identitaet dieser Methode; dasselbe Zeichen steht unten an
                          jeder Aufrufstelle, die sie ruft. -->
                     <span class="mc-badge">
-                      <Icon icon="lucide:braces" class="h-3.5 w-3.5" />
+                      <!-- Dasselbe Zeichen wie am Kanten-Label: geschweifte Klammern fuer eine
+                           Methode, das Variablenzeichen fuer ein Feld. -->
+                      <Icon :icon="isField ? 'lucide:variable' : 'lucide:braces'" class="h-3.5 w-3.5" />
                     </span>
-                    <code class="mc-name font-mono text-sm font-semibold">{{ c.name }}()</code>
+                    <code class="mc-name font-mono text-sm font-semibold">{{ memberName(c.name) }}</code>
                     <span v-if="c.needsReview" class="review-badge shrink-0">
                       <Icon icon="lucide:alert-triangle" class="h-3 w-3 shrink-0" />
                       Please review
@@ -501,7 +514,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                   <Icon icon="lucide:code-2" class="h-5 w-5" />
                 </span>
                 <div class="min-w-0">
-                  <div class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Consumer · calls</div>
+                  <div class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Consumer · {{ isField ? 'reads' : 'calls' }}</div>
                   <h2 class="truncate text-base font-bold text-[var(--color-text)]">{{ edge.fromClass }}</h2>
                 </div>
               </div>
@@ -534,9 +547,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                         <span class="mc-badge">
                           <Icon icon="lucide:corner-down-right" class="h-3.5 w-3.5" />
                         </span>
-                        <code class="font-mono text-sm font-semibold text-[var(--color-text)]">{{ grp.callerMethod }}()</code>
+                        <code class="font-mono text-sm font-semibold text-[var(--color-text)]">{{ callerName(grp.callerMethod, grp.callerIsField) }}</code>
                         <Icon icon="lucide:arrow-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
-                        <code class="mc-name font-mono text-sm font-semibold">{{ site.calleeMethod }}()</code>
+                        <code class="mc-name font-mono text-sm font-semibold">{{ memberName(site.calleeMethod) }}</code>
                         <!-- Genau diese Zeile ist die geratene Stelle -> das Badge gehoert hierher,
                              nicht nur an die Definition oben. -->
                         <span
@@ -550,7 +563,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                         <div class="ml-auto flex min-w-0 items-center gap-1.5">
                           <span
                             class="inline-flex min-w-0 items-center gap-1 truncate font-mono text-2xs text-[var(--color-text-muted)]"
-                            :title="site.lineExact ? 'Exact call line' : 'Line estimated – re-analyze the file for the exact line'"
+                            :title="site.lineExact ? (isField ? 'Exact line of the access' : 'Exact call line') : 'Line estimated – re-analyze the file for the exact line'"
                           >
                             <Icon icon="lucide:file-code" class="h-3 w-3 shrink-0" />
                             {{ usageSnippets[grp.callerMethod].filename }} · {{ site.lineExact ? '' : '~' }}L{{ site.line }}

@@ -17,6 +17,8 @@ import sun from '@iconify-icons/lucide/sun'
 import moon from '@iconify-icons/lucide/moon'
 import bookOpen from '@iconify-icons/lucide/book-open'
 import braces from '@iconify-icons/lucide/braces'
+// Feldzugriff (`Http.GET`): eigene Kantenart neben dem Methodenaufruf – am Label und in der Legende.
+import variable from '@iconify-icons/lucide/variable'
 import listChecks from '@iconify-icons/lucide/list-checks'
 import share2 from '@iconify-icons/lucide/share-2'
 import plus from '@iconify-icons/lucide/plus'
@@ -93,6 +95,7 @@ const ICONS = {
   'lucide:moon': moon,
   'lucide:book-open': bookOpen,
   'lucide:braces': braces,
+  'lucide:variable': variable,
   'lucide:list-checks': listChecks,
   'lucide:share-2': share2,
   'lucide:plus': plus,

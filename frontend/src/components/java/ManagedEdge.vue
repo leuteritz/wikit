@@ -88,6 +88,9 @@ const labelX = computed(() => pathData.value[1])
 const labelY = computed(() => pathData.value[2] + labelStagger.value)
 
 const d = computed(() => props.data || {})
+// Feldzugriff statt Methodenaufruf: dieselbe Kante, aber der Name traegt keine Klammern und die
+// Kursiv-Regel (offene Implementierung) gilt nicht – ein Feld ist nie polymorph.
+const isField = computed(() => d.value.kind === 'field')
 
 // Steht die Implementierung fest? Bei Interface und abstrakter Klasse nicht – das Label sagt es
 // mit der UML-Notation (kursiv + Typzeichen). Die Icons sind dieselben wie im Typ-Chip der Karte,
@@ -344,12 +347,22 @@ const pulsing = computed(() => !!d.value.isHighlighted && !isHovered.value)
         v-if="d.bundleCount > 1"
         class="me-method me-count"
         :class="{ 'me-method--open': d.openKind }"
-        :title="openTitle || 'Multiple methods – show details'"
+        :title="openTitle || (isField ? 'Multiple fields – show details' : 'Multiple methods – show details')"
       >
-        <Icon :icon="d.openKind ? OPEN_ICON[d.openKind] : 'lucide:braces'" class="me-ic" />{{ d.bundleCount }} methods
+        <Icon
+          :icon="isField ? 'lucide:variable' : d.openKind ? OPEN_ICON[d.openKind] : 'lucide:braces'"
+          class="me-ic"
+        />{{ d.bundleCount }} {{ isField ? 'fields' : 'methods' }}
       </span>
-      <span v-else class="me-method" :class="{ 'me-method--open': d.openKind }" :title="openTitle || null">
-        <Icon v-if="d.openKind" :icon="OPEN_ICON[d.openKind]" class="me-ic me-ic--open" />{{ d.method ? d.method + '()' : '—' }}
+      <!-- Ein Feld traegt KEINE Klammern – `ACCEPT()` waere kein Java und laese sich wie eine
+           parameterlose Methode. Das Zeichen davor sagt die Art, damit ein einzelnes Wort am
+           Pfeil nicht raten laesst, ob es Methode oder Feld ist. Die Kursiv-Auszeichnung
+           (offene Implementierung) gilt nur fuer Methoden: ein Feld ist nie polymorph. -->
+      <span v-else class="me-method" :class="{ 'me-method--open': !isField && d.openKind }" :title="openTitle || null">
+        <Icon v-if="isField" icon="lucide:variable" class="me-ic me-ic--open" />
+        <Icon v-else-if="d.openKind" :icon="OPEN_ICON[d.openKind]" class="me-ic me-ic--open" />{{
+          d.method ? (isField ? d.method : d.method + '()') : '—'
+        }}
       </span>
 
       <span

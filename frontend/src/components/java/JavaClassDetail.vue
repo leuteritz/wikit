@@ -346,7 +346,7 @@ const summarizedCount = computed(() => members.value.filter((m) => m.summary_htm
 
 // Kurzzeichen fuer alles, was keine Methode ist. Die Signatur sagt es zwar auch (`N8nClient()`
 // ohne Rueckgabetyp), aber erst beim Lesen – der Chip macht die Liste scanbar.
-const MEMBER_CHIP = { constructor: 'ctor', initializer: 'init' }
+const MEMBER_CHIP = { constructor: 'ctor', initializer: 'init', field: 'field' }
 function memberChip(m) {
   return MEMBER_CHIP[m.member_kind] || ''
 }
@@ -357,6 +357,8 @@ function memberChip(m) {
 function signature(m) {
   const kind = m.member_kind || 'method'
   if (kind === 'initializer') return m.method_name
+  // Ein Feld hat keine Parameterliste – `ACCEPT()` waere kein Java (identisch zum Backend).
+  if (kind === 'field') return `${(m.modifiers || []).join(' ')} ${m.return_type || ''} ${m.method_name}`.replace(/\s+/g, ' ').trim()
   const params = (m.parameters || []).map((p) => `${p.type} ${p.name}`.trim()).join(', ')
   const mods = (m.modifiers || []).join(' ')
   const ret = kind === 'constructor' ? '' : m.return_type || 'void'

@@ -485,9 +485,13 @@ export class JavaQueueService {
       job.className = file.class_name;
       job.package = file.pkg ?? null;
 
-      const allMethods = await this.ds
-        .getRepository(JavaMethod)
-        .find({ where: { file_id: file.id }, order: { id: 'ASC' } });
+      // Felder werden NICHT zusammengefasst: `public static final String ACCEPT = "Accept"` sagt
+      // sich selbst, und bei einer Codebasis mit tausenden Klassen waeren es tausende
+      // Ollama-Laeufe fuer Einzeiler. Konstruktoren und Initialisierer bleiben drin – dort steht
+      // die Verdrahtung. (java_methods haelt seit den Konstruktoren jedes Mitglied mit Rumpf.)
+      const allMethods = (
+        await this.ds.getRepository(JavaMethod).find({ where: { file_id: file.id }, order: { id: 'ASC' } })
+      ).filter((m) => (m.member_kind || 'method') !== 'field');
       job.methodTotal = allMethods.length;
 
       // RAG-Kontext einmal pro Einheit aufbauen (Wissensbasis + Nutzer-Kontext).
