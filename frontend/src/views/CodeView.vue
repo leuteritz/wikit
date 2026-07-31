@@ -25,7 +25,7 @@ import { detectJavaClasses } from '../lib/javaDetect.js'
 import { formatEta, formatDuration } from '../lib/format.js'
 import { isTypingTarget } from '../lib/shortcuts.js'
 
-const { files, loading: filesLoading, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFileId, lastTargetLine, lastTargetEndLine, lastSearchQuery, lastSearchOpts, deleteFile, resetAll } =
+const { files, loading: filesLoading, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFileId, lastTargetLine, lastTargetEndLine, lastSearchQuery, lastSearchOpts, openAddCode, deleteFile, resetAll } =
   useJavaAnalyzer()
 // Startzeitpunkt fuer die Wartemeldung der Klassenliste (die Uhr laeuft in BusyState).
 const filesStartedAt = ref(Date.now())
@@ -167,6 +167,12 @@ const inputTiles = computed(() => [
 // Hand-off aus Landing-Analyse / Suche / Edge-Panel uebernehmen: Datei vorwaehlen und
 // (optional) die Ziel-Quellzeile ans Detail-Panel durchreichen. Danach zuruecksetzen.
 function consumeHandoff() {
+  // „Add code" von der Landing-Seite: dort gibt es keine Drop-Zone mehr, der Verweis fuehrt
+  // hierher – und zwar bis ins Modal, nicht nur bis zum Knopf, der es oeffnet.
+  if (openAddCode.value) {
+    openAddCode.value = false
+    showNew.value = true
+  }
   if (lastFileId.value == null) return
   selectedFileId.value = lastFileId.value
   activeTargetLine.value = lastTargetLine.value

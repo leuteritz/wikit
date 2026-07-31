@@ -28,6 +28,11 @@ const state = reactive({
   // faende die Klasse etwas anderes als die Palette. Beide werden nach Verbrauch genullt.
   lastSearchQuery: null,
   lastSearchOpts: null,
+  // Hand-off „einlesen": die Landing-Seite hat keine eigene Drop-Zone mehr (sie ist Suche und
+  // Bilanz, sonst nichts). Ihr „Add code"-Verweis setzt dieses Flag und springt in die
+  // Code-Ansicht, die das Modal beim Ankommen oeffnet – sonst laege der Knopf, den man gerade
+  // gedrueckt hat, dort ein zweites Mal und man muesste ihn erneut suchen.
+  openAddCode: false,
 })
 
 async function fetchFiles() {
