@@ -18,6 +18,10 @@ import BusyState from '../components/BusyState.vue'
 import JavaCodeEditor from '../components/java/JavaCodeEditor.vue'
 import JavaDependencyGraph from '../components/java/JavaDependencyGraph.vue'
 import JavaClassDetail from '../components/java/JavaClassDetail.vue'
+// Kanten-Detail und Aggregat-Aufloesung: gerechnet werden sie im Graphen (er allein kennt Kanten,
+// Dateiliste und Ebenen-Schluessel), gezeigt werden sie hier – neben dem Bild, nicht darueber.
+import JavaEdgeDetailPanel from '../components/java/JavaEdgeDetailPanel.vue'
+import JavaBundlePanel from '../components/java/JavaBundlePanel.vue'
 import JavaExportModal from '../components/java/JavaExportModal.vue'
 import JavaQueueModal from '../components/java/JavaQueueModal.vue'
 import JavaDetectedClasses from '../components/java/JavaDetectedClasses.vue'
@@ -32,7 +36,7 @@ const { files, loading: filesLoading, fetchFiles, analyzeBatch, analyzing, error
 const filesStartedAt = ref(Date.now())
 const { summary: queueSummary, enqueueMany, enqueueAllUnanalyzed, cancelJob, cancelAllJobs, progressFor, ensurePolling } =
   useJavaQueue()
-const { recomputeEdges, recomputing, recomputeProgress, resetEdges, edgeReturn, requestEdgeReturn, clearEdgeReturn } = useJavaGraph()
+const { recomputeEdges, recomputing, recomputeProgress, resetEdges } = useJavaGraph()
 const { push, clearAll: clearNotifications } = useNotifications()
 // Verschiebbare Spaltenbreiten des 3-Spalten-Layouts (Drag-to-Resize + Reset).
 const {
@@ -62,6 +66,59 @@ const activeTargetEndLine = ref(null) // Ziel-End-Zeile -> markiert den gesamten
 // Suchbegriff + Schalter aus der globalen Suche: gehen unveraendert an die Suchleiste des
 // Klassen-Panels weiter, damit man dort weitersucht, statt neu anzufangen.
 const handoffSearch = ref(null)
+
+// --- Spalte 3: Klasse ODER Beziehung -----------------------------------------------------------
+// Ein Klick auf eine Kante im Graphen landet hier, nicht mehr in einem Modal darueber. Beides ist
+// dieselbe Taetigkeit – Code lesen –, also derselbe Ort; was gerade zu sehen ist, entscheidet ein
+// Umschalter. Er ersetzt zugleich den frueheren „Back to relation"-Knopf: der war noetig, weil das
+// Modal beim Sprung in den Code zuklappte und die Beziehung mitnahm. Jetzt bleibt sie einfach
+// stehen, und ein Klick fuehrt zurueck.
+const relation = ref(null) // vom Graphen gemeldet: { kind: 'edge' | 'bundle', … } | null
+const detailTab = ref('class') // 'class' | 'relation'
+const showRelation = computed(() => !!relation.value && detailTab.value === 'relation')
+// Der Klassen-Reiter traegt den Namen der geoeffneten Klasse: „Class" allein liesse offen, wohin
+// er zurueckfuehrt – und genau das ist die Frage, wenn man aus einer Beziehung heraus schaut.
+const selectedFile = computed(() => files.value.find((f) => f.id === selectedFileId.value) || null)
+
+// Der Graph rechnet, diese Ansicht zeigt. Das Detail oeffnet SOFORT (mit dem, was ohne Request
+// bekannt ist) und meldet sich waehrend des Ladens erneut – deshalb kommen hier mehrere Meldungen
+// zu einem Klick, und nur die erste darf Platz nehmen.
+function onRelation(payload) {
+  const wasOpen = !!relation.value
+  relation.value = payload
+  if (!payload) {
+    detailTab.value = 'class'
+    releaseFocus()
+    return
+  }
+  detailTab.value = 'relation'
+  if (wasOpen) return
+  // Zwei Codebloecke uebereinander (Definition + Aufrufstelle) brauchen Breite – dieselbe geliehene
+  // Aufteilung wie beim Sprung aus der globalen Suche, samt Rueckgabe beim Schliessen. Und der
+  // Graph muss seinen Ausschnitt nachziehen, weil ihm dabei ein knappes Viertel Flaeche fehlt.
+  focusRight()
+  refitGraphSoon(300)
+}
+
+// ×/ESC/Klick ins Leere: fertig mit der Beziehung. Der Zustand liegt im Graphen (dort entsteht er),
+// also wird er auch dort geloescht – die Meldung kommt als `relation: null` zurueck.
+function closeRelation() {
+  graphRef.value?.closeRelation?.()
+}
+function onRelationClose(reason) {
+  // Sprung in den Quellcode: die Beziehung bleibt offen, nur nach hinten. Wer den Code gelesen hat,
+  // will oft zurueck – und findet sie im Umschalter, statt sie im Graphen neu suchen zu muessen.
+  if (reason === 'navigate') {
+    detailTab.value = 'class'
+    return
+  }
+  // Kante aus einer Aggregatliste: × fuehrt zurueck in die Liste, nicht ins Nichts.
+  if (relation.value?.kind === 'edge' && relation.value.back) {
+    graphRef.value?.closeEdgeDetail?.()
+    return
+  }
+  closeRelation()
+}
 const search = ref('') // was im Feld steht – reagiert sofort auf jeden Tastendruck
 // …und was daraus tatsaechlich gefiltert wird. Getrennt, weil an EINEM Tastendruck der halbe
 // Bildschirm haengt: Trefferliste, Package-Baum, alle Baumzeilen und der Graph (der bei wenigen
@@ -182,6 +239,9 @@ function consumeHandoff() {
   }
   if (lastFileId.value == null) return
   selectedFileId.value = lastFileId.value
+  // Der Sprung gilt einer KLASSE – auch wenn er aus einem Kanten-Detail kam. Die Beziehung bleibt
+  // im Umschalter erreichbar, sie tritt nur zurueck.
+  detailTab.value = 'class'
   activeTargetLine.value = lastTargetLine.value
   activeTargetEndLine.value = lastTargetEndLine.value
   // Die Suche gehoert zum Sprung: ein neues Objekt je Hand-off, damit das Panel auch dann reagiert,
@@ -252,7 +312,14 @@ watch(lastFileId, (v) => {
 // ohne technischen Grund – bei einem Import, der Minuten braucht, eine ziemlich teure.
 function onKeydown(e) {
   if (e.key === 'Escape') {
-    if (showNew.value && !pendingConflicts.value) showNew.value = false
+    if (showNew.value && !pendingConflicts.value) {
+      showNew.value = false
+      return
+    }
+    // Das Kanten-Detail ist kein Modal mehr – ESC gehoert deshalb hierher und nicht in das Panel:
+    // wer im Klassenfilter oder im Editor tippt, meint mit ESC etwas anderes (dieselbe Regel wie
+    // bei allen uebrigen Kuerzeln dieser Ansicht).
+    if (relation.value && !isTypingTarget(document.activeElement)) closeRelation()
     return
   }
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && showNew.value && !analyzing.value && !pendingConflicts.value) {
@@ -832,6 +899,9 @@ function selectFile(id) {
   releaseFocus()
   handoffSearch.value = null
   selectedFileId.value = id
+  // Wer eine Klasse waehlt, meint die Klasse. Eine offene Beziehung wird davon nicht ungueltig –
+  // sie tritt nur hinter den Umschalter zurueck (und gibt dabei ihre Markierung im Graphen ab).
+  detailTab.value = 'class'
 }
 
 // Klick im Baum: Klasse auswaehlen UND den Graph dorthin fuehren (Package oeffnen + zentrieren).
@@ -1583,10 +1653,12 @@ function onResetPanels() {
           :focus-token="graphFocusToken"
           :match-ids="graphMatchIds"
           :search-query="graphQuery"
+          :relation-visible="showRelation"
           @select="selectFileFromGraph"
           @navigate="onGraphNavigate"
           @pane-click="releaseFocus"
           @clear-search="search = ''"
+          @relation="onRelation"
         />
       </div>
 
@@ -1603,25 +1675,49 @@ function onResetPanels() {
         <span class="panel-resizer__grip" />
       </div>
 
-      <!-- Spalte 3: Detail -->
+      <!-- Spalte 3: Detail – wahlweise die geoeffnete Klasse oder die angeklickte Beziehung. -->
       <div class="flex min-h-0 flex-col gap-2">
-        <!-- Rueckweg zur Kante, ueber die man hier gelandet ist. Steht UEBER dem Detail und nicht
-             im Graphen: hierher schaut der Nutzer nach dem Sprung, und hier stellt sich die Frage
-             „und wie komme ich zurueck?". -->
+        <!-- Umschalter, nur solange eine Beziehung offen ist. Ohne sie gibt es nichts zu waehlen,
+             und eine Leiste mit einem einzigen, immer aktiven Knopf waere blosse Dekoration. -->
         <Transition name="pop">
-          <button v-if="edgeReturn" type="button" class="edge-back" @click="requestEdgeReturn()">
-            <span class="edge-back-ic"><Icon icon="lucide:corner-up-left" class="h-4 w-4" /></span>
-            <span class="min-w-0 flex-1 text-left">
-              <span class="block text-2xs font-semibold uppercase tracking-[0.12em] opacity-70">Back to relation</span>
-              <span class="block truncate font-mono text-[0.8125rem] font-semibold">{{ edgeReturn.label }}</span>
-            </span>
-            <Icon icon="lucide:git-fork" class="h-4 w-4 shrink-0 opacity-60" />
-          </button>
+          <div v-if="relation" class="detail-tabs">
+            <button
+              type="button"
+              class="detail-tab"
+              :class="{ 'is-active': detailTab === 'class' }"
+              @click="detailTab = 'class'"
+            >
+              <Icon icon="lucide:box" class="h-3.5 w-3.5 shrink-0" />
+              <span class="truncate">{{ selectedFile ? selectedFile.class_name : 'Class' }}</span>
+            </button>
+            <button
+              type="button"
+              class="detail-tab"
+              :class="{ 'is-active': detailTab === 'relation' }"
+              @click="detailTab = 'relation'"
+            >
+              <Icon icon="lucide:share-2" class="h-3.5 w-3.5 shrink-0" />
+              <span class="truncate">Relation</span>
+            </button>
+            <button
+              type="button"
+              class="detail-tab-x"
+              title="Close relation (ESC)"
+              aria-label="Close relation"
+              @click="closeRelation()"
+            >
+              <Icon icon="lucide:x" class="h-4 w-4" />
+            </button>
+          </div>
         </Transition>
 
         <!-- min-h-0 + flex-1: der Detailbereich behaelt seine eigene Scrollflaeche, auch wenn der
-             Zurueck-Knopf darueber Platz belegt. -->
-        <div class="min-h-0 flex-1">
+             Umschalter darueber Platz belegt.
+             `v-show` statt `v-if`: das Klassen-Panel traegt einen CodeMirror, eine Suchposition und
+             eine Scrollstelle. Ein Blick auf die Beziehung und zurueck wuerde all das verwerfen und
+             die Klasse neu laden – bei einem Umschalter, der zum Hin- und Herschauen da ist, waere
+             das genau die falsche Antwort. -->
+        <div v-show="!showRelation" class="min-h-0 flex-1">
           <JavaClassDetail
             ref="detailRef"
             v-if="selectedFileId"
@@ -1646,6 +1742,30 @@ function onResetPanels() {
               </p>
             </div>
           </div>
+        </div>
+
+        <!-- Die angeklickte Kante: Einzelbeziehung (Definition -> Aufrufstellen) oder die
+             Aufloesung einer Aggregatkante. Beide sind hier Panels der Spalte, keine Modals –
+             der Graph, aus dem der Klick kam, bleibt daneben sichtbar und markiert die Linie. -->
+        <div v-if="relation" v-show="showRelation" class="min-h-0 flex-1">
+          <JavaEdgeDetailPanel
+            v-if="relation.kind === 'edge'"
+            :edge="relation.edge"
+            :visible="true"
+            :loading="relation.loading"
+            :loading-since="relation.since"
+            :back="relation.back"
+            @close="onRelationClose"
+            @delete-edge="(id) => graphRef?.deleteRelationEdge?.(id)"
+          />
+          <JavaBundlePanel
+            v-else
+            :visible="true"
+            :bundle="relation.bundle"
+            :load-detail="relation.loadDetail"
+            @close="onRelationClose"
+            @open="relation.openRelation"
+          />
         </div>
       </div>
     </div>
@@ -1879,39 +1999,57 @@ function onResetPanels() {
   transform: scale(0.96) translateY(-4px);
 }
 
-/* Rueckweg zur Kante (Spalte 3, ueber dem Detail). Bewusst gross und in Akzentfarbe: er ist die
-   Antwort auf „wie komme ich zu der Beziehung zurueck, aus der ich hier gelandet bin?" – und ein
-   Weg, den man nicht findet, gibt es nicht. Volle Breite, damit der Kantenname (mono, kann lang
-   werden) Platz hat und der Knopf nicht neben dem Detail zu suchen ist. */
-.edge-back {
+/* Umschalter der Detail-Spalte: Klasse | Beziehung. Ein Segment, kein Stapel aus zwei Karten –
+   die beiden schliessen einander aus, und was gerade gilt, soll man an einer Stelle sehen. Er
+   erscheint erst, wenn es wirklich zwei Dinge gibt (s. Template) und ersetzt den frueheren
+   „Back to relation"-Knopf: derselbe Rueckweg, aber in beide Richtungen. */
+.detail-tabs {
   display: flex;
-  width: 100%;
   align-items: center;
-  gap: 0.625rem;
+  gap: 2px;
   border-radius: 0.75rem;
-  border: 1px solid color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  padding: 3px;
+}
+.detail-tab {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  border-radius: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.detail-tab:hover {
+  background: var(--color-surface-offset);
+  color: var(--color-text);
+}
+/* Der aktive Reiter traegt Flaeche, nicht nur Farbe: bei zwei gleich breiten Knoepfen nebeneinander
+   ist eine Textfarbe allein zu leise, um „hier stehe ich" zu sagen. */
+.detail-tab.is-active {
   background: var(--color-accent-soft);
-  padding: 0.5rem 0.75rem;
   color: var(--color-accent);
-  text-align: left;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 40%, transparent);
 }
-.edge-back:hover {
-  border-color: var(--color-accent);
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--color-accent) 26%, transparent);
-  transform: translateY(-1px);
-}
-.edge-back:active {
-  transform: translateY(0);
-}
-.edge-back-ic {
+.detail-tab-x {
   display: grid;
   flex-shrink: 0;
   place-items: center;
   width: 1.75rem;
   height: 1.75rem;
   border-radius: 0.5rem;
-  background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+  color: var(--color-text-muted);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.detail-tab-x:hover {
+  background: var(--color-surface-offset);
+  color: var(--color-text);
 }
 
 /* Tastenkappe fuer den Shortcut-Hinweis im Modal-Footer. */

@@ -1,13 +1,21 @@
 <script setup>
-// Edge-Detail-Panel fuer eine Call-Kante im Klassengraphen.
+// Kanten-Detail (Spalte 3 der Code-Ansicht) fuer eine Call- oder Feld-Kante des Klassengraphen.
+//
+// Das war einmal ein Modal ueber dem Graphen. Es verdeckte damit genau das Bild, aus dem der Klick
+// kam: die Beziehung liess sich lesen ODER im Graphen verorten, nie beides. Jetzt steht sie neben
+// dem Graphen – dort, wo auch der Code einer Klasse steht, denn es ist dieselbe Taetigkeit. Die
+// Kante selbst bleibt derweil im Bild markiert (`pinnedEdge` in useJavaGraph).
+//
 // Gerichteter Informationsfluss analog zum Pfeil im Graphen (Definition -> Nutzung):
 //   * Oben (Quelle): die DEFINIERENDE Klasse mit der Methodendefinition – Name, Signatur und
 //     Shiki-gehighlighteter Quellcode (vom Backend, Dual-Theme via CSS-Variablen).
 //   * Pfeil-Divider in Akzentfarbe.
 //   * Unten (Anwender): die AUFRUFENDE Klasse mit der exakten Aufrufzeile + fokussiertem
 //     Code-Snippet, in dem die Aufrufzeile farbig hervorgehoben ist.
-// Navigations-Links oeffnen die jeweilige Datei zeilengenau. Schliesst per ESC, Backdrop oder
-// Close-Button. HTTP nur ueber lib/api.js.
+// Navigations-Links oeffnen die jeweilige Datei zeilengenau. Geschlossen wird ueber den ×-Knopf
+// oder ESC – und ESC routet CodeView, nicht dieses Panel: es ist kein Modal mehr, also darf es
+// nicht jede ESC-Taste des Fensters an sich ziehen (im Klassenfilter oder im Editor meint sie
+// etwas anderes). HTTP nur ueber lib/api.js.
 import { computed, watch, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../../lib/api.js'
@@ -31,6 +39,9 @@ const props = defineProps({
   loading: { type: Boolean, default: false },
   // Startzeitpunkt fuer die Uhr in `BusyState` (dort laeuft sie, nicht hier).
   loadingSince: { type: Number, default: 0 },
+  // Steht unter dieser Kante noch eine Aggregatliste, aus der sie geoeffnet wurde? Dann ist ×
+  // nicht „fertig", sondern „zurueck zur Liste" – und muss das auch sagen.
+  back: { type: String, default: null },
 })
 const emit = defineEmits(['close', 'delete-edge'])
 
@@ -250,19 +261,8 @@ function openUsage(c) {
   navigateTo(edge?.fromFileId, site?.line ?? null)
 }
 
-function onKeydown(e) {
-  if (e.key !== 'Escape') return
-  close()
-}
-// Sichtbarkeit steuert nur Tastatur und Zustand.
-watch(
-  () => props.visible,
-  (vis) => {
-    confirmingDelete.value = null
-    if (vis) window.addEventListener('keydown', onKeydown)
-    else window.removeEventListener('keydown', onKeydown)
-  },
-)
+// Eine offene Loesch-Bestaetigung gehoert zu GENAU der Kante, an der sie aufgerufen wurde.
+watch(() => props.edge, () => (confirmingDelete.value = null))
 
 // Die DATEN steuern das Nachladen – ausdruecklich nicht `visible`.
 // Grund: Das Panel oeffnet inzwischen sofort mit einem Platzhalter (`loading`), dessen `callSites`
@@ -282,33 +282,25 @@ watch(
     loadUsageSnippets()
   },
 )
-onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="modal">
-      <div
-        v-if="visible && edge"
-        class="fixed inset-0 z-50 grid place-items-center p-4"
-        role="dialog"
-        aria-modal="true"
-      >
-        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="close" />
-
-        <div
-          class="card relative z-10 flex max-h-[85vh] w-max min-w-[min(92vw,42rem)] max-w-[min(92vw,1400px)] flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)] shadow-2xl"
-        >
+  <!-- Panel der Detail-Spalte: kein Teleport, kein Backdrop. Die Hoehe kommt vom Elternteil
+       (`h-full`), gescrollt wird nur der Mittelteil – Kopf und Fuss stehen fest, damit „welche
+       Beziehung sehe ich hier?" auch nach 300 Zeilen Code noch beantwortet ist. -->
+  <div
+    v-if="visible && edge"
+    class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]"
+  >
           <!-- Kopf: Definition -> Nutzung (gleiche Richtung wie der Graph-Pfeil) -->
-          <header class="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">
-            <div class="flex min-w-0 items-center gap-2 text-sm font-bold text-[var(--color-text)]">
-              <Icon icon="lucide:share-2" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
-              <span class="truncate">{{ edge.toClass }}</span>
-              <Icon icon="lucide:arrow-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
-              <span class="truncate">{{ edge.fromClass }}</span>
-              <!-- Dasselbe Badge wie am Kanten-Label im Graph. Es steht hier, damit der Klick auf
-                   eine „Please review"-Kante nicht in einem Modal endet, das aussieht wie jedes
-                   andere – erklärt wird es an der betroffenen Methode weiter unten. -->
+          <header class="shrink-0 border-b border-[var(--color-border)] px-3 py-2.5">
+            <div class="flex items-center justify-between gap-2">
+              <span class="ed-kind" :style="{ '--k': isField ? 'var(--color-lavender)' : 'var(--color-accent)' }">
+                <Icon :icon="isField ? 'lucide:variable' : 'lucide:braces'" class="h-3 w-3 shrink-0" />
+                {{ calleeList.length }} {{ memberWord }}{{ calleeList.length === 1 ? '' : 's' }}
+              </span>
+              <!-- Dasselbe Badge wie am Kanten-Label im Graph – erklärt wird es an der betroffenen
+                   Methode weiter unten. -->
               <span
                 v-if="unverified.size"
                 class="review-badge shrink-0"
@@ -317,23 +309,36 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                 <Icon icon="lucide:alert-triangle" class="h-3 w-3 shrink-0" />
                 Please review
               </span>
+              <span class="flex-1" />
+              <!-- NUR der Rueckweg in die Aggregatliste, aus der diese Kante geoeffnet wurde.
+                   Ein zusaetzliches × waere hier die zweite Schliessen-Schaltflaeche innerhalb von
+                   zwei Zentimetern – die erste steht im Umschalter direkt darueber. -->
+              <button
+                v-if="back"
+                type="button"
+                class="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-2xs font-semibold text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+                :title="`Back to ${back}`"
+                @click="close"
+              >
+                <Icon icon="lucide:corner-up-left" class="h-3.5 w-3.5" />
+                Back
+              </button>
             </div>
-            <button
-              type="button"
-              class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
-              title="Close (ESC)"
-              aria-label="Close"
-              @click="close"
-            >
-              <Icon icon="lucide:x" class="h-5 w-5" />
-            </button>
+            <!-- Die zwei Klassen tragen die Aussage und bekommen deshalb eine eigene Zeile: in
+                 einer schmalen Spalte neben Badges gedrängt blieben von beiden nur Wortanfänge. -->
+            <div class="mt-1.5 flex min-w-0 items-center gap-1.5 text-sm font-bold text-[var(--color-text)]">
+              <Icon icon="lucide:share-2" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+              <span class="truncate" :title="edge.toClass">{{ edge.toClass }}</span>
+              <Icon icon="lucide:arrow-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
+              <span class="truncate" :title="edge.fromClass">{{ edge.fromClass }}</span>
+            </div>
           </header>
 
           <div class="min-h-0 flex-1 overflow-y-auto">
             <!-- Warten hat EINE Form (`BusyState`) – und sie steht dort, wo das Ergebnis erscheinen
                  wird, nicht als Spinner irgendwo über dem Graphen. Das Skelett hat so viele Zeilen
                  wie die Kante Methoden trägt, damit das Panel beim Eintreffen nicht springt. -->
-            <div v-if="loading" class="p-4">
+            <div v-if="loading" class="p-3">
               <BusyState
                 variant="panel"
                 :title="`Opening ${edge.toClass} → ${edge.fromClass}`"
@@ -346,7 +351,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
             <template v-else>
             <!-- ── Quelle: definierende Klasse + Methoden-Quellcode (Shiki) ── -->
-            <section class="p-4">
+            <section class="p-3">
               <div class="mb-3 flex flex-wrap items-center gap-2.5">
                 <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
                   <Icon icon="lucide:file-code" class="h-5 w-5" />
@@ -499,7 +504,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             </section>
 
             <!-- ── Divider: Richtung Definition -> Nutzung ── -->
-            <div class="flex items-center gap-3 px-4">
+            <div class="flex items-center gap-3 px-3">
               <span class="h-px flex-1 bg-[var(--color-border)]" />
               <span class="grid h-8 w-8 place-items-center rounded-full bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
                 <Icon icon="lucide:arrow-down" class="h-4 w-4 edge-arrow" />
@@ -508,7 +513,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             </div>
 
             <!-- ── Anwender: aufrufende Klasse mit exakter Aufrufzeile ── -->
-            <section class="p-4">
+            <section class="p-3">
               <div class="mb-3 flex items-center gap-2.5">
                 <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
                   <Icon icon="lucide:code-2" class="h-5 w-5" />
@@ -591,11 +596,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           <!-- Footer: zur Quell-/Aufruferklasse springen (read-only). Waehrend des Ladens weg –
                ein Sprung in eine Klasse, deren Stelle noch gar nicht feststeht, waere ein Angebot
                ins Leere. -->
-          <footer v-if="!loading" class="shrink-0 border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3">
+          <footer v-if="!loading" class="shrink-0 border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
             <div class="flex flex-wrap items-center justify-end gap-2">
               <button
                 type="button"
-                class="mr-auto inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition hover:bg-[var(--color-surface-offset)]"
+                class="mr-auto inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text)] transition hover:bg-[var(--color-surface-offset)]"
                 @click="openSourceClass"
               >
                 <Icon icon="lucide:file-code" class="h-4 w-4 text-[var(--color-text-muted)]" />
@@ -603,10 +608,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               </button>
             </div>
           </footer>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+  </div>
 </template>
 
 <style scoped>
@@ -659,10 +661,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
    Badge aufwirft, und muss ohne Hover lesbar sein. */
 .review-note {
   @apply mx-3 mb-2 flex gap-2 rounded-lg px-2.5 py-2 text-2xs leading-relaxed;
-  /* Die Karte waechst per `w-max` mit ihrem breitesten Kind – ein Fliesstext dieser Laenge wuerde
-     das Modal auf Maximalbreite ziehen, obwohl der Code viel schmaler ist. Mit `width: 0` zaehlt
-     der Absatz nicht in die max-content-Breite und fuellt ueber `min-width` trotzdem die Karte
-     (abzueglich der eigenen mx-3-Raender), bricht also um statt zu strecken. */
+  /* Die Methodenkarte darf mit ihrem breitesten Kind (dem Code) waagerecht wachsen. Mit `width: 0`
+     zaehlt dieser Fliesstext nicht in deren max-content-Breite und fuellt ueber `min-width`
+     trotzdem die Karte (abzueglich der eigenen mx-3-Raender), bricht also um statt zu strecken. */
   width: 0;
   min-width: calc(100% - 1.5rem);
   color: var(--color-text);
@@ -677,33 +678,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   background-color: color-mix(in srgb, var(--color-warning) 16%, transparent);
 }
 
-/* Zentriertes Einblenden: Backdrop faded, Card skaliert sanft von 0.95 auf 1. */
-.modal-enter-active,
-.modal-leave-active {
-  transition: opacity 0.18s ease;
-}
-.modal-enter-active .card,
-.modal-leave-active .card {
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.18s ease;
-}
-.modal-enter-from,
-.modal-leave-to {
-  opacity: 0;
-}
-.modal-enter-from .card,
-.modal-leave-to .card {
-  transform: scale(0.95);
-  opacity: 0;
-}
-@media (prefers-reduced-motion: reduce) {
-  .modal-enter-active .card,
-  .modal-leave-active .card {
-    transition: opacity 0.18s ease;
-  }
-  .modal-enter-from .card,
-  .modal-leave-to .card {
-    transform: none;
-  }
+/* Art der Beziehung im Kopf: dasselbe Zeichen und dieselbe Farbe wie am Kanten-Label im Graphen
+   (Aufruf = Akzent, Feldzugriff = Lavendel) – wer von dort kommt, erkennt sie wieder. */
+.ed-kind {
+  @apply inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-3xs font-bold uppercase tracking-wide;
+  color: var(--k);
+  border: 1px solid color-mix(in srgb, var(--k) 40%, transparent);
+  background-color: color-mix(in srgb, var(--k) 12%, transparent);
 }
 
 /* Dezente Richtungsanimation des Divider-Pfeils. */

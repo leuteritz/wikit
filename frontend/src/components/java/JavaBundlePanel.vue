@@ -14,7 +14,7 @@
 // Der Code kommt server-gerendert (Shiki) ueber `api.getJavaMethodSnippet` und wird mit den
 // geteilten Helfern aus lib/javaCode.js aufbereitet – identisch zum Edge-Detail-Modal, kein
 // zweiter Highlighter im Client. Die Aufrufstellen selbst rechnet der Parent (`loadDetail`).
-import { ref, computed, watch, onUnmounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../../lib/api.js'
 import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
@@ -287,57 +287,41 @@ function toggle(rel) {
 function close() {
   emit('close')
 }
-function onKeydown(e) {
-  if (e.key === 'Escape') close()
-}
+// An den DATEN haengen, nicht an `visible`: das Panel steht in der Detail-Spalte, und wer dort eine
+// zweite Aggregatkante anklickt, tauscht nur `bundle` – `visible` bliebe durchgehend true, der
+// Watch liefe nie wieder und die Liste zeigte weiter die Beziehungen der ersten Kante. (Dieselbe
+// Falle wie beim Nachladen im Kanten-Detail, s. CLAUDE.md.)
 watch(
-  () => props.visible,
-  (vis) => {
-    if (vis) window.addEventListener('keydown', onKeydown)
-    else window.removeEventListener('keydown', onKeydown)
+  () => (props.visible ? props.bundle : null),
+  (bundle) => {
     query.value = ''
     expanded.value = new Set()
     details.value = {}
     typeUsages.value = {}
+    if (!bundle) return
     // Die erste Beziehung gleich aufklappen: das Panel soll Code ZEIGEN, nicht erst anbieten.
     const first = relations.value.find((r) => methodsOf(r).length) || relations.value[0]
-    if (vis && first) toggle(first)
+    if (first) toggle(first)
   },
+  { immediate: true },
 )
-onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="slideover">
-      <div
-        v-if="visible && bundle"
-        class="fixed inset-0 z-50"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Bundled class relations"
-      >
-        <div class="slideover-backdrop absolute inset-0 bg-black/30 backdrop-blur-[2px]" @click="close" />
-
-        <aside
-          class="slideover-panel absolute right-0 top-0 flex h-full w-[min(96vw,40rem)] flex-col border-l border-[var(--color-border)] bg-[var(--color-surface-2)] shadow-2xl"
-        >
-          <header class="shrink-0 border-b border-[var(--color-border)] px-4 py-3">
-            <div class="flex items-center justify-between gap-3">
-              <h2 class="flex min-w-0 items-center gap-2 text-sm font-bold text-[var(--color-text)]">
-                <Icon icon="lucide:git-fork" class="h-4 w-4 shrink-0 text-[var(--color-thistle)]" />
-                <span class="truncate">Bundled relations</span>
-              </h2>
-              <button
-                type="button"
-                class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
-                title="Close (ESC)"
-                aria-label="Close"
-                @click="close"
-              >
-                <Icon icon="lucide:x" class="h-5 w-5" />
-              </button>
-            </div>
+  <!-- Panel der Detail-Spalte (frueher ein Slide-over ueber dem Graphen): dieselbe Liste, nur neben
+       dem Bild statt darueber. Hoehe vom Elternteil, gescrollt wird nur die Liste. -->
+  <div
+    v-if="visible && bundle"
+    class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]"
+    aria-label="Bundled class relations"
+  >
+          <header class="shrink-0 border-b border-[var(--color-border)] px-3 py-2.5">
+            <!-- Kein ×: geschlossen wird ueber den Umschalter direkt darueber (bzw. ESC). Zwei
+                 Schliessen-Knoepfe im selben Blickfeld lassen offen, ob sie dasselbe tun. -->
+            <h2 class="flex min-w-0 items-center gap-2 text-sm font-bold text-[var(--color-text)]">
+              <Icon icon="lucide:git-fork" class="h-4 w-4 shrink-0 text-[var(--color-thistle)]" />
+              <span class="truncate">Bundled relations</span>
+            </h2>
 
             <!-- Richtung des Buendels: definierende Seite -> nutzende Seite, wie der Pfeil im Graph. -->
             <div class="mt-2 flex items-center gap-2 text-[0.8125rem]">
@@ -613,13 +597,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             </ul>
           </div>
 
-          <footer class="shrink-0 border-t border-[var(--color-border)] px-4 py-2.5 text-2xs text-[var(--color-text-muted)]">
+          <footer class="shrink-0 border-t border-[var(--color-border)] px-3 py-2 text-2xs text-[var(--color-text-muted)]">
             Arrows read “defines → uses”. Open a row for the code, “Full details” for every call site.
           </footer>
-        </aside>
-      </div>
-    </Transition>
-  </Teleport>
+  </div>
 </template>
 
 <style scoped>

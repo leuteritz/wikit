@@ -264,11 +264,13 @@ html.dark .shiki span {
 .edge-usage-code .shiki,
 .edge-code .shiki {
   margin: 0;
-  /* Kein Overflow-Container: der Block behaelt seine natuerliche Breite, damit die
-     mitwachsende Modal-Card (w-max) sich an den breitesten Codeblock anpasst und kein
-     horizontaler Scrollbalken entsteht. Vertikales Scrollen uebernimmt der innere
-     Body-Container (.overflow-y-auto). */
-  overflow: visible;
+  /* Waagerecht scrollt der BLOCK, nicht die Spalte. Frueher stand hier `overflow: visible`: das
+     Panel war ein Modal, dessen Karte per `w-max` mit dem breitesten Codeblock mitwuchs. Seit es
+     in der Detail-Spalte steht, ist die Breite vorgegeben – ohne eigenen Container schoebe eine
+     lange Zeile das ganze Panel auf, und die Seite bekaeme einen waagerechten Scrollbalken.
+     Vertikal scrollt weiterhin der Body-Container (.overflow-y-auto). */
+  overflow-x: auto;
+  overflow-y: hidden;
   border: 0;
   border-radius: 0;
   padding: 0.5rem 0;

@@ -108,7 +108,7 @@ const openTitle = computed(() =>
 // Zeigt die Maus auf einen Knoten, bleiben nur dessen eigene Kanten stehen; alles andere faellt
 // fast auf null. Der Zustand kommt aus dem Composable, NICHT ueber `data`: sonst muesste der
 // Parent bei jeder Mausbewegung saemtliche Kanten neu in den Vue-Flow-Store schreiben.
-const { hoveredNode, hoverPalette, hoveredEdge, setHoveredEdge, clearHoveredEdge, graphQuery, graphHitNodes } =
+const { hoveredNode, hoverPalette, hoveredEdge, setHoveredEdge, clearHoveredEdge, pinnedEdge, graphQuery, graphHitNodes } =
   useJavaGraph()
 
 // Knoten-Hover: die Linie traegt die Identitaetsfarbe des Nachbarn an ihrem ANDEREN Ende – genau
@@ -150,6 +150,10 @@ const findDimmed = computed(() => !!findQuery.value && !isFindHit.value)
 const kindColor = computed(() => d.value.edgeStyle?.stroke || 'var(--color-accent)')
 const edgeColor = computed(() => neighbourColor.value || kindColor.value)
 const isHovered = computed(() => hoveredEdge.value?.id === props.id)
+// Angeklickt = ihr Detail steht rechts offen. Dieselbe Wirkung wie der Hover, nur bleibend – der
+// Blick wandert zwischen Code und Bild hin und her, und die Linie muss beim Zurueckschauen noch
+// dieselbe sein.
+const isPinned = computed(() => pinnedEdge.value?.id === props.id)
 
 // Hover-ABSICHT, nicht blosse Beruehrung: wer die Maus quer ueber ein dichtes Kantenfeld zieht,
 // streift Dutzende Trefferflaechen und liess dabei den halben Graphen im Stroboskop auf- und
@@ -185,10 +189,16 @@ const dimmed = computed(() => {
   // Steht die Maus auf einer anderen Kante, tritt diese hier zurueck – sonst bliebe die
   // hervorgehobene Beziehung in einem dichten Graphen genauso unlesbar wie vorher.
   if (hoveredEdge.value) return !isHovered.value
-  // Ohne Maus im Bild bestimmt die Suche (gleiche Vorrangregel wie bei den Karten).
+  // Ohne Maus im Bild: die angeklickte Kante (Detail rechts offen) isoliert wie ein Hover. Der
+  // Hover steht davor, weil er die feinere Geste ist – wer bei offenem Detail woanders hinzeigt,
+  // fragt gerade nach etwas anderem.
+  if (pinnedEdge.value) return !isPinned.value
+  // Sonst bestimmt die Suche (gleiche Vorrangregel wie bei den Karten).
   return findDimmed.value
 })
-const focused = computed(() => (!!hoveredNode.value || !!hoveredEdge.value) && !dimmed.value)
+const focused = computed(
+  () => (!!hoveredNode.value || !!hoveredEdge.value || !!pinnedEdge.value) && !dimmed.value,
+)
 
 // Die Kanten-Grundfarbe steht in data.edgeStyle; hier kommt nur der Fokus-Zustand darueber.
 const pathStyle = computed(() => {
@@ -202,9 +212,10 @@ const pathStyle = computed(() => {
   // Knoten-Hover: Identitaetsfarbe des Nachbarn statt der Art-Farbe (s. neighbourColor). Gilt auch
   // im Suchmodus – Hover schlaegt Suche, dieselbe Vorrangregel wie bei der Daempfung.
   const tint = neighbourColor.value ? { stroke: neighbourColor.value } : null
-  // Direkt gehoverte Kante: kraeftiger als der blosse Nachbarschafts-Fokus. Der Schein kommt NICHT
-  // von `filter: drop-shadow` (s. .me-glow unten), sondern von zwei breiteren Pfaden darunter.
-  if (isHovered.value) return { ...base, opacity: 1, strokeWidth: (base.strokeWidth || 2) + 1.4 }
+  // Direkt gehoverte oder angeklickte Kante: kraeftiger als der blosse Nachbarschafts-Fokus. Der
+  // Schein kommt NICHT von `filter: drop-shadow` (s. .me-glow unten), sondern von zwei breiteren
+  // Pfaden darunter.
+  if (isHovered.value || isPinned.value) return { ...base, opacity: 1, strokeWidth: (base.strokeWidth || 2) + 1.4 }
   // Suchtreffer: kraeftig wie eine gehoverte Kante, aber ohne deren Extra-Breite – bei zwanzig
   // Treffern gleichzeitig waere das ein Balkenbild.
   if (isFindHit.value) return { ...base, ...tint, opacity: 1, strokeWidth: (base.strokeWidth || 2) + 0.7 }
@@ -225,9 +236,10 @@ const pathStyle = computed(() => {
 const tinted = computed(() => !!neighbourColor.value && !dimmed.value)
 
 const baseWidth = computed(() => Number(d.value.edgeStyle?.strokeWidth) || 2)
-const glowing = computed(() => isHovered.value || !!d.value.isHighlighted || isFindHit.value)
-// Nur die „aufleuchtende" Kante (Code-Tab-Klick) pulsiert – beim Hover waere Bewegung unruhig.
-const pulsing = computed(() => !!d.value.isHighlighted && !isHovered.value)
+const glowing = computed(() => isHovered.value || isPinned.value || !!d.value.isHighlighted || isFindHit.value)
+// Nur die „aufleuchtende" Kante (Code-Tab-Klick) pulsiert – beim Hover waere Bewegung unruhig,
+// und bei der angeklickten Kante erst recht: ihr Detail steht minutenlang offen.
+const pulsing = computed(() => !!d.value.isHighlighted && !isHovered.value && !isPinned.value)
 </script>
 
 <template>
@@ -282,7 +294,8 @@ const pulsing = computed(() => !!d.value.isHighlighted && !isHovered.value)
       class="me-label me-label--agg"
       :class="{
         'me-label--dim': dimmed,
-        'me-label--hot': isHovered,
+        'me-label--hot': isHovered || isPinned,
+        'me-label--pinned': isPinned,
         'me-label--find': isFindHit && !isHovered,
         'me-label--tint': tinted,
       }"
@@ -327,7 +340,8 @@ const pulsing = computed(() => !!d.value.isHighlighted && !isHovered.value)
         'me-label--selected': selected,
         'me-label--lit': d.isHighlighted,
         'me-label--dim': dimmed,
-        'me-label--hot': isHovered,
+        'me-label--hot': isHovered || isPinned,
+        'me-label--pinned': isPinned,
         'me-label--find': isFindHit && !isHovered,
         'me-label--tint': tinted,
       }"
@@ -492,6 +506,15 @@ const pulsing = computed(() => !!d.value.isHighlighted && !isHovered.value)
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--edge) 28%, transparent), 0 4px 14px rgb(0 0 0 / 0.22);
   transform-origin: center;
   z-index: 2;
+}
+/* Angeklickte Kante: ihr Detail steht rechts offen. Ein Hover geht vorueber, das hier bleibt –
+   deshalb ein deckender Grund in der Kantenfarbe statt nur eines Rings. So bleibt genau eine
+   Beschriftung im Bild „eingeschaltet", auch wenn die Maus laengst im Panel steht. */
+.me-label--pinned {
+  background-color: color-mix(in srgb, var(--edge) 16%, var(--color-surface-2));
+  box-shadow: 0 0 0 2px var(--edge), 0 6px 18px rgb(0 0 0 / 0.28);
+  font-weight: 700;
+  z-index: 3;
 }
 /* Aggregat-Label: reine Zahl, nicht klickbar -> Cursor + Hover-Affordanz zuruecknehmen. */
 /* Aggregat-Label traegt die Farbe seiner Kante -> Linie und Beschriftung sind als EINE Aussage

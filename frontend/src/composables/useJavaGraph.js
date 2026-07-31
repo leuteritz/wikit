@@ -55,6 +55,17 @@ const hoveredNode = ref(null)
 // `hoveredNode`: ManagedEdge liest sie selbst, statt dass der Kanten-Store neu geschrieben wird.
 const hoverPalette = ref(null)
 
+// Die ANGEKLICKTE Kante: `{ id, sourceId, targetId, color }` | null. Gleiche Form und gleiche
+// Wirkung wie `hoveredEdge` – nur bleibt sie stehen, solange ihr Detail in der rechten Spalte
+// offen ist. Sie ersetzt das frühere Modal als Ortsangabe: das Detail sagt, WAS die Beziehung
+// ist, der Pin sagt, WO im Bild sie liegt. Ohne ihn stünde rechts Code zu einer Linie, die man
+// im Kantenfeld nicht mehr wiederfindet.
+//
+// Gesetzt wird er vom Graphen (er kennt Kanten-Ids, Endpunkte und Farbe), gelöscht beim
+// Schliessen des Details oder sobald keiner der beiden Endpunkte mehr gezeichnet wird – ein Pin
+// auf zwei unsichtbaren Knoten wuerde SAEMTLICHE Karten daempfen und das Bild leerraeumen.
+const pinnedEdge = ref(null)
+
 // Gegenstueck fuer die KANTE unter der Maus: `{ id, sourceId, targetId, color }` | null.
 // Eine Kante ist eine Aussage ueber ZWEI Klassen – wer sie ansieht, will wissen, welche beiden.
 // Deshalb hebt der Graph beim Hover die Linie UND ihre beiden Endpunkte hervor und daempft den
@@ -71,16 +82,11 @@ const hoveredEdge = ref(null)
 const graphQuery = ref('')
 const graphHitNodes = ref(new Set())
 
-// Rueckweg aus einem Kanten-Panel in den Quellcode.
-//
-// Der Sprung „Kante -> Aufrufstelle" ist eine Einbahnstrasse: das Panel schliesst sich (sonst
-// verdeckt es genau den Code, zu dem gesprungen wurde), und damit ist auch die Beziehung weg, die
-// man gerade untersucht hat. Wer den Code gelesen hat, will zurueck zu genau dieser Kante – nicht
-// sie im Graphen neu suchen. `edgeReturn` haelt dafuer den Panel-Zustand fest; `edgeReturnToken`
-// ist das Signal an den Graphen, ihn wiederherzustellen (gleiche Mechanik wie `focusToken` dort:
-// ein Zaehler, damit auch zweimal dasselbe Ziel ausloest).
-const edgeReturn = ref(null) // { kind: 'edge'|'bundle', label, payload } | null
-const edgeReturnToken = ref(0)
+// Der frühere Rueckweg-Apparat (`edgeReturn`/`edgeReturnToken`) ist ersatzlos entfallen: er war
+// die Antwort darauf, dass das Kanten-MODAL beim Sprung in den Code zuklappte und die Beziehung
+// mitnahm. Seit das Detail in der rechten Spalte steht, bleibt es beim Sprung schlicht geoeffnet
+// – der Umschalter „Class · Relation" dort IST der Rueckweg. Zwei Wege dafuer waeren genau die
+// Doppelspurigkeit, gegen die der Apparat einmal gebaut wurde.
 
 async function fetchEdges() {
   loading.value = true
@@ -196,6 +202,14 @@ export function useJavaGraph() {
     setHoveredEdge(payload) {
       hoveredEdge.value = payload
     },
+    // --- Angeklickte Kante (Detail rechts offen) ----------------------------------------------
+    pinnedEdge,
+    setPinnedEdge(payload) {
+      // Referenzgleichheit pruefen: der Graph setzt den Pin aus einem watchEffect ueber dem
+      // Layout, und ein unveraenderter Wert wuerde sonst jede Karte und jede Kante ihre Daempfung
+      // neu bewerten lassen – bei jedem Layout-Lauf.
+      if (pinnedEdge.value !== payload) pinnedEdge.value = payload
+    },
     // --- Suche im Graphen ---------------------------------------------------------------------
     graphQuery,
     setGraphQuery(value) {
@@ -206,19 +220,6 @@ export function useJavaGraph() {
     // Immer ein NEUES Set setzen – ein mutiertes bliebe fuer die Kanten unsichtbar.
     setGraphHitNodes(ids) {
       graphHitNodes.value = ids instanceof Set ? ids : new Set(ids || [])
-    },
-    // --- Rueckweg zum Kanten-Panel ------------------------------------------------------------
-    edgeReturn,
-    edgeReturnToken,
-    setEdgeReturn(target) {
-      edgeReturn.value = target
-    },
-    clearEdgeReturn() {
-      edgeReturn.value = null
-    },
-    // Vom „Back"-Knopf aufgerufen: der Graph hoert auf den Zaehler und oeffnet das Panel erneut.
-    requestEdgeReturn() {
-      if (edgeReturn.value) edgeReturnToken.value++
     },
     // Nur loeschen, wenn wirklich noch DIESE Kante steht: beim Wandern von Kante A nach B feuert
     // As `mouseleave` teils nach Bs `mouseenter` – ohne die Pruefung bliebe gar nichts markiert.

@@ -21,7 +21,7 @@
 // props.files[].dependencies. Methodenruempfe traegt die Dateiliste NICHT (der Listen-Serializer
 // liefert method_count + dependencies[]) – die holt das Edge-Panel lazy je Klasse ueber
 // useJavaAnalyzer().getFile bzw. api.getJavaMethodSnippet.
-import { computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch, watchEffect, nextTick } from 'vue'
 import { VueFlow, MarkerType, Handle, Position, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import '@vue-flow/core/dist/style.css'
@@ -43,8 +43,8 @@ import {
 import { layoutFlat, layoutClustered, layoutRadial } from '../../lib/graphLayout.js'
 import { parseGraphQuery, matchNode, matchEdge, GRAPH_QUERY_HELP } from '../../lib/graphQuery.js'
 import BusyState from '../BusyState.vue'
-import JavaEdgeDetailPanel from './JavaEdgeDetailPanel.vue'
-import JavaBundlePanel from './JavaBundlePanel.vue'
+// Kanten-Detail und Aggregat-Aufloesung rendert CodeView in Spalte 3 – der Graph rechnet sie nur
+// und meldet sie als `relation` nach oben (s. dortiger Kommentar am Emit).
 import ManualEdgePanel from './ManualEdgePanel.vue'
 import ManagedEdge from './ManagedEdge.vue'
 
@@ -62,11 +62,23 @@ const props = defineProps({
   // direkter Nachbarschaft statt der Package-Ebene.
   matchIds: { type: Array, default: () => [] },
   searchQuery: { type: String, default: '' },
+  // Steht das Kanten-Detail rechts gerade IM BILD? CodeView zeigt dort wahlweise die geoeffnete
+  // Klasse oder die Beziehung; nur im zweiten Fall gehoert die Kante im Graphen markiert. Was man
+  // sieht, ist markiert – ein Pin auf eine Beziehung, deren Detail gerade hinter dem Klassen-Tab
+  // liegt, waere eine Daempfung ohne sichtbaren Anlass.
+  relationVisible: { type: Boolean, default: true },
 })
 // `navigate` = „der Graph zeigt jetzt diese Ebene" (Package-Pfad, leerer String = oberste Ebene).
 // Gegenrichtung zu focusPath: der Baum links ist die Ortsangabe und darf nicht stehenbleiben,
 // waehrend man sich hier durch die Packages klickt.
-const emit = defineEmits(['select', 'clear-search', 'navigate', 'pane-click'])
+// `relation` = „das ist die angeklickte Beziehung" – der Graph RECHNET sie (er allein kennt
+// Dateiliste, Kanten und Ebenen-Schluessel), gezeigt wird sie in Spalte 3 von CodeView. Payload:
+//   { kind: 'edge',   edge, loading, since, back }   – eine Klassenkante (call/field)
+//   { kind: 'bundle', bundle, loadDetail, openRelation } – eine Aggregatkante der Package-Ebene
+//   null – nichts offen
+// Die zwei Funktionen im Bundle-Payload sind dieselbe Bauart wie `data.onOpen` an den Kanten:
+// die Rechnung bleibt dort, wo ihre Daten liegen, und wandert nicht in die View.
+const emit = defineEmits(['select', 'clear-search', 'navigate', 'pane-click', 'relation'])
 
 const { theme } = useTheme()
 // `viewport` wird fuer den Zonen-Layer gebraucht: er liegt HINTER dem Canvas und muss dessen
@@ -94,10 +106,8 @@ const {
   setHoveredEdge,
   setGraphQuery,
   setGraphHitNodes,
-  edgeReturn,
-  edgeReturnToken,
-  setEdgeReturn,
-  clearEdgeReturn,
+  pinnedEdge,
+  setPinnedEdge,
 } = useJavaGraph()
 // Detailabruf einer einzelnen Klasse (Methodenruempfe fuers Edge-Panel) – die Liste traegt sie nicht.
 const { getFile } = useJavaAnalyzer()
@@ -1011,7 +1021,9 @@ const layout = computed(() => {
           strokeDasharray: allManual ? '6 4' : undefined,
           cursor: 'pointer',
         },
-        onOpen: openEdgePanel,
+        // Der Pin im Bild haengt an der Vue-Flow-Kanten-Id; `data` allein kennt sie nicht.
+        edgeKey: `call:${definerFile.id}-${callerFile.id}`,
+        onOpen: openRelation,
         onDelete: onDeleteEdge,
       },
     })
@@ -1042,7 +1054,8 @@ const layout = computed(() => {
         fromFileId: callerFile.id,
         toFileId: definerFile.id,
         edgeStyle: { stroke: FIELD_COLOR, strokeWidth: 2.1, cursor: 'pointer' },
-        onOpen: openEdgePanel,
+        edgeKey: `field:${definerFile.id}-${callerFile.id}`,
+        onOpen: openRelation,
       },
     })
   }
@@ -1126,7 +1139,8 @@ const layout = computed(() => {
         // Eigene Farbe, weil es eine ANDERE EBENE ist: hier steht ein Knoten fuer viele Klassen.
         edgeStyle: { stroke: AGG_COLOR, strokeWidth: width, opacity: 0.9, cursor: 'pointer' },
         // Klick loest das Buendel in seine einzelnen Klassenbeziehungen auf.
-        onOpen: openBundlePanel,
+        edgeKey: `agg:${ge.id}`,
+        onOpen: openRelation,
       },
     })
   }
@@ -1503,6 +1517,13 @@ defineExpose({
   focusFind,
   fitToView: (opts = {}) => fitView({ padding: 0.18, maxZoom: 1.15, duration: 200, ...opts }),
   drillUp,
+  // Das Detail steht rechts, bedient wird es also auch von dort (× / ESC / Klick ins Leere).
+  // Der Zustand bleibt trotzdem hier: er entsteht aus Kanten, Dateiliste und Ebenen-Schluesseln,
+  // die CodeView gar nicht hat. Deshalb Methoden und keine Props – „schliess jetzt" bzw. „loesch
+  // diese Kante" sind Ereignisse, keine Zustaende (gleiche Begruendung wie bei `focusFind`).
+  closeRelation,
+  closeEdgeDetail: closeEdgePanel, // nur die Einzelkante: darunter kann eine Aggregatliste stehen
+  deleteRelationEdge: onDeleteEdge,
 })
 
 // Canvas-Raster: ein einzelnes Linienraster, das mit dem Viewport wandert und beim Pannen
@@ -1531,15 +1552,21 @@ const neighbours = computed(() => {
 function isDimmed(nodeId) {
   const h = hoveredNode.value
   // Reihenfolge mit Absicht: der Hover ist die feinere Geste und darf INNERHALB eines Suchergebnisses
-  // weiter isolieren. Liegt die Maus nirgends, bestimmt die Suche das Bild.
-  if (!h && !hoveredEdge.value && findQuery.value) return !isFindHit(nodeId)
+  // weiter isolieren. Liegt die Maus nirgends, bestimmt die angeklickte Kante das Bild, und erst
+  // danach die Suche.
+  if (!h && !hoveredEdge.value && !pinnedEdge.value && findQuery.value) return !isFindHit(nodeId)
   if (h) return h !== nodeId && !neighbours.value.get(h)?.has(nodeId)
   // Hover auf einer KANTE: nur ihre beiden Endpunkte bleiben stehen. Schaerfer als beim
   // Knoten-Hover (dort bleibt die ganze Nachbarschaft) – eine Kante ist genau eine Beziehung
   // zwischen genau zwei Klassen, und das soll man auch so sehen.
-  const he = hoveredEdge.value
+  const he = hoveredEdge.value || pinnedEdge.value
   if (he) return he.sourceId !== nodeId && he.targetId !== nodeId
   return false
+}
+// Endpunkt der angeklickten Kante? Traegt einen bleibenden Ring statt des fluechtigen Hover-Rings.
+function isPinnedEnd(nodeId) {
+  const p = pinnedEdge.value
+  return !!p && (p.sourceId === nodeId || p.targetId === nodeId)
 }
 // --- Identitaetsfarbe je Nachbar -------------------------------------------------------------
 // Sechs Farben aus derselben Familie, die im Edge-Panel die Methoden auseinanderhaelt (`--mc-*`,
@@ -1573,7 +1600,9 @@ function neighbourPalette(nodeId) {
 function focusColor(nodeId) {
   const h = hoveredNode.value
   if (h) return h === nodeId ? null : hoverPalette.value?.get(nodeId) || null
-  const he = hoveredEdge.value
+  // Angeklickte Kante: dieselbe Regel wie beim Kanten-Hover, nur bleibend – die Karte traegt die
+  // Farbe der Linie, die zu ihr fuehrt.
+  const he = hoveredEdge.value || pinnedEdge.value
   if (!he || (he.sourceId !== nodeId && he.targetId !== nodeId)) return null
   return he.color || 'var(--color-accent)'
 }
@@ -1671,10 +1700,12 @@ watch(
   },
 )
 
-// --- Edge-Detail-Panel fuer angeklickte Auto-Call-Edges -----------------------
+// --- Kanten-Detail (Spalte 3 von CodeView) ------------------------------------
 // Die Call-Sites werden erst beim Klick fuer das konkrete Klassenpaar + Methode berechnet
-// (rein zur Anzeige; die Existenz der Kante kommt aus dem Backend). Manuelle Kanten haben
-// keinen verifizierbaren Quellcode -> oeffnen das Panel nicht.
+// (rein zur Anzeige; die Existenz der Kante kommt aus dem Backend). Gezeigt wird das Ergebnis
+// nicht mehr hier, sondern rechts neben dem Graphen: der Code zu einer Beziehung ist dasselbe
+// Lesen wie der Code einer Klasse und gehoert an dieselbe Stelle. Ein Modal darueber verdeckte
+// ausgerechnet den Graphen, aus dem man kam, und liess sich nicht neben ihm lesen.
 const activeEdge = ref(null)
 // Laeuft, waehrend die Methodenruempfe fuer das Edge-Panel nachgeladen werden (s. methodsOf).
 const edgePanelLoading = ref(false)
@@ -2010,9 +2041,10 @@ function openBundlePanel(d) {
     relations,
   }
 }
-function closeBundlePanel(reason) {
-  rememberReturn(reason, 'bundle', activeBundle.value)
+function closeBundlePanel() {
   activeBundle.value = null
+  // Steht darueber noch eine Einzelkante aus dieser Liste, gehoert der Pin weiterhin ihr.
+  if (!activeEdge.value) pinnedRaw.value = null
 }
 // Aufrufstellen einer einzelnen Beziehung ermitteln – dieselbe Rechnung wie fuer das
 // Edge-Detail-Modal, nur ohne es zu oeffnen. Das Bundle-Panel zeigt den Code damit INLINE; die
@@ -2044,45 +2076,102 @@ function openRelationCode(rel) {
   })
 }
 
-function onEdgeClick({ edge }) {
-  const d = edge?.data
-  // Neue Kante angesehen -> ein gemerkter Rueckweg zur alten fuehrt nur noch in die Irre.
-  clearEdgeReturn()
-  if (d?.kind === 'aggregate') return openBundlePanel(d)
+// EIN Weg fuer beide Klickflaechen einer Kante: die Linie (@edge-click) und das Label
+// (`data.onOpen` in ManagedEdge, das den Klick abfaengt und deshalb nie bei @edge-click ankommt).
+// Vorher stand die Pin-Logik nur am ersten – gemessen: Klick auf das Label oeffnete das Detail,
+// markierte im Bild aber nichts.
+function openRelation(d, edgeId = null) {
+  if (!d || (d.kind !== 'aggregate' && d.kind !== 'call' && d.kind !== 'field')) return
+  // Der Pin ist die Ortsangabe zum Detail rechts: dieselbe Form wie beim Kanten-Hover, damit
+  // Karten, Linie und Label ihn ohne zweite Regel lesen koennen.
+  pinnedRaw.value = {
+    id: d.edgeKey || edgeId,
+    sourceId: d.sourceId,
+    targetId: d.targetId,
+    color: d.edgeStyle?.stroke || 'var(--color-accent)',
+  }
+  if (d.kind === 'aggregate') return openBundlePanel(d)
   openEdgePanel(d)
 }
-function closeEdgePanel(reason) {
+function onEdgeClick({ edge }) {
+  openRelation(edge?.data, edge?.id)
+}
+function closeEdgePanel() {
   // Ein noch laufender Ladevorgang darf das Panel nicht wieder aufziehen.
   edgeToken++
   edgePanelLoading.value = false
-  rememberReturn(reason, 'edge', activeEdge.value)
   activeEdge.value = null
+  // Kam die Kante aus einer Aggregatliste („Full details"), steht die Liste darunter noch – dann
+  // ist das Schliessen der Rueckweg dorthin und nicht das Ende der Untersuchung.
+  if (!activeBundle.value) pinnedRaw.value = null
 }
 
-// --- Rueckweg aus dem Code zurueck zur Kante -------------------------------------------------
-// Schliesst ein Panel, WEIL in den Quellcode gesprungen wurde, merken wir uns seinen Zustand.
-// CodeView blendet daraufhin einen Zurueck-Knopf ein; ein Klick darauf stellt exakt dieses Panel
-// wieder her (der Zustand IST die Wiederherstellung – nichts wird neu berechnet).
-function rememberReturn(reason, kind, payload) {
-  if (reason !== 'navigate' || !payload) {
-    // Per ESC/× geschlossen: der Nutzer ist fertig mit der Kante, ein Rueckweg waere Ballast.
-    clearEdgeReturn()
-    return
-  }
-  const label =
-    kind === 'bundle'
-      ? `${payload.fromLabel} → ${payload.toLabel}`
-      : `${payload.fromClass} → ${payload.toClass}`
-  setEdgeReturn({ kind, label, payload })
+// --- Was steht gerade rechts? ------------------------------------------------------------------
+// EINE Meldung fuer beide Panelarten, gesendet bei jeder Aenderung ihres Zustands (auch waehrend
+// des Ladens – das Detail oeffnet sofort mit dem, was bekannt ist, s. `openEdgePanel`).
+// Die Einzelkante gewinnt gegen das Buendel: „Full details" oeffnet sie AUS der Liste heraus, und
+// beim Schliessen kommt genau diese Liste wieder zum Vorschein.
+watch(
+  [activeEdge, edgePanelLoading, edgePanelSince, activeBundle],
+  () => {
+    if (activeEdge.value) {
+      emit('relation', {
+        kind: 'edge',
+        edge: activeEdge.value,
+        loading: edgePanelLoading.value,
+        since: edgePanelSince.value,
+        back: activeBundle.value ? 'Bundled relations' : null,
+      })
+    } else if (activeBundle.value) {
+      emit('relation', {
+        kind: 'bundle',
+        bundle: activeBundle.value,
+        loadDetail: loadRelationDetail,
+        openRelation: openRelationCode,
+      })
+    } else {
+      emit('relation', null)
+    }
+  },
+  { deep: false },
+)
+
+// Klick ins Leere: frueher war das der Klick auf den Backdrop des Modals – dieselbe Geste, gleiche
+// Wirkung. Bewusst NICHT in `clearHighlights`: die laeuft auch beim Klick auf eine Karte, und dort
+// waehlt man eine Klasse aus, ohne die untersuchte Beziehung aufzugeben.
+function onPaneClick() {
+  clearHighlights()
+  closeRelation()
 }
 
-watch(edgeReturnToken, () => {
-  const t = edgeReturn.value
-  if (!t) return
-  if (t.kind === 'bundle') activeBundle.value = t.payload
-  else activeEdge.value = t.payload
-  clearEdgeReturn() // einmaliger Rueckweg: das Panel steht wieder offen, der Knopf hat sich erledigt
+// Alles zu, in einem Zug: ×/ESC in Spalte 3 und der Klick auf die freie Graphflaeche meinen „ich
+// bin fertig mit dieser Beziehung" – dann auch die Liste darunter, sonst spraenge sie beim
+// Schliessen der Einzelkante wieder auf.
+function closeRelation() {
+  edgeToken++
+  edgePanelLoading.value = false
+  activeEdge.value = null
+  activeBundle.value = null
+  pinnedRaw.value = null
+}
+
+// --- Pin: die angeklickte Kante im Bild markieren ---------------------------------------------
+// `pinnedRaw` ist die Absicht, `pinnedEdge` (Composable) die Wirkung. Dazwischen zwei Bedingungen,
+// beide gemessen an dem, was sonst passiert:
+//   * Das Detail muss rechts SICHTBAR sein (`relationVisible`) – sonst daempft der Graph fuer
+//     etwas, das gerade niemand ansieht.
+//   * Mindestens ein Endpunkt muss gezeichnet sein. Wer nach dem Klick eine Ebene hoeher geht,
+//     haette sonst einen Pin auf zwei Knoten, die es im Bild nicht gibt – und weil die Daempfung
+//     „alles ausser diesen beiden" lautet, waere das Bild vollstaendig leer.
+const pinnedRaw = ref(null)
+watchEffect(() => {
+  const p = pinnedRaw.value
+  if (!p || !props.relationVisible) return setPinnedEdge(null)
+  const ids = new Set(layout.value.nodes.map((n) => n.id))
+  setPinnedEdge(ids.has(p.sourceId) || ids.has(p.targetId) ? p : null)
 })
+// Modul-State: beim Verlassen des Code-Tabs bliebe sonst ein gedimmter Graph zurueck.
+onUnmounted(() => setPinnedEdge(null))
 
 // --- Kante löschen (× am Label / Detail-Panel) -------------------------------
 // edgeId = java_edges.id. Backend tombstoned Auto-Kanten (kein Wiederauftauchen),
@@ -2235,7 +2324,7 @@ watch(
       @node-mouse-enter="onNodeEnter"
       @node-mouse-leave="onNodeLeave"
       @edge-click="onEdgeClick"
-      @pane-click="clearHighlights"
+      @pane-click="onPaneClick"
       @connect="onConnect"
     >
       <!-- Custom Node: kompaktes Card-Design, Akzentfarbe nach ROLLE (Streifen/Badge/Ring);
@@ -2251,6 +2340,7 @@ watch(
               'vf-card--context': data.isContext,
               'vf-card--dim': isDimmed(`c:${data.fileId}`),
               'vf-card--focus': !!focusColor(`c:${data.fileId}`),
+              'vf-card--pinned': isPinnedEnd(`c:${data.fileId}`),
               'vf-card--find': findNodeHitSet.has(`c:${data.fileId}`),
             },
           ]"
@@ -2306,6 +2396,7 @@ watch(
             'vf-pkgcard--related': data.related,
             'vf-card--dim': isDimmed(`p:${data.path}`),
             'vf-card--focus': !!focusColor(`p:${data.path}`),
+            'vf-card--pinned': isPinnedEnd(`p:${data.path}`),
             'vf-card--find': findNodeHitSet.has(`p:${data.path}`),
           }"
           :style="{ '--pkg': data.color, '--edge': focusColor(`p:${data.path}`) }"
@@ -2852,26 +2943,9 @@ watch(
       </button>
     </div>
 
-    <!-- Slide-over: eine Aggregatkante („N class relations") in ihre Klassenpaare auflösen.
-         MUSS vor dem Edge-Detail-Modal stehen: beide teleportieren an <body>, und die
-         Template-Reihenfolge entscheidet, was oben liegt – der Code-Auszug gehört über die Liste. -->
-    <JavaBundlePanel
-      :visible="!!activeBundle"
-      :bundle="activeBundle"
-      :load-detail="loadRelationDetail"
-      @close="closeBundlePanel"
-      @open="openRelationCode"
-    />
-
-    <!-- Edge-Detail-Modal: Ansicht Definition -> Nutzung; löscht Kanten pro Methode (ESC schliesst) -->
-    <JavaEdgeDetailPanel
-      :edge="activeEdge"
-      :visible="!!activeEdge"
-      :loading="edgePanelLoading"
-      :loading-since="edgePanelSince"
-      @close="closeEdgePanel"
-      @delete-edge="onDeleteEdge"
-    />
+    <!-- Kanten-Detail und Aggregat-Aufloesung stehen in Spalte 3 (CodeView), nicht mehr hier als
+         Modal ueber dem Graphen: der Klick auf eine Kante soll neben dem Bild lesbar sein, in dem
+         sie liegt. Gemeldet wird sie ueber `relation`. -->
 
     <!-- Slide-over: manuelle Kante anlegen (ausgelöst durch Drag-to-Connect) -->
     <ManualEdgePanel
@@ -3971,6 +4045,17 @@ watch(
     0 8px 22px color-mix(in srgb, var(--edge) 30%, transparent);
   transform: translateY(-1px);
   z-index: 1;
+}
+/* Endpunkt der ANGEKLICKTEN Kante (ihr Detail steht rechts offen). Dieselbe Farbe wie der
+   Hover-Ring – es ist dieselbe Aussage –, aber deutlich fester: der Hover-Ring verschwindet, sobald
+   die Maus weiterzieht, dieser bleibt, waehrend man rechts liest. Ring per `box-shadow`, damit
+   keine Karte ihre Groesse aendert (das Layout wuerde sonst verspringen). */
+.vf-card--pinned,
+.vf-pkgcard.vf-card--pinned {
+  border-color: var(--edge);
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 5px var(--edge),
+    0 10px 26px color-mix(in srgb, var(--edge) 34%, transparent);
+  z-index: 2;
 }
 /* --- Legende: Kategorien --------------------------------------------------------------------
    Die Typ-Zeilen sind kurz (ein Wort) -> zweispaltig, sonst waere die Legende doppelt so hoch
