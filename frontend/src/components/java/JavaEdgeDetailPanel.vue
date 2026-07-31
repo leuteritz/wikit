@@ -243,17 +243,32 @@ function onKeydown(e) {
   if (e.key !== 'Escape') return
   close()
 }
+// Sichtbarkeit steuert nur Tastatur und Zustand.
 watch(
   () => props.visible,
   (vis) => {
     confirmingDelete.value = null
-    if (vis) {
-      window.addEventListener('keydown', onKeydown)
-      loadSnippets()
-      loadUsageSnippets()
-    } else {
-      window.removeEventListener('keydown', onKeydown)
+    if (vis) window.addEventListener('keydown', onKeydown)
+    else window.removeEventListener('keydown', onKeydown)
+  },
+)
+
+// Die DATEN steuern das Nachladen – ausdruecklich nicht `visible`.
+// Grund: Das Panel oeffnet inzwischen sofort mit einem Platzhalter (`loading`), dessen `callSites`
+// noch leer sind. Haengt das Laden an `visible`, laeuft es genau einmal – naemlich auf diesem
+// leeren Platzhalter – und wird nie wiederholt, weil `visible` true bleibt, waehrend nur `edge`
+// getauscht wird. Genau so blieb der Consumer-Abschnitt nach dem Laden leer.
+watch(
+  () => (props.visible && !props.loading ? props.edge : null),
+  (edge) => {
+    if (!edge) {
+      // Neue Kante im Anflug (oder geschlossen): der Ausschnitt der alten gehoert nicht mehr dazu.
+      snippets.value = {}
+      usageSnippets.value = {}
+      return
     }
+    loadSnippets()
+    loadUsageSnippets()
   },
 )
 onUnmounted(() => window.removeEventListener('keydown', onKeydown))
