@@ -134,11 +134,16 @@ export const api = {
       { silent: true },
     ),
   // Shiki-gehighlightetes Fenster um eine Quellzeile (Vorschau der Suchpalette).
+  // `full`: statt des Fensters die GANZE Klasse (Treffer auf den Klassennamen meint die Klasse).
   // `silent`: die Vorschau zeigt bereits den unformatierten Ausschnitt aus dem Suchergebnis.
-  getJavaSourceWindow: (fileId, line) =>
-    http('GET', `/java/source-window?fileId=${encodeURIComponent(fileId)}&line=${encodeURIComponent(line)}`, null, {
-      silent: true,
-    }),
+  getJavaSourceWindow: (fileId, line, { full = false } = {}) =>
+    http(
+      'GET',
+      `/java/source-window?fileId=${encodeURIComponent(fileId)}&line=${encodeURIComponent(line)}` +
+        (full ? '&full=1' : ''),
+      null,
+      { silent: true },
+    ),
 
   deleteJavaFile: (id) => http('DELETE', `/java/files/${id}`),
 

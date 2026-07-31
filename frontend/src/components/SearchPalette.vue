@@ -11,6 +11,9 @@
 // Die Vorschau rechts ist der eigentliche Zweck: ein Treffer im Code ohne seinen Code ist nur die
 // Behauptung, dass es ihn gibt. Sie zeigt sofort den Ausschnitt aus dem Suchergebnis (kommt ohne
 // zweiten Request mit) und tauscht ihn gegen das server-gehighlightete Fenster, sobald das da ist.
+// Der Ausschnitt richtet sich dabei nach der FRAGE, nicht nach der Trefferart: ein Treffer auf den
+// Klassennamen meint die Klasse, also steht dort ihr ganzer Quelltext (`wantsFullClass`); ein
+// Treffer im Quelltext meint die Stelle, also das Fenster darum.
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useArticles } from '../composables/useArticles.js'
@@ -18,7 +21,7 @@ import { useSearch } from '../composables/useSearch.js'
 import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { api } from '../lib/api.js'
 import { buildSearchRegex } from '../lib/codeSearch.js'
-import { buildCallWindow } from '../lib/javaCode.js'
+import { addLineNumbers, buildCallWindow } from '../lib/javaCode.js'
 import { parseSearchQuery, wantsArticles, wantsCode, wantsSymbols, SEARCH_FACETS, SEARCH_SCOPE_ALL } from '../lib/searchQuery.js'
 import BusyState from './BusyState.vue'
 import CategoryBadge from './CategoryBadge.vue'
@@ -371,10 +374,19 @@ const scanNote = computed(() => {
 })
 
 // --- Vorschau ------------------------------------------------------------------------------
-// Fenster je (Klasse, Zeile), einmal geholt und gemerkt: beim Durchblaettern mit den Pfeiltasten
-// waere sonst jeder Rueckschritt ein neuer Request.
+// Fenster je (Klasse, Zeile, Ausschnitt), einmal geholt und gemerkt: beim Durchblaettern mit den
+// Pfeiltasten waere sonst jeder Rueckschritt ein neuer Request. Der Deckel ist neu und noetig,
+// seit ein Eintrag eine ganze Klasse sein kann: das Modal bleibt gemountet, und ein paar Dutzend
+// Suchen mit je acht Klassen haetten sonst dauerhaft ein paar hundert Kilobyte HTML je Eintrag
+// im Speicher. Aeltester Eintrag zuerst (Map haelt die Einfuegereihenfolge).
+const PREVIEW_CACHE_MAX = 24
 const previewCache = new Map()
 const preview = ref(null)
+const previewBody = ref(null)
+// Startzeitpunkt der laufenden Vorschau-Anfrage (fuer BusyState). Eine ganze Klasse zu rendern ist
+// mehr Arbeit als sieben Zeilen – auf dem Pi ist das der Unterschied zwischen „ist gleich da" und
+// „haengt".
+const previewSince = ref(0)
 let previewTimer = null
 let previewToken = 0
 
@@ -386,15 +398,22 @@ const previewTarget = (item) => {
   const line = item?.line ?? item?.item?.lineNumber ?? null
   return fileId && line ? { fileId, line } : null
 }
+// Ein Treffer auf den KLASSENNAMEN meint die Klasse, nicht die Zeile, in der ihr Name steht – dort
+// ist ein Fenster von sieben Zeilen die falsche Antwort. Alles andere behaelt es: bei einem
+// Quelltext- oder Methodentreffer IST die Fundstelle die Auskunft, und in 400 Zeilen ginge sie
+// unter. Deshalb auch die Server-Klassen (`viaSource`) nicht – die passen im Quelltext, nicht im
+// Namen, und sagen das in der Liste auch.
+const wantsFullClass = (item) => item?.kind === 'class' && !item.viaSource
 const previewKey = (item) => {
   const t = previewTarget(item)
-  return t ? `${t.fileId}:${t.line}` : ''
+  return t ? `${t.fileId}:${t.line}:${wantsFullClass(item) ? 'full' : 'win'}` : ''
 }
 
 watch(activeItem, (item) => {
   clearTimeout(previewTimer)
   const target = previewTarget(item)
   const key = previewKey(item)
+  const full = wantsFullClass(item)
   if (!key) {
     preview.value = null
     return
@@ -404,20 +423,45 @@ watch(activeItem, (item) => {
     return
   }
   preview.value = null
+  previewSince.value = Date.now()
   previewTimer = setTimeout(async () => {
     const token = ++previewToken
     try {
-      const win = await api.getJavaSourceWindow(target.fileId, target.line)
+      const win = await api.getJavaSourceWindow(target.fileId, target.line, { full })
       if (token !== previewToken) return
-      // Server liefert reines Shiki-HTML, der Client schneidet daraus sein Fenster und markiert die
-      // Fundzeile – dieselben DOM-Helfer wie im Edge-/Bundle-Panel, kein zweiter Highlighter.
-      const entry = { ...win, html: buildCallWindow(win.html, win.startLine, target.line) }
+      // Server liefert reines Shiki-HTML, der Client schneidet es zurecht und markiert die Zeile,
+      // um die es geht – dieselben DOM-Helfer wie im Edge-/Bundle-Panel, kein zweiter Highlighter.
+      // Ganze Klasse: Leerzeilen bleiben (sie sind die Gliederung) und die Klassendeklaration wird
+      // markiert. Fenster: +-3 Nicht-Leerzeilen um die Fundstelle.
+      const html = full
+        ? addLineNumbers(win.html, win.startLine, { keepBlank: true, highlight: win.hitLine })
+        : buildCallWindow(win.html, win.startLine, target.line)
+      const entry = { ...win, html }
+      if (previewCache.size >= PREVIEW_CACHE_MAX) previewCache.delete(previewCache.keys().next().value)
       previewCache.set(key, entry)
       preview.value = entry
     } catch {
       if (token === previewToken) preview.value = null
     }
   }, PREVIEW_DEBOUNCE_MS)
+})
+
+// Die markierte Zeile in den Blick holen. Bei der ganzen Klasse steht die Deklaration hinter
+// Package- und Import-Block, also unten aus dem Bild – und eine Vorschau, die man erst scrollen
+// muss, um zu sehen, worauf man gerade steht, ist keine. Gerechnet statt `scrollIntoView()`:
+// letzteres scrollt jeden Vorfahren mit, also auch die Seite hinter dem Modal.
+watch(preview, async (p) => {
+  await nextTick()
+  const box = previewBody.value
+  if (!box) return
+  const line = p?.full ? box.querySelector('.line-highlight') : null
+  if (!line) {
+    box.scrollTop = 0
+    return
+  }
+  const delta = line.getBoundingClientRect().top - box.getBoundingClientRect().top
+  // Ein Drittel von oben: darueber bleiben Package/Imports sichtbar, darunter beginnt die Klasse.
+  box.scrollTop = Math.max(0, box.scrollTop + delta - box.clientHeight / 3)
 })
 
 // Jedes Oeffnen des Modals beginnt bei null – eine alte Eingabe waere beim naechsten Strg+K ein
@@ -881,12 +925,15 @@ const shortPackage = (pkg) => pkg || 'default package'
                 <span class="truncate font-mono text-3xs text-[var(--color-text-muted)]">
                   {{ shortPackage(activeItem.package ?? activeItem.item?.package) }}
                 </span>
+                <!-- Bei der ganzen Klasse ist der Umfang die Auskunft (und die markierte Zeile die
+                     Deklaration); beim Fenster ist es die Fundzeile. -->
                 <span v-if="previewKey(activeItem)" class="ml-auto shrink-0 font-mono text-3xs text-[var(--color-text-muted)]">
-                  L{{ activeItem.line ?? activeItem.item?.lineNumber }}
+                  L{{ activeItem.line ?? activeItem.item?.lineNumber }}<template v-if="preview?.full"> · {{ preview.totalLines }} lines</template>
                 </span>
               </div>
-              <div class="min-h-0 flex-1 overflow-auto px-5 py-4">
-                <!-- Server-gehighlightetes Fenster … -->
+              <div ref="previewBody" class="min-h-0 flex-1 overflow-auto px-5 py-4">
+                <!-- Server-gehighlighteter Ausschnitt: ganze Klasse beim Klassentreffer, sonst das
+                     Fenster um die Fundstelle. -->
                 <div v-if="preview" class="edge-code code-dark" v-html="preview.html" />
                 <!-- … bis dahin der Ausschnitt, der mit dem Suchergebnis ohnehin schon da ist.
                      Kein Ladezustand, der den Blick anhaelt: derselbe Code, nur ohne Farben. -->
@@ -899,7 +946,22 @@ const shortPackage = (pkg) => pkg || 'default package'
                   class="block"
                   :class="l.isHit ? 'text-[var(--color-text)]' : 'text-[var(--color-text-muted)]'"
                 ><span class="mr-3 inline-block w-8 select-none text-right text-[var(--color-text-muted)]">{{ l.line }}</span><span v-html="markRanges(l.text, l.ranges)" /></span></pre>
-                <div v-else class="text-xs text-[var(--color-text-muted)]">Loading…</div>
+                <!-- Ein Klassentreffer bringt keinen Ausschnitt mit (er kommt aus der Klassenliste,
+                     nicht aus der Quelltextsuche) – hier steht deshalb die Wartemeldung der App,
+                     mitsamt dem, worauf gewartet wird. -->
+                <BusyState
+                  v-else
+                  :title="`Opening ${activeItem.name || activeItem.className || activeItem.item?.className || 'class'}…`"
+                  :detail="wantsFullClass(activeItem) ? 'full source · highlighted on the server' : 'source around the match'"
+                  hint="The whole class is rendered once and then kept — arrow keys stay instant."
+                  :since="previewSince"
+                />
+                <!-- Was der Deckel abschneidet, steht da. Ein stiller Schnitt liest sich wie
+                     „so kurz ist die Klasse". -->
+                <p
+                  v-if="preview?.truncated"
+                  class="mt-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-offset)] px-3 py-1.5 font-mono text-3xs text-[var(--color-text-muted)]"
+                >Showing the first {{ preview.endLine }} of {{ preview.totalLines }} lines — press ↵ to open the full class in Code.</p>
               </div>
             </template>
 

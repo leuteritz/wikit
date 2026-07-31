@@ -104,14 +104,16 @@ export class JavaController {
   }
 
   // Shiki-gehighlightetes Fenster um eine Quellzeile (Vorschau der globalen Code-Suche).
+  // `full=1` liefert stattdessen die ganze Klasse (Treffer auf den Klassennamen).
   // Statische Route -> vor files/:id.
   @Get('source-window')
   sourceWindow(
     @Query('fileId') fileId: string,
     @Query('line') line: string,
     @Query('context') context?: string,
+    @Query('full') full?: string,
   ) {
-    return this.svc.getSourceWindow(fileId, line, context);
+    return this.svc.getSourceWindow(fileId, line, context, full);
   }
 
   // Fortschritt eines laufenden analyze-batch (SSE). Der Client erzeugt die jobId, oeffnet damit

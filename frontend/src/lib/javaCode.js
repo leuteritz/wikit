@@ -29,7 +29,16 @@ const CONTEXT_LINES = 3
 // Server-gerendertes Shiki-HTML mit Gutter-Zeilennummern versehen: pro `.line` das
 // `data-line`-Attribut (startLine + i) setzen, das die CSS-Gutter-Regel (`::before`) anzeigt.
 // Reines DOM-Post-Processing – kein zweiter Highlighter (Farben bleiben aus Shiki-CSS-Variablen).
-export function addLineNumbers(html, startLine) {
+//
+// Zwei Optionen, beide fuer die GANZE Klasse in der Suchvorschau gedacht (der Normalfall –
+// Methodenrumpf im Edge-/Bundle-Panel – bleibt unveraendert):
+//  * `keepBlank` – Leerzeilen stehenlassen. Bei einem Methodenrumpf sind sie Luft in einem
+//    ohnehin knappen Panel; ueber eine ganze Klasse gelesen sind sie ihre Gliederung, und ohne
+//    sie klebt der Import-Block am Klassenkopf.
+//  * `highlight` – eine Quellzeile markieren (`line-highlight`, dieselbe Auszeichnung wie die
+//    Aufrufzeile in `buildCallWindow`), damit die Klassendeklaration in 400 Zeilen auffindbar
+//    bleibt.
+export function addLineNumbers(html, startLine, { keepBlank = false, highlight = null } = {}) {
   try {
     const doc = new DOMParser().parseFromString(html, 'text/html')
     const root = doc.querySelector('.shiki')
@@ -39,7 +48,7 @@ export function addLineNumbers(html, startLine) {
     // kombinierte Block ist leerzeilenfrei, die data-line-Nummern bleiben korrekt (Luecken = ok).
     const kept = [...root.querySelectorAll('.line')]
       .map((el, i) => ({ el, line: base + i }))
-      .filter(({ el }) => !isBlank(el))
+      .filter(({ el }) => keepBlank || !isBlank(el))
     if (!kept.length) return html
     // Frisches <code> mit den gehaltenen Zeilen – die `.line` werden (wie in `buildCallWindow`)
     // OHNE `\n`-Textnodes direkt aneinandergehaengt: im Original-`<pre>` (white-space: pre) wuerde
@@ -49,6 +58,7 @@ export function addLineNumbers(html, startLine) {
     const code = doc.createElement('code')
     kept.forEach(({ el, line }) => {
       el.setAttribute('data-line', String(line))
+      if (highlight != null) el.classList.toggle('line-highlight', line === highlight)
       code.appendChild(el)
     })
     const oldCode = root.querySelector('code')

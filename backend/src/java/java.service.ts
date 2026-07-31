@@ -54,6 +54,12 @@ const CODE_SEARCH_CONTEXT = 2;
 // Kontextzeilen je Seite im Vorschau-Fenster (getSourceWindow); der Client schneidet daraus sein
 // endgueltiges Fenster (buildCallWindow haelt +-3 Nicht-Leerzeilen).
 const SOURCE_WINDOW_CONTEXT = 8;
+// Deckel der GANZ-Klassen-Vorschau (`full=1`). Ein Klassentreffer meint die Klasse als Ganzes, also
+// wird sie auch ganz gerendert – aber Shiki laeuft dafuer ueber jede Zeile, und auf dem Pi ist das
+// bei einer Riesenklasse eine spuerbare Wartezeit vor einer Vorschau, durch die man ohnehin nur
+// blaettert. Was der Deckel abschneidet, steht in der Antwort (`truncated`) und wird angeschrieben –
+// ein stiller Schnitt liest sich wie „so kurz ist die Klasse".
+const SOURCE_FULL_MAX_LINES = 1500;
 
 // Die klassenbeschreibenden Spalten aus einem geparsten Typ – an drei Stellen gebraucht
 // (analyze, analyze-batch Insert + Overwrite-Update); getrennte Literale waeren dreimal die
@@ -691,7 +697,18 @@ export class JavaService {
   // den vorhandenen DOM-Helfern (`buildCallWindow`) zurecht – kein zweiter Highlighter im Client.
   // Eingerueckt wird wie im Quellcode-Tab der Klasse (`reindentJava`, Zeilenzahl bleibt konstant),
   // damit die Vorschau und die Ansicht NACH dem Sprung dasselbe zeigen.
-  async getSourceWindow(fileIdParam: string, lineParam: string, contextParam?: string): Promise<any> {
+  //
+  // ZWEI Ausschnitte, weil es zwei Fragen sind – aber EIN Endpunkt, weil der Gegenstand derselbe
+  // ist (Shiki-HTML aus dem Quelltext EINER Klasse, samt Zeilennummern): `full=1` liefert die
+  // ganze Klasse (Treffer auf den KLASSENNAMEN meint die Klasse, nicht die eine Zeile), ohne
+  // `full` das Fenster um `line` (Treffer im Quelltext meint genau die Stelle). Die Antwortform
+  // bleibt in beiden Faellen gleich, nur `startLine`/`endLine` unterscheiden sich.
+  async getSourceWindow(
+    fileIdParam: string,
+    lineParam: string,
+    contextParam?: string,
+    fullParam?: string,
+  ): Promise<any> {
     const fileId = Number(fileIdParam);
     const line = Number(lineParam);
     if (!fileId || !Number.isFinite(line) || line < 1) {
@@ -700,11 +717,14 @@ export class JavaService {
     const file = await this.ds.getRepository(JavaFile).findOne({ where: { id: fileId } });
     if (!file) throw new NotFoundException('File not found');
 
+    const full = fullParam === '1';
     const context = Math.min(Math.max(Number(contextParam) || SOURCE_WINDOW_CONTEXT, 1), 40);
     const lines = this.formatter.reindentJava(file.raw_source || '').split('\n');
     const hitLine = Math.min(line, lines.length || 1);
-    const startLine = Math.max(1, hitLine - context);
-    const endLine = Math.min(lines.length, hitLine + context);
+    const startLine = full ? 1 : Math.max(1, hitLine - context);
+    const endLine = full
+      ? Math.min(lines.length, SOURCE_FULL_MAX_LINES)
+      : Math.min(lines.length, hitLine + context);
     const code = lines.slice(startLine - 1, endLine).join('\n');
     const { html } = await this.markdown.renderMarkdown('```java\n' + code + '\n```');
 
@@ -717,6 +737,9 @@ export class JavaService {
       endLine,
       hitLine,
       totalLines: lines.length,
+      full,
+      // Nur im Ganz-Klassen-Modus eine Aussage: beim Fenster ist „da fehlt was" der Zweck.
+      truncated: full && endLine < lines.length,
       html,
     };
   }
