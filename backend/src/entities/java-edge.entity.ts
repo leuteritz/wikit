@@ -10,8 +10,16 @@ export class JavaEdge {
   @Column({ name: 'source_class', type: 'text' })
   source_class: string;
 
+  // Package beider Seiten: erst damit ist die Kante eindeutig (zwei Klassen 'Header' in
+  // verschiedenen Packages sind zwei Klassen). NULL = Altbestand oder default package.
+  @Column({ name: 'source_pkg', type: 'text', nullable: true })
+  source_pkg: string | null;
+
   @Column({ name: 'target_class', type: 'text' })
   target_class: string;
+
+  @Column({ name: 'target_pkg', type: 'text', nullable: true })
+  target_pkg: string | null;
 
   @Column({ name: 'method_name', type: 'text', nullable: true })
   method_name: string | null;

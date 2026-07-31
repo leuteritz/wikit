@@ -351,7 +351,15 @@ const basePath = computed(() => (zoomPath.value == null ? rootPath.value : zoomP
 // Klassenname -> Datei. Die Auflösung liegt als reine Funktion in `lib/packageGraph.js` (dort
 // steht auch, warum sie mehr tut als ein Map-Lookup: Kanten tragen nur den EINFACHEN Namen).
 const filesByName = computed(() => indexFilesByName(props.files || []))
-const resolveClass = (name, consumer) => resolveClassByName(filesByName.value, name, consumer)
+const resolveClass = (name, consumer, pkg = null) => resolveClassByName(filesByName.value, name, consumer, pkg)
+// Beide Enden einer Server-Kante zuordnen. Die Kante trägt ihre Packages selbst mit
+// (`source_pkg`/`target_pkg`) – damit ist die Zuordnung exakt statt geraten; NULL bei Altbestand,
+// dann greift wieder die Namensauflösung über die Importe des Nutzers.
+function endsOf(e, resolve) {
+  const consumer = resolve(e.source_class, null, e.source_pkg ?? null)
+  const provider = resolve(e.target_class, consumer, e.target_pkg ?? null)
+  return { consumer, provider }
+}
 
 // Alle Klassenkanten (unabhaengig von der Sichtbarkeit) fuer die Aggregation: gleiche Richtung
 // wie im Graph, also fromId = Definition/Provider, toId = Nutzung/Consumer.
@@ -360,9 +368,7 @@ const allClassEdges = computed(() => {
   const out = []
   const pairs = new Set()
   for (const e of serverEdges.value || []) {
-    // Erst den Nutzer (er liefert den Kontext für die Auflösung), dann das Ziel relativ zu ihm.
-    const caller = resolveClass(e.source_class, null)
-    const definer = resolveClass(e.target_class, caller)
+    const { consumer: caller, provider: definer } = endsOf(e, resolveClass)
     if (!caller || !definer || caller.id === definer.id) continue
     out.push({ fromId: definer.id, toId: caller.id, kind: e.kind || 'call' })
     pairs.add(`${definer.id}->${caller.id}`)
@@ -845,7 +851,7 @@ const layout = computed(() => {
   // class_name -> Dateien (Mehrzahl: der Name ist nicht eindeutig, s. resolveClassByName). Nur
   // die GEZEICHNETEN Klassen – was nicht im Bild ist, bekommt auch keine Kante.
   const known = indexFilesByName(files)
-  const resolveHere = (name, consumer) => resolveClassByName(known, name, consumer)
+  const resolveHere = (name, consumer, pkg = null) => resolveClassByName(known, name, consumer, pkg)
 
   // Package -> Farbindex (stabil sortiert). Die Nachbar-Aggregate gehoeren dazu: sie bekommen im
   // geclusterten Layout eine eigene Zone, und die traegt die Package-Farbe.
@@ -891,8 +897,7 @@ const layout = computed(() => {
   //    statt ArrowClosed + Legendeneintrag. Bis dahin: Visualisierung + Legende unveraendert.
   const callGroups = new Map() // `${callerId}->${definerId}` -> { callerFile, definerFile, methods: [] }
   for (const e of serverEdges.value || []) {
-    const callerFile = resolveHere(e.source_class, null) // A
-    const definerFile = resolveHere(e.target_class, callerFile) // B
+    const { consumer: callerFile, provider: definerFile } = endsOf(e, resolveHere) // A -> B
     if (!callerFile || !definerFile || callerFile.id === definerFile.id) {
       // Genau ein Endpunkt fehlt -> die andere Klasse ist „extern" (nicht geladen).
       if (!callerFile && definerFile) externalRefs.add(e.source_class)
@@ -1826,10 +1831,9 @@ function relationsBetween(sourceKey, targetKey) {
   }
 
   for (const e of serverEdges.value || []) {
-    // Dieselbe Auflösung wie in `allClassEdges` – sonst nennt das Panel andere Paare, als der
+    // Dieselbe Zuordnung wie in `allClassEdges` – sonst nennt das Panel andere Paare, als der
     // Graph gezählt hat, und die angeschriebene Zahl stimmte nicht mehr mit der Liste überein.
-    const consumer = resolveClass(e.source_class, null)
-    const provider = resolveClass(e.target_class, consumer)
+    const { consumer, provider } = endsOf(e, resolveClass)
     if (!consumer || !provider || consumer.id === provider.id) continue
     if (keyOf.get(provider.id) !== sourceKey || keyOf.get(consumer.id) !== targetKey) continue
     add(
@@ -2016,9 +2020,14 @@ async function onSaveManualEdge({ methodName }) {
   if (!c) return
   closeManualPanel()
   try {
+    // Package beider Seiten mitschicken: der Nutzer hat auf KARTEN gezogen, meint also genau
+    // diese zwei Dateien. Ohne das Package wäre die Kante wieder nur namensbasiert und träfe bei
+    // zwei gleichnamigen Klassen die falsche.
     await createEdge({
       source: c.targetFile.class_name,
+      sourcePkg: c.targetFile.package || undefined,
       target: c.sourceFile.class_name,
+      targetPkg: c.sourceFile.package || undefined,
       methodName: methodName || undefined,
     })
   } catch (e) {

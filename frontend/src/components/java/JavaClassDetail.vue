@@ -180,13 +180,20 @@ const queueProgress = computed(() => progressFor(props.fileId))
 // --- Code-Token <-> Graph-Edge -------------------------------------------------
 // Methodennamen, die diese Klasse (als Aufrufer) ueber eine Call-Edge nutzt -> im Quellcode
 // klickbar. `uses`-Edges (Typ-Nutzung) sind keine Methodenaufrufe und bleiben aussen vor.
+// Gehört die Kantenseite zu GENAU dieser Klasse? Der Name allein reicht nicht: bei zwei Klassen
+// `Header` machte er die Methoden der anderen hier klickbar. Das Package der Kante entscheidet;
+// bei Altbestand (NULL) bleibt es beim Namen.
+function isThisClass(name, pkg) {
+  if (name !== file.value?.class_name) return false
+  return pkg == null || pkg === (file.value?.package || '')
+}
+
 const callableMethods = computed(() => {
-  const cls = file.value?.class_name
-  if (!cls) return []
+  if (!file.value?.class_name) return []
   return [
     ...new Set(
       (serverEdges.value || [])
-        .filter((e) => e.source_class === cls && e.kind !== 'uses')
+        .filter((e) => isThisClass(e.source_class, e.source_pkg) && e.kind !== 'uses')
         .map((e) => e.method_name)
         .filter(Boolean),
     ),
@@ -219,12 +226,11 @@ function onClearCall() {
 // Methodennamen, die diese Klasse (als DEFINITION) fuer andere bereitstellt und die per Call-Edge
 // genutzt werden -> im Quellcode klickbar. `uses`-Edges (Typ-Nutzung) bleiben aussen vor.
 const incomingMethods = computed(() => {
-  const cls = file.value?.class_name
-  if (!cls) return []
+  if (!file.value?.class_name) return []
   return [
     ...new Set(
       (serverEdges.value || [])
-        .filter((e) => e.target_class === cls && e.kind !== 'uses')
+        .filter((e) => isThisClass(e.target_class, e.target_pkg) && e.kind !== 'uses')
         .map((e) => e.method_name)
         .filter(Boolean),
     ),

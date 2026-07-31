@@ -133,10 +133,18 @@ CREATE INDEX IF NOT EXISTS idx_java_file_versions_file ON java_file_versions(jav
 -- struktureller Typ-Bezug (Feld-/Variablen-/Parameter-/Rueckgabetyp, new X(),
 -- statischer Aufruf ohne Methoden-Treffer) – kein Label, Fallback je Klassenpaar.
 -- SQLite kennt kein BOOLEAN -> INTEGER 0/1.
+-- source_pkg/target_pkg machen die Kante EINDEUTIG: der einfache Klassenname allein ist es nicht
+-- (zwei Klassen 'Header' in verschiedenen Packages sind zwei verschiedene Klassen, und ohne das
+-- Package verschmolzen ihre Kanten zu einer). Der Name bleibt trotzdem die fuehrende Angabe --
+-- er ueberlebt einen Re-Import, waehrend eine java_files.id das nicht tut. NULL = Altbestand
+-- oder default package, dann faellt die Zuordnung auf den Namen zurueck.
+-- Hinweis: KEIN Semikolon in diesem Kommentar (SCHEMA wird beim Init daran gesplittet).
 CREATE TABLE IF NOT EXISTS java_edges (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   source_class TEXT NOT NULL,
+  source_pkg   TEXT,
   target_class TEXT NOT NULL,
+  target_pkg   TEXT,
   method_name  TEXT,
   is_manual    INTEGER NOT NULL DEFAULT 0,
   dismissed    INTEGER NOT NULL DEFAULT 0,
@@ -182,4 +190,6 @@ export const COLUMN_MIGRATIONS: Array<{ table: string; column: string; ddl: stri
   { table: 'java_methods', column: 'body_start_line', ddl: 'ALTER TABLE java_methods ADD COLUMN body_start_line INTEGER' },
   { table: 'java_methods', column: 'member_kind', ddl: 'ALTER TABLE java_methods ADD COLUMN member_kind TEXT' },
   { table: 'java_edges', column: 'kind', ddl: "ALTER TABLE java_edges ADD COLUMN kind TEXT NOT NULL DEFAULT 'call'" },
+  { table: 'java_edges', column: 'source_pkg', ddl: 'ALTER TABLE java_edges ADD COLUMN source_pkg TEXT' },
+  { table: 'java_edges', column: 'target_pkg', ddl: 'ALTER TABLE java_edges ADD COLUMN target_pkg TEXT' },
 ];

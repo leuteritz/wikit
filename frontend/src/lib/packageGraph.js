@@ -41,9 +41,17 @@ export function indexFilesByName(files) {
   return m;
 }
 
-export function resolveClassByName(index, name, consumer = null) {
+// `pkg` ist der Package-Hinweis der KANTE (`source_pkg`/`target_pkg`). Seit die Kanten ihn tragen,
+// ist das keine Auflösung mehr, sondern eine Zuordnung: die Kante sagt selbst, welche der
+// gleichnamigen Klassen sie meint. Alles darunter ist der Rückfall für Altbestand (Spalte NULL)
+// und für Import-Kanten, die aus `dependencies` stammen.
+export function resolveClassByName(index, name, consumer = null, pkg = null) {
   const list = index?.get(name);
   if (!list?.length) return null;
+  if (pkg != null) {
+    const exact = list.find((f) => (f.package || '') === pkg);
+    if (exact) return exact;
+  }
   if (list.length === 1) return list[0];
   if (consumer) {
     for (const dep of consumer.dependencies || []) {
