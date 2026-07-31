@@ -19,10 +19,18 @@ import { addLineNumbers, buildCallWindow } from '../../lib/javaCode.js'
 import { buildMethodColorMap, methodColorVars, markMethodCalls } from '../../lib/javaMethodColors.js'
 import { copyToClipboard } from '../../lib/clipboard.js'
 import { Icon } from '../../lib/icons.js'
+import BusyState from '../BusyState.vue'
 
 const props = defineProps({
   edge: { type: Object, default: null },
   visible: { type: Boolean, default: false },
+  // Die Ruempfe beider Klassen kommen erst beim Klick (die Dateiliste traegt sie nicht mit, s.
+  // `methodsOf` im Graphen). Solange sie unterwegs sind, steht das Panel schon da: Kopf und
+  // Methodennamen sind aus Dateiliste und Kantendaten bereits bekannt, nur der Code fehlt.
+  // Ohne das sah ein Klick auf eine Kante eine halbe Sekunde lang aus wie verschluckt.
+  loading: { type: Boolean, default: false },
+  // Startzeitpunkt fuer die Uhr in `BusyState` (dort laeuft sie, nicht hier).
+  loadingSince: { type: Number, default: 0 },
 })
 const emit = defineEmits(['close', 'delete-edge'])
 
@@ -296,6 +304,21 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           </header>
 
           <div class="min-h-0 flex-1 overflow-y-auto">
+            <!-- Warten hat EINE Form (`BusyState`) – und sie steht dort, wo das Ergebnis erscheinen
+                 wird, nicht als Spinner irgendwo über dem Graphen. Das Skelett hat so viele Zeilen
+                 wie die Kante Methoden trägt, damit das Panel beim Eintreffen nicht springt. -->
+            <div v-if="loading" class="p-4">
+              <BusyState
+                variant="panel"
+                :title="`Opening ${edge.toClass} → ${edge.fromClass}`"
+                :detail="`${calleeList.length} method${calleeList.length === 1 ? '' : 's'} · source of both classes`"
+                hint="Method bodies are fetched on click — the class list does not carry them, so this is one request per class."
+                :since="loadingSince"
+                :rows="Math.min(6, Math.max(2, calleeList.length * 2))"
+              />
+            </div>
+
+            <template v-else>
             <!-- ── Quelle: definierende Klasse + Methoden-Quellcode (Shiki) ── -->
             <section class="p-4">
               <div class="mb-3 flex flex-wrap items-center gap-2.5">
@@ -534,10 +557,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                 </div>
               </div>
             </section>
+            </template>
           </div>
 
-          <!-- Footer: zur Quell-/Aufruferklasse springen (read-only) -->
-          <footer class="shrink-0 border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3">
+          <!-- Footer: zur Quell-/Aufruferklasse springen (read-only). Waehrend des Ladens weg –
+               ein Sprung in eine Klasse, deren Stelle noch gar nicht feststeht, waere ein Angebot
+               ins Leere. -->
+          <footer v-if="!loading" class="shrink-0 border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3">
             <div class="flex flex-wrap items-center justify-end gap-2">
               <button
                 type="button"

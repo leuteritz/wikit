@@ -1589,6 +1589,11 @@ watch(
 const activeEdge = ref(null)
 // Laeuft, waehrend die Methodenruempfe fuer das Edge-Panel nachgeladen werden (s. methodsOf).
 const edgePanelLoading = ref(false)
+// Startzeitpunkt der Wartemeldung (die Uhr laeuft in `BusyState`) und ein Zaehler, der eine
+// ueberholte Antwort erkennt: wer waehrend des Ladens eine andere Kante klickt oder schliesst,
+// soll nicht Sekunden spaeter das alte Ergebnis vorgesetzt bekommen.
+const edgePanelSince = ref(0)
+let edgeToken = 0
 
 // Baut die Panel-Daten fuer eine (ggf. gebuendelte) Call-Kante. `methods` = Array von
 // { edgeId, method, isManual } -> Aufrufstellen werden ueber ALLE Methoden gesammelt; das Panel
@@ -1692,12 +1697,46 @@ async function openEdgePanel(d) {
       console.warn('[JavaGraph] Edge-Panel: Klasse(n) nicht in der Dateiliste gefunden', d)
       return
     }
+    // Der Klick wird SOFORT beantwortet. Kopfzeile und Methodennamen sind bereits bekannt (die
+    // Dateiliste liegt im Store, die Namen stecken in den Kantendaten) – es fehlen nur die
+    // Ruempfe beider Klassen, und genau die kosten die Zeit. Das Panel oeffnet deshalb mit dem,
+    // was da ist, und traegt die Wartemeldung darin. Vorher passierte nach dem Klick sichtbar
+    // nichts, bis alles geladen war: auf dem Pi las sich das wie ein verschluckter Klick.
+    const token = ++edgeToken
+    edgePanelSince.value = Date.now()
     edgePanelLoading.value = true
+    activeEdge.value = {
+      kind: 'call',
+      fromClass: callerFile.class_name,
+      toClass: definerFile.class_name,
+      fromFileId: callerFile.id,
+      toFileId: definerFile.id,
+      // Dieselbe Form wie `computeCallEdgeData` sie liefert – nur ohne Signatur und Aufrufstellen,
+      // die beide erst aus den Ruempfen entstehen. So rendert der Kopf schon richtig (inklusive
+      // „Please review", das aus den Kantendaten kommt und nicht aus dem Code).
+      methods: methodList.map((m) => ({
+        edgeId: m.edgeId ?? null,
+        name: m.method,
+        signature: '',
+        isManual: !!m.isManual,
+        confidence: m.confidence ?? 1,
+        needsReview: !!m.needsReview,
+      })),
+      needsReview: methodList.some((m) => m.needsReview),
+      bundleCount: methodList.length,
+      isManual: !!d.isManual,
+      callSites: [],
+      callees: methodList.map((m) => m.method),
+      calleeSignatures: [],
+    }
     try {
       const [callerMethods, definerMethods] = await Promise.all([
         methodsOf(d.fromFileId),
         methodsOf(d.toFileId),
       ])
+      // Inzwischen eine andere Kante geklickt oder das Panel geschlossen -> dieses Ergebnis
+      // gehoert zu einer Frage, die niemand mehr stellt.
+      if (token !== edgeToken) return
       activeEdge.value = computeCallEdgeData(
         { ...callerFile, methods: callerMethods },
         { ...definerFile, methods: definerMethods },
@@ -1705,7 +1744,7 @@ async function openEdgePanel(d) {
         { isManual: d.isManual },
       )
     } finally {
-      edgePanelLoading.value = false
+      if (token === edgeToken) edgePanelLoading.value = false
     }
   } catch (e) {
     console.warn('[JavaGraph] Edge-Panel konnte nicht geöffnet werden', d, e)
@@ -1849,6 +1888,9 @@ function onEdgeClick({ edge }) {
   openEdgePanel(d)
 }
 function closeEdgePanel(reason) {
+  // Ein noch laufender Ladevorgang darf das Panel nicht wieder aufziehen.
+  edgeToken++
+  edgePanelLoading.value = false
   rememberReturn(reason, 'edge', activeEdge.value)
   activeEdge.value = null
 }
@@ -2662,6 +2704,8 @@ watch(
     <JavaEdgeDetailPanel
       :edge="activeEdge"
       :visible="!!activeEdge"
+      :loading="edgePanelLoading"
+      :loading-since="edgePanelSince"
       @close="closeEdgePanel"
       @delete-edge="onDeleteEdge"
     />
