@@ -19,7 +19,7 @@ import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { api } from '../lib/api.js'
 import { buildSearchRegex } from '../lib/codeSearch.js'
 import { buildCallWindow } from '../lib/javaCode.js'
-import { parseSearchQuery, wantsArticles, wantsCode, wantsSymbols, SEARCH_FACETS } from '../lib/searchQuery.js'
+import { parseSearchQuery, wantsArticles, wantsCode, wantsSymbols, SEARCH_FACETS, SEARCH_SCOPE_ALL } from '../lib/searchQuery.js'
 import BusyState from './BusyState.vue'
 import CategoryBadge from './CategoryBadge.vue'
 import { Icon } from '../lib/icons.js'
@@ -30,6 +30,12 @@ const props = defineProps({
   // Der Unterschied ist der RAHMEN, nicht das Verhalten: Suche, Rangfolge, Tastatur und der Sprung
   // in die Code-Ansicht sind in beiden Faellen derselbe Code.
   variant: { type: String, default: 'modal' },
+  // Dauerhaft sichtbare Facettenleiste ueber dem Feld (Landing Page). Ohne sie erscheinen die
+  // Facetten nur als Chips im leeren, fokussierten Feld – wer sie nicht kennt, findet sie dort
+  // nie, weil sie beim ersten getippten Zeichen verschwinden. Auf einer Seite, die die Suche als
+  // Hauptangebot zeigt, ist „einschraenken" ein Klick wert; im Modal bliebe die Leiste dagegen
+  // dauerhaft im Weg, dort ist die Eingabe schon der Anfang der Antwort.
+  facetBar: { type: Boolean, default: false },
 })
 const emit = defineEmits(['close'])
 
@@ -492,6 +498,30 @@ function applyFacet(prefix) {
   inputEl.value?.focus()
 }
 
+// --- Facettenleiste: Quelle wechseln, Begriff behalten --------------------------------------
+// Der Praefix wird getauscht, nicht dem Feld vorangestellt: `query` ist EINE Zeichenkette, aus der
+// `parseSearchQuery` Scope und Begriff liest. Wer „DoaAddForm" getippt hat und dann auf „Source"
+// klickt, meint denselben Begriff in einer anderen Quelle – ihn dabei zu verlieren, waere die
+// Einschraenkung teurer als das Tippen.
+const scopeChips = computed(() => [SEARCH_SCOPE_ALL, ...SEARCH_FACETS])
+
+// Mit Facettenleiste hat der Ruhezustand nichts mehr zu sagen: „Type to search…" steht bereits als
+// Platzhalter IM Feld, und die Chips darueber sagen genauer, was durchsucht wird. Die Zeile bleibt
+// fuer alles, was eine Auskunft ist – Fehler, laufende Suche, „nichts gefunden".
+const showEmptyNote = computed(
+  () => !props.facetBar || !!(patternError.value || codeError.value || busy.value || term.value),
+)
+
+function pickScope(facet) {
+  // Ein zweiter Klick auf die aktive Facette hebt sie auf. Ohne das kaeme man aus einer
+  // Einschraenkung nur heraus, indem man den Praefix im Feld von Hand loescht.
+  const prefix = parsed.value.scope === facet.scope ? '' : facet.prefix
+  const t = term.value
+  query.value = prefix ? (t ? `${prefix} ${t}` : prefix) : t
+  active.value = 0
+  inputEl.value?.focus()
+}
+
 // --- Darstellung ---------------------------------------------------------------------------
 const escapeHtml = (s) =>
   String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -544,6 +574,34 @@ const shortPackage = (pkg) => pkg || 'default package'
           ? 'max-h-[76vh] max-w-5xl rounded-2xl border-[var(--color-border-strong)] shadow-2xl'
           : 'sp-inline max-h-[62vh] rounded-2xl border-[var(--color-border)] shadow-xl'"
       >
+        <!-- Facettenleiste (nur mit `facet-bar`): WELCHE QUELLE gefragt wird, als Klick statt als
+             Tippwissen. Sie steht UEBER dem Feld, weil sie den Gegenstand der Eingabe bestimmt –
+             darunter laese sie sich wie ein Filter des Ergebnisses. Der aktive Chip kommt aus
+             `parsed.scope`, nicht aus einem eigenen Ref: sonst haette die Leiste einen Zustand,
+             den ein von Hand getippter Praefix (`s: foo`) still widerlegt. -->
+        <div v-if="facetBar" class="flex flex-wrap items-center gap-1 border-b border-[var(--color-border)] bg-[var(--color-surface-offset)]/40 px-2.5 py-2">
+          <button
+            v-for="f in scopeChips"
+            :key="f.scope"
+            type="button"
+            class="sp-chip flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-2xs font-semibold transition"
+            :class="parsed.scope === f.scope
+              ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] shadow-sm'
+              : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]'"
+            :title="f.hint"
+            :aria-pressed="parsed.scope === f.scope"
+            @mousedown.prevent
+            @click="pickScope(f)"
+          >
+            <Icon :icon="f.icon" class="h-3.5 w-3.5 shrink-0" />
+            {{ f.short }}
+            <code
+              v-if="f.prefix"
+              class="hidden font-mono text-3xs opacity-70 sm:inline"
+            >{{ f.prefix }}</code>
+          </button>
+        </div>
+
         <!-- Kopfzeile: Feld, Zaehler, Modus-Schalter. Die Schalter sind dieselben wie in der
              Suchleiste des Quellcode-Tabs (gleiche Icons, gleiche Bedeutung) – sie betreffen die
              Zeilensuche im Code, Namen und Artikel bleiben unberuehrt. -->
@@ -605,7 +663,7 @@ const shortPackage = (pkg) => pkg || 'default package'
 
         <!-- Facetten: stehen nicht in einem Tooltip, den niemand oeffnet, sondern erscheinen im
              leeren Feld und tragen sich per Klick selbst ein (wie im Graph-Suchfeld). -->
-        <div v-if="!query && focused" class="flex flex-wrap items-center gap-1.5 border-b border-[var(--color-border)] px-4 py-2">
+        <div v-if="!facetBar && !query && focused" class="flex flex-wrap items-center gap-1.5 border-b border-[var(--color-border)] px-4 py-2">
           <span class="font-mono text-3xs uppercase tracking-[0.12em] text-[var(--color-text-muted)]">Narrow it down</span>
           <button
             v-for="f in SEARCH_FACETS"
@@ -855,7 +913,7 @@ const shortPackage = (pkg) => pkg || 'default package'
         <!-- Leerzustand: im Modal eine ganze Flaeche, eingebettet nur eine Zeile – dort ist die
              Karte Teil der Seite und darf im Ruhezustand nicht die Hoehe von acht Treffern haben. -->
         <div
-          v-else
+          v-else-if="showEmptyNote"
           class="text-center text-[var(--color-text-muted)]"
           :class="isModal ? 'px-4 py-10 text-sm' : 'px-4 py-4 text-xs'"
         >

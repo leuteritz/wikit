@@ -18,14 +18,33 @@ const SCOPE_BY_PREFIX = {
   s: 'source',
 }
 
-// Reihenfolge = Reihenfolge der Chips im leeren Feld.
+// Reihenfolge = Reihenfolge der Chips (leeres Feld im Modal, dauerhafte Leiste auf der Landing).
+// Sortiert nach Haeufigkeit der Frage: „wie heisst die Klasse" steht vor „wo steht das im Code".
+//
+// `scope` ist die Umkehrung von SCOPE_BY_PREFIX und wird von der dauerhaften Facettenleiste
+// gebraucht: sie muss den AKTIVEN Chip markieren, und dafuer vergleicht sie gegen den Scope aus
+// `parseSearchQuery` – nicht gegen den Praefix, der im Feld auch fehlen kann (`all`).
+// `short` ist die Beschriftung dieser Leiste (ein Wort, Grossschreibung), `label` bleibt die
+// erklaerende Fassung der Chips im leeren Feld. `icon` ist ein Name aus `lib/icons.js`.
 export const SEARCH_FACETS = [
-  { prefix: 's:', label: 'source code', hint: 'lines inside .java files' },
-  { prefix: 'm:', label: 'method', hint: 'method names' },
-  { prefix: 'c:', label: 'class', hint: 'class names' },
-  { prefix: 'p:', label: 'package', hint: 'package paths' },
-  { prefix: 'a:', label: 'article', hint: 'wiki articles' },
+  { prefix: 'c:', scope: 'class', short: 'Classes', label: 'class', hint: 'class names', icon: 'lucide:braces' },
+  { prefix: 'm:', scope: 'method', short: 'Methods', label: 'method', hint: 'method names', icon: 'lucide:file-code' },
+  { prefix: 's:', scope: 'source', short: 'Source', label: 'source code', hint: 'lines inside .java files', icon: 'lucide:code-2' },
+  { prefix: 'p:', scope: 'package', short: 'Packages', label: 'package', hint: 'package paths', icon: 'lucide:package' },
+  { prefix: 'a:', scope: 'article', short: 'Articles', label: 'article', hint: 'wiki articles', icon: 'lucide:file-text' },
 ]
+
+// „Alles" ist keine Facette (es gibt keinen Praefix dafuer), aber in einer dauerhaften Leiste ist es
+// der Ruhezustand und muss anklickbar sein – sonst kaeme man aus einer Einschraenkung nur durch
+// Loeschen des Praefixes im Feld wieder heraus.
+export const SEARCH_SCOPE_ALL = {
+  prefix: '',
+  scope: 'all',
+  short: 'All',
+  label: 'everything',
+  hint: 'articles, classes, methods and source lines',
+  icon: 'lucide:layout-grid',
+}
 
 /**
  * Eingabe -> { scope, term }.
