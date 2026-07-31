@@ -89,6 +89,18 @@ const labelY = computed(() => pathData.value[2] + labelStagger.value)
 
 const d = computed(() => props.data || {})
 
+// Steht die Implementierung fest? Bei Interface und abstrakter Klasse nicht – das Label sagt es
+// mit der UML-Notation (kursiv + Typzeichen). Die Icons sind dieselben wie im Typ-Chip der Karte,
+// damit „◈" am Label und „◈" auf der Klasse dasselbe bedeuten.
+const OPEN_ICON = { interface: 'lucide:component', abstract: 'lucide:layers' }
+const openTitle = computed(() =>
+  d.value.openKind === 'interface'
+    ? `Defined by the interface ${d.value.toClass} — which implementation runs is not fixed here`
+    : d.value.openKind === 'abstract'
+      ? `Defined by the abstract class ${d.value.toClass} — a subclass may override it`
+      : '',
+)
+
 // --- Hover-Fokus ---------------------------------------------------------------------------
 // Zeigt die Maus auf einen Knoten, bleiben nur dessen eigene Kanten stehen; alles andere faellt
 // fast auf null. Der Zustand kommt aus dem Composable, NICHT ueber `data`: sonst muesste der
@@ -323,11 +335,22 @@ const pulsing = computed(() => !!d.value.isHighlighted && !isHovered.value)
       @click.stop="d.onOpen && d.onOpen(d, $event)"
     >
       <Icon v-if="d.isManual" icon="lucide:link" class="me-ic me-ic--manual" title="Manual edge" />
-      <!-- Gebuendelte Kante (>1 Methode): kompaktes Chip „n Methoden"; sonst der Methodenname. -->
-      <span v-if="d.bundleCount > 1" class="me-method me-count" title="Multiple methods – show details">
-        <Icon icon="lucide:braces" class="me-ic" />{{ d.bundleCount }} methods
+      <!-- Gebuendelte Kante (>1 Methode): kompaktes Chip „n Methoden"; sonst der Methodenname.
+           Beide tragen die Auskunft, OB die Implementierung feststeht: kursiv + Typzeichen, wenn
+           die Definition ein Interface oder abstrakt ist (UML-Notation, s. `openKindOf` im Graphen).
+           Alle Methoden einer Kante stammen aus derselben Klasse – die Aussage gilt fuer beide
+           Faelle gleich. -->
+      <span
+        v-if="d.bundleCount > 1"
+        class="me-method me-count"
+        :class="{ 'me-method--open': d.openKind }"
+        :title="openTitle || 'Multiple methods – show details'"
+      >
+        <Icon :icon="d.openKind ? OPEN_ICON[d.openKind] : 'lucide:braces'" class="me-ic" />{{ d.bundleCount }} methods
       </span>
-      <span v-else class="me-method">{{ d.method ? d.method + '()' : '—' }}</span>
+      <span v-else class="me-method" :class="{ 'me-method--open': d.openKind }" :title="openTitle || null">
+        <Icon v-if="d.openKind" :icon="OPEN_ICON[d.openKind]" class="me-ic me-ic--open" />{{ d.method ? d.method + '()' : '—' }}
+      </span>
 
       <span
         v-if="d.needsReview"
@@ -510,6 +533,19 @@ const pulsing = computed(() => !!d.value.isHighlighted && !isHovered.value)
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+/* Implementierung steht nicht fest (Interface / abstrakte Klasse) – UML setzt genau das kursiv.
+   Dazu das Typzeichen der Klassenkarte davor: die Konvention allein erkennt nicht jeder, das
+   Symbol schon. Bewusst KEINE eigene Farbe und keine andere Strichform – beide Achsen sind im
+   Graphen vergeben (Rolle/Typ/Gruppe bzw. call/uses/import). */
+.me-method--open {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-style: italic;
+}
+.me-ic--open {
+  opacity: 0.85;
 }
 /* Buendel-Chip „n Methoden": dezent abgesetzt, mit fuehrendem Icon. */
 .me-count {

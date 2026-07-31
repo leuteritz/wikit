@@ -183,6 +183,23 @@ function nodeMetric(d) {
   const unit = useFields ? 'field' : 'method'
   return { value, label: `${value} ${unit}${value === 1 ? '' : 's'}` }
 }
+// --- Wo eine Methode definiert ist, ist nicht dasselbe wie was dort laeuft --------------------
+// Ein Aufruf gegen ein Interface oder eine abstrakte Klasse sagt NICHT, welche Implementierung
+// wirklich ausgefuehrt wird – bei einer konkreten Klasse sagt er es. Das ist am Kanten-Label die
+// wichtigere Auskunft als der Methodenname allein, und UML notiert sie seit jeher gleich: kursiv
+// fuer alles, dessen Implementierung offen ist. Kursiv kostet dabei weder eine Farbe (die sind an
+// Rolle/Typ/Gruppe vergeben) noch eine Strichform (call/uses/import).
+//
+// `stereotype` ist bei Altbestand NULL (s. Datenmodell) – deshalb zusaetzlich `class_modifiers`,
+// das aus derselben Analyse stammt, aber schon laenger gefuellt wird. Ohne diesen zweiten Weg
+// saehe eine nie neu analysierte abstrakte Klasse aus wie eine konkrete.
+const OPEN_KIND_ICON = { interface: TYPE_META.interface.icon, abstract: TYPE_META.abstract.icon }
+function openKindOf(f) {
+  if (!f) return null
+  if (f.class_type === 'interface') return 'interface'
+  if (f.stereotype === 'abstract') return 'abstract'
+  return (f.class_modifiers || []).includes('abstract') ? 'abstract' : null
+}
 const TYPE_ORDER = ['class', 'interface', 'enum', 'annotation']
 // `stereotype` ist NULL, solange eine Klasse nicht neu analysiert wurde -> auf `class_type`
 // zurückfallen, und Unbekanntes auf `class`; nie undefined, sonst rendert die Karte ohne Glyph.
@@ -929,6 +946,9 @@ const layout = computed(() => {
         edgeId: single ? methods[0].edgeId : null,
         isManual: allManual,
         needsReview,
+        // Steht die Implementierung fest? `null` = ja (konkrete Klasse), sonst 'interface' bzw.
+        // 'abstract' – das Label setzt die Methode dann kursiv und stellt das Typzeichen davor.
+        openKind: openKindOf(definerFile),
         fromClass: callerFile.class_name, // Aufrufer A
         toClass: definerFile.class_name, // Definition B
         fromFileId: callerFile.id,
@@ -2609,8 +2629,15 @@ watch(
             <span class="legend-line legend-line--lit" style="background: var(--color-edge-highlight)" />
             <span><b>Highlighted</b> from a click in the source code</span>
           </div>
+          <!-- Die kursive Schreibweise am Kanten-Label ist eine Aussage, keine Typografie – ohne
+               diesen Eintrag waere sie eine huebsche Luege. -->
+          <div class="legend-row">
+            <Icon icon="lucide:component" class="h-3.5 w-3.5 shrink-0 text-[var(--color-type-interface)]" />
+            <span><b><i>italic</i></b> method — defined by an interface or abstract class</span>
+          </div>
           <p class="legend-hint">
             Arrows point from the definition to the class using it.<br />
+            An italic label means the running implementation is not fixed here.<br />
             Hover a class to isolate its connections —<br />
             each neighbour shares a colour with the line leading to it.
           </p>
