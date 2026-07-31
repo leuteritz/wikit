@@ -575,14 +575,61 @@ async function analyzeAll() {
   }
 }
 
-async function onFile(e) {
-  const list = [...(e.target.files || [])]
-  if (!list.length) return
-  filename.value = list.length === 1 ? list[0].name : `${list.length} files`
-  const texts = await Promise.all(list.map((f) => f.text()))
+// Dateien uebernehmen – aus dem Waehler im Modal wie aus einem Drop auf die Ansicht. Beide Wege
+// enden gleich: Quelltext im Editor, Modal offen, der Nutzer sieht VOR dem Speichern, was ankommt.
+async function acceptFiles(list) {
+  const java = list.filter((f) => f.name.toLowerCase().endsWith('.java'))
+  if (!java.length) {
+    if (list.length) setNotice('Only .java files can be added here.', 'error')
+    return
+  }
+  if (java.length < list.length) {
+    setNotice(`${list.length - java.length} non-Java file(s) ignored.`, 'info')
+  }
+  filename.value = java.length === 1 ? java[0].name : `${java.length} files`
+  const texts = await Promise.all(java.map((f) => f.text()))
   // Mehrere Dateien zusammenfuegen -> das Backend trennt sie wieder (package-/Typ-Grenzen).
   source.value = texts.join('\n\n')
   showNew.value = true
+}
+
+async function onFile(e) {
+  await acceptFiles([...(e.target.files || [])])
+}
+
+// --- Datei ziehen und fallen lassen, irgendwo auf dieser Ansicht ----------------------------
+// Die Landing-Seite hatte einmal eine Drop-Zone; seit sie nur noch Suche und Bilanz ist, gab es
+// im ganzen Programm keine mehr – der Dateiwaehler im Modal nimmt keinen Drop an. Statt eine
+// kleine Zone irgendwo hinzustellen, nimmt die GANZE Code-Ansicht die Datei: man zielt beim
+// Ziehen nicht, man laesst los.
+const dropActive = ref(false)
+let dragDepth = 0 // dragenter/-leave feuern auch fuer Kindelemente – ohne Zaehler flackert das Overlay
+
+// Nur echte Dateien, kein Text aus dem Editor: sonst legt sich das Overlay ueber jede Auswahl,
+// die man im Quelltext verschiebt.
+const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files')
+
+function onDragEnter(e) {
+  if (!hasFiles(e)) return
+  dragDepth++
+  dropActive.value = true
+}
+function onDragOver(e) {
+  if (!hasFiles(e)) return
+  e.preventDefault() // ohne das lehnt der Browser den Drop ab und oeffnet die Datei selbst
+  e.dataTransfer.dropEffect = 'copy'
+}
+function onDragLeave(e) {
+  if (!hasFiles(e)) return
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (!dragDepth) dropActive.value = false
+}
+async function onDrop(e) {
+  if (!hasFiles(e)) return
+  e.preventDefault()
+  dragDepth = 0
+  dropActive.value = false
+  await acceptFiles([...(e.dataTransfer?.files || [])])
 }
 
 // Erfolgreichen Batch abschliessen. Reihenfolge ist hier die eigentliche Funktion: Der GRAPH
@@ -854,7 +901,27 @@ function onResetPanels() {
 </script>
 
 <template>
-  <div class="flex h-full flex-col text-[var(--color-text)]">
+  <div
+    class="relative flex h-full flex-col text-[var(--color-text)]"
+    @dragenter="onDragEnter"
+    @dragover="onDragOver"
+    @dragleave="onDragLeave"
+    @drop="onDrop"
+  >
+    <!-- Ziel ist die ganze Ansicht, nicht ein Kaestchen darin: beim Ziehen zielt niemand, man
+         laesst los. Das Overlay sagt deshalb nur, DASS hier losgelassen werden darf – es ist keine
+         Flaeche, die man treffen muss. `pointer-events-none`, damit es den Drop nicht selbst
+         abfaengt; die Handler sitzen am Wurzelelement. -->
+    <Transition name="dropfade">
+      <div v-if="dropActive" class="drop-overlay pointer-events-none">
+        <div class="drop-card">
+          <Icon icon="lucide:upload" class="drop-icon" />
+          <p class="drop-title">Drop <span class="font-mono">.java</span> files to add</p>
+          <p class="drop-sub">Several types in one file are split automatically</p>
+        </div>
+      </div>
+    </Transition>
+
     <!-- ── Command-Bar: eine Zeile, damit die Arbeitsflaeche darunter den Raum bekommt ── -->
     <header class="shrink-0 border-b border-[var(--color-border)] px-5 py-2.5">
       <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -990,11 +1057,15 @@ function onResetPanels() {
             <span class="hidden sm:inline">{{ analyzingAll ? 'Queueing…' : 'Run AI' }}</span>
           </button>
 
-          <!-- Primaeraktion: neue Quellen einlesen. -->
+          <!-- Primaeraktion: neue Quellen einlesen. Seit die Startseite keine Drop-Zone mehr hat,
+               ist dies der einzige Eingang fuer neuen Code – er traegt deshalb sichtbar mehr
+               Gewicht als die uebrigen Knoepfe (Verlauf, Akzentschatten, Anheben beim Hover) und
+               antwortet auf eine gezogene Datei, indem er aufleuchtet (`is-armed`). -->
           <button
             type="button"
-            class="action-btn inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 text-[0.8125rem] font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)]"
-            v-tip="{ title: 'Add code', hint: 'Paste or drop .java sources — several classes at once are split automatically.' }"
+            class="add-btn action-btn inline-flex h-9 items-center gap-1.5 rounded-lg px-3.5 text-[0.8125rem] font-semibold text-[var(--color-accent-contrast)]"
+            :class="{ 'is-armed': dropActive }"
+            v-tip="{ title: 'Add code', hint: 'Paste sources — or drop .java files anywhere on this view. Several classes at once are split automatically.' }"
             @click="showNew = true"
           >
             <Icon icon="lucide:plus" class="h-4 w-4" />
@@ -1451,17 +1522,20 @@ function onResetPanels() {
               <Icon icon="lucide:search" class="mx-auto mb-2 h-6 w-6 text-[var(--color-text-muted)] opacity-40" />
               <p class="text-xs text-[var(--color-text-muted)]">No class matches “{{ appliedSearch }}”.</p>
             </template>
+            <!-- Ohne Klassen ist „Add code" die einzige sinnvolle Handlung – und seit die
+                 Startseite ihre Drop-Zone abgegeben hat, ist dies der Ort, an dem man sie erwartet.
+                 Deshalb hier keine Fussnote unter einem grauen Icon, sondern die Einladung selbst:
+                 dieselbe gestrichelte Flaeche, die auch beim Ziehen erscheint. -->
             <template v-else>
-              <Icon icon="lucide:braces" class="mx-auto mb-2 h-6 w-6 text-[var(--color-text-muted)] opacity-40" />
-              <p class="mb-3 text-xs text-[var(--color-text-muted)]">No classes analyzed yet.</p>
-              <button
-                type="button"
-                class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--color-accent)] transition hover:bg-[var(--color-surface-offset)]"
-                @click="showNew = true"
-              >
-                <Icon icon="lucide:plus" class="h-3.5 w-3.5" />
-                Add code
-              </button>
+              <div class="empty-drop">
+                <span class="empty-icon"><Icon icon="lucide:upload" class="h-5 w-5" /></span>
+                <p class="empty-title">Drop <span class="font-mono">.java</span> files here</p>
+                <p class="empty-sub">anywhere on this view — or paste sources</p>
+                <button type="button" class="add-btn empty-btn" @click="showNew = true">
+                  <Icon icon="lucide:plus" class="h-3.5 w-3.5" />
+                  Add code
+                </button>
+              </div>
             </template>
           </li>
         </ul>
@@ -2042,5 +2116,143 @@ function onResetPanels() {
 }
 .action-btn:not(:disabled):active {
   transform: scale(0.96);
+}
+
+/* --- „Add code": der einzige Eingang fuer neuen Code ----------------------------------------
+   Seit die Startseite nur noch Suche und Bilanz ist, kommt aller Quelltext hier herein. Der Knopf
+   traegt deshalb mehr Gewicht als die uebrigen: Verlauf statt Flaeche, ein Schatten in der
+   AKZENTFARBE statt eines grauen (er hebt das Element aus der Leiste, ohne einen zweiten Rahmen zu
+   brauchen), und ein leichtes Anheben beim Hover. Keine Dauer-Animation: ein Knopf, der von selbst
+   pulsiert, ist nach zwei Minuten Arbeit nur noch Unruhe. */
+.add-btn {
+  background-image: linear-gradient(
+    135deg,
+    var(--color-accent) 0%,
+    color-mix(in srgb, var(--color-accent) 78%, var(--color-warning)) 100%
+  );
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 12%),
+    0 4px 12px -4px color-mix(in srgb, var(--color-accent) 65%, transparent);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.2s ease,
+    filter 0.15s ease;
+}
+.add-btn:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+  box-shadow:
+    0 2px 4px rgb(0 0 0 / 14%),
+    0 8px 20px -6px color-mix(in srgb, var(--color-accent) 75%, transparent);
+}
+.add-btn:not(:disabled):active {
+  transform: translateY(0) scale(0.97);
+}
+/* Eine gezogene Datei ist eine Frage an genau diesen Knopf – er antwortet, indem er aufleuchtet.
+   Der Ring liegt als `box-shadow` an, damit sich die Groesse nicht aendert und die Kopfzeile
+   waehrend des Ziehens nicht umbricht. */
+.add-btn.is-armed {
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 0 3px var(--color-accent-soft),
+    0 8px 22px -6px color-mix(in srgb, var(--color-accent) 85%, transparent);
+}
+
+/* --- Drop-Overlay: die ganze Ansicht ist das Ziel ------------------------------------------
+   Kein `backdrop-filter` (s. Stolperfalle „kein filter im Graphen"): das Overlay liegt ueber der
+   gesamten Flaeche inklusive Canvas und waere damit die groesste Offscreen-Textur im Bild. Eine
+   halbdeckende Flaeche tut dasselbe, ohne den Compositor zu zwingen. */
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: color-mix(in srgb, var(--color-surface) 82%, transparent);
+}
+.drop-card {
+  display: flex;
+  max-width: 26rem;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  border-radius: 1rem;
+  border: 2px dashed var(--color-accent);
+  background: var(--color-surface-2);
+  padding: 1.75rem 2.5rem;
+  text-align: center;
+  box-shadow: 0 12px 40px -12px color-mix(in srgb, var(--color-accent) 60%, transparent);
+}
+.drop-icon {
+  height: 2rem;
+  width: 2rem;
+  margin-bottom: 0.5rem;
+  color: var(--color-accent);
+}
+.drop-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.drop-sub {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+.dropfade-enter-active,
+.dropfade-leave-active {
+  transition: opacity 0.12s ease;
+}
+.dropfade-enter-from,
+.dropfade-leave-to {
+  opacity: 0;
+}
+
+/* --- Leerzustand der Klassenliste: dieselbe Einladung, nur ruhend --------------------------- */
+.empty-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  border-radius: 0.875rem;
+  border: 1px dashed var(--color-border-strong);
+  padding: 1.25rem 0.75rem;
+}
+.empty-icon {
+  display: grid;
+  height: 2.25rem;
+  width: 2.25rem;
+  place-items: center;
+  border-radius: 999px;
+  margin-bottom: 0.5rem;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+.empty-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.empty-sub {
+  font-size: 0.6875rem;
+  color: var(--color-text-muted);
+}
+.empty-btn {
+  margin-top: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 0.5rem;
+  padding: 0.4375rem 0.875rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-accent-contrast);
+}
+@media (prefers-reduced-motion: reduce) {
+  .add-btn,
+  .add-btn:hover {
+    transition: none;
+    transform: none;
+  }
 }
 </style>
