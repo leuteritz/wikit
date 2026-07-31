@@ -770,19 +770,27 @@ function finishBatch(res) {
 // --- Fortschritt des Parse-/Speicher-Laufs ---------------------------------------------------
 // Ein Paste mit 150.000 Zeilen ist EIN Request, der je nach Maschine zehn Sekunden bis Minuten
 // laeuft. Der Server meldet seine Phasen per SSE; hier werden sie zu einer Gesamtquote verrechnet.
-// Die Gewichte sind gemessene Anteile (Parsen dominiert), keine Schaetzung ins Blaue.
-// Gewichte = gemessene Zeitanteile eines 5000-Klassen-Laufs (Parsen ~6 s, Schreiben + Kanten ~9 s).
+// Die Gewichte sind GEMESSENE Zeitanteile, keine Schaetzung – und `unit` sagt, was der Zaehler
+// unter dem Ring ueberhaupt zaehlt (er zaehlt je Phase etwas anderes).
+//
+// Gemessen ueber den SSE-Strom, 1200 Klassen auf einer Entwicklungsmaschine:
+// Erst-Import  split 0 % · parse 35 % · check 2 % · save 20 % · edges 40 %
+// inkrementell (50 neue Klassen in 1250)      parse 8 % · check 3 % · save 16 % · edges 67 %
+//
+// Die Kantenphase dominiert in BEIDEN Faellen: sie laeuft ueber ALLE Klassen der Codebasis, nicht
+// nur ueber die neuen. Sie stand hier mit 0.12 – deshalb war der Ring waehrend ihrer gesamten
+// Laufzeit weit vor der Wirklichkeit und zeigte 99 %, waehrend der Server 2.000 von 2.680 meldete.
 const PHASES = [
-  { key: 'split', label: 'Splitting sources', weight: 0.03 },
-  { key: 'parse', label: 'Parsing classes', weight: 0.42 },
-  { key: 'check', label: 'Checking duplicates', weight: 0.1 },
-  { key: 'save', label: 'Writing to database', weight: 0.33 },
-  { key: 'edges', label: 'Computing call edges', weight: 0.12 },
+  { key: 'split', label: 'Splitting sources', weight: 0.02, unit: 'sections' },
+  { key: 'parse', label: 'Parsing classes', weight: 0.33, unit: 'classes' },
+  { key: 'check', label: 'Checking duplicates', weight: 0.03, unit: 'classes' },
+  { key: 'save', label: 'Writing to database', weight: 0.2, unit: 'classes' },
+  { key: 'edges', label: 'Computing call edges', weight: 0.42, unit: 'classes scanned' },
 ]
 // Der Komplett-Reset laeuft durch denselben Apparat, hat aber eigene Phasen.
 const RESET_PHASES = [
-  { key: 'delete', label: 'Removing classes', weight: 0.85 },
-  { key: 'edges', label: 'Clearing edges', weight: 0.15 },
+  { key: 'delete', label: 'Removing classes', weight: 0.85, unit: 'classes' },
+  { key: 'edges', label: 'Clearing edges', weight: 0.15, unit: 'classes scanned' },
 ]
 const progress = ref(null) // { phase, done, total }
 const elapsedMs = ref(0)
@@ -833,13 +841,18 @@ const currentPhaseFraction = computed(() => {
   const p = progress.value
   if (!p) return 0
   if (p.phase === 'done') return 1
+  // ⚠️ Meldet die Phase einen ZAEHLER, ist er der Fortschritt – die Zeitkurve darf ihn nicht
+  // ueberschreiben. Genau das tat ein `Math.max(byTime, byCount)`: die Kantenphase laeuft bei
+  // grossen Importen minutenlang, die Kurve stand also laengst auf ihrem Deckel (90 % der Phase),
+  // waehrend der Server 2.000 von 2.680 meldete. Angezeigt wurden 99 % – die Anzeige behauptete
+  // etwas, das der Zaehler zwei Zeilen tiefer widerlegte.
+  if (p.total) return Math.max(0, Math.min(1, (p.done || 0) / p.total))
+  // Ohne Zaehler bleibt nur die Zeit: die Schreibphase blockiert synchron (better-sqlite3), von
+  // dort kommt bis zum Commit nichts. Asymptotisch und bei 90 % gedeckelt – so erreicht sie das
+  // Phasenende nie von selbst und behauptet nie, fertig zu sein.
   // `now` aus dem tickenden elapsedMs ableiten – so ist die Interpolation reaktiv.
   const now = runStartedAt + elapsedMs.value
-  // Zeitkurve laeuft IMMER mit (deckelt bei 90 % der Phase, erreicht sie also nie von selbst);
-  // meldet der Server einen weiteren Zaehlerstand, gewinnt der.
-  const byTime = (1 - Math.exp(-Math.max(0, now - phaseStartedAt.value) / PHASE_TAU_MS)) * 0.9
-  const byCount = p.total ? Math.min(1, (p.done || 0) / p.total) : 0
-  return Math.max(0, Math.min(1, Math.max(byTime, byCount)))
+  return (1 - Math.exp(-Math.max(0, now - phaseStartedAt.value) / PHASE_TAU_MS)) * 0.9
 })
 const runPercent = computed(() => {
   const p = progress.value
@@ -854,13 +867,31 @@ const runPercent = computed(() => {
 })
 // Fuellgrad EINER Phase fuer die Segmentleiste: durch = 1, laufend = ihr Bruchteil, offen = 0.
 const phaseFill = (i) => (i < phaseIndex.value ? 1 : i === phaseIndex.value ? currentPhaseFraction.value : 0)
-// Restzeit aus der bisher gemessenen Rate. Erst ab etwas Fortschritt, sonst schwankt sie wild.
+// Restzeit. Solange die laufende Phase ZAEHLT, kommt sie aus deren eigener Rate – die Gesamtquote
+// taugt dafuer nicht: sie haengt an den Phasengewichten und behauptete bei 99 % „0:03", waehrend
+// noch 680 Klassen vor dem Lauf lagen. Zur Restzeit der laufenden Phase kommt der Anteil der noch
+// offenen Phasen, hochgerechnet aus dem, was die laufende bisher gekostet hat.
+// Erst ab etwas Fortschritt, sonst schwankt die Schaetzung wild.
 const runRemainingMs = computed(() => {
+  const p = progress.value
+  if (!p || p.phase === 'done' || elapsedMs.value < 1500) return null
+  const list = activePhases.value
+  const cur = list[phaseIndex.value]
+  const done = p.done || 0
+  const phaseElapsed = runStartedAt + elapsedMs.value - phaseStartedAt.value
+  if (cur?.weight && p.total && done > 0 && phaseElapsed > 500) {
+    const phaseLeft = (phaseElapsed / done) * Math.max(0, p.total - done)
+    const restWeight = list.slice(phaseIndex.value + 1).reduce((n, x) => n + x.weight, 0)
+    return Math.round(phaseLeft + ((phaseElapsed + phaseLeft) / cur.weight) * restWeight)
+  }
+  // Zaehlerlose Phase (Schreiben) -> wie bisher aus der Gesamtquote.
   const pct = runPercent.value
-  if (pct < 5 || pct >= 100 || elapsedMs.value < 1500) return null
+  if (pct < 5 || pct >= 100) return null
   return Math.round((elapsedMs.value / pct) * (100 - pct))
 })
 const runPhaseLabel = computed(() => activePhases.value[phaseIndex.value]?.label || 'Finishing up')
+// Was der Zaehler unter dem Ring zaehlt – je Phase etwas anderes.
+const runPhaseUnit = computed(() => activePhases.value[phaseIndex.value]?.unit || '')
 
 async function analyze() {
   if (!source.value.trim()) return
@@ -1337,9 +1368,13 @@ function onResetPanels() {
                 <div class="absolute grid place-items-center">
                   <span class="font-mono text-3xl font-bold tabular-nums text-[var(--color-text)]">{{ runPercent }}<span class="text-lg text-[var(--color-text-muted)]">%</span></span>
                   <!-- Zaehler nur, solange er auch zaehlt: die Schreibphase kann keinen liefern
-                       (synchrone Transaktion), ein stehendes „0/5.000" waere irrefuehrend. -->
+                       (synchrone Transaktion), ein stehendes „0/5.000" waere irrefuehrend.
+                       Die Einheit steht dabei: je Phase zaehlt er etwas anderes, und ohne das Wort
+                       liest sich „2.000/2.680" wie die Grundlage der Prozentzahl darueber – die es
+                       nicht ist (die Phase ist nur EIN Abschnitt des Laufs). -->
                   <span v-if="progress.total && progress.done" class="mt-0.5 font-mono text-2xs tabular-nums text-[var(--color-text-muted)]">
                     {{ nf.format(progress.done) }}/{{ nf.format(progress.total) }}
+                    <span v-if="runPhaseUnit" class="opacity-70">{{ runPhaseUnit }}</span>
                   </span>
                 </div>
               </div>
