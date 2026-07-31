@@ -77,6 +77,13 @@ export interface JavaInvocation {
   // GEGENTEIL: nicht die eigene Klasse, sondern ausdruecklich die Oberklasse. Ohne diese
   // Unterscheidung waere ein `super.m()` in einer ueberschreibenden Methode ein Selbstaufruf.
   viaSuper: boolean;
+  // true, wenn der Aufruf SEHR WOHL einen Empfaenger hat, dieser aber kein aufloesbarer Bezeichner
+  // ist: `foo().m()`, `a.b.m()`, `"x".m()`, `arr[i].m()`. Das ist etwas grundlegend anderes als
+  // `receiver === null` (= gar kein Empfaenger, also `m()`/`this.m()`), auch wenn beide Felder
+  // gleich aussehen: bei einem unqualifizierten Aufruf legt Java das Ziel fest, hier dagegen
+  // haengt es an einem Typ, den wir nicht kennen. Wer beides gleich behandelt, raet ueber eine
+  // Frage, die gar nicht offen ist – s. `recomputeAutoEdges`.
+  receiverUnresolved: boolean;
   line: number;
 }
 
@@ -908,6 +915,7 @@ function extractInvocations(mNode: any): JavaInvocation[] {
     let receiver: string | null = null;
     let receiverIsNew = false;
     let viaSuper = false;
+    let receiverUnresolved = false;
 
     const dot = toks[k - 2];
     if (dot && dot.image === '.') {
@@ -915,6 +923,10 @@ function extractInvocations(mNode: any): JavaInvocation[] {
       if (r && r.image === 'super') {
         // `super.m()`: kein aufloesbarer Bezeichner, aber ausdruecklich NICHT die eigene Klasse.
         viaSuper = true;
+      } else if (r && r.image === 'this') {
+        // `this.m()` -> Selbstaufruf. Muss VOR dem Auffangzweig stehen: `this` ist ein Keyword,
+        // kein Identifier, und wuerde sonst als „Empfaenger unbekannt" gelten – womit die eigene
+        // Klasse nicht mehr als Ziel in Frage kaeme.
       } else if (r && isIdent(r)) {
         // Nur EINFACHE Empfaenger (recv.m()), keine Ketten a.b.m() (mehrdeutig).
         const before = toks[k - 4];
@@ -924,18 +936,36 @@ function extractInvocations(mNode: any): JavaInvocation[] {
           // Kette `this.<feld>.m()` ist eindeutig: `this` macht <feld> garantiert zum Feld der
           // Klasse -> als Empfaenger aufloesen (haeufiges Idiom bei injizierten Abhaengigkeiten).
           receiver = r.image;
+        } else {
+          // `a.b.m()`: der Empfaenger ist `a.b`, und dessen Typ steht hier nicht.
+          receiverUnresolved = true;
         }
       } else if (r && r.image === ')') {
         const typeName = resolveNewType(toks, k - 3);
         if (typeName) {
           receiver = typeName;
           receiverIsNew = true;
+        } else {
+          // `foo().m()` – Aufruf auf dem ERGEBNIS eines Aufrufs. Der Empfaenger ist da, sein Typ
+          // ist der Rueckgabetyp von `foo()`, den wir nicht aufloesen. Genau dieser Fall erzeugte
+          // falsche Kanten: `reg.getWorkflows().entrySet()` landete als „unqualifiziert" in der
+          // Heuristik und traf jede eigene Klasse, die zufaellig ein `entrySet()` definiert.
+          receiverUnresolved = true;
         }
+      } else {
+        // Literal, Array-Zugriff, geklammerter Ausdruck: Empfaenger vorhanden, Typ unbekannt.
+        receiverUnresolved = true;
       }
-      // r.image === 'this' -> Selbstaufruf, receiver bleibt null
     }
 
-    invocations.push({ method, receiver, receiverIsNew, viaSuper, line: nameTok.startLine ?? 1 });
+    invocations.push({
+      method,
+      receiver,
+      receiverIsNew,
+      viaSuper,
+      receiverUnresolved,
+      line: nameTok.startLine ?? 1,
+    });
   }
   return invocations;
 }

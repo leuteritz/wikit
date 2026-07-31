@@ -1166,6 +1166,13 @@ export class JavaService {
             pairHasCall.add(`${A}\u0000${B}`);
             continue;
           }
+          // Empfaenger vorhanden, aber nicht aufloesbar (`foo().m()`, `a.b.m()`, `"x".m()`): hier
+          // ist NICHTS offen, was Java fuer uns entscheiden wuerde – das Ziel haengt an einem Typ,
+          // den wir nicht kennen. Alles Weitere unten gilt ausdruecklich nur fuer unqualifizierte
+          // Aufrufe; ohne diese Zeile lief `reg.getWorkflows().entrySet()` in die Heuristik und
+          // erzeugte eine Kante zu jeder eigenen Klasse, die zufaellig `entrySet()` definiert
+          // (gemeldet an einem Interface `RequestParams` – getroffen wurde aber `Map.entrySet`).
+          if (inv.receiverUnresolved) continue;
           // Unqualifizierter Aufruf (`m(…)`, `this.m(…)`, `super.m(…)`) – in Javas Reihenfolge
           // aufloesen, statt sofort zu raten. Vorher sprang die Berechnung direkt zur Heuristik
           // und erzeugte damit Kanten fuer Aufrufe, die die Klasse selbst beantwortet.
