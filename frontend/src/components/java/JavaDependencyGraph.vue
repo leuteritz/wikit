@@ -31,7 +31,7 @@ import { useJavaGraph } from '../../composables/useJavaGraph.js'
 import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
 import { useRootScale } from '../../composables/useRootScale.js'
 import { Icon } from '../../lib/icons.js'
-import { buildPackageLevel, buildNeighbourLevel, buildEgoLevel, commonPackagePrefix, breadcrumbFor } from '../../lib/packageGraph.js'
+import { buildPackageLevel, buildNeighbourLevel, buildContextLevel, commonPackagePrefix, breadcrumbFor } from '../../lib/packageGraph.js'
 import { layoutFlat, layoutClustered, layoutRadial } from '../../lib/graphLayout.js'
 import { parseGraphQuery, matchNode, matchEdge, GRAPH_QUERY_HELP } from '../../lib/graphQuery.js'
 import BusyState from '../BusyState.vue'
@@ -385,117 +385,147 @@ const searchActive = computed(
   () => !!props.searchQuery && props.matchIds.length > 0 && props.matchIds.length <= SEARCH_GRAPH_LIMIT,
 )
 const matchIdSet = computed(() => new Set(props.matchIds))
-const searchNeighbourIds = computed(() => {
+// Nachbarn UND Beziehungszahl in einem Durchlauf: die Leiter unten braucht die Gesamtzahl auch
+// dann, wenn gerade gar keine Umgebung gezeichnet wird (Stufe 0) – sonst stuende dort „0 von 0".
+const searchContextInfo = computed(() => {
   const ids = matchIdSet.value
   const out = new Set()
-  if (!searchActive.value) return out
+  let relations = 0
+  if (!searchActive.value) return { ids: out, relations: 0 }
   for (const e of allClassEdges.value) {
-    if (ids.has(e.fromId) && !ids.has(e.toId)) out.add(e.toId)
-    if (ids.has(e.toId) && !ids.has(e.fromId)) out.add(e.fromId)
+    const from = ids.has(e.fromId)
+    const to = ids.has(e.toId)
+    if (from === to) continue // beide Treffer oder keiner -> keine Beziehung nach draussen
+    out.add(from ? e.toId : e.fromId)
+    relations++
   }
-  return out
+  return { ids: out, relations }
 })
-// Kontext hilft – bis er das Ergebnis begraebt. „26 matches + 54 related" sind 80 Karten und ein
-// Kantenfeld, in dem man die gesuchten Klassen nicht mehr findet; genau der Zustand, den die Suche
-// beseitigen sollte. Der Kontext kommt deshalb nur von selbst, solange das Bild klein bleibt, und
-// ist sonst einen Klick entfernt (Chip in der Kopfzeile). Ein Override gilt fuer GENAU diese
-// Anfrage: die naechste faengt wieder bei der Automatik an, sonst schleppt man eine Entscheidung
-// mit, die zu einem anderen Ergebnis getroffen wurde.
-const CONTEXT_AUTO_LIMIT = 30
-const contextOverride = ref(null) // null = automatisch
-watch(
-  () => props.searchQuery,
-  () => {
-    contextOverride.value = null
-  },
-)
-// --- Ein einziger Treffer ist eine andere Frage ----------------------------------------------
-// „Wo ist DoaAddForm?" verlangt nicht eine Trefferliste, sondern DIESE Klasse mit ihren
-// Beziehungen. Bisher galt auch hier der Kontext-Deckel (automatisch nur bis 30 Knoten) – bei
-// einer gut vernetzten Klasse stand deshalb genau eine Karte ohne eine einzige Kante im Bild,
-// also nichts von dem, weswegen man gesucht hat. Der Ego-Ausschnitt zeigt stattdessen ALLES,
-// was an ihr haengt: die staerksten Nachbarn als Karten, den Rest je Package zusammengefasst
-// (s. lib/packageGraph.js → buildEgoLevel).
-const EGO_CARD_LIMIT = 40 // so viele Nachbarn als einzelne Karten, danach Aggregate
-const EGO_NODE_LIMIT = 10 // hoechstens so viele Aggregatknoten
-// Schrittweise auf- und zumachen – in Stufen statt „40 oder alles". Die Leiter ist fest, weil eine
-// freie Zahl (Schieberegler) bei jedem Zwischenwert ein neues Layout kostet und niemand 63 Karten
-// als Absicht formuliert. Was ueber der Nachbarzahl liegt, wird ausgeblendet.
-const EGO_STEPS = [8, 20, 40, 80, 160, 400]
-const egoBudget = ref(EGO_CARD_LIMIT) // Kartenbudget der aktuellen Anfrage
-const egoExpanded = ref(new Set()) // aufgeklappte Nachbar-Packages (Pfad)
+const searchNeighbourIds = computed(() => searchContextInfo.value.ids)
+// --- Wieviel Umgebung? EINE Bedienung, egal ob ein Treffer oder sechsundzwanzig --------------
+//
+// Das waren lange zwei Mechaniken fuer dieselbe Frage, und man sah es: ein einzelner Treffer
+// bekam eine Stufenleiter in der Leiste links (8 · 20 · 40 · all), mehrere Treffer einen grossen
+// Schalter mittig ueber dem Graphen („Show 78 related classes"). Wer im Klassenfilter tippte,
+// wechselte damit je nach Trefferzahl die Bedienung – und der Schalter war die schlechtere
+// Haelfte: er kannte nur alles oder nichts, sprang also von 26 auf 104 Karten und damit in genau
+// das Gedraenge, das die Suche aufloesen sollte.
+//
+// Jetzt gilt fuer beides dieselbe Leiter, und ein einzelner Treffer ist nur der Sonderfall „ein
+// Zentrum" (s. lib/packageGraph.js → buildContextLevel). Vier Festlegungen:
+//
+//   * Stufe 0 ist „nur die Treffer" – das alte „Hide related", jetzt als unterste Sprosse
+//     derselben Leiter statt als eigener Schalter an eigener Stelle.
+//   * Was nicht als Karte ins Budget passt, verschwindet NICHT, sondern wird je Package zu einem
+//     Aggregatknoten – dieselbe Karte und dieselbe Kantenart wie bei der Package-Umgebung, also
+//     anklickbar, aufloesbar und im Buendel-Panel lesbar. Ein Budget, das still abschneidet,
+//     waere ein Deckel, der sich als Bild ausgibt.
+//   * Die Automatik waehlt die STARTSTUFE, nicht einen An/Aus-Zustand: so viel Umgebung, wie das
+//     Bild vertraegt (CONTEXT_AUTO_LIMIT). Frueher war dieselbe Schwelle ein Boolean – bei 5
+//     Treffern und 40 Nachbarn hiess das „gar nichts", heute sind es die 20 staerksten.
+//   * Ein einzelner Treffer beginnt bei EGO_CARD_LIMIT statt bei der Automatik: dort IST die
+//     Umgebung die Antwort auf die Frage, und eine Karte ohne Kanten waere gar keine.
+// Der Override gilt fuer GENAU diese Anfrage – die naechste beginnt wieder bei der Automatik,
+// sonst schleppt man eine Entscheidung mit, die zu einem anderen Ergebnis getroffen wurde.
+const CONTEXT_AUTO_LIMIT = 30 // so gross darf das Bild von selbst werden (Treffer + Umgebung)
+const EGO_CARD_LIMIT = 40 // Startbudget bei genau einem Treffer
+const CONTEXT_NODE_LIMIT = 10 // hoechstens so viele Aggregatknoten
+// Feste Stufen statt Schieberegler: jeder Zwischenwert kostet ein dagre-Layout, und niemand
+// formuliert „63 Karten" als Absicht. Was ueber der Nachbarzahl liegt, wird ausgeblendet.
+const CONTEXT_STEPS = [0, 8, 20, 40, 80, 160, 400]
 
+const contextOverride = ref(null) // null = automatisch, sonst die gewaehlte Stufe
+const contextExpanded = ref(new Set()) // aufgeklappte Nachbar-Packages (Pfad)
+
+// Genau ein Treffer -> Stern mit Mitte (nur dafuer taugt das radiale Layout).
 const egoCenterId = computed(() =>
   searchActive.value && props.matchIds.length === 1 ? props.matchIds[0] : null,
 )
-// Jede neue Suche faengt bei der Voreinstellung an: eine mitgeschleppte Aufklapp-Entscheidung
-// gehoerte zu einem anderen Ergebnis (dieselbe Regel wie beim Kontext-Override).
+// Jede neue Suche faengt bei der Voreinstellung an: eine mitgeschleppte Stufe oder ein
+// aufgeklapptes Package gehoerten zu einem anderen Ergebnis.
 watch([() => props.searchQuery, egoCenterId], () => {
-  egoBudget.value = EGO_CARD_LIMIT
-  egoExpanded.value = new Set()
+  contextOverride.value = null
+  contextExpanded.value = new Set()
 })
-const egoLevel = computed(() =>
-  buildEgoLevel({
-    files: props.files || [],
-    classEdges: allClassEdges.value,
-    centerId: egoCenterId.value,
-    cardLimit: egoBudget.value,
-    nodeLimit: EGO_NODE_LIMIT,
-    rootPath: rootPath.value,
-    expandedPaths: egoExpanded.value,
-  }),
-)
-// Stufen, die es bei DIESER Klasse ueberhaupt gibt: alles oberhalb der Nachbarzahl waere derselbe
-// Ausschnitt unter anderem Namen. Die letzte Stufe ist immer „alle".
-const egoSteps = computed(() => {
-  const total = egoLevel.value.neighbours
-  const steps = EGO_STEPS.filter((s) => s < total)
-  return [...steps, total]
+
+// Stufen, die es bei DIESEM Ergebnis ueberhaupt gibt: alles oberhalb der Nachbarzahl waere
+// derselbe Ausschnitt unter anderem Namen. Die letzte Stufe ist immer „alle".
+const contextSteps = computed(() => {
+  const total = searchContextInfo.value.ids.size
+  return [...CONTEXT_STEPS.filter((s) => s < total), total]
 })
-function stepEgo(dir) {
-  const steps = egoSteps.value
-  const i = steps.findIndex((s) => s >= egoBudget.value)
-  const next = steps[Math.min(steps.length - 1, Math.max(0, (i < 0 ? steps.length - 1 : i) + dir))]
-  if (next != null) egoBudget.value = next
+const autoBudget = computed(() => {
+  const total = searchContextInfo.value.ids.size
+  if (!total) return 0
+  if (props.matchIds.length === 1) return Math.min(EGO_CARD_LIMIT, total)
+  // Die groesste Stufe, die neben den Treffern noch ins Bild passt.
+  const room = CONTEXT_AUTO_LIMIT - matchIdSet.value.size
+  return contextSteps.value.reduce((best, s) => (s <= room ? s : best), 0)
+})
+const contextBudget = computed(() => contextOverride.value ?? autoBudget.value)
+function setContextBudget(n) {
+  contextOverride.value = n
 }
-// Ein Aggregat aufklappen heisst: DIESES Package als Karten zeigen. Der Weg zurueck ist der Chip in
-// der Leiste – ein zweiter Klick auf den Knoten geht nicht, weil er danach nicht mehr da ist.
-function toggleEgoPackage(path) {
-  const next = new Set(egoExpanded.value)
+function stepContext(dir) {
+  const steps = contextSteps.value
+  const i = steps.findIndex((s) => s >= contextBudget.value)
+  const next = steps[Math.min(steps.length - 1, Math.max(0, (i < 0 ? steps.length - 1 : i) + dir))]
+  if (next != null) contextOverride.value = next
+}
+// Ein Aggregat aufklappen heisst: DIESES Package als Karten zeigen. Der Weg zurueck ist der Chip
+// in der Leiste – ein zweiter Klick auf den Knoten geht nicht, weil er danach nicht mehr da ist.
+function toggleContextPackage(path) {
+  const next = new Set(contextExpanded.value)
   const key = path || '(default)'
   if (next.has(key)) next.delete(key)
   else next.add(key)
-  egoExpanded.value = next
+  contextExpanded.value = next
 }
-const egoActive = computed(() => egoCenterId.value != null && egoLevel.value.neighbours > 0)
 
-const showSearchContext = computed(() => {
-  if (!searchActive.value) return false
-  // Im Ego-Ausschnitt IST die Umgebung die Antwort – sie ist keine Zugabe, die man abwaegt.
-  if (egoActive.value) return true
-  if (contextOverride.value !== null) return contextOverride.value
-  return matchIdSet.value.size + searchNeighbourIds.value.size <= CONTEXT_AUTO_LIMIT
-})
+// Umgebung ueberhaupt vorhanden -> die Leiste zeigt die Leiter (auch auf Stufe 0, sonst gaebe es
+// keinen Weg zurueck nach oben).
+const contextAvailable = computed(() => searchActive.value && searchContextInfo.value.ids.size > 0)
+// Umgebung im Bild -> Karten und Aggregate werden gebaut.
+const contextShown = computed(() => contextAvailable.value && contextBudget.value > 0)
+const EMPTY_CONTEXT = {
+  cardIds: new Set(),
+  nodes: [],
+  edges: [],
+  keyByFileId: new Map(),
+  linkedIds: new Set(),
+  neighbours: 0,
+  relations: 0,
+  aggregatedClasses: 0,
+  hiddenPackages: 0,
+  hiddenRelations: 0,
+  cardCount: 0,
+  expandedPaths: [],
+}
+const contextLevel = computed(() =>
+  contextShown.value
+    ? buildContextLevel({
+        files: props.files || [],
+        classEdges: allClassEdges.value,
+        centerIds: matchIdSet.value,
+        cardLimit: contextBudget.value,
+        nodeLimit: CONTEXT_NODE_LIMIT,
+        rootPath: rootPath.value,
+        expandedPaths: contextExpanded.value,
+      })
+    : EMPTY_CONTEXT,
+)
+
 const searchScope = computed(() => {
   if (!searchActive.value) return null
   const ids = matchIdSet.value
-  const neighbours = searchNeighbourIds.value
-  if (egoActive.value) {
-    const ego = egoLevel.value
-    const wanted = new Set([...ids, ...ego.cardIds])
-    return {
-      files: (props.files || []).filter((f) => wanted.has(f.id)),
-      matches: ids.size,
-      related: ego.neighbours,
-      ego,
-    }
-  }
-  const wanted = showSearchContext.value ? new Set([...ids, ...neighbours]) : ids
+  const wanted = new Set([...ids, ...contextLevel.value.cardIds])
   return {
     files: (props.files || []).filter((f) => wanted.has(f.id)),
     matches: ids.size,
-    related: neighbours.size,
-    ego: null,
+    // „related" ist die GESAMTZAHL der Nachbarn, nicht die gerade gezeichnete: die Leiste sagt
+    // „20 von 78", und 78 muss dieselbe Zahl sein, egal auf welcher Stufe man steht.
+    related: searchContextInfo.value.ids.size,
+    relations: searchContextInfo.value.relations,
   }
 })
 
@@ -529,11 +559,11 @@ const insideKeys = computed(() =>
   packageMode.value ? level.value.keyByFileId : new Map(scopeFiles.value.map((f) => [f.id, `c:${f.id}`])),
 )
 const neighbourhood = computed(() =>
-  // Der Ego-Ausschnitt bringt seine eigene Umgebung mit (Aggregate der ueberzaehligen Nachbarn) –
+  // Der Suchmodus bringt seine eigene Umgebung mit (Aggregate der ueberzaehligen Nachbarn) –
   // dieselbe Form wie hier, damit Kanten, Farben, Legende und das Buendel-Panel unveraendert damit
   // arbeiten. Deshalb ein Zweig und keine zweite Rendering-Strecke.
-  egoActive.value
-    ? egoLevel.value
+  contextShown.value
+    ? contextLevel.value
     : buildNeighbourLevel({
         files: props.files || [],
         classEdges: allClassEdges.value,
@@ -1040,12 +1070,15 @@ const layout = computed(() => {
   // genutzten Klassen dazu, entstehen dagegen echte Gruppen (ein Treffer und seine Nutzer liegen
   // oft im selben Package), und dann traegt die Zone. Einzelgaenger bleiben auch dort ungerahmt
   // (minGroupSize) – genau der Fall, der die Gruppierung hier frueher gekostet hat.
-  const searchClustered = searchActive.value && showSearchContext.value
+  const searchClustered = searchActive.value && contextShown.value
   const clustered =
     !packageMode.value && groupByPackage.value && distinctPkgs > 1 && (!searchActive.value || searchClustered)
-  // Der Ego-Ausschnitt ist ein Stern – dort hat dagre nichts zu schichten (jede Kante geht zur
-  // Mitte) und legte alle Nachbarn in EINE Reihe. Ringe statt Reihen, s. layoutRadial.
-  const placed = egoActive.value
+  // Radial gilt nur beim EINZELNEN Treffer: dort ist der Ausschnitt ein Stern, dagre hat nichts zu
+  // schichten (jede Kante geht zur Mitte) und legte alle Nachbarn in EINE Reihe. Bei mehreren
+  // Treffern gibt es keine Mitte – ein Ring um irgendeinen von ihnen waere eine erfundene
+  // Rangfolge, dort schichtet dagre (geclustert, s. o.) richtig.
+  const radial = contextShown.value && egoCenterId.value != null
+  const placed = radial
     ? layoutRadial({
         centerId: `c:${egoCenterId.value}`,
         ring: layoutNodes.filter((n) => n.id !== `c:${egoCenterId.value}` && n.id.startsWith('c:')),
@@ -1449,11 +1482,11 @@ function onNodeClick({ node }) {
   // Ein Nachbar-Aggregat traegt keinen eigenen Inhalt, sondern einen Ort: der Klick oeffnet ihn –
   // damit ist der Weg aus einem Package zu seinem Gegenueber ein einziger Klick.
   if (node?.type === 'pkg') {
-    // Im Ego-Ausschnitt steht ein Aggregat fuer „und diese hier haengen auch dran". Ein Klick
-    // loest genau DAS auf – schrittweise, statt in eine andere Ebene zu springen und den
-    // Ausschnitt zu verlassen, um den es gerade geht.
-    if (egoActive.value && node.data?.related) {
-      toggleEgoPackage(node.data.path || '')
+    // Im Suchmodus steht ein Aggregat fuer „und diese hier haengen auch dran". Ein Klick loest
+    // genau DAS auf – schrittweise, statt in eine andere Ebene zu springen und den Ausschnitt zu
+    // verlassen, um den es gerade geht.
+    if (contextShown.value && node.data?.related) {
+      toggleContextPackage(node.data.path || '')
       return
     }
     drillTo(node.data?.path || '')
@@ -2113,10 +2146,10 @@ watch(
             <Icon icon="lucide:x" class="h-3.5 w-3.5" />
           </button>
         </div>
-        <div v-if="!egoActive" class="vf-rail-stats">
+        <div class="vf-rail-stats">
           <span class="vf-crumb-count">{{ searchScope.matches }} match{{ searchScope.matches === 1 ? '' : 'es' }}</span>
-          <span v-if="searchScope.related && showSearchContext" class="vf-crumb-count">
-            +{{ searchScope.related }} related
+          <span v-if="searchScope.relations" class="vf-crumb-count">
+            {{ searchScope.relations }} relation{{ searchScope.relations === 1 ? '' : 's' }}
           </span>
         </div>
       </div>
@@ -2187,78 +2220,82 @@ watch(
         </div>
       </div>
 
-      <!-- 2) Ego-Abschnitt: Bilanz der gefundenen Klasse + schrittweises Auf- und Zumachen.
-              Bei 132 Nachbarn ist weder „alle" noch „vierzig" die Antwort – die Frage ist, wieviel
-              man gerade sehen WILL. Stufenleiter statt Schieberegler: jeder Schritt kostet genau
-              ein Layout und ist ruecknehmbar. -->
-      <div v-if="egoActive" class="vf-rail-sec">
+      <!-- 2) Umgebung: EINE Leiter fuer einen wie fuer sechsundzwanzig Treffer. Bei 132 Nachbarn
+              ist weder „alle" noch „vierzig" die Antwort – die Frage ist, wieviel man gerade sehen
+              WILL. Stufen statt Schieberegler: jeder Schritt kostet genau ein Layout und ist
+              ruecknehmbar. Die Leiste steht auch auf Stufe 0 da, sonst gaebe es keinen Weg
+              zurueck nach oben. -->
+      <div v-if="contextAvailable" class="vf-rail-sec">
         <div class="vf-rail-head">
           <Icon icon="lucide:git-fork" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
-          <span class="vf-ego-label">
-            {{ egoLevel.relations }} relation{{ egoLevel.relations === 1 ? '' : 's' }}
+          <span class="vf-ego-label">Context</span>
+          <span class="vf-ego-count">
+            <b>{{ contextLevel.cardCount }}</b>/{{ searchScope.related }}
           </span>
         </div>
         <div class="vf-rail-stats">
-          <span class="vf-crumb-count">{{ egoLevel.neighbours }} class{{ egoLevel.neighbours === 1 ? '' : 'es' }}</span>
-          <span v-if="egoLevel.nodes.length" class="vf-crumb-count">
-            {{ egoLevel.aggregatedClasses }} in {{ egoLevel.nodes.length }} pkg
+          <span class="vf-crumb-count">
+            {{ contextBudget ? 'related classes' : 'matches only' }}
+          </span>
+          <span v-if="contextLevel.nodes.length" class="vf-crumb-count">
+            {{ contextLevel.aggregatedClasses }} in {{ contextLevel.nodes.length }} pkg
           </span>
           <span
-            v-if="egoLevel.hiddenPackages"
+            v-if="contextLevel.hiddenPackages"
             class="vf-crumb-warn"
-            v-tip="{ title: `${egoLevel.hiddenPackages} more packages`, hint: `${egoLevel.hiddenRelations} further relations are not drawn — raise the step or open a package.` }"
+            v-tip="{ title: `${contextLevel.hiddenPackages} more packages`, hint: `${contextLevel.hiddenRelations} further relations are not drawn — raise the step or open a package.` }"
           >
             <Icon icon="lucide:alert-triangle" class="h-3 w-3" />
-            +{{ egoLevel.hiddenPackages }}
+            +{{ contextLevel.hiddenPackages }}
           </span>
         </div>
 
-        <template v-if="egoLevel.neighbours > EGO_STEPS[0]">
-          <div class="vf-ego-step">
-            <button
-              type="button"
-              class="vf-ego-btn"
-              :disabled="egoBudget <= egoSteps[0]"
-              v-tip="{ title: 'Show fewer', hint: 'One step down — the rest folds back into its packages.' }"
-              @click="stepEgo(-1)"
-            >
-              <Icon icon="lucide:minus" class="h-3.5 w-3.5" />
-            </button>
-            <span class="vf-ego-count">
-              <b>{{ egoLevel.cardCount }}</b>/{{ egoLevel.neighbours }}
-            </span>
-            <button
-              type="button"
-              class="vf-ego-btn"
-              :disabled="egoLevel.cardCount >= egoLevel.neighbours"
-              v-tip="{ title: 'Show more', hint: 'One step up — more neighbours become single cards.' }"
-              @click="stepEgo(1)"
-            >
-              <Icon icon="lucide:plus" class="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <!-- Die Stufen selbst: wer weiss, wieviel er sehen will, springt direkt hin. -->
-          <div class="vf-ego-ticks">
-            <button
-              v-for="s in egoSteps"
-              :key="s"
-              type="button"
-              class="vf-ego-tick"
-              :class="{ 'is-on': egoBudget === s }"
-              @click="egoBudget = s"
-            >{{ s === egoLevel.neighbours ? 'all' : s }}</button>
-          </div>
-        </template>
+        <div class="vf-ego-step">
+          <button
+            type="button"
+            class="vf-ego-btn"
+            :disabled="contextBudget <= contextSteps[0]"
+            v-tip="{ title: 'Show less', hint: 'One step down — the rest folds back into its packages.' }"
+            @click="stepContext(-1)"
+          >
+            <Icon icon="lucide:minus" class="h-3.5 w-3.5" />
+          </button>
+          <span class="vf-ego-hint">{{ contextBudget ? `${contextBudget === searchScope.related ? 'all' : contextBudget} as cards` : 'no context' }}</span>
+          <button
+            type="button"
+            class="vf-ego-btn"
+            :disabled="contextBudget >= searchScope.related"
+            v-tip="{ title: 'Show more', hint: 'One step up — more neighbours become single cards.' }"
+            @click="stepContext(1)"
+          >
+            <Icon icon="lucide:plus" class="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <!-- Die Stufen selbst: wer weiss, wieviel er sehen will, springt direkt hin. „0" ist das
+             frühere „Hide related" – jetzt die unterste Sprosse derselben Leiter. -->
+        <div class="vf-ego-ticks">
+          <button
+            v-for="s in contextSteps"
+            :key="s"
+            type="button"
+            class="vf-ego-tick"
+            :class="{ 'is-on': contextBudget === s }"
+            v-tip="s === 0
+              ? { title: 'Matches only', hint: 'Hides the surrounding classes entirely.' }
+              : { title: `${s === searchScope.related ? 'All' : s} neighbour${s === 1 ? '' : 's'} as cards`, hint: 'The rest stays in the picture as one node per package.' }"
+            @click="setContextBudget(s)"
+          >{{ s === searchScope.related ? 'all' : s }}</button>
+        </div>
 
         <!-- Aufgeklappte Packages: der Chip IST der Rueckweg – ihr Aggregatknoten ist ja weg. -->
-        <div v-if="egoLevel.expandedPaths.length" class="vf-rail-chips">
+        <div v-if="contextLevel.expandedPaths.length" class="vf-rail-chips">
           <button
-            v-for="p in egoLevel.expandedPaths"
+            v-for="p in contextLevel.expandedPaths"
             :key="p"
             type="button"
             class="vf-ego-chip"
             v-tip="{ title: `Collapse ${p}`, hint: 'Folds these classes back into one aggregate node.' }"
-            @click="toggleEgoPackage(p)"
+            @click="toggleContextPackage(p)"
           >
             <Icon icon="lucide:package-open" class="h-3 w-3 shrink-0" />
             <span class="truncate">{{ p }}</span>
@@ -2326,31 +2363,10 @@ watch(
       </div>
     </div>
 
-    <!-- Der Kontext ist eine ENTSCHEIDUNG, keine Nebenwirkung – und als Chip in der Kopfzeile war
-         sie weder zu sehen noch aus sich heraus zu verstehen. Deshalb eine eigene Schaltflaeche
-         mittig ueber dem Graphen: Beschriftung sagt, was passiert, die Zeile darunter, was das
-         bedeutet. Sie steht nur da, wenn es ueberhaupt Umgebung gibt. -->
-    <!-- Im Ego-Ausschnitt gibt es nichts abzuwaegen: dort IST die Umgebung die Antwort. -->
-    <button
-      v-if="files.length && searchActive && !egoActive && searchScope.related"
-      type="button"
-      class="vf-ctx-toggle"
-      :class="{ 'is-on': showSearchContext }"
-      @click="contextOverride = !showSearchContext"
-    >
-      <Icon :icon="showSearchContext ? 'lucide:eye-off' : 'lucide:eye'" class="vf-ctx-icon" />
-      <span class="vf-ctx-text">
-        <span class="vf-ctx-title">
-          {{ showSearchContext ? 'Hide' : 'Show' }} {{ searchScope.related }} related class{{ searchScope.related === 1 ? '' : 'es' }}
-        </span>
-        <span class="vf-ctx-sub">
-          {{ showSearchContext
-            ? `Back to the ${searchScope.matches} match${searchScope.matches === 1 ? '' : 'es'} on their own`
-            : `Classes that use or are used by the ${searchScope.matches} match${searchScope.matches === 1 ? '' : 'es'}` }}
-        </span>
-      </span>
-    </button>
-
+    <!-- Hier stand die Schaltflaeche „Show N related classes" mittig ueber dem Graphen. Sie ist in
+         die Leiste links gewandert und dort zur Stufenleiter geworden: dieselbe Frage wie beim
+         einzelnen Treffer, deshalb dieselbe Bedienung an derselben Stelle – und statt „alles oder
+         nichts" eine Stufe, die zum Ergebnis passt. -->
 
     <!-- Canvas-Chrome unten: Werkzeuge links, Legende rechts. Beide schweben am unteren Rand,
          damit die obere Canvas-Haelfte (wo dagre die Wurzelknoten setzt) frei bleibt. -->
@@ -2779,6 +2795,16 @@ watch(
   font-weight: 600;
   color: var(--color-text);
 }
+/* Zwischen den beiden Richtungsknoepfen steht, was die aktuelle Stufe BEDEUTET („20 as cards",
+   „no context") – die reine Zahl steht schon in der Kopfzeile des Abschnitts, und sie zweimal
+   nebeneinander zu zeigen hiesse, dieselbe Auskunft fuer zwei zu halten. */
+.vf-ego-hint {
+  min-width: 5.5rem;
+  text-align: center;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+}
 /* Die Stufen als Skala: wer weiss, wieviel er sehen will, springt direkt hin. */
 .vf-ego-ticks {
   display: flex;
@@ -3050,66 +3076,10 @@ watch(
   color: var(--color-accent);
 }
 
-/* --- Umgebung im Suchmodus ein-/ausblenden ---------------------------------------------------
-   Eigene Schaltflaeche statt eines Chips in der Kopfzeile: die Frage „will ich die Klassen um die
-   Treffer herum sehen?" ist die einzige Entscheidung, die der Suchmodus verlangt – sie gehoert
-   nicht in eine Reihe mit Zaehlern. Mittig oben, weil dort der Blick beginnt; deckender
-   Hintergrund statt backdrop-filter (s. Stolperfalle „kein filter im Graphen"). */
-.vf-ctx-toggle {
-  position: absolute;
-  top: 54px;
-  left: 50%;
-  z-index: 6;
-  display: flex;
-  max-width: calc(100% - 24px);
-  transform: translateX(-50%);
-  align-items: center;
-  gap: 10px;
-  border-radius: 12px;
-  border: 1px solid var(--color-accent);
-  background: var(--color-surface-2);
-  padding: 8px 16px 8px 12px;
-  box-shadow: 0 6px 18px rgb(0 0 0 / 0.14);
-  text-align: left;
-  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
-}
-.vf-ctx-toggle:hover {
-  background: var(--color-accent-soft);
-  box-shadow: 0 8px 22px rgb(0 0 0 / 0.18);
-}
-/* Ist die Umgebung bereits im Bild, ist der Knopf nur noch der Rueckweg – dann tritt er zurueck,
-   statt weiter zum Klicken einzuladen. */
-.vf-ctx-toggle.is-on {
-  border-color: var(--color-border-strong);
-}
-.vf-ctx-icon {
-  width: 1.25rem;
-  height: 1.25rem;
-  flex-shrink: 0;
-  color: var(--color-accent);
-}
-.vf-ctx-toggle.is-on .vf-ctx-icon {
-  color: var(--color-text-muted);
-}
-.vf-ctx-text {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-}
-.vf-ctx-title {
-  font-size: 0.875rem;
-  font-weight: 700;
-  line-height: 1.3;
-  color: var(--color-text);
-}
-.vf-ctx-sub {
-  overflow: hidden;
-  font-size: 0.75rem;
-  line-height: 1.35;
-  color: var(--color-text-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* Die Schaltflaeche `.vf-ctx-toggle` („Show N related classes", mittig ueber dem Graphen) ist
+   entfallen: dieselbe Frage beantwortet jetzt die Stufenleiter in der Leiste links, fuer einen
+   Treffer wie fuer sechsundzwanzig. Zwei Bedienelemente an zwei Stellen fuer eine Frage waren der
+   Bruch, den man beim Tippen im Klassenfilter gesehen hat. */
 
 /* Bilanz der Umgebung: eigene Farbe (Aggregat-Ton), damit sie nicht als Teil der Klassenzahl des
    Ausschnitts gelesen wird – sie zaehlt genau das, was AUSSERHALB liegt. */

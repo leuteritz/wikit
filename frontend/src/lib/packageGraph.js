@@ -286,26 +286,34 @@ export function buildNeighbourLevel({
   }
 }
 
-// --- Ego-Ausschnitt: EINE Klasse und alles, was an ihr haengt ---------------------------------
+// --- Umgebung eines Suchergebnisses: die Treffer und alles, was an ihnen haengt ---------------
 //
-// Der Fall „ich suche eine Klasse" ist ein anderer als „ich suche ein Wort": gefragt ist nicht die
-// Trefferliste, sondern DIESE Klasse mit ihren Beziehungen. Die Suche zeigte dafuer bisher nur den
-// Treffer, sobald er viele Nachbarn hatte (der Kontext kam automatisch erst bis 30 Knoten) – also
-// genau dann nichts, wenn es am meisten zu sehen gaebe: eine Karte ohne eine einzige Kante.
+// EINE Funktion fuer zwei Faelle, die lange zwei waren: „wo ist DoaAddForm?" (ein Treffer) und
+// „wo kommt `rules` vor?" (26 Treffer). Beide stellen dieselbe Frage – wieviel Umgebung will ich
+// sehen? – und wurden verschieden beantwortet: der eine gestuft (8 · 20 · 40 · all), der andere
+// binaer (alle 78 Nachbarn oder keiner), an zwei verschiedenen Stellen der Oberflaeche. Der
+// binaere war dabei der schlechtere: „Show 78 related" sprang von 26 auf 104 Karten, also genau
+// in das Gedraenge, das die Suche beseitigen sollte. Ein einzelner Treffer ist seither nur der
+// Sonderfall „ein Zentrum" – deshalb `centerIds` und nicht `centerId`.
 //
-// Diese Funktion baut den Ausschnitt in zwei Stufen, weil eine Darstellung nicht beides kann:
+// Der Ausschnitt entsteht in zwei Stufen, weil eine Darstellung nicht beides kann:
 //   * die staerksten `cardLimit` Nachbarn als EINZELNE Klassenkarten (ihre Kanten tragen
 //     Methodennamen und fuehren bis in den Code),
 //   * alle weiteren zusammengefasst je Package als Aggregatknoten mit Aggregatkante – bei 137
-//     Nachbarn ist „util · 41 relations" eine Aussage, 137 Karten sind es nicht.
-// „Staerkster" Nachbar = Summe der Kantengewichte: ein Aufruf wiegt mehr als eine Typnutzung, die
-// mehr als ein Import. Wer im Bild bleibt, soll der sein, mit dem die Klasse wirklich arbeitet.
-const EGO_KIND_WEIGHT = { call: 3, uses: 2, import: 1 }
+//     Nachbarn ist „util · 41 relations" eine Aussage, 137 Karten sind es nicht. Damit ist der
+//     Rest auch nie stillschweigend fort: was nicht als Karte passt, steht als Package im Bild.
+// „Staerkster" Nachbar = Summe der Kantengewichte zu den ZENTREN: ein Aufruf wiegt mehr als eine
+// Typnutzung, die mehr als ein Import. Wer im Bild bleibt, soll der sein, mit dem die gefundenen
+// Klassen wirklich arbeiten.
+const CONTEXT_KIND_WEIGHT = { call: 3, uses: 2, import: 1 }
 
-export function buildEgoLevel({
+export function buildContextLevel({
   files = [],
   classEdges = [],
-  centerId = null,
+  // Die Zentren des Ausschnitts = die Treffer. Ein Eintrag ergibt den Ego-Stern, mehrere den
+  // Suchmodus mit Umgebung. Kanten ZWISCHEN Zentren sind keine Umgebung und zaehlen hier nirgends
+  // mit – sie stehen ohnehin im Bild, weil beide Enden Treffer sind.
+  centerIds = null,
   cardLimit = 40,
   nodeLimit = 10,
   rootPath = '',
@@ -327,21 +335,31 @@ export function buildEgoLevel({
     hiddenRelations: 0,
   }
   const byId = new Map(files.map((f) => [f.id, f]))
-  if (centerId == null || !byId.has(centerId)) return empty
+  const centers = new Set([...(centerIds || [])].filter((id) => byId.has(id)))
+  if (!centers.size) return empty
 
   // 1) Nachbarn sammeln und gewichten.
   // `provides`/`consumes` aus Sicht des NACHBARN – dieselbe Lesart wie bei den Umgebungs-Knoten
   // eines Packages (Pfeil nach unten = liefert an den Ausschnitt, nach oben = nutzt ihn).
-  const stats = new Map() // fileId -> { weight, relations, provides, consumes }
+  // `byCenter` haelt fest, an WELCHEM Zentrum ein Nachbar haengt: bei mehreren Treffern muss die
+  // Aggregatkante von dem Treffer ausgehen, der die Beziehung wirklich hat – eine Sammelkante von
+  // irgendeinem waere eine Behauptung, die das Buendel-Panel nicht aufloesen koennte.
+  const stats = new Map() // fileId -> { weight, relations, provides, consumes, byCenter }
   let relations = 0
   for (const e of classEdges) {
-    const other = e.fromId === centerId ? e.toId : e.toId === centerId ? e.fromId : null
-    if (other == null || other === centerId || !byId.has(other)) continue
-    const s = stats.get(other) || { weight: 0, relations: 0, provides: 0, consumes: 0 }
-    s.weight += EGO_KIND_WEIGHT[e.kind] ?? 1
+    const fromIsCenter = centers.has(e.fromId)
+    const toIsCenter = centers.has(e.toId)
+    // Beide oder keins: keine Beziehung zwischen Ausschnitt und Umgebung.
+    if (fromIsCenter === toIsCenter) continue
+    const center = fromIsCenter ? e.fromId : e.toId
+    const other = fromIsCenter ? e.toId : e.fromId
+    if (!byId.has(other)) continue
+    const s = stats.get(other) || { weight: 0, relations: 0, provides: 0, consumes: 0, byCenter: new Map() }
+    s.weight += CONTEXT_KIND_WEIGHT[e.kind] ?? 1
     s.relations++
-    if (e.toId === centerId) s.provides++
+    if (toIsCenter) s.provides++
     else s.consumes++
+    s.byCenter.set(center, (s.byCenter.get(center) || 0) + 1)
     stats.set(other, s)
     relations++
   }
@@ -394,6 +412,8 @@ export function buildEgoLevel({
         consumes: 0,
         relations: 0,
         related: true,
+        // Beziehungen dieses Aggregats je Zentrum -> daraus entstehen unten die Aggregatkanten.
+        byCenter: new Map(),
       }
       groups.set(key, g)
     }
@@ -402,6 +422,7 @@ export function buildEgoLevel({
     g.relations += s.relations
     g.provides += s.provides
     g.consumes += s.consumes
+    for (const [c, n] of s.byCenter) g.byCenter.set(c, (g.byCenter.get(c) || 0) + n)
   }
 
   // Nach Beziehungszahl deckeln: zehn Aggregate sind noch ein Bild, dreissig sind wieder eine
@@ -413,13 +434,19 @@ export function buildEgoLevel({
 
   return {
     cardIds,
-    nodes: kept,
-    edges: kept.map((n) => ({
-      id: `ego:${centerId}:${n.id}`,
-      source: `c:${centerId}`,
-      target: n.id,
-      count: n.relations,
-    })),
+    // `byCenter` ist Bauwissen und gehoert nicht in die Knotendaten – die Karte rendert daraus
+    // nichts, und ein durchgereichtes Feld wird irgendwann als Zusage gelesen.
+    nodes: kept.map(({ byCenter, ...n }) => n),
+    // Eine Kante je (Zentrum, Aggregat): bei einem Treffer ist das die bisherige Sternkante, bei
+    // mehreren haengt jedes Package an genau den Treffern, mit denen es wirklich zu tun hat.
+    edges: kept.flatMap((n) =>
+      [...n.byCenter].map(([center, count]) => ({
+        id: `ego:${center}:${n.id}`,
+        source: `c:${center}`,
+        target: n.id,
+        count,
+      })),
+    ),
     keyByFileId: new Map([...keyByFileId].filter(([, key]) => keptIds.has(key))),
     linkedIds: new Set(), // Nachbarkarten kommen im Ego-Modus aus `cardIds`, nicht von hier
     neighbours: stats.size,
