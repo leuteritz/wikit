@@ -341,9 +341,15 @@ export function buildContextLevel({
   // 1) Nachbarn sammeln und gewichten.
   // `provides`/`consumes` aus Sicht des NACHBARN – dieselbe Lesart wie bei den Umgebungs-Knoten
   // eines Packages (Pfeil nach unten = liefert an den Ausschnitt, nach oben = nutzt ihn).
-  // `byCenter` haelt fest, an WELCHEM Zentrum ein Nachbar haengt: bei mehreren Treffern muss die
-  // Aggregatkante von dem Treffer ausgehen, der die Beziehung wirklich hat – eine Sammelkante von
-  // irgendeinem waere eine Behauptung, die das Buendel-Panel nicht aufloesen koennte.
+  // `byCenter` haelt fest, an WELCHEM Zentrum ein Nachbar haengt – und in WELCHER RICHTUNG. Beides
+  // ist noetig, damit die Aggregatkante aufloesbar bleibt: bei mehreren Treffern muss sie von dem
+  // Treffer ausgehen, der die Beziehung wirklich hat, und ihre Richtung muss dieselbe Lesart haben
+  // wie jede andere Kante im Graphen (Pfeil zeigt von der DEFINITION zur NUTZUNG). Die Richtung
+  // fehlte: die Kante lief immer `Treffer -> Package`, auch wenn das Package liefert und der
+  // Treffer es nutzt. Der Pfeil behauptete damit das Gegenteil, und das Buendel-Panel – das nach
+  // `provider === source` und `consumer === target` sucht – fand null Paare, obwohl die Kante
+  // „N class relations" anschrieb. Gemessen an einem Zentrum, das 57 Utility-Klassen nutzt:
+  // count=20, aufgeloest=0.
   const stats = new Map() // fileId -> { weight, relations, provides, consumes, byCenter }
   let relations = 0
   for (const e of classEdges) {
@@ -359,7 +365,11 @@ export function buildContextLevel({
     s.relations++
     if (toIsCenter) s.provides++
     else s.consumes++
-    s.byCenter.set(center, (s.byCenter.get(center) || 0) + 1)
+    // Je Zentrum getrennt nach Richtung – `provides` = der Nachbar definiert, das Zentrum nutzt.
+    const dir = s.byCenter.get(center) || { provides: 0, consumes: 0 }
+    if (toIsCenter) dir.provides++
+    else dir.consumes++
+    s.byCenter.set(center, dir)
     stats.set(other, s)
     relations++
   }
@@ -422,7 +432,12 @@ export function buildContextLevel({
     g.relations += s.relations
     g.provides += s.provides
     g.consumes += s.consumes
-    for (const [c, n] of s.byCenter) g.byCenter.set(c, (g.byCenter.get(c) || 0) + n)
+    for (const [c, n] of s.byCenter) {
+      const cur = g.byCenter.get(c) || { provides: 0, consumes: 0 }
+      cur.provides += n.provides
+      cur.consumes += n.consumes
+      g.byCenter.set(c, cur)
+    }
   }
 
   // Nach Beziehungszahl deckeln: zehn Aggregate sind noch ein Bild, dreissig sind wieder eine
@@ -437,15 +452,24 @@ export function buildContextLevel({
     // `byCenter` ist Bauwissen und gehoert nicht in die Knotendaten – die Karte rendert daraus
     // nichts, und ein durchgereichtes Feld wird irgendwann als Zusage gelesen.
     nodes: kept.map(({ byCenter, ...n }) => n),
-    // Eine Kante je (Zentrum, Aggregat): bei einem Treffer ist das die bisherige Sternkante, bei
-    // mehreren haengt jedes Package an genau den Treffern, mit denen es wirklich zu tun hat.
+    // Eine Kante je (Zentrum, Aggregat, RICHTUNG): bei einem Treffer ist das die bisherige
+    // Sternkante, bei mehreren haengt jedes Package an genau den Treffern, mit denen es wirklich zu
+    // tun hat. Die Richtung ist keine Kosmetik – sie ist dieselbe Aussage wie bei jeder anderen
+    // Kante (Definition -> Nutzung), und nur mit ihr findet das Buendel-Panel seine Klassenpaare
+    // wieder. Hat ein Package beide Richtungen, sind es zwei Kanten: „util liefert an Hub" und
+    // „Hub liefert an util" sind zwei Aussagen, und ManagedEdge faechert Gegenrichtungen ohnehin
+    // auf (`parallelIndex`), sie liegen also nicht uebereinander.
     edges: kept.flatMap((n) =>
-      [...n.byCenter].map(([center, count]) => ({
-        id: `ego:${center}:${n.id}`,
-        source: `c:${center}`,
-        target: n.id,
-        count,
-      })),
+      [...n.byCenter].flatMap(([center, dir]) => {
+        const out = []
+        if (dir.provides) {
+          out.push({ id: `ego:${n.id}->c:${center}`, source: n.id, target: `c:${center}`, count: dir.provides })
+        }
+        if (dir.consumes) {
+          out.push({ id: `ego:c:${center}->${n.id}`, source: `c:${center}`, target: n.id, count: dir.consumes })
+        }
+        return out
+      }),
     ),
     keyByFileId: new Map([...keyByFileId].filter(([, key]) => keptIds.has(key))),
     linkedIds: new Set(), // Nachbarkarten kommen im Ego-Modus aus `cardIds`, nicht von hier

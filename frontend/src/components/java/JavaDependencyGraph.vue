@@ -595,9 +595,18 @@ const scopeFiles = computed(() => {
 // eine Klasse an ihrem Aggregat, im Klassenmodus an sich selbst.
 const RELATED_NODE_LIMIT = 8 // hoechstens so viele Nachbar-Packages (nach Beziehungszahl)
 const RELATED_CLASS_LIMIT = 60 // bis hierher einzelne Nachbarklassen statt Aggregatknoten
-const insideKeys = computed(() =>
-  packageMode.value ? level.value.keyByFileId : new Map(scopeFiles.value.map((f) => [f.id, `c:${f.id}`])),
-)
+// ⚠️ Es zaehlt, was GEZEICHNET ist – nicht, was im Ausschnitt liegt. Im Suchmodus sind das die
+// Treffer plus die Kontextkarten (`searchScope`), nicht alle Klassen unter dem Pfad: `scopeFiles`
+// lieferte dort die ganze Codebasis (ohne Pfad ist `scopedFiles` = alle Dateien), und damit bekam
+// AUCH jede Klasse, die gerade in einem Aggregat steckt, den Schluessel `c:<id>`. In `bundleKeys`
+// gewinnt insideKeys, also ueberschrieb dieser Schluessel die Package-Zuordnung aus dem
+// Kontext-Level – und der Klick auf „22 class relations" fand null Paare, weil er Klassen unter
+// `p:com.acme.util` suchte, die dort nicht mehr standen. Gemessen: 22 -> „total 0".
+const insideKeys = computed(() => {
+  if (packageMode.value) return level.value.keyByFileId
+  const drawn = searchActive.value ? searchScope.value.files : scopeFiles.value
+  return new Map(drawn.map((f) => [f.id, `c:${f.id}`]))
+})
 const neighbourhood = computed(() =>
   // Der Suchmodus bringt seine eigene Umgebung mit (Aggregate der ueberzaehligen Nachbarn) –
   // dieselbe Form wie hier, damit Kanten, Farben, Legende und das Buendel-Panel unveraendert damit
