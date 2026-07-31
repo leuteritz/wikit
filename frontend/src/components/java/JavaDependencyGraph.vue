@@ -473,48 +473,28 @@ function stepContext(dir) {
   if (next != null) contextOverride.value = next
 }
 
-// --- Der Regler: Rastpunkte auf einer Achse, nicht fuenf lose Chips --------------------------
-// Der Zug ueber die Achse darf GENAU EIN Layout kosten. Deshalb folgt waehrend der Geste nur die
-// Anzeige (`dragStep`), gesetzt wird erst beim Loslassen – ein dagre-Lauf je ueberfahrenem
-// Rastpunkt waere genau der Grund, aus dem hier Stufen stehen und kein freier Schieberegler.
-const trackEl = ref(null)
-const dragStep = ref(null)
-// Was der Regler ZEIGT (waehrend des Ziehens die Vorschau, sonst der wirkliche Wert).
-const shownBudget = computed(() => dragStep.value ?? contextBudget.value)
-const shownIndex = computed(() => {
-  const i = contextSteps.value.indexOf(shownBudget.value)
-  // Ein Wert zwischen zwei Stufen (nach einer Ergebnisaenderung moeglich) rastet nach unten ein.
-  return i >= 0 ? i : Math.max(0, contextSteps.value.findIndex((s) => s > shownBudget.value) - 1)
+// --- Die Stufen als LESBARE Liste, nicht als Achse -------------------------------------------
+// Ein Regler zeigt eine Position; hier ist aber die Frage „was sehe ich bei dieser Stufe?", und
+// die beantwortet keine Position, sondern ein Satz. Jede Stufe steht deshalb als eigene Zeile da,
+// mit ihrer Zahl und dem, was sie bedeutet – alle gleichzeitig sichtbar, jede ein Klick.
+// Was NICHT als Karte passt, bleibt je Package gefaltet: `total - s` ist ohne Rechnung bekannt und
+// gilt fuer jede Stufe, nicht nur fuer die gerade gewaehlte.
+const contextLayers = computed(() => {
+  const total = searchContextInfo.value.ids.size
+  return contextSteps.value.map((s) => ({
+    step: s,
+    label: s === 0 ? 'none' : s === total ? 'all' : String(s),
+    // Zweite Zeile: was diese Wahl bedeutet. „matches only" ist die Abwesenheit von Umgebung,
+    // „nothing folded" ihr Gegenteil – dazwischen zaehlt, was zusammengefasst bleibt.
+    note:
+      s === 0
+        ? 'matches only'
+        : s === total
+          ? 'nothing folded'
+          : `+${total - s} folded into packages`,
+    count: s === total ? total : null,
+  }))
 })
-const trackFill = computed(() => {
-  const n = contextSteps.value.length
-  return n > 1 ? `${(shownIndex.value / (n - 1)) * 100}%` : '0%'
-})
-function stepAt(clientX) {
-  const el = trackEl.value
-  const steps = contextSteps.value
-  if (!el || steps.length < 2) return steps[0] ?? 0
-  const r = el.getBoundingClientRect()
-  const t = Math.min(1, Math.max(0, (clientX - r.left) / r.width))
-  return steps[Math.round(t * (steps.length - 1))]
-}
-function onTrackDown(e) {
-  e.preventDefault() // sonst waehlt der Zug die Beschriftungen aus statt zu regeln
-  dragStep.value = stepAt(e.clientX)
-  e.currentTarget.setPointerCapture?.(e.pointerId)
-}
-function onTrackMove(e) {
-  if (dragStep.value === null) return
-  dragStep.value = stepAt(e.clientX)
-}
-function onTrackUp() {
-  if (dragStep.value === null) return
-  const target = dragStep.value
-  dragStep.value = null
-  // Nur schreiben, wenn sich wirklich etwas aendert – sonst rechnet ein Klick auf die aktive
-  // Stufe ein Layout fuer dasselbe Bild.
-  if (target !== contextBudget.value) setContextBudget(target)
-}
 // Ein Aggregat aufklappen heisst: DIESES Package als Karten zeigen. Der Weg zurueck ist der Chip
 // in der Leiste – ein zweiter Klick auf den Knoten geht nicht, weil er danach nicht mehr da ist.
 function toggleContextPackage(path) {
@@ -2215,7 +2195,80 @@ watch(
          darunter noch einmal. Vertikal waechst der Pfad dorthin, wo Platz ist (nach unten), liest
          sich wie der Baum in der linken Spalte und kollidiert mit nichts. Eine Leiste, drei
          Abschnitte: Ort · Bilanz · Ego-Regler. -->
-    <div v-if="files.length && (searchActive || level.groups.length || basePath)" class="vf-rail">
+    <!-- Oben links stehen ZWEI Dinge, und sie beantworten zwei Fragen: „wieviel Umgebung will ich
+         sehen?" (Layer-Karte) und „wo bin ich, was ist im Bild?" (Leiste darunter). Frueher war
+         der Regler der dritte Abschnitt der Leiste – zwischen Pfad und Warnungen eingeklemmt und
+         entsprechend klein. Als eigene Karte darueber ist er das, was er ist: die einzige
+         Einstellung, die der Suchmodus verlangt. -->
+    <div v-if="files.length && (searchActive || level.groups.length || basePath)" class="vf-topleft">
+      <!-- Umgebungs-Auswahl: jede Stufe eine Zeile, alle gleichzeitig sichtbar. Kein Regler –
+           „20" sagt nichts, „+33 folded into packages" schon. -->
+      <div
+        v-if="contextAvailable"
+        class="vf-layers"
+        role="radiogroup"
+        aria-label="How many related classes to draw"
+        @keydown.up.prevent="stepContext(-1)"
+        @keydown.left.prevent="stepContext(-1)"
+        @keydown.down.prevent="stepContext(1)"
+        @keydown.right.prevent="stepContext(1)"
+      >
+        <div class="vf-layers-head">
+          <Icon icon="lucide:layers" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+          <span class="vf-layers-title">Context</span>
+          <span class="vf-layers-total">{{ searchScope.related }} related</span>
+        </div>
+
+        <button
+          v-for="l in contextLayers"
+          :key="l.step"
+          type="button"
+          class="vf-layer"
+          :class="{ 'is-on': contextBudget === l.step }"
+          role="radio"
+          :aria-checked="contextBudget === l.step"
+          @click="setContextBudget(l.step)"
+        >
+          <span class="vf-layer-mark" />
+          <span class="vf-layer-num">{{ l.label }}</span>
+          <span class="vf-layer-note">{{ l.note }}</span>
+        </button>
+
+        <!-- Bilanz der GEWAEHLTEN Stufe: die genaue Paketzahl kennt nur sie (aufgeklappte Packages
+             verschieben sie). Steht deshalb hier und nicht in jeder Zeile. -->
+        <p v-if="contextLevel.nodes.length || contextLevel.hiddenPackages" class="vf-layers-foot">
+          <template v-if="contextLevel.nodes.length">
+            <b>{{ contextLevel.aggregatedClasses }}</b> in {{ contextLevel.nodes.length }}
+            package{{ contextLevel.nodes.length === 1 ? '' : 's' }}
+          </template>
+          <span
+            v-if="contextLevel.hiddenPackages"
+            class="vf-crumb-warn"
+            v-tip="{ title: `${contextLevel.hiddenPackages} more packages`, hint: `${contextLevel.hiddenRelations} further relations are not drawn — raise the step or open a package.` }"
+          >
+            <Icon icon="lucide:alert-triangle" class="h-3 w-3" />
+            +{{ contextLevel.hiddenPackages }}
+          </span>
+        </p>
+
+        <!-- Aufgeklappte Packages: der Chip IST der Rueckweg – ihr Aggregatknoten ist ja weg. -->
+        <div v-if="contextLevel.expandedPaths.length" class="vf-rail-chips">
+          <button
+            v-for="p in contextLevel.expandedPaths"
+            :key="p"
+            type="button"
+            class="vf-ego-chip"
+            v-tip="{ title: `Collapse ${p}`, hint: 'Folds these classes back into one aggregate node.' }"
+            @click="toggleContextPackage(p)"
+          >
+            <Icon icon="lucide:package-open" class="h-3 w-3 shrink-0" />
+            <span class="truncate">{{ p }}</span>
+            <Icon icon="lucide:x" class="h-3 w-3 shrink-0 opacity-60" />
+          </button>
+        </div>
+      </div>
+
+      <div class="vf-rail">
       <!-- 1) Ort. Im Suchmodus ist der Ort die Anfrage: ein Pfad waere dort keine gueltige
               Ortsangabe mehr (die Treffer liegen quer durch die Codebasis). -->
       <div v-if="searchActive" class="vf-rail-sec">
@@ -2305,98 +2358,8 @@ watch(
           </span>
         </div>
       </div>
-
-      <!-- 2) Umgebung: EINE Leiter fuer einen wie fuer sechsundzwanzig Treffer. Bei 132 Nachbarn
-              ist weder „alle" noch „vierzig" die Antwort – die Frage ist, wieviel man gerade sehen
-              WILL. Stufen statt Schieberegler: jeder Schritt kostet genau ein Layout und ist
-              ruecknehmbar. Die Leiste steht auch auf Stufe 0 da, sonst gaebe es keinen Weg
-              zurueck nach oben. -->
-      <div v-if="contextAvailable" class="vf-rail-sec">
-        <div class="vf-rail-head">
-          <Icon icon="lucide:git-fork" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
-          <span class="vf-ctx-name">Context</span>
-          <span class="vf-ctx-val" :class="{ 'is-dragging': dragStep !== null }">
-            <b>{{ dragStep === null ? contextLevel.cardCount : shownBudget }}</b><i>/{{ searchScope.related }}</i>
-          </span>
-        </div>
-
-        <!-- Rastpunkte auf EINER Achse statt fuenf loser Chips: der zurueckgelegte Teil ist
-             gefuellt, also sieht man, wo auf der Skala man steht – nicht nur, welcher Chip gerade
-             leuchtet. Klicken, ziehen und Pfeiltasten fuehren zum selben Ergebnis; das Ziehen
-             schreibt erst beim Loslassen (ein Layout je Geste, s. `dragStep`). -->
-        <div
-          class="vf-track"
-          role="slider"
-          tabindex="0"
-          :aria-label="`How many of the ${searchScope.related} related classes to draw`"
-          :aria-valuemin="contextSteps[0]"
-          :aria-valuemax="searchScope.related"
-          :aria-valuenow="shownBudget"
-          :aria-valuetext="shownBudget ? `${shownBudget} of ${searchScope.related} as cards` : 'matches only'"
-          @pointerdown="onTrackDown"
-          @pointermove="onTrackMove"
-          @pointerup="onTrackUp"
-          @pointercancel="onTrackUp"
-          @keydown.left.prevent="stepContext(-1)"
-          @keydown.down.prevent="stepContext(-1)"
-          @keydown.right.prevent="stepContext(1)"
-          @keydown.up.prevent="stepContext(1)"
-          @keydown.home.prevent="setContextBudget(contextSteps[0])"
-          @keydown.end.prevent="setContextBudget(contextSteps[contextSteps.length - 1])"
-        >
-          <div ref="trackEl" class="vf-track-inner">
-            <span class="vf-track-rail"><span class="vf-track-fill" :style="{ width: trackFill }" /></span>
-            <span
-              v-for="(s, i) in contextSteps"
-              :key="s"
-              class="vf-track-stop"
-              :class="{ 'is-done': i < shownIndex, 'is-on': i === shownIndex }"
-              :style="{ left: contextSteps.length > 1 ? `${(i / (contextSteps.length - 1)) * 100}%` : '0%' }"
-            >
-              <i class="vf-track-dot" />
-              <em class="vf-track-lab">{{ s === searchScope.related ? 'all' : s }}</em>
-            </span>
-          </div>
-        </div>
-
-        <!-- Was die Stufe bedeutet – in Worten, nicht als zweite Zahlenreihe. -->
-        <p class="vf-rail-sub">
-          <template v-if="shownBudget">
-            <b>{{ shownBudget === searchScope.related ? 'all' : shownBudget }}</b> as cards
-            <template v-if="contextLevel.nodes.length">
-              <span class="vf-dot">·</span><b>{{ contextLevel.aggregatedClasses }}</b> in
-              {{ contextLevel.nodes.length }} package{{ contextLevel.nodes.length === 1 ? '' : 's' }}
-            </template>
-          </template>
-          <template v-else>matches only — no surrounding classes</template>
-          <span
-            v-if="contextLevel.hiddenPackages"
-            class="vf-crumb-warn"
-            v-tip="{ title: `${contextLevel.hiddenPackages} more packages`, hint: `${contextLevel.hiddenRelations} further relations are not drawn — raise the step or open a package.` }"
-          >
-            <Icon icon="lucide:alert-triangle" class="h-3 w-3" />
-            +{{ contextLevel.hiddenPackages }}
-          </span>
-        </p>
-
-        <!-- Aufgeklappte Packages: der Chip IST der Rueckweg – ihr Aggregatknoten ist ja weg. -->
-        <div v-if="contextLevel.expandedPaths.length" class="vf-rail-chips">
-          <button
-            v-for="p in contextLevel.expandedPaths"
-            :key="p"
-            type="button"
-            class="vf-ego-chip"
-            v-tip="{ title: `Collapse ${p}`, hint: 'Folds these classes back into one aggregate node.' }"
-            @click="toggleContextPackage(p)"
-          >
-            <Icon icon="lucide:package-open" class="h-3 w-3 shrink-0" />
-            <span class="truncate">{{ p }}</span>
-            <Icon icon="lucide:x" class="h-3 w-3 shrink-0 opacity-60" />
-          </button>
-        </div>
       </div>
     </div>
-
 
     <!-- Suche IM Bild (oben rechts, die einzige freie Ecke). Sie aendert den Ausschnitt nicht –
          sie sagt, wo im aktuellen Graphen etwas steckt, und daempft den Rest. -->
@@ -2839,114 +2802,112 @@ watch(
 
 /* --- Ebenen-Navigation (Breadcrumb) ---------------------------------------------------- */
 
-/* --- Umgebungs-Regler: eine Achse mit Rastpunkten -------------------------------------------
-   Vorher waren das ein Zaehler, zwei ±-Knoepfe und eine Reihe loser Chips – vier Elemente fuer
-   eine Groesse. Als Achse ist die Menge selbst ablesbar: der gefuellte Teil sagt „so weit bin
-   ich", der offene „das ginge noch". Bedient wird per Klick, Zug und Pfeiltasten; geschrieben
-   wird beim Loslassen (ein dagre-Layout je Geste, nicht je ueberfahrenem Punkt). */
-.vf-ctx-name {
+/* --- Umgebungs-Auswahl: eine Liste von Ebenen, kein Regler ----------------------------------
+   Ein Regler zeigt eine POSITION; die Frage hier ist aber „was sehe ich bei dieser Stufe?", und
+   die beantwortet ein Satz, keine Position. Jede Stufe steht deshalb als eigene, grosse Zeile da –
+   Zahl links, Bedeutung rechts, alle gleichzeitig sichtbar. Und sie steht als EIGENE Karte ueber
+   der Leiste: vorher war sie deren dritter Abschnitt, zwischen Pfad und Warnungen eingeklemmt und
+   entsprechend klein, obwohl sie die einzige Einstellung ist, die der Suchmodus verlangt. */
+.vf-layers {
+  flex: none;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  padding: 8px 8px 6px;
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.1);
+}
+.vf-layers-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 6px;
+}
+.vf-layers-title {
   flex: 1;
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--color-text-muted);
-}
-.vf-ctx-val {
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  font-size: 0.6875rem;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-text-muted);
-}
-.vf-ctx-val b {
-  font-size: 0.8125rem;
-  font-weight: 700;
   color: var(--color-text);
 }
-/* Waehrend des Ziehens ist die Zahl eine Vorschau, kein Zustand – sie traegt deshalb die
-   Akzentfarbe, bis losgelassen wird. */
-.vf-ctx-val.is-dragging b {
-  color: var(--color-accent);
-}
-.vf-track {
-  padding: 6px 12px 2px;
-  cursor: pointer;
-  touch-action: none; /* sonst scrollt die Geste die Leiste statt zu regeln */
-}
-.vf-track:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-  border-radius: 8px;
-}
-.vf-track-inner {
-  position: relative;
-  height: 1.75rem;
-}
-.vf-track-rail {
-  position: absolute;
-  top: 3px;
-  left: 0;
-  right: 0;
-  height: 2px;
-  border-radius: 999px;
-  background: var(--color-border);
-}
-.vf-track-fill {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--color-accent);
-  transition: width 0.18s ease;
-}
-.vf-track-stop {
-  position: absolute;
-  top: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  transform: translateX(-50%);
-}
-.vf-track-dot {
-  height: 8px;
-  width: 8px;
-  border-radius: 999px;
-  border: 2px solid var(--color-border);
-  background: var(--color-surface-2);
-  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
-}
-.vf-track-stop.is-done .vf-track-dot {
-  border-color: var(--color-accent);
-  background: var(--color-accent);
-}
-/* Der aktuelle Punkt ist der Griff: groesser, gefuellt, mit Ring – erkennbar auch ohne Farbe. */
-.vf-track-stop.is-on .vf-track-dot {
-  border-color: var(--color-accent);
-  background: var(--color-accent);
-  transform: scale(1.6);
-  box-shadow: 0 0 0 3px var(--color-accent-soft);
-}
-.vf-track-lab {
-  margin-top: 8px;
+.vf-layers-total {
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  /* Nicht kleiner: 0.625rem sind bei 16px-Root genau die 10px, die als Untergrenze fuer Meta-
-     Beschriftungen gelten (s. „Lesbarkeit auf grossen Schirmen"). 0.5625rem waeren dort 9px. */
   font-size: 0.625rem;
-  font-style: normal;
   font-variant-numeric: tabular-nums;
   color: var(--color-text-muted);
   white-space: nowrap;
-  transition: color 0.15s ease;
 }
-.vf-track-stop.is-on .vf-track-lab {
+/* Eine Ebene = eine Zeile. Grosszuegige Trefferflaeche: das ist die Einstellung, die man im
+   Suchmodus am haeufigsten anfasst. */
+.vf-layer {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  padding: 6px 6px;
+  text-align: left;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.vf-layer:hover {
+  background: var(--color-surface-offset);
+}
+.vf-layer.is-on {
+  background: var(--color-accent-soft);
+}
+.vf-layer:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+/* Auswahlpunkt: gefuellter Ring statt Haken – „eines von mehreren", und das sagt die Form. */
+.vf-layer-mark {
+  height: 0.875rem;
+  width: 0.875rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: 2px solid var(--color-border-strong);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.vf-layer.is-on .vf-layer-mark {
+  border-color: var(--color-accent);
+  box-shadow: inset 0 0 0 3px var(--color-accent);
+}
+.vf-layer-num {
+  min-width: 2.25rem;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.875rem;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+.vf-layer.is-on .vf-layer-num {
   color: var(--color-accent);
 }
-.vf-track:hover .vf-track-dot {
-  border-color: var(--color-border-strong);
+/* Die Bedeutung der Stufe. Sie darf umbrechen – abgeschnitten waere sie keine Auskunft. */
+.vf-layer-note {
+  min-width: 0;
+  flex: 1;
+  font-size: 0.6875rem;
+  line-height: 1.35;
+  color: var(--color-text-muted);
 }
-.vf-track:hover .vf-track-stop.is-done .vf-track-dot,
-.vf-track:hover .vf-track-stop.is-on .vf-track-dot {
-  border-color: var(--color-accent);
+.vf-layers-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  border-top: 1px solid var(--color-border);
+  margin-top: 4px;
+  padding: 6px 4px 0;
+  font-size: 0.625rem;
+  color: var(--color-text-muted);
+}
+.vf-layers-foot b {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
 }
 /* Fliesstext der Leiste: eine Aussage je Zeile, Zahlen hervorgehoben. Ersetzt die gerahmten
    Einzelzaehler (`.vf-crumb-count`), die nebeneinander wie eine Werkzeugleiste aussahen. */
@@ -3004,15 +2965,24 @@ watch(
  * und kollidiert mit nichts. Deckender Hintergrund ohne `backdrop-filter` (s. Stolperfalle
  * „kein filter im Graphen"): das Element gibt es zwar nur einmal, aber es liegt ueber der
  * gesamten Layoutflaeche und waere damit die groesste Offscreen-Textur im Bild. */
-.vf-rail {
+/* Zwei Karten in einer Spalte oben links: die Umgebungs-Auswahl (`.vf-layers`) und darunter die
+   Ortsangabe (`.vf-rail`). Die Positionierung liegt hier, damit beide sie sich nicht gegenseitig
+   ausrechnen muessen; gedeckelt wird die Spalte, gescrollt nur die Leiste. */
+.vf-topleft {
   position: absolute;
   top: 10px;
   left: 10px;
   z-index: 5;
   display: flex;
-  width: 13.5rem;
+  width: 15rem;
   max-width: calc(100% - 20px);
   max-height: calc(100% - 92px); /* Dock unten bleibt frei */
+  flex-direction: column;
+  gap: 8px;
+}
+.vf-rail {
+  display: flex;
+  min-height: 0;
   flex-direction: column;
   overflow-y: auto;
   border-radius: 12px;
@@ -3121,7 +3091,11 @@ watch(
   z-index: 6;
   display: flex;
   width: 19rem;
-  max-width: calc(100% - 20px);
+  /* Die Spalte oben links (`.vf-topleft`, 15rem) hat Vorrang: sie ist die Einstellung, dieses Feld
+     ist die Zugabe. Gemessen bei 1280 lief es sonst 51 px unter die Layer-Karte – dort ist die
+     Graphflaeche nur ~513 px breit. Der Abzug ist etwas groesser als die Spalte selbst, damit
+     zwischen beiden eine Luecke bleibt statt einer Beruehrung. */
+  max-width: min(calc(100% - 20px), calc(100% - 17rem));
   flex-direction: column;
   gap: 4px;
 }
