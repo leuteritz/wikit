@@ -82,13 +82,15 @@ const KIND_META = {
     label: 'uses type',
     color: 'var(--color-cyan)',
     explain: (r) =>
-      `${r.consumer.class_name} works with the type ${r.provider.class_name} — as a field, a parameter, a return type or a new ${r.provider.class_name}(). No method call was detected.`,
+      `${r.consumer.class_name} works with the type ${r.provider.class_name} — as a field, a parameter, a return type, a cast, a static member such as ${r.provider.class_name}.CONSTANT, or a new ${r.provider.class_name}(). No method call was detected, so the lines below show where the type itself appears.`,
   },
   import: {
     label: 'imports',
     color: 'var(--color-text-muted)',
+    // Bewusst KEINE Behauptung mehr ("nothing uses it"): darueber entscheiden die Zeilen unten,
+    // und genau diese Behauptung war falsch, solange der Parser Konstruktoren nicht las.
     explain: (r) =>
-      `${r.consumer.class_name} only imports ${r.provider.class_name}. Nothing in the code uses it — often a leftover import.`,
+      `${r.consumer.class_name} imports ${r.provider.class_name}, and neither a call nor a type use was detected. The lines below are every place the name appears in the source.`,
   },
 }
 
@@ -232,12 +234,45 @@ async function fetchDetail(rel) {
   }
 }
 
+// --- Beleg fuer eine Beziehung OHNE Methode (`uses` / `import`) -------------------------------
+//
+// Eine solche Zeile stand bisher ohne Code da („No call site to show"), obwohl der Typ im
+// Quelltext des Nutzers an genau benennbaren Stellen erscheint (`Http.GET`, `catch (Foo ex)`,
+// `(Foo) x`). Der Server liefert sie zeilengenau und bereits gehighlightet – hier wird nur noch
+// der Gutter gesetzt und die Fundzeile markiert, mit denselben Helfern wie ueberall.
+// rel.key -> { loading, error, total, imports, truncated, usages: [{ line, html }] }
+const typeUsages = ref({})
+
+async function fetchTypeUsages(rel) {
+  if (typeUsages.value[rel.key]) return
+  typeUsages.value = { ...typeUsages.value, [rel.key]: { loading: true } }
+  try {
+    const data = await api.getJavaTypeUsages(rel.consumer.id, rel.provider.class_name)
+    typeUsages.value = {
+      ...typeUsages.value,
+      [rel.key]: {
+        loading: false,
+        total: data.total,
+        imports: data.imports,
+        truncated: data.truncated,
+        usages: (data.usages || []).map((u) => ({
+          ...u,
+          html: addLineNumbers(u.html, u.startLine, { keepBlank: true, highlight: u.line }),
+        })),
+      },
+    }
+  } catch (e) {
+    typeUsages.value = { ...typeUsages.value, [rel.key]: { loading: false, error: e.message } }
+  }
+}
+
 function toggle(rel) {
   const next = new Set(expanded.value)
   if (next.has(rel.key)) next.delete(rel.key)
   else {
     next.add(rel.key)
     if (methodsOf(rel).length) fetchDetail(rel)
+    else fetchTypeUsages(rel)
   }
   expanded.value = next
 }
@@ -256,6 +291,7 @@ watch(
     query.value = ''
     expanded.value = new Set()
     details.value = {}
+    typeUsages.value = {}
     // Die erste Beziehung gleich aufklappen: das Panel soll Code ZEIGEN, nicht erst anbieten.
     const first = relations.value.find((r) => methodsOf(r).length) || relations.value[0]
     if (vis && first) toggle(first)
@@ -393,18 +429,60 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                 <div v-if="expanded.has(r.key)" class="rel-body">
                   <p class="rel-explain">{{ explainFor(r) }}</p>
 
-                  <!-- Kein Aufruf im Code -> es gibt auch keine Stelle zu zeigen. Ehrlich sagen. -->
+                  <!-- Kein Methoden-Label -> kein Aufruf, aber sehr wohl Code: die Stellen, an
+                       denen der Typ im Quelltext des Nutzers steht. Ohne sie war diese Zeile eine
+                       Behauptung ohne Beleg – und genau dort lag der gemeldete Fehler. -->
                   <template v-if="!methodsOf(r).length">
-                    <p class="rel-note">
-                      <Icon icon="lucide:info" class="h-3.5 w-3.5 shrink-0" />
-                      No call site to show — this relation comes from the type or the import, not from a method call.
+                    <p v-if="typeUsages[r.key]?.loading" class="rel-note">
+                      <Icon icon="lucide:loader-2" class="h-3.5 w-3.5 shrink-0 animate-spin" />
+                      Looking for {{ r.provider.class_name }} in the source of {{ r.consumer.class_name }}…
                     </p>
+                    <p v-else-if="typeUsages[r.key]?.error" class="rel-note rel-note--warn">
+                      <Icon icon="lucide:alert-triangle" class="h-3.5 w-3.5 shrink-0" />
+                      {{ typeUsages[r.key].error }}
+                    </p>
+
+                    <template v-else-if="typeUsages[r.key]">
+                      <div v-for="u in typeUsages[r.key].usages" :key="`t-${u.line}`" class="rel-site">
+                        <div
+                          class="edge-usage-code rel-clickable"
+                          :title="`Open ${r.consumer.class_name} at line ${u.line}`"
+                          @click="onCodeClick(r.consumer.id, u.line)"
+                          v-html="u.html"
+                        />
+                        <p class="rel-caption">
+                          Line {{ u.line }} — the highlighted line names
+                          <code class="rel-mc-code">{{ r.provider.class_name }}</code>.
+                          <button type="button" class="rel-jump" @click="goTo(r.consumer.id, u.line)">
+                            Go to line {{ u.line }}
+                            <Icon icon="lucide:arrow-up-right" class="rel-loc-go" />
+                          </button>
+                        </p>
+                      </div>
+
+                      <p v-if="typeUsages[r.key].truncated" class="rel-note">
+                        Showing the first {{ typeUsages[r.key].usages.length }} of
+                        {{ typeUsages[r.key].total }} place(s) in {{ r.consumer.class_name }}.
+                      </p>
+                      <!-- Belegte Aussage statt Vermutung: null Fundstellen ausser dem Import
+                           heisst wirklich „ungenutzt", und das darf dann auch dastehen. -->
+                      <p v-else-if="!typeUsages[r.key].total" class="rel-note">
+                        <Icon icon="lucide:info" class="h-3.5 w-3.5 shrink-0" />
+                        <template v-if="typeUsages[r.key].imports">
+                          {{ r.provider.class_name }} appears only in the import line of {{ r.consumer.class_name }} — an unused import.
+                        </template>
+                        <template v-else>
+                          The name {{ r.provider.class_name }} does not appear in the source of {{ r.consumer.class_name }} — this may be a manual link.
+                        </template>
+                      </p>
+                    </template>
+
                     <div class="rel-actions">
                       <button type="button" class="rel-btn" @click="goTo(r.provider.id)">
                         <Icon icon="lucide:file-code" class="h-3.5 w-3.5" />
                         Open {{ r.provider.class_name }}
                       </button>
-                      <button type="button" class="rel-btn" @click="goTo(r.consumer.id)">
+                      <button type="button" class="rel-btn" @click="goTo(r.consumer.id, typeUsages[r.key]?.usages?.[0]?.line ?? null)">
                         <Icon icon="lucide:file-code" class="h-3.5 w-3.5" />
                         Open {{ r.consumer.class_name }}
                       </button>

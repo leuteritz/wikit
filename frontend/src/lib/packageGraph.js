@@ -15,6 +15,53 @@ export const DEFAULT_PACKAGE = '(default)'
 
 const segments = (pkg) => (pkg && pkg !== DEFAULT_PACKAGE ? pkg.split('.').filter(Boolean) : [])
 
+const simpleName = (fqn) => String(fqn ?? '').split('.').pop()
+
+// --- Klassenname -> Datei ----------------------------------------------------------------------
+//
+// `java_edges` traegt nur den EINFACHEN Klassennamen. In einer Codebasis mit `efw.util.http.Header`
+// UND `wt.doc.Header` ist der mehrdeutig, und eine Map „Name -> Datei" behielt die zuletzt
+// eingelesene: die Beziehung hing an der falschen Klasse – im Buendel des richtigen Packages
+// fehlte sie, im falschen stand eine, die es dort gar nicht gibt. Genau so sah es aus wie „eine
+// Klassenbeziehung zu wenig".
+//
+// Aufgeloest wird deshalb, wie Java es aufloest, in dieser Reihenfolge:
+//   1. der Name ist eindeutig -> fertig (der Normalfall, und der einzige Pfad ohne Kosten),
+//   2. ein IMPORT der nutzenden Klasse nennt das Package (die FQCN steht in `dependencies`),
+//      `import p.q.*` zaehlt mit – es benennt immerhin das Package,
+//   3. dasselbe Package wie die nutzende Klasse – dafuer braucht Java keinen Import,
+//   4. sonst die erste. Mehrdeutig bleibt mehrdeutig; stabil ist besser als zufaellig.
+export function indexFilesByName(files) {
+  const m = new Map();
+  for (const f of files || []) {
+    const list = m.get(f.class_name);
+    if (list) list.push(f);
+    else m.set(f.class_name, [f]);
+  }
+  return m;
+}
+
+export function resolveClassByName(index, name, consumer = null) {
+  const list = index?.get(name);
+  if (!list?.length) return null;
+  if (list.length === 1) return list[0];
+  if (consumer) {
+    for (const dep of consumer.dependencies || []) {
+      const pkg = dep.endsWith('.*')
+        ? dep.slice(0, -2)
+        : simpleName(dep) === name
+          ? dep.slice(0, Math.max(0, dep.length - name.length - 1))
+          : null;
+      if (pkg == null) continue;
+      const hit = list.find((f) => (f.package || '') === pkg);
+      if (hit) return hit;
+    }
+    const same = list.find((f) => (f.package || '') === (consumer.package || ''));
+    if (same) return same;
+  }
+  return list[0];
+}
+
 // Laengster gemeinsamer Package-Praefix aller Klassen. Liegt alles unter `com.acme`, waere die
 // oberste Ebene sonst ein einziger Knoten „com" – ein Klick ohne Information. Wir starten
 // stattdessen dort, wo sich die Codebasis zum ersten Mal verzweigt.

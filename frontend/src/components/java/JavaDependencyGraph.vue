@@ -31,7 +31,15 @@ import { useJavaGraph } from '../../composables/useJavaGraph.js'
 import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
 import { useRootScale } from '../../composables/useRootScale.js'
 import { Icon } from '../../lib/icons.js'
-import { buildPackageLevel, buildNeighbourLevel, buildContextLevel, commonPackagePrefix, breadcrumbFor } from '../../lib/packageGraph.js'
+import {
+  buildPackageLevel,
+  buildNeighbourLevel,
+  buildContextLevel,
+  commonPackagePrefix,
+  breadcrumbFor,
+  indexFilesByName,
+  resolveClassByName,
+} from '../../lib/packageGraph.js'
 import { layoutFlat, layoutClustered, layoutRadial } from '../../lib/graphLayout.js'
 import { parseGraphQuery, matchNode, matchEdge, GRAPH_QUERY_HELP } from '../../lib/graphQuery.js'
 import BusyState from '../BusyState.vue'
@@ -340,24 +348,28 @@ const showClasses = ref(false)
 const rootPath = computed(() => commonPackagePrefix(props.files || []))
 const basePath = computed(() => (zoomPath.value == null ? rootPath.value : zoomPath.value))
 
+// Klassenname -> Datei. Die Auflösung liegt als reine Funktion in `lib/packageGraph.js` (dort
+// steht auch, warum sie mehr tut als ein Map-Lookup: Kanten tragen nur den EINFACHEN Namen).
+const filesByName = computed(() => indexFilesByName(props.files || []))
+const resolveClass = (name, consumer) => resolveClassByName(filesByName.value, name, consumer)
+
 // Alle Klassenkanten (unabhaengig von der Sichtbarkeit) fuer die Aggregation: gleiche Richtung
 // wie im Graph, also fromId = Definition/Provider, toId = Nutzung/Consumer.
 const allClassEdges = computed(() => {
   const files = props.files || []
-  const byName = new Map()
-  for (const f of files) byName.set(f.class_name, f)
   const out = []
   const pairs = new Set()
   for (const e of serverEdges.value || []) {
-    const caller = byName.get(e.source_class)
-    const definer = byName.get(e.target_class)
+    // Erst den Nutzer (er liefert den Kontext für die Auflösung), dann das Ziel relativ zu ihm.
+    const caller = resolveClass(e.source_class, null)
+    const definer = resolveClass(e.target_class, caller)
     if (!caller || !definer || caller.id === definer.id) continue
     out.push({ fromId: definer.id, toId: caller.id, kind: e.kind || 'call' })
     pairs.add(`${definer.id}->${caller.id}`)
   }
   for (const f of files) {
     for (const dep of f.dependencies || []) {
-      const target = byName.get(simpleName(dep))
+      const target = resolveClass(simpleName(dep), f)
       if (!target || target.id === f.id) continue
       const key = `${target.id}->${f.id}`
       if (pairs.has(key)) continue
@@ -830,8 +842,10 @@ watch(
 
 const layout = computed(() => {
   const files = visibleFiles.value
-  const known = new Map() // class_name -> file
-  for (const f of files) known.set(f.class_name, f)
+  // class_name -> Dateien (Mehrzahl: der Name ist nicht eindeutig, s. resolveClassByName). Nur
+  // die GEZEICHNETEN Klassen – was nicht im Bild ist, bekommt auch keine Kante.
+  const known = indexFilesByName(files)
+  const resolveHere = (name, consumer) => resolveClassByName(known, name, consumer)
 
   // Package -> Farbindex (stabil sortiert). Die Nachbar-Aggregate gehoeren dazu: sie bekommen im
   // geclusterten Layout eine eigene Zone, und die traegt die Package-Farbe.
@@ -877,8 +891,8 @@ const layout = computed(() => {
   //    statt ArrowClosed + Legendeneintrag. Bis dahin: Visualisierung + Legende unveraendert.
   const callGroups = new Map() // `${callerId}->${definerId}` -> { callerFile, definerFile, methods: [] }
   for (const e of serverEdges.value || []) {
-    const callerFile = known.get(e.source_class) // A
-    const definerFile = known.get(e.target_class) // B
+    const callerFile = resolveHere(e.source_class, null) // A
+    const definerFile = resolveHere(e.target_class, callerFile) // B
     if (!callerFile || !definerFile || callerFile.id === definerFile.id) {
       // Genau ein Endpunkt fehlt -> die andere Klasse ist „extern" (nicht geladen).
       if (!callerFile && definerFile) externalRefs.add(e.source_class)
@@ -977,7 +991,7 @@ const layout = computed(() => {
   // 2) Interne Import-Kanten (nur, wenn nicht bereits Call-Kante; nur geladene Ziele).
   for (const f of files) {
     for (const dep of f.dependencies || []) {
-      const target = known.get(simpleName(dep))
+      const target = resolveHere(simpleName(dep), f)
       if (!target) {
         externalRefs.add(simpleName(dep)) // importierte Klasse nicht geladen -> extern, ausgeblendet
         continue
@@ -1798,7 +1812,6 @@ const bundleKeys = computed(() => {
 function relationsBetween(sourceKey, targetKey) {
   const keyOf = bundleKeys.value
   const files = props.files || []
-  const byName = new Map(files.map((f) => [f.class_name, f]))
   const groups = new Map()
   const add = (provider, consumer, kind, method) => {
     const k = `${provider.id}->${consumer.id}`
@@ -1813,8 +1826,10 @@ function relationsBetween(sourceKey, targetKey) {
   }
 
   for (const e of serverEdges.value || []) {
-    const consumer = byName.get(e.source_class)
-    const provider = byName.get(e.target_class)
+    // Dieselbe Auflösung wie in `allClassEdges` – sonst nennt das Panel andere Paare, als der
+    // Graph gezählt hat, und die angeschriebene Zahl stimmte nicht mehr mit der Liste überein.
+    const consumer = resolveClass(e.source_class, null)
+    const provider = resolveClass(e.target_class, consumer)
     if (!consumer || !provider || consumer.id === provider.id) continue
     if (keyOf.get(provider.id) !== sourceKey || keyOf.get(consumer.id) !== targetKey) continue
     add(
@@ -1835,7 +1850,7 @@ function relationsBetween(sourceKey, targetKey) {
   // Import-Fallback: nur fuer Paare, die noch gar keine Beziehung haben (wie im Graph).
   for (const f of files) {
     for (const dep of f.dependencies || []) {
-      const provider = byName.get(simpleName(dep))
+      const provider = resolveClass(simpleName(dep), f)
       if (!provider || provider.id === f.id) continue
       if (keyOf.get(provider.id) !== sourceKey || keyOf.get(f.id) !== targetKey) continue
       if (groups.has(`${provider.id}->${f.id}`)) continue

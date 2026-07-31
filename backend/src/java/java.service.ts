@@ -61,6 +61,18 @@ const SOURCE_WINDOW_CONTEXT = 8;
 // ein stiller Schnitt liest sich wie „so kurz ist die Klasse".
 const SOURCE_FULL_MAX_LINES = 1500;
 
+// --- Wo steht dieser Typ? (getTypeUsages) ------------------------------------------------------
+// Eine `uses`-Kante trug bisher keinen Code: das Bundle-Panel schrieb „No call site to show" und
+// liess den Nutzer mit einer Behauptung zurueck, die er nur durch Aufmachen der Klasse pruefen
+// konnte – obwohl `Http.GET` an drei Stellen im Quelltext steht. Gedeckelt, weil jede Fundstelle
+// einen eigenen Shiki-Lauf kostet; was wegfaellt, steht als `truncated` in der Antwort.
+const TYPE_USAGE_MAX = 6;
+const TYPE_USAGE_CONTEXT = 3;
+// `import`/`package` NENNEN den Typ, benutzen ihn aber nicht. Genau diese Unterscheidung ist die
+// Frage, die das Panel beantwortet ("leftover import" oder echte Verwendung?) – die Zeilen werden
+// deshalb getrennt gezaehlt statt mitgeliefert.
+const TYPE_MENTION_HEADER_RE = /^\s*(?:import|package)\b/;
+
 // Die klassenbeschreibenden Spalten aus einem geparsten Typ – an drei Stellen gebraucht
 // (analyze, analyze-batch Insert + Overwrite-Update); getrennte Literale waeren dreimal die
 // Gelegenheit, ein neues Feld zu vergessen. `class_modifiers` ist JSON-als-TEXT (s. json.util).
@@ -743,6 +755,65 @@ export class JavaService {
       // Nur im Ganz-Klassen-Modus eine Aussage: beim Fenster ist „da fehlt was" der Zweck.
       truncated: full && endLine < lines.length,
       html,
+    };
+  }
+
+  // Wo im Quelltext von `fileId` steht der Typ `typeName`? Die Antwort auf die Frage, die eine
+  // `uses`- oder `import`-Kante aufwirft und bisher unbeantwortet blieb.
+  //
+  // Vier Festlegungen:
+  //  * **Gesucht wird als ganzes Wort, gross-/kleinschreibungsgenau** – dieselbe Musterlogik wie
+  //    ueberall (`buildSearchRegex`). Ohne die Wortgrenzen traefe `Http` auch `HttpsURLConnection`
+  //    und `HttpURLConnection`, und aus einer belegten Aussage wuerde eine falsche.
+  //  * **`import`/`package`-Zeilen zaehlen getrennt.** Sie nennen den Typ, benutzen ihn nicht –
+  //    und ob es ausser ihnen noch etwas gibt, IST die Frage. `total: 0` bei `imports: 1` heisst
+  //    belegt „leftover import"; jede andere Zahl widerlegt es.
+  //  * **Der Quelltext wird eingerueckt wie im Source-Tab** (`reindentJava`, wie getSourceWindow),
+  //    damit die gemeldete Zeile die ist, die der Sprung anschliessend markiert.
+  //  * **Kein Parser.** Die Kante ist bereits berechnet; hier geht es nur noch darum, sie zu
+  //    BELEGEN. Ein zweiter Parse-Lauf je aufgeklappter Zeile waere auf dem Pi spuerbar, und ein
+  //    Textbeleg ist genau das, was der Nutzer selbst nachlesen wuerde.
+  async getTypeUsages(fileIdParam: string, typeNameParam: string): Promise<any> {
+    const fileId = Number(fileIdParam);
+    const typeName = String(typeNameParam || '').trim();
+    if (!fileId || !typeName) throw new BadRequestException('fileId and typeName are required');
+    const file = await this.ds.getRepository(JavaFile).findOne({ where: { id: fileId } });
+    if (!file) throw new NotFoundException('File not found');
+
+    const { re } = buildSearchRegex({ query: typeName, caseSensitive: true, wholeWord: true });
+    const lines = this.formatter.reindentJava(file.raw_source || '').split('\n');
+    const hitLines: number[] = [];
+    let imports = 0;
+    if (re) {
+      for (let i = 0; i < lines.length; i++) {
+        re.lastIndex = 0;
+        if (!re.test(lines[i])) continue;
+        if (TYPE_MENTION_HEADER_RE.test(lines[i])) imports++;
+        else hitLines.push(i + 1);
+      }
+    }
+
+    const shown = hitLines.slice(0, TYPE_USAGE_MAX);
+    const usages = await Promise.all(
+      shown.map(async (line) => {
+        const startLine = Math.max(1, line - TYPE_USAGE_CONTEXT);
+        const endLine = Math.min(lines.length, line + TYPE_USAGE_CONTEXT);
+        const { html } = await this.markdown.renderMarkdown(
+          '```java\n' + lines.slice(startLine - 1, endLine).join('\n') + '\n```',
+        );
+        return { line, startLine, endLine, html };
+      }),
+    );
+
+    return {
+      fileId,
+      typeName,
+      className: file.class_name,
+      filename: file.filename,
+      total: hitLines.length,
+      imports,
+      truncated: hitLines.length > shown.length,
+      usages,
     };
   }
 

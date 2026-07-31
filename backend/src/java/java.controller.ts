@@ -116,6 +116,13 @@ export class JavaController {
     return this.svc.getSourceWindow(fileId, line, context, full);
   }
 
+  // Belegstellen eines Typs im Quelltext einer Klasse – die Code-Ansicht einer `uses`-/`import`-
+  // Kante, die kein Methoden-Label traegt. Statische Route -> vor files/:id.
+  @Get('type-usages')
+  typeUsages(@Query('fileId') fileId: string, @Query('typeName') typeName: string) {
+    return this.svc.getTypeUsages(fileId, typeName);
+  }
+
   // Fortschritt eines laufenden analyze-batch (SSE). Der Client erzeugt die jobId, oeffnet damit
   // diesen Stream und schickt sie im analyze-batch-Body mit. Statische Route -> vor keiner
   // parametrisierten Route in Konflikt, `:jobId` ist hier der einzige Parameter.

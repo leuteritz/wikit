@@ -136,6 +136,15 @@ export const api = {
   // Shiki-gehighlightetes Fenster um eine Quellzeile (Vorschau der Suchpalette).
   // `full`: statt des Fensters die GANZE Klasse (Treffer auf den Klassennamen meint die Klasse).
   // `silent`: die Vorschau zeigt bereits den unformatierten Ausschnitt aus dem Suchergebnis.
+  // Wo steht dieser Typ im Quelltext jener Klasse? Belegt eine `uses`-/`import`-Kante, die kein
+  // Methoden-Label traegt und deshalb sonst ohne Code dastuende.
+  getJavaTypeUsages: (fileId, typeName) =>
+    http(
+      'GET',
+      `/java/type-usages?fileId=${encodeURIComponent(fileId)}&typeName=${encodeURIComponent(typeName)}`,
+      null,
+      { silent: true },
+    ),
   getJavaSourceWindow: (fileId, line, { full = false } = {}) =>
     http(
       'GET',
