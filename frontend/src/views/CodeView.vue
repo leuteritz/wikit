@@ -71,10 +71,16 @@ const search = ref('') // was im Feld steht – reagiert sofort auf jeden Tasten
 const appliedSearch = ref('')
 const SEARCH_DEBOUNCE_MS = 160
 let searchTimer = null
-watch(search, (v) => {
+watch(search, (v, prev) => {
   clearTimeout(searchTimer)
   if (!v.trim()) {
     appliedSearch.value = ''
+    // Den Filter zu loeschen heisst „zeig mir wieder alles" – und genau das tat der Graph nicht:
+    // er blieb in der Ebene stehen, in der die Suche ihn zuletzt abgesetzt hatte. Gemessen ein
+    // Package mit 4 Klassen, waehrend die Codebasis 937 hat, also ausgerechnet der Ausschnitt,
+    // den man mit dem Loeschen loswerden wollte. Nur beim Uebergang „war etwas, ist jetzt leer":
+    // ein leeres Feld, das leer bleibt, ist keine Handlung.
+    if (prev && prev.trim()) showGraphOverview()
     return
   }
   searchTimer = setTimeout(() => {
@@ -219,11 +225,10 @@ function consumeHandoff() {
   if (handoffSearch.value) {
     focusRight()
     // …und der Graph muss den Ausschnitt nachziehen: die geliehene Breite nimmt ihm ein knappes
-    // Viertel seiner Flaeche, und zwar ANIMIERT (220 ms, s. `.panel-grid`) – sein eigenes
-    // Einpassen laeuft da laengst. Gemessen blieb der Ausschnitt danach zur alten Breite passend:
-    // Karten 67 statt 125 px und die halbe Umgebung links ausserhalb des Canvas. Der Nachzieher
-    // sitzt hinter der Uebergangszeit UND hinter dem zweiten Einpassen des Graphen (280 ms).
-    setTimeout(() => graphRef.value?.fitToView?.(), 400)
+    // Viertel seiner Flaeche, und zwar ANIMIERT – sein eigenes Einpassen laeuft da laengst.
+    // Gemessen blieb der Ausschnitt sonst zur alten Breite passend: Karten 67 statt 125 px und die
+    // halbe Umgebung links ausserhalb des Canvas.
+    refitGraphSoon(300)
   }
   lastFileId.value = null
   lastTargetLine.value = null
@@ -475,6 +480,26 @@ function focusGraphOnFile(file) {
   graphFocusFileId.value = file?.id ?? null
   treeDrivenPath = graphFocusPath.value
   graphFocusToken.value = ++focusSeq
+}
+
+// Die Kamera nachziehen, wenn sich die Graphflaeche gerade noch aendert: die Panelbreite laeuft
+// als Animation (220 ms, s. `.panel-grid`), das Einpassen des Graphen haengt dagegen am Layout und
+// ist da laengst gelaufen – der Ausschnitt passt dann zur Flaeche von vorhin. Der Nachzieher sitzt
+// hinter der Uebergangszeit UND hinter dem zweiten Einpassen des Graphen (280 ms). Bewusst ein
+// ruhiger Schwenk statt eines Sprungs: hier raeumt die Ansicht auf, das darf man sehen.
+const GRAPH_REFIT_DELAY_MS = 400
+let refitTimer = null
+function refitGraphSoon(duration = 420) {
+  clearTimeout(refitTimer)
+  refitTimer = setTimeout(() => graphRef.value?.fitToView?.({ duration }), GRAPH_REFIT_DELAY_MS)
+}
+
+// „Zeig mir wieder alles": oberste Ebene + eingepasste Kamera. Der leere Pfad landet im Graphen
+// auf `rootPath` (dessen Fokus-Watcher faengt jeden Pfad ab, der nicht zur Wurzel passt) – hier
+// muss also niemand wissen, wie der gemeinsame Praefix der Codebasis gerade heisst.
+function showGraphOverview() {
+  focusGraphOnPackage('')
+  refitGraphSoon()
 }
 
 function toggleFolder(path, open) {

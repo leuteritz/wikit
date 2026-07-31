@@ -1414,7 +1414,14 @@ function focusFind() {
   findField.value?.focus()
   findField.value?.select()
 }
-defineExpose({ focusFind, fitToView: () => fitView({ padding: 0.18, maxZoom: 1.15, duration: 200 }), drillUp })
+// `fitToView` nimmt Optionen an: der Aufrufer weiss, ob er die Tastatur bedient (0 -> sofort, so
+// schnell wie ein Tastendruck) oder eine Ansicht aufraeumt (dann ein ruhiger Schwenk statt eines
+// Sprungs). Die Grundwerte bleiben dieselben, damit beide Wege denselben Ausschnitt ergeben.
+defineExpose({
+  focusFind,
+  fitToView: (opts = {}) => fitView({ padding: 0.18, maxZoom: 1.15, duration: 200, ...opts }),
+  drillUp,
+})
 
 // Canvas-Raster: ein einzelnes Linienraster, das mit dem Viewport wandert und beim Pannen
 // Orientierung gibt. Deckkraft so gewaehlt, dass es als Gefuege lesbar bleibt, ohne mit den
