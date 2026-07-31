@@ -193,14 +193,38 @@ function consumeHandoff() {
     // Bild"). Diese eine Meldung gehoert aber zum Sprung selbst, nicht zu einer Handlung des
     // Nutzers: dieselbe Unterscheidung wie `treeDrivenPath` weiter unten.
     handoffNavigating = true
-    focusGraphOnFile(target)
+    // Kam der Sprung aus einer Trefferliste (nur die Palette schickt eine Suche mit), gilt er der
+    // KLASSE, nicht nur ihrem Quelltext: der Filter links stellt sich auf ihren Namen, und der
+    // Graph zeigt sie mit ihrer ganzen Umgebung. Queue, Edge-Panel und Landing-„Add code" kommen
+    // dagegen aus dem Bild selbst – dort waere ein gesetzter Filter eine Einschraenkung, um die
+    // niemand gebeten hat (dieselbe Grenze wie bei der geliehenen Panelbreite weiter unten).
+    //
+    // Die Ebene DARUNTER ist in beiden Faellen das Package der Klasse: wer den Filter spaeter
+    // leert, landet dort, wo die Klasse liegt – und nicht wieder in dem Ausschnitt, den er vor der
+    // Suche ansah. Nur den Knoten anfahren muss der Ego-Fall nicht: das Ego-Layout stellt die
+    // Klasse selbst in die Mitte, und der Fokus-Zweig des Graphen passt auf EINEN Knoten ein
+    // (`padding 1.6`) – gemessen ein Ausschnitt, der die halbe Umgebung aus dem Bild schob.
+    if (handoffSearch.value) {
+      focusGraphOnPackage(target.package || '')
+      focusSearchOnFile(target)
+    } else {
+      focusGraphOnFile(target)
+    }
     openPathInTree(target.package || '(default)')
     nextTick(() => scrollTreeTo(`[data-fid="${target.id}"]`))
   }
   // Kam der Sprung aus der globalen Suche (nur die schickt eine Suche mit), will man den CODE
   // lesen – dafuer macht das Panel vorübergehend auf. Zurueckgegeben wird beim Schliessen oder
   // beim naechsten Klick in Graph/Baum (s. selectFile/onDetailClose).
-  if (handoffSearch.value) focusRight()
+  if (handoffSearch.value) {
+    focusRight()
+    // …und der Graph muss den Ausschnitt nachziehen: die geliehene Breite nimmt ihm ein knappes
+    // Viertel seiner Flaeche, und zwar ANIMIERT (220 ms, s. `.panel-grid`) – sein eigenes
+    // Einpassen laeuft da laengst. Gemessen blieb der Ausschnitt danach zur alten Breite passend:
+    // Karten 67 statt 125 px und die halbe Umgebung links ausserhalb des Canvas. Der Nachzieher
+    // sitzt hinter der Uebergangszeit UND hinter dem zweiten Einpassen des Graphen (280 ms).
+    setTimeout(() => graphRef.value?.fitToView?.(), 400)
+  }
   lastFileId.value = null
   lastTargetLine.value = null
   lastTargetEndLine.value = null
@@ -323,13 +347,54 @@ const GRAPH_SEARCH_DELAY_MS = 240
 const graphMatchIds = ref([])
 const graphQuery = ref('')
 let graphSearchTimer = null
+// Sprung aus der globalen Suche: dort ist GENAU EINE Klasse gemeint, der Filter links trifft aber
+// oft mehrere Namen („Doa" -> DoaAddForm, DoaUtil, DoaHelper). Der Graph zeigt deshalb das Ego der
+// gesprungenen Klasse, solange der Filter noch der ist, den der Sprung gesetzt hat; jeder weitere
+// Tastendruck loest die Ausnahme auf. Gemerkt wird die ANFRAGE mit, nicht nur ein Schalter: der
+// Watcher laeuft nicht, wenn der Filter schon denselben Wert trug (zweimal derselbe Sprung), und
+// ein einmaliges Ueberspringen bliebe dann haengen und verschluckte den naechsten echten Lauf.
+let egoOverride = null // { query, id }
+// Filter links UND Graph in einem Zug auf die gesprungene Klasse stellen. Beide Debounces bleiben
+// aussen vor: sie sind gegen das Tippen gebaut (an einem Anschlag haengt der halbe Bildschirm), hier
+// gibt es aber genau eine Aenderung – und ein Sprung, der erst 400 ms spaeter im Bild ankommt, sieht
+// aus wie ein verschluckter Klick.
+function focusSearchOnFile(file) {
+  const name = String(file.class_name || '')
+  if (!name) return
+  clearTimeout(searchTimer)
+  search.value = name
+  appliedSearch.value = name
+  clearTimeout(graphSearchTimer)
+  egoOverride = { query: name, id: file.id }
+  graphMatchIds.value = [file.id]
+  graphQuery.value = name
+}
+
+// Zurueck zur Regel „Graph zeigt die Trefferliste" – ohne Verzoegerung, es wird nur weggenommen.
+function releaseEgoOverride() {
+  if (!egoOverride) return
+  egoOverride = null
+  clearTimeout(graphSearchTimer)
+  graphMatchIds.value = searching.value ? filteredFiles.value.map((f) => f.id) : []
+  graphQuery.value = searching.value ? appliedSearch.value : ''
+}
 watch([searching, filteredFiles], ([on, list]) => {
   clearTimeout(graphSearchTimer)
   if (!on) {
+    egoOverride = null
     graphMatchIds.value = []
     graphQuery.value = ''
     return
   }
+  // Der Sprung hat den Graphen bereits auf diese eine Klasse gestellt – der Filter, den er dabei
+  // gesetzt hat, laeuft hier als eigene Aenderung ein und wuerde sie sofort wieder durch die volle
+  // Trefferliste ersetzen.
+  if (egoOverride && egoOverride.query === appliedSearch.value) {
+    graphMatchIds.value = [egoOverride.id]
+    graphQuery.value = appliedSearch.value
+    return
+  }
+  egoOverride = null
   graphSearchTimer = setTimeout(() => {
     graphMatchIds.value = list.map((f) => f.id)
     graphQuery.value = appliedSearch.value
@@ -489,8 +554,16 @@ function onGraphNavigate(path) {
   // dem Bild – die fuer einen Suchtreffer geliehene Panelbreite gehoert dann zurueck. Kam die
   // Meldung dagegen vom Sprung selbst (der Graph faehrt die gefundene Klasse an), ist sie KEINE
   // Handlung des Nutzers und darf die Breite nicht wieder einkassieren.
-  if (handoffNavigating) handoffNavigating = false
-  else releaseFocus()
+  //
+  // Und der Sprung meldet sich MEHRFACH: er setzt Ebene und Suchmodus zugleich, und der
+  // Ebenenwechsel laeuft im Graphen verzoegert (withLayoutBusy malt erst die Wartemeldung). Ein
+  // einmaliger Vermerk waere vom ersten `navigate` aufgebraucht und das zweite gaebe die Breite
+  // sofort wieder ab. Im Suchmodus meldet der Graph `null` – der Vermerk gilt deshalb, solange
+  // genau das kommt, und endet mit der ersten echten Ebene: DAS ist wieder eine Handlung des
+  // Nutzers (Filter geleert, Ebene gewechselt).
+  if (handoffNavigating && !path) return
+  handoffNavigating = false
+  releaseFocus()
   // Kam die Ebene aus dem Baum, ist dessen Zustand bereits die Absicht des Nutzers – dann nur die
   // Markierung nachziehen, nicht die Faltung.
   const fromTree = treeDrivenPath !== null && treeDrivenPath === path
@@ -810,6 +883,10 @@ function selectFile(id) {
   // Manuelle Auswahl -> evtl. ausstehende Such-Zielzeile verwerfen (kein Fehl-Highlight).
   activeTargetLine.value = null
   activeTargetEndLine.value = null
+  // Der Sprung aus der globalen Suche haelt den Graphen auf EINER Klasse fest. Wer daneben eine
+  // andere waehlt, meint nicht mehr sie – dann gilt wieder der Filter, sonst zeigte der Graph das
+  // Umfeld einer Klasse, die rechts gar nicht mehr offen ist.
+  if (egoOverride && egoOverride.id !== id) releaseEgoOverride()
   // …und die geliehene Panelbreite zurueckgeben: wer im Graphen oder im Baum weiterklickt,
   // arbeitet wieder mit dem Bild, nicht mit dem Code eines Suchtreffers.
   releaseFocus()
