@@ -163,6 +163,7 @@ export class JavaService {
           body: m.body || '',
           start_line: m.start_line ?? null,
           body_start_line: m.body_start_line ?? null,
+          member_kind: m.member_kind ?? 'method',
         });
       }
 
@@ -458,6 +459,7 @@ export class JavaService {
           body: m.body || '',
           start_line: m.start_line ?? null,
           body_start_line: m.body_start_line ?? null,
+          member_kind: m.member_kind ?? 'method',
         })),
       );
     }

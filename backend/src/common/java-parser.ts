@@ -4,6 +4,14 @@
 // 1:1 portiert aus backend/javaParser.js (Typen bewusst locker gehalten).
 import { parse } from 'java-parser';
 
+// Was fuer ein Mitglied traegt diesen Rumpf? Konstruktoren und Initialisierer sind KEINE Methoden
+// im Sinne der Aufloesung – man ruft sie nicht beim Namen, sie stehen nicht in `definedMethods`
+// und sie zaehlen nicht in `method_count` oder beim Klassen-Charakter mit. Sie tragen aber Code,
+// und bei einer Klasse, die ihre Abhaengigkeiten im Konstruktor verdrahtet, steht dort die
+// EINZIGE Benutzung einer importierten Klasse. Ohne sie behauptete der Graph „only imports X.
+// Nothing in the code uses it" ueber eine Klasse, die zwei Zeilen tiefer benutzt wird.
+export type JavaMemberKind = 'method' | 'constructor' | 'initializer';
+
 export interface JavaMethodInfo {
   method_name: string;
   return_type: string;
@@ -13,6 +21,7 @@ export interface JavaMethodInfo {
   body: string;
   start_line: number; // 1-basierte Quellzeile der Methodendeklaration (fuer Sprung/Highlight)
   body_start_line: number; // 1-basierte Quellzeile des Body-`{` (Basis fuer exakte Aufrufzeilen)
+  member_kind: JavaMemberKind;
 }
 
 // Java-Methoden-Modifier (kein Annotations-Set): dient als Filter, damit aus den
@@ -204,11 +213,17 @@ function minLine(node: any): number {
   return lines.length ? Math.min(...lines) : 1;
 }
 
-// Methodenrumpf rekonstruieren: Spannweite der methodBody-Tokens aus dem Quelltext schneiden.
+// Der Rumpf-Knoten eines Mitglieds – Methode, Konstruktor oder Initialisierer-Block. Die
+// Reihenfolge ist wichtig: `methodBody`/`constructorBody` ENTHALTEN ihrerseits einen `block`,
+// also darf der nur der letzte Versuch sein (er gilt den Initialisierern, die keine Huelle haben).
+function bodyNodeOf(member: any): any {
+  return findFirst(member, 'methodBody') || findFirst(member, 'constructorBody') || findFirst(member, 'block');
+}
+
+// Methodenrumpf rekonstruieren: Spannweite der Body-Tokens aus dem Quelltext schneiden.
 // chevrotain-Tokens haben startOffset/endOffset (endOffset = Index des letzten Zeichens).
 // Leerer String bei abstract-/Interface-Methoden ohne Body.
-function bodyText(methodNode: any, source: string): string {
-  const bodyNode = findFirst(methodNode, 'methodBody');
+function bodyText(bodyNode: any, source: string): string {
   if (!bodyNode) return '';
   const toks = collectTokens(bodyNode);
   if (!toks.length) return '';
@@ -344,13 +359,92 @@ function extractMethods(typeNode: any, blocks: any[], source: string): JavaMetho
       parameters: params,
       modifiers,
       javadoc: javadocFor(minOffset(mNode), blocks, source),
-      body: bodyText(mNode, source),
+      body: bodyText(findFirst(mNode, 'methodBody'), source),
       // Zeile des Methoden-Identifiers (praeziser als der Knotenanfang mit Annotationen/Modifiern).
       start_line: minLine(declarator),
       // Zeile des Body-`{` (= Beginn von bodyText, da der Slice am `{`-Token startet) -> Basis,
       // um aus dem Body-Text die exakte Quellzeile einer Aufrufstelle zu berechnen.
       body_start_line: minLine(findFirst(mNode, 'methodBody')),
+      member_kind: 'method',
     });
+  }
+
+  // Konstruktoren – normal (`Foo(int x) { … }`) und kompakt (Record: `Pt { … }`, eigener
+  // CST-Knoten OHNE Deklarator, die Parameter sind die Record-Komponenten). Beide sind Mitglieder
+  // mit Rumpf; ohne sie zeigt das Edge-Panel zu einer Kante aus dem Konstruktor keine Aufrufstelle.
+  for (const cNode of [
+    ...findAll(typeNode, 'constructorDeclaration'),
+    ...findAll(typeNode, 'compactConstructorDeclaration'),
+  ]) {
+    const declarator = findFirst(cNode, 'constructorDeclarator');
+    // Der Name steht in `simpleTypeName` – beim kompakten Konstruktor direkt am Knoten.
+    const nameNode = findFirst(cNode, 'simpleTypeName');
+    const nameTok = collectTokens(nameNode || cNode).find((t) => isIdent(t));
+    if (!nameTok) continue;
+
+    const modifiers: string[] = [];
+    for (const tok of findAll(cNode, 'constructorModifier')
+      .flatMap((node) => collectTokens(node))
+      .sort((a, b) => a.startOffset - b.startOffset)) {
+      const kw = (tok.image || '').toLowerCase();
+      if (METHOD_MODIFIERS.has(kw) && !modifiers.includes(kw)) modifiers.push(kw);
+    }
+
+    const params: Array<{ type: string; name: string }> = [];
+    if (declarator) {
+      for (const p of findAll(declarator, 'variableParaRegularParameter')) {
+        params.push({
+          type: typeText(findFirst(p, 'unannType')),
+          name: collectTokens(findFirst(p, 'variableDeclaratorId') || p).find((t) => isIdent(t))?.image || '',
+        });
+      }
+      for (const p of findAll(declarator, 'variableArityParameter')) {
+        const idTok = collectTokens(p).filter((t) => isIdent(t));
+        params.push({
+          type: typeText(findFirst(p, 'unannType')) + '...',
+          name: idTok.length ? idTok[idTok.length - 1].image : '',
+        });
+      }
+    }
+
+    const body = findFirst(cNode, 'constructorBody');
+    methods.push({
+      method_name: nameTok.image,
+      // Ein Konstruktor HAT keinen Rueckgabetyp – `void` waere hier keine Vereinfachung, sondern
+      // eine falsche Angabe. Die Signatur laesst die Stelle deshalb leer (s. buildSignature).
+      return_type: '',
+      parameters: params,
+      modifiers,
+      javadoc: javadocFor(minOffset(cNode), blocks, source),
+      body: bodyText(body, source),
+      start_line: minLine(declarator || nameNode || cNode),
+      body_start_line: minLine(body),
+      member_kind: 'constructor',
+    });
+  }
+
+  // Initialisierer-Bloecke. Ihr „Name" ist bewusst der Quelltext selbst (`static { }` / `{ }`):
+  // beides sind keine gueltigen Java-Bezeichner, koennen also nie mit einer echten Methode
+  // kollidieren (die Suche nach einem Snippet geht ueber den Namen), und sie lesen sich genau so,
+  // wie sie im Code stehen.
+  for (const [nodeName, label, mods] of [
+    ['staticInitializer', 'static { }', ['static']],
+    ['instanceInitializer', '{ }', []],
+  ] as Array<[string, string, string[]]>) {
+    for (const iNode of findAll(typeNode, nodeName)) {
+      const body = findFirst(iNode, 'block');
+      methods.push({
+        method_name: label,
+        return_type: '',
+        parameters: [],
+        modifiers: mods,
+        javadoc: javadocFor(minOffset(iNode), blocks, source),
+        body: bodyText(body, source),
+        start_line: minLine(iNode),
+        body_start_line: minLine(body),
+        member_kind: 'initializer',
+      });
+    }
   }
 
   // Elemente eines Annotationstyps (`String value() default "";`). In Java SIND das Methoden,
@@ -376,8 +470,15 @@ function extractMethods(typeNode: any, blocks: any[], source: string): JavaMetho
       body: defaultValueText(el, source),
       start_line: minLine(el),
       body_start_line: null,
+      member_kind: 'method',
     });
   }
+
+  // Quellreihenfolge herstellen: die Mitglieder entstehen oben in vier Durchlaeufen (Methoden,
+  // Konstruktoren, Initialisierer, Annotationselemente), stehen im Code aber gemischt. Ohne diese
+  // Zeile stuende der Konstruktor in der Klassenansicht hinter der letzten Methode – genau dort,
+  // wo ihn niemand sucht. `sort` ist seit ES2019 stabil, gleiche Zeile behaelt also ihre Ordnung.
+  methods.sort((a, b) => (a.start_line || 0) - (b.start_line || 0));
   return methods;
 }
 
@@ -437,7 +538,12 @@ export function deriveStereotype(info: {
   if (isThrowable(info.extends_name) || isThrowable(info.class_name)) return 'exception';
   if (info.class_modifiers.includes('abstract')) return 'abstract';
 
-  const methods = info.methods || [];
+  // NUR echte Methoden: seit Konstruktoren und Initialisierer eigene Mitglieder sind, stuenden
+  // sie sonst hier mit drin – und beide Regeln unten kippten lautlos. Eine Utility-Klasse mit dem
+  // ueblichen privaten Konstruktor waere keine Utility mehr (er ist nicht static), und JEDE
+  // Datenklasse waere gewoehnlich (ein Konstruktor ist kein Accessor). Genau die zwei Faelle, die
+  // der Kommentar unten seit jeher ausnimmt.
+  const methods = (info.methods || []).filter((m) => (m.member_kind ?? 'method') === 'method');
   // Utility: mindestens eine Methode und ALLE statisch (Konstruktoren stoeren nicht – der
   // private Ctor ist genau das Idiom, das eine Utility-Klasse uninstanziierbar macht).
   if (methods.length > 0 && methods.every((m) => (m.modifiers || []).includes('static'))) return 'util';
@@ -823,12 +929,17 @@ function collectFields(typeNode: any): Record<string, string> {
   return fields;
 }
 
-// Scope einer Methode: Felder + Parameter + lokale Variablen (mit Typ).
-// `var`-Locals werden uebersprungen (Typ ohne Inferenz nicht aufloesbar).
-function methodScope(mNode: any, baseFields: Record<string, string>): Record<string, string> {
+// Scope eines Mitglieds: Felder + Parameter + lokale Variablen + catch-Parameter (mit Typ).
+// `var`-Locals werden uebersprungen (Typ ohne Inferenz nicht aufloesbar). Deklarator und Rumpf
+// kommen von aussen, weil sie je Mitgliedsart anders heissen (methodDeclarator/methodBody vs.
+// constructorDeclarator/constructorBody vs. blosser block) – die Regeln darin sind dieselben.
+function memberScope(
+  declarator: any,
+  bodyNode: any,
+  baseFields: Record<string, string>,
+): Record<string, string> {
   const scope: Record<string, string> = { ...baseFields };
 
-  const declarator = findFirst(mNode, 'methodDeclarator');
   if (declarator) {
     for (const p of findAll(declarator, 'variableParaRegularParameter')) {
       const type = simpleName(typeText(findFirst(p, 'unannType')));
@@ -837,8 +948,9 @@ function methodScope(mNode: any, baseFields: Record<string, string>): Record<str
     }
   }
 
-  const bodyNode = findFirst(mNode, 'methodBody');
   if (bodyNode) {
+    // try-with-resources braucht keinen eigenen Zweig: ein `resource`-Knoten enthaelt selbst eine
+    // `localVariableDeclaration` (im CST nachgesehen, nicht angenommen).
     for (const lvd of findAll(bodyNode, 'localVariableDeclaration')) {
       const type = simpleName(typeText(findFirst(lvd, 'localVariableType')));
       if (!type || type === 'var') continue;
@@ -846,6 +958,18 @@ function methodScope(mNode: any, baseFields: Record<string, string>): Record<str
         const id = collectTokens(vdId).find((t) => isIdent(t))?.image;
         if (id) scope[id] = type;
       }
+    }
+    // `catch (final BootException ex)` deklariert eine Variable wie jede andere – ohne sie war
+    // `ex.report()` ein Aufruf auf einem Empfaenger ohne Typ, also gar keine Kante.
+    for (const cp of findAll(bodyNode, 'catchFormalParameter')) {
+      // Ein Multi-catch (`catch (A | B e)`) nennt zwei Typen. Welcher davon der Empfaenger ist,
+      // entscheidet erst der gemeinsame Obertyp – den kennen wir nicht, also binden wir hier gar
+      // nichts. Beide Typen sind trotzdem referenziert (s. collectTypeMentions).
+      const types = findAll(cp, 'catchType').flatMap((ct) => findAll(ct, 'unannClassType'));
+      if (types.length !== 1) continue;
+      const type = simpleName(typeText(types[0]));
+      const id = collectTokens(findFirst(cp, 'variableDeclaratorId') || cp).find((t) => isIdent(t))?.image;
+      if (type && id) scope[id] = type;
     }
   }
   return scope;
@@ -888,11 +1012,56 @@ function collectNewTypes(node: any): string[] {
   return out;
 }
 
-// Methoden-Aufrufe eines Methodenrumpfs extrahieren. Kein methodInvocation-Knoten in
-// java-parser -> Token-Stream-Pass: der Methodenname ist immer der Identifier direkt
-// links vom '(' eines methodInvocationSuffix.
-function extractInvocations(mNode: any): JavaInvocation[] {
-  const bodyNode = findFirst(mNode, 'methodBody');
+// Typnamen, die im Code stehen, ohne eine Deklaration zu sein. Vier Stellen, jede fuer sich eine
+// echte Abhaengigkeit (ohne den genannten Typ kompiliert die Klasse nicht) und keine davon bisher
+// erfasst – jede erzeugte damit die falsche Auskunft „only imports X, nothing uses it":
+//
+//   * `Foo.CONST` / `Foo.staticMethod()` / `Foo.class` / `Foo.Nested` – ein QUALIFIZIERTER Zugriff.
+//     Erkannt wird der Wurzel-Bezeichner einer Punktkette, der selbst nicht auf einen Punkt folgt.
+//     Der Grossbuchstabe ist dabei kein Schoenheitsfilter, sondern das einzige Merkmal, an dem auch
+//     ein Java-Leser `Http.GET` (Typ) von `conn.getResponseCode()` (Variable) unterscheidet – ohne
+//     ihn wuerde jede gleichnamige Variable eine erfundene Kante erzeugen. Paketpraefixe
+//     (`efw.util.X`) fallen als Kleinschreibung ohnehin heraus, und was uebrig bleibt, filtert die
+//     Neuberechnung noch gegen die tatsaechlich analysierten Klassennamen.
+//   * `catch (A | B e)` – auch der Multi-catch, bei dem der Scope bewusst nichts bindet.
+//   * `(Payload) o` – Cast auf einen Referenztyp.
+//   * `o instanceof Payload` – java-parser hat dafuer keinen eigenen Knoten, der Typ haengt als
+//     `referenceType` an einem `binaryExpression` mit `Instanceof`-Token (im CST nachgesehen).
+//   * `throws BootException` – die deklarierte Ausnahme.
+function collectTypeMentions(node: any): string[] {
+  const out: string[] = [];
+
+  const toks = collectTokens(node).sort((a, b) => a.startOffset - b.startOffset);
+  for (let i = 0; i < toks.length; i++) {
+    const t = toks[i];
+    if (!isIdent(t) || !/^[A-Z]/.test(t.image || '')) continue;
+    if (toks[i + 1]?.image !== '.') continue;
+    if (toks[i - 1]?.image === '.') continue;
+    out.push(t.image);
+  }
+
+  for (const ct of findAll(node, 'catchType')) {
+    for (const t of findAll(ct, 'unannClassType')) out.push(simpleName(typeText(t)));
+  }
+  for (const cast of findAll(node, 'referenceTypeCastExpression')) {
+    const rt = findFirst(cast, 'referenceType');
+    if (rt) out.push(firstTypeName(rt));
+  }
+  for (const be of findAll(node, 'binaryExpression')) {
+    if (!(be.children?.Instanceof || []).length) continue;
+    for (const rt of be.children.referenceType || []) out.push(firstTypeName(rt));
+  }
+  for (const th of findAll(node, 'throws')) {
+    for (const t of findAll(th, 'exceptionType')) out.push(firstTypeName(t));
+  }
+
+  return out.filter(Boolean);
+}
+
+// Methoden-Aufrufe eines Rumpfes extrahieren. Kein methodInvocation-Knoten in java-parser
+// -> Token-Stream-Pass: der Methodenname ist immer der Identifier direkt links vom '(' eines
+// methodInvocationSuffix. Der Rumpf kommt von aussen, weil er je Mitgliedsart anders heisst.
+function extractInvocations(bodyNode: any): JavaInvocation[] {
   if (!bodyNode) return [];
   const toks = collectTokens(bodyNode).sort((a, b) => a.startOffset - b.startOffset);
 
@@ -1008,35 +1177,63 @@ export function parseJavaForEdges(source: string): JavaClassGraphInfo[] {
     if (!class_name) continue;
 
     const fields = collectFields(node);
-    const methodNodes = [
+    // Jedes Mitglied MIT Rumpf ist ein moeglicher Aufrufer – nicht nur die Methoden. Genau daran
+    // scheiterte der gemeldete Fall: eine Klasse, die ihren Schluessel im Konstruktor holt
+    // (`KeyHlpr.getProp(…)`), benutzte KeyHlpr nachweislich, und der Graph behauptete das
+    // Gegenteil, weil hier nur `methodDeclaration` stand.
+    const members: Array<{ node: any; declarator: any; name: string }> = [];
+    for (const mNode of [
       ...findAll(node, 'methodDeclaration'),
       ...findAll(node, 'interfaceMethodDeclaration'),
-    ];
+    ]) {
+      const declarator = findFirst(mNode, 'methodDeclarator');
+      const nameTok = declarator ? collectTokens(declarator).find((t) => isIdent(t)) : null;
+      members.push({ node: mNode, declarator, name: nameTok?.image || '' });
+    }
+    for (const cNode of [
+      ...findAll(node, 'constructorDeclaration'),
+      ...findAll(node, 'compactConstructorDeclaration'),
+    ]) {
+      const nameNode = findFirst(cNode, 'simpleTypeName');
+      const nameTok = collectTokens(nameNode || cNode).find((t) => isIdent(t));
+      members.push({ node: cNode, declarator: findFirst(cNode, 'constructorDeclarator'), name: nameTok?.image || '' });
+    }
+    for (const iNode of [...findAll(node, 'staticInitializer'), ...findAll(node, 'instanceInitializer')]) {
+      members.push({ node: iNode, declarator: null, name: '' });
+    }
+
     const callers: JavaCallerMethod[] = [];
     const referencedTypes = new Set<string>();
-    for (const mNode of methodNodes) {
-      const declarator = findFirst(mNode, 'methodDeclarator');
-      const nameTok = declarator
-        ? collectTokens(declarator).find((t) => isIdent(t))
-        : null;
-      const scope = methodScope(mNode, fields);
+    for (const member of members) {
+      const bodyNode = bodyNodeOf(member.node);
+      const scope = memberScope(member.declarator, bodyNode, fields);
       callers.push({
-        name: nameTok?.image || '',
+        name: member.name,
         scope,
-        invocations: extractInvocations(mNode),
+        invocations: extractInvocations(bodyNode),
       });
-      // Scope deckt Felder (gespreizt) + Parameter + lokale Variablen ab.
+      // Scope deckt Felder (gespreizt) + Parameter + lokale Variablen + catch-Parameter ab.
       for (const t of Object.values(scope)) referencedTypes.add(t);
-      // Rueckgabetyp der Methode.
-      const ret = simpleName(typeText(findFirst(mNode, 'result')));
+      // Rueckgabetyp der Methode (Konstruktoren/Initialisierer haben keinen).
+      const ret = simpleName(typeText(findFirst(member.node, 'result')));
       if (ret && ret !== 'void') referencedTypes.add(ret);
-      // Instanziierte Typen (`new X()`) im Methodenrumpf.
-      for (const t of collectNewTypes(mNode)) referencedTypes.add(t);
+      // Instanziierte Typen (`new X()`) im Rumpf.
+      for (const t of collectNewTypes(member.node)) referencedTypes.add(t);
     }
     // Felder auch dann erfassen, wenn die Klasse keine Methoden hat.
     for (const t of Object.values(fields)) referencedTypes.add(t);
-    // Instanziierungen ausserhalb von Methodenruempfen (Feld-Initialisierer etc.).
+    // Instanziierungen ausserhalb von Ruempfen (Feld-Initialisierer etc.).
     for (const t of collectNewTypes(node)) referencedTypes.add(t);
+    // Typnamen, die nirgends deklariert werden (statischer Zugriff, Cast, instanceof, catch,
+    // throws). Ueber den GANZEN Typ-Knoten, damit auch Feld-Initialisierer und Annotationen
+    // mitzaehlen – die Neuberechnung filtert ohnehin gegen die analysierten Klassen.
+    for (const t of collectTypeMentions(node)) referencedTypes.add(t);
+    // `extends`/`implements`: die staerkste Abhaengigkeit, die es gibt – ohne den Obertyp
+    // existiert die Klasse nicht. Sie erzeugte trotzdem nur dann eine Kante, wenn zufaellig eine
+    // geerbte Methode aufgerufen wurde (resolveInherited); sonst behauptete die Import-Kante
+    // „nothing in the code uses it" ueber die eigene Basisklasse.
+    const superNames = superTypeNames(node);
+    for (const t of superNames) referencedTypes.add(t);
 
     infos.push({
       class_name,
@@ -1044,7 +1241,7 @@ export function parseJavaForEdges(source: string): JavaClassGraphInfo[] {
       fields,
       callers,
       referencedTypes,
-      superTypes: superTypeNames(node),
+      superTypes: superNames,
       staticImports,
       staticWildcardTypes,
     });

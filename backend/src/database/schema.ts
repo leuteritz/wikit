@@ -89,6 +89,11 @@ CREATE TABLE IF NOT EXISTS java_methods (
   body        TEXT,                -- geparster Methodenrumpf (Offset-basiert, KI-Kontext)
   start_line  INTEGER,             -- 1-basierte Quellzeile der Methodendeklaration (Such-Sprung/Highlight)
   body_start_line INTEGER,         -- 1-basierte Quellzeile der Body-Klammer (Basis fuer exakte Aufrufzeilen)
+  -- 'method' | 'constructor' | 'initializer'. Die Tabelle haelt jedes Mitglied MIT Rumpf, nicht
+  -- nur Methoden: eine Klasse, die ihre Abhaengigkeiten im Konstruktor verdrahtet, hat dort die
+  -- einzige Benutzung einer importierten Klasse, und ohne die Zeile koennte das Edge-Panel die
+  -- Aufrufstelle einer so entstandenen Kante nicht zeigen. NULL im Altbestand = 'method'.
+  member_kind TEXT,
   created_at  TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_java_methods_file ON java_methods(file_id);
@@ -175,5 +180,6 @@ export const COLUMN_MIGRATIONS: Array<{ table: string; column: string; ddl: stri
   { table: 'java_methods', column: 'body', ddl: 'ALTER TABLE java_methods ADD COLUMN body TEXT' },
   { table: 'java_methods', column: 'start_line', ddl: 'ALTER TABLE java_methods ADD COLUMN start_line INTEGER' },
   { table: 'java_methods', column: 'body_start_line', ddl: 'ALTER TABLE java_methods ADD COLUMN body_start_line INTEGER' },
+  { table: 'java_methods', column: 'member_kind', ddl: 'ALTER TABLE java_methods ADD COLUMN member_kind TEXT' },
   { table: 'java_edges', column: 'kind', ddl: "ALTER TABLE java_edges ADD COLUMN kind TEXT NOT NULL DEFAULT 'call'" },
 ];

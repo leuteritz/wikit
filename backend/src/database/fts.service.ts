@@ -47,12 +47,16 @@ export class FtsService {
     await manager.query('DELETE FROM java_fts WHERE rowid = ?', [fileId]);
     if (!f) return;
     const methodRows = await manager.query(
-      `SELECT method_name, return_type, parameters, javadoc, ai_summary
+      `SELECT method_name, return_type, parameters, javadoc, ai_summary, member_kind
        FROM java_methods WHERE file_id = ? ORDER BY id`,
       [fileId],
     );
     const methods = methodRows
-      .map((m: any) => `${m.return_type || 'void'} ${m.method_name}`)
+      // Konstruktoren und Initialisierer haben keinen Rueckgabetyp – ein 'void' davor waere ein
+      // Term, der im Quelltext nicht steht (NULL im Altbestand = Methode).
+      .map((m: any) =>
+        (m.member_kind || 'method') === 'method' ? `${m.return_type || 'void'} ${m.method_name}` : m.method_name,
+      )
       .join(' ');
     const descriptions = [f.description || '']
       .concat(methodRows.map((m: any) => `${m.method_name}: ${m.ai_summary || m.javadoc || ''}`))
@@ -143,6 +147,12 @@ export class FtsService {
   // Methoden-genaue Code-Suche: matcht Methodennamen (LIKE, COLLATE NOCASE) und liefert die
   // Zeilennummer mit -> das Frontend springt direkt zur Methode (Such-Sprung + Highlight).
   // Kein FTS noetig (gezielter Namens-Treffer), bewusst SQLite-Raw analog searchJavaFiles.
+  //
+  // NUR echte Methoden, obwohl java_methods seit der Kanten-Korrektur jedes Mitglied mit Rumpf
+  // haelt: ein Konstruktor heisst wie seine Klasse und stuende sonst als zweiter Treffer unter
+  // der Klasse, die die Palette eine Zeile darueber ohnehin schon nennt – und ein Initialisierer
+  // heisst nach seiner Schreibweise im Code, traefe also jede Suche nach "static". NULL im
+  // Altbestand = Methode.
   async searchJavaMethods(q: string, limit = 10): Promise<any[]> {
     const term = (q || '').trim();
     if (!term) return [];
@@ -153,6 +163,8 @@ export class FtsService {
          FROM java_methods m
          JOIN java_files f ON f.id = m.file_id
          WHERE m.method_name LIKE ? COLLATE NOCASE
+           -- Nur echte Methoden (Begruendung s. Kommentar ueber der Funktion).
+           AND (m.member_kind IS NULL OR m.member_kind = 'method')
          ORDER BY (m.method_name = ? COLLATE NOCASE) DESC, m.method_name COLLATE NOCASE
          LIMIT ?`,
         [`%${term}%`, term, limit],

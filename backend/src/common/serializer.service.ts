@@ -38,11 +38,18 @@ export class SerializerService {
     method_name: string;
     parameters: any[];
     modifiers?: string[];
+    member_kind?: string | null;
   }): string {
+    const kind = m.member_kind || 'method';
+    // Ein Initialisierer-Block hat keine Signatur – sein gespeicherter Name IST die Schreibweise
+    // im Quelltext (`static { }` / `{ }`). Klammern anzuhaengen waere kein Java.
+    if (kind === 'initializer') return m.method_name;
     const params = (m.parameters || []).map((p: any) => `${p.type} ${p.name}`.trim()).join(', ');
     const mods = (m.modifiers || []).join(' ');
+    // Ein Konstruktor HAT keinen Rueckgabetyp; `void` waere dort nicht knapp, sondern falsch.
+    const ret = kind === 'constructor' ? '' : m.return_type || 'void';
     // Modifier (falls vorhanden) der Signatur voranstellen: `public static String getId(...)`.
-    return `${mods} ${m.return_type || 'void'} ${m.method_name}(${params})`.trim();
+    return `${mods} ${ret} ${m.method_name}(${params})`.replace(/\s+/g, ' ').trim();
   }
 
   async tagsForArticle(articleId: number): Promise<string[]> {
@@ -126,10 +133,15 @@ export class SerializerService {
     if (!rows.length) return [];
     const ids = rows.map((r) => r.id);
 
-    // Methodenzahl je Datei.
+    // Methodenzahl je Datei. Konstruktoren und Initialisierer stehen seit v3.x mit in der Tabelle,
+    // zaehlen hier aber NICHT mit: „5 methods" auf der Klassenkarte ist eine Aussage ueber die
+    // Methoden, und die Zahl waere sonst ueber Nacht bei jeder Klasse eine andere geworden, ohne
+    // dass sich am Code etwas geaendert haette. NULL = Altbestand = Methode.
     const methodCounts = new Map<number, number>();
     for (const r of await this.ds.query(
-      `SELECT file_id, COUNT(*) AS n FROM java_methods GROUP BY file_id`,
+      `SELECT file_id, COUNT(*) AS n FROM java_methods
+        WHERE member_kind IS NULL OR member_kind = 'method'
+        GROUP BY file_id`,
     )) {
       methodCounts.set(Number(r.file_id), Number(r.n));
     }
@@ -213,6 +225,7 @@ export class SerializerService {
         body: true,
         start_line: true,
         body_start_line: true,
+        member_kind: true,
       },
     });
     // signature_html (Shiki java) + summary_html (KI-Text als Markdown) server-seitig rendern,
@@ -221,8 +234,10 @@ export class SerializerService {
       methodRows.map(async (m) => {
         const parameters = safeJson(m.parameters, []);
         const modifiers = safeJson(m.modifiers, []);
+        // Altbestand hat hier NULL – der Client soll nicht jedes Mitglied darauf pruefen muessen.
+        const memberKind = m.member_kind || 'method';
         const { html: signatureHtml } = await this.markdown.renderMarkdown(
-          '```java\n' + this.buildSignature({ ...m, parameters, modifiers }) + '\n```',
+          '```java\n' + this.buildSignature({ ...m, parameters, modifiers, member_kind: memberKind }) + '\n```',
         );
         const { html: summaryHtml } = m.ai_summary
           ? await this.markdown.renderMarkdown(m.ai_summary)
@@ -236,6 +251,7 @@ export class SerializerService {
           ...m,
           parameters,
           modifiers,
+          member_kind: memberKind,
           signature_html: signatureHtml,
           summary_html: summaryHtml,
           body_html: bodyHtml,

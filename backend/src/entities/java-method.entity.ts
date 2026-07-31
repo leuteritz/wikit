@@ -35,6 +35,10 @@ export class JavaMethod {
   @Column({ name: 'body_start_line', type: 'integer', nullable: true })
   body_start_line: number | null; // 1-basierte Quellzeile des Body-`{` (Basis fuer exakte Aufrufzeilen)
 
+  // 'method' | 'constructor' | 'initializer' – NULL im Altbestand, dort als 'method' zu lesen.
+  @Column({ name: 'member_kind', type: 'text', nullable: true })
+  member_kind: string | null;
+
   @Column({ name: 'created_at', type: 'text', nullable: true, insert: false, update: false })
   created_at: string;
 }

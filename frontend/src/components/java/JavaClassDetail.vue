@@ -324,17 +324,37 @@ const typeBadge = computed(() => ({
   annotation: 'badge-danger',
 }[classKind.value] || 'badge-muted'))
 
-// Geladen: die echten Methoden. Waehrend des Ladens: die Zahl aus der Liste – dieselbe Zahl, nur
-// frueher, und der Kopf springt beim Eintreffen nicht.
-const methodCount = computed(() => file.value?.methods?.length ?? listEntry.value?.method_count ?? 0)
-const summarizedCount = computed(() => (file.value?.methods || []).filter((m) => m.summary_html).length)
+// Die Liste zeigt jedes Mitglied MIT Rumpf – auch Konstruktoren und Initialisierer-Bloecke, denn
+// dort steht bei einer Klasse, die ihre Abhaengigkeiten im Konstruktor holt, der interessanteste
+// Code. `memberCount` ist deshalb die Zahl der ANGEZEIGTEN Zeilen (sonst widerspraeche die
+// Ueberschrift der Liste darunter), `methodCount` bleibt die Aussage „so viele Methoden hat die
+// Klasse" – dieselbe Zahl, die die Klassenkarte im Graphen anschreibt.
+const members = computed(() => file.value?.methods || [])
+const memberCount = computed(() => (file.value ? members.value.length : (listEntry.value?.method_count ?? 0)))
+const methodCount = computed(() =>
+  file.value
+    ? members.value.filter((m) => (m.member_kind || 'method') === 'method').length
+    : (listEntry.value?.method_count ?? 0),
+)
+const summarizedCount = computed(() => members.value.filter((m) => m.summary_html).length)
+
+// Kurzzeichen fuer alles, was keine Methode ist. Die Signatur sagt es zwar auch (`N8nClient()`
+// ohne Rueckgabetyp), aber erst beim Lesen – der Chip macht die Liste scanbar.
+const MEMBER_CHIP = { constructor: 'ctor', initializer: 'init' }
+function memberChip(m) {
+  return MEMBER_CHIP[m.member_kind] || ''
+}
 
 // Signatur als String (Header-Chip + Wiki-Export). Modifier voranstellen, analog zum Backend
-// (SerializerService.buildSignature) -> `public static String getId(User u)`.
+// (SerializerService.buildSignature) -> `public static String getId(User u)`. Konstruktoren haben
+// keinen Rueckgabetyp, Initialisierer-Bloecke tragen ihre Schreibweise schon im Namen.
 function signature(m) {
+  const kind = m.member_kind || 'method'
+  if (kind === 'initializer') return m.method_name
   const params = (m.parameters || []).map((p) => `${p.type} ${p.name}`.trim()).join(', ')
   const mods = (m.modifiers || []).join(' ')
-  return `${mods} ${m.return_type || 'void'} ${m.method_name}(${params})`.trim()
+  const ret = kind === 'constructor' ? '' : m.return_type || 'void'
+  return `${mods} ${ret} ${m.method_name}(${params})`.replace(/\s+/g, ' ').trim()
 }
 // Code-Block einer Methode aufbereiten: server-gerenderte Signatur (Shiki, inkl. Modifier) als
 // erste Zeile, deklarationsfreier Rumpf, interne Leerzeilen IMMER entfernt (kein Toggle mehr).
@@ -520,7 +540,9 @@ function buildMarkdown(f) {
     for (const d of f.dependencies) lines.push(`- \`${d}\``)
     lines.push('')
   }
-  lines.push('## Methods', '')
+  // „Members", nicht „Methods": die Liste traegt seit der Kanten-Korrektur auch Konstruktoren und
+  // Initialisierer – und gerade der Konstruktor gehoert in einen Artikel ueber die Klasse.
+  lines.push('## Members', '')
   for (const m of f.methods || []) {
     lines.push(`### ${m.method_name}`, '', '```java', signature(m), '```', '')
     if (m.ai_summary) lines.push(m.ai_summary, '')
@@ -753,14 +775,18 @@ async function removeFile() {
           </section>
 
           <!-- Methoden -->
-          <h3 class="mb-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Methods ({{ methodCount }})</h3>
+          <h3 class="mb-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Members ({{ memberCount }})</h3>
           <ul class="space-y-1.5">
-            <li v-for="m in file.methods" :key="m.id" class="overflow-hidden rounded-lg border border-[var(--color-border)]">
+            <li v-for="m in members" :key="m.id" class="overflow-hidden rounded-lg border border-[var(--color-border)]">
               <button
                 type="button"
                 class="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-[var(--color-surface-offset)]"
                 @click="toggle(m.id)"
               >
+                <span
+                  v-if="memberChip(m)"
+                  class="shrink-0 rounded bg-[var(--color-surface-offset)] px-1.5 py-0.5 font-mono text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]"
+                >{{ memberChip(m) }}</span>
                 <code class="min-w-0 flex-1 truncate text-xs text-[var(--color-text)]">{{ signature(m) }}</code>
                 <span
                   class="shrink-0 rounded px-1.5 py-0.5 text-[0.5625rem] font-semibold uppercase"
