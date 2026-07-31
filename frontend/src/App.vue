@@ -5,8 +5,11 @@ import SearchPalette from './components/SearchPalette.vue'
 import ShortcutsOverlay from './components/ShortcutsOverlay.vue'
 import { sidebarShortcuts, keyChips, isTypingTarget } from './lib/shortcuts.js'
 import NotificationHost from './components/NotificationHost.vue'
+import ActivityCard from './components/ActivityCard.vue'
 import { useArticles } from './composables/useArticles.js'
 import { useJavaAnalyzer } from './composables/useJavaAnalyzer.js'
+import { useJavaQueue } from './composables/useJavaQueue.js'
+import { useActivity } from './composables/useActivity.js'
 import { useBot } from './composables/useBot.js'
 import { useTheme } from './composables/useTheme.js'
 import { WIKI_TITLE, WIKI_ICON, WIKI_VERSION } from './config.js'
@@ -14,6 +17,10 @@ import { Icon } from './lib/icons.js'
 
 const { load, articles } = useArticles()
 const { files, fetchFiles } = useJavaAnalyzer()
+const { probe: probeQueue } = useJavaQueue()
+// „Laeuft gerade etwas Langes?" – die Frage betrifft jede Ansicht, denn Import, Reset,
+// Kanten-Neuberechnung und KI-Queue laufen im Server weiter, wenn man die Code-Ansicht verlaesst.
+const { busy: activityBusy } = useActivity()
 const { theme, toggle: toggleTheme } = useTheme()
 // Verbindungsstand des Bots. Er haengt an der Sidebar, weil die Frage „antwortet die KI ueberhaupt?"
 // jede Ansicht betrifft – ein Massenlauf gegen einen abgeschalteten Ollama-Server faellt sonst
@@ -75,6 +82,10 @@ onMounted(() => {
   load()
   // Nur die Anzahl fuer den Nav-Badge – Fehler still (Code-Feature ist optional/leer moeglich).
   fetchFiles().catch(() => {})
+  // Einmal nachsehen, ob im Server noch eine KI-Queue laeuft. Ohne das faengt die Sidebar einen
+  // laufenden Massenlauf erst auf, wenn jemand die Code-Ansicht oeffnet – nach einem Reload also
+  // womoeglich nie.
+  probeQueue().catch(() => {})
   startHealthWatch()
   window.addEventListener('keydown', onKey)
 })
@@ -162,6 +173,14 @@ function isActive(to) {
               class="absolute -right-1 -top-0.5 h-2 w-2 rounded-full ring-2 ring-[var(--color-surface-2)] lg:hidden"
               :style="{ background: DOT_COLOR[link.status] }"
             />
+            <!-- Ersatz fuer die Fortschrittskarte in der schmalen Icon-Spalte: dort ist fuer eine
+                 Phasenleiste kein Platz, aber „es laeuft etwas" muss trotzdem ankommen. Hier ist
+                 der Puls angebracht (anders als beim Bot-Punkt): der zeigt einen ZUSTAND, dieser
+                 einen laufenden Vorgang – und genau das ist die Aussage. -->
+            <span
+              v-if="link.to === '/code' && activityBusy"
+              class="absolute -right-1 -top-0.5 h-2 w-2 animate-pulse rounded-full bg-[var(--color-accent)] ring-2 ring-[var(--color-surface-2)] lg:hidden"
+            />
           </span>
           <span class="hidden flex-1 lg:inline">{{ link.label }}</span>
           <span
@@ -182,11 +201,19 @@ function isActive(to) {
 
       <div class="flex-1" />
 
+      <!-- Was gerade auf dem Server laeuft (Import, Reset, Kanten, KI-Queue). Steht hier, weil die
+           Sidebar die einzige Flaeche ist, die JEDE Ansicht zeigt – der Fortschritt hing vorher an
+           der Code-Ansicht und war beim Wechseln weg, obwohl der Lauf weiterging. -->
+      <ActivityCard />
+
       <!-- Kuerzel der aktuellen Ansicht. Sie standen bisher nirgends – man musste sie kennen oder
            in einem `title` finden. Hier ist Platz (die Spalte ist unten leer), und die Liste bleibt
            kurz: alles Weitere ist einen Tastendruck entfernt (`?`). Nur im breiten Layout – in der
-           Icon-Spalte waere sie unlesbar. -->
-      <div class="mb-3 hidden lg:block">
+           Icon-Spalte waere sie unlesbar.
+           Waehrend eines Laufs tritt die Fortschrittskarte an ihre Stelle: beides zusammen
+           passt in der Hoehe nicht, und wer gerade auf einen Import wartet, schlaegt keine
+           Tastenkuerzel nach. -->
+      <div v-if="!activityBusy" class="mb-3 hidden lg:block">
         <button
           type="button"
           class="mb-1.5 flex w-full items-center gap-1.5 px-2 font-mono text-[0.59375rem] font-semibold tracking-[0.16em] text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"

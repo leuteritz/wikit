@@ -2,6 +2,11 @@
 // -> in Komponenten wird nie direkt fetch() benutzt.
 import { reactive, toRefs } from 'vue'
 import { api } from '../lib/api.js'
+// Fortschritt eines langen Laufs gehoert nicht in die Komponente, die ihn ausgeloest hat:
+// der Server arbeitet weiter, wenn sie verschwindet (s. useActivity.js).
+import { useActivity } from './useActivity.js'
+
+const { trackRun } = useActivity()
 
 const state = reactive({
   files: [],
@@ -73,49 +78,32 @@ export function useJavaAnalyzer() {
     // (DB-Duplikate, kein overwrite), wird die Dateiliste NICHT aktualisiert -> der Aufrufer
     // zeigt den Confirm-Dialog und ruft erneut mit { overwrite: true } auf.
     //
-    // `onProgress` schaltet den Live-Fortschritt ein: Der Client erzeugt eine jobId, oeffnet damit
-    // den SSE-Stream und schickt sie mit. Ein Paste ueber 150.000 Zeilen laeuft sonst als eine
-    // einzige, stumme Anfrage – der Nutzer sieht minutenlang nur einen Spinner.
-    // Der Stream ist eine reine Zugabe: faellt er aus (Proxy, alter Server), laeuft die Analyse
-    // unveraendert weiter, nur eben ohne Detailfortschritt.
-    async analyzeBatch(source, { overwrite = false, onProgress = null } = {}) {
+    // Der Fortschritt laeuft IMMER (frueher nur, wenn der Aufrufer ein `onProgress` mitgab): ein
+    // Paste ueber 150.000 Zeilen ist sonst eine einzige, stumme Anfrage, die minutenlang laeuft.
+    // Gemeldet wird an `useActivity` und nicht an den Aufrufer – sonst haengt die Anzeige an der
+    // Komponente, die den Lauf gestartet hat, und ist beim Ansichtswechsel weg, obwohl der Server
+    // weiterarbeitet.
+    async analyzeBatch(source, { overwrite = false } = {}) {
       state.analyzing = true
       state.error = ''
-      let es = null
-      let jobId = null
-      if (onProgress) {
-        jobId = `b${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
-        try {
-          es = new EventSource(api.javaAnalyzeProgressUrl(jobId))
-          es.onmessage = (ev) => {
-            try {
-              const msg = JSON.parse(ev.data)
-              if (msg && msg.phase !== 'heartbeat') onProgress(msg)
-            } catch {
-              /* unlesbares Event ignorieren */
-            }
-          }
-          es.onerror = () => {}
-          // Kurz warten, bis die Verbindung wirklich offen ist – sonst gehen die ersten
-          // Ereignisse (split/parse-Start) verloren.
-          await new Promise((resolve) => {
-            const done = () => resolve()
-            es.addEventListener('open', done, { once: true })
-            setTimeout(done, 400)
-          })
-        } catch {
-          es = null
-        }
-      }
       try {
-        const result = await api.analyzeJavaBatch({ source, overwrite, jobId })
+        const result = await trackRun(
+          'import',
+          (jobId) => api.analyzeJavaBatch({ source, overwrite, jobId }),
+          // Rueckfrage wegen Duplikaten -> der Lauf ist NICHT fertig, sondern wartet auf eine
+          // Entscheidung. Kein Abschluss melden, sonst stuende „Imported 0 classes" da, waehrend
+          // der Dialog noch offen ist.
+          {
+            summarize: (res) =>
+              res?.needsConfirm ? null : `Imported ${(res?.saved || []).length} class(es)`,
+          },
+        )
         if (!result.needsConfirm) await fetchFiles()
         return result
       } catch (e) {
         state.error = e.message
         throw e
       } finally {
-        es?.close()
         state.analyzing = false
       }
     },
@@ -127,42 +115,19 @@ export function useJavaAnalyzer() {
     // Dependencies/Versionen via CASCADE, Kanten einmal am Ende). EIN Request – frueher lief hier
     // ein DELETE je Klasse, und jeder einzelne rechnete den gesamten Kantengraphen neu.
     // `userContext` bleibt BEWUSST erhalten: Session-/Projekt-Einstellung fuer KI-Prompts.
-    async resetAll({ onProgress = null } = {}) {
-      let es = null
-      let jobId = null
-      if (onProgress) {
-        jobId = `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
-        try {
-          es = new EventSource(api.javaAnalyzeProgressUrl(jobId))
-          es.onmessage = (ev) => {
-            try {
-              const msg = JSON.parse(ev.data)
-              if (msg && msg.phase !== 'heartbeat') onProgress(msg)
-            } catch {
-              /* unlesbares Event ignorieren */
-            }
-          }
-          es.onerror = () => {}
-          await new Promise((resolve) => {
-            es.addEventListener('open', resolve, { once: true })
-            setTimeout(resolve, 400)
-          })
-        } catch {
-          es = null
-        }
-      }
-      try {
-        await api.resetAllJavaFiles(jobId)
-        await fetchFiles()
-        state.lastFileId = null
-        state.lastTargetLine = null
-        state.lastTargetEndLine = null
-        state.lastSearchQuery = null
-        state.lastSearchOpts = null
-        state.error = ''
-      } finally {
-        es?.close()
-      }
+    async resetAll() {
+      // Die Zahl VOR dem Loeschen – danach ist die Liste leer und koennte nichts mehr melden.
+      const removed = state.files.length
+      await trackRun('reset', (jobId) => api.resetAllJavaFiles(jobId), {
+        summarize: () => `Removed ${removed} class(es)`,
+      })
+      await fetchFiles()
+      state.lastFileId = null
+      state.lastTargetLine = null
+      state.lastTargetEndLine = null
+      state.lastSearchQuery = null
+      state.lastSearchOpts = null
+      state.error = ''
     },
     summarizeMethod: (id, data) => api.summarizeJavaMethod(id, data),
     linkArticle: (id, articleId) => api.linkJavaArticle(id, { article_id: articleId }),

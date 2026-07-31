@@ -185,6 +185,17 @@ function ensurePolling({ detail = false } = {}) {
   }
 }
 
+// EINMAL nachsehen, ob im Server noch etwas laeuft – und nur dann das Polling starten.
+// Fuer die Sidebar-Anzeige: nach einem Reload (oder wenn die App auf einer anderen Ansicht
+// startet) weiss der Client sonst nichts von einer laufenden Queue, bis jemand die Code-Ansicht
+// oeffnet. Bewusst KEIN `ensurePolling()` an dieser Stelle: das haelt einen Dauer-Beobachter und
+// wuerde bis in alle Ewigkeit alle 3 s fragen, auch wenn nie wieder etwas laeuft. `refresh()`
+// stoppt sich dagegen selbst, sobald nichts mehr aktiv ist und niemand zusieht.
+async function probe() {
+  await refresh()
+  if (hasActive()) startPolling()
+}
+
 function progressFor(fileId) {
   const job = byFile[fileId]
   if (job) {
@@ -284,5 +295,6 @@ export function useJavaQueue() {
     progressFor,
     ensurePolling,
     refresh,
+    probe,
   }
 }

@@ -10,6 +10,7 @@ import { ref, reactive, onMounted, onUnmounted, computed, watch, nextTick } from
 import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { useJavaQueue } from '../composables/useJavaQueue.js'
 import { useJavaGraph } from '../composables/useJavaGraph.js'
+import { useActivity } from '../composables/useActivity.js'
 import { buildPackageTree, countClasses, filterClasses, LANGUAGES } from '../composables/useCodeAnalysis.js'
 import { usePanelResize } from '../composables/usePanelResize.js'
 import { useNotifications } from '../composables/useNotifications.js'
@@ -314,7 +315,9 @@ onUnmounted(() => {
   releasePolling?.()
   window.removeEventListener('keydown', onKeydown)
   clearTimeout(detectTimer)
-  clearInterval(elapsedTimer)
+  // Die Uhr des laufenden Imports wird hier BEWUSST nicht mehr gestoppt: sie gehoert `useActivity`
+  // und traegt die Sidebar-Karte weiter, waehrend diese Ansicht schon weg ist. Genau daran haengt
+  // der ganze Umbau – sie hier abzuraeumen hiesse, den Fortschritt wieder an die Ansicht zu binden.
   // Beide Sucheingaben-Timer: ein spaeter feuernder Timer schriebe in Refs einer Ansicht, die es
   // nicht mehr gibt.
   clearTimeout(searchTimer)
@@ -768,137 +771,26 @@ function finishBatch(res) {
 }
 
 // --- Fortschritt des Parse-/Speicher-Laufs ---------------------------------------------------
-// Ein Paste mit 150.000 Zeilen ist EIN Request, der je nach Maschine zehn Sekunden bis Minuten
-// laeuft. Der Server meldet seine Phasen per SSE; hier werden sie zu einer Gesamtquote verrechnet.
-// Die Gewichte sind GEMESSENE Zeitanteile, keine Schaetzung – und `unit` sagt, was der Zaehler
-// unter dem Ring ueberhaupt zaehlt (er zaehlt je Phase etwas anderes).
-//
-// Gemessen ueber den SSE-Strom, 1200 Klassen auf einer Entwicklungsmaschine:
-// Erst-Import  split 0 % · parse 35 % · check 2 % · save 20 % · edges 40 %
-// inkrementell (50 neue Klassen in 1250)      parse 8 % · check 3 % · save 16 % · edges 67 %
-//
-// Die Kantenphase dominiert in BEIDEN Faellen: sie laeuft ueber ALLE Klassen der Codebasis, nicht
-// nur ueber die neuen. Sie stand hier mit 0.12 – deshalb war der Ring waehrend ihrer gesamten
-// Laufzeit weit vor der Wirklichkeit und zeigte 99 %, waehrend der Server 2.000 von 2.680 meldete.
-const PHASES = [
-  { key: 'split', label: 'Splitting sources', weight: 0.02, unit: 'sections' },
-  { key: 'parse', label: 'Parsing classes', weight: 0.33, unit: 'classes' },
-  { key: 'check', label: 'Checking duplicates', weight: 0.03, unit: 'classes' },
-  { key: 'save', label: 'Writing to database', weight: 0.2, unit: 'classes' },
-  { key: 'edges', label: 'Computing call edges', weight: 0.42, unit: 'classes scanned' },
-]
-// Der Komplett-Reset laeuft durch denselben Apparat, hat aber eigene Phasen.
-const RESET_PHASES = [
-  { key: 'delete', label: 'Removing classes', weight: 0.85, unit: 'classes' },
-  { key: 'edges', label: 'Clearing edges', weight: 0.15, unit: 'classes scanned' },
-]
-const progress = ref(null) // { phase, done, total }
-const elapsedMs = ref(0)
-const phaseStartedAt = ref(0)
-let elapsedTimer = null
-let runStartedAt = 0
-
-// Fortschrittsereignis uebernehmen und den Phasenwechsel stempeln (fuer die Zeit-Interpolation
-// in Phasen, die keinen Zaehler liefern koennen).
-function onRunProgress(ev) {
-  if (!ev) return
-  if (ev.phase !== progress.value?.phase) phaseStartedAt.value = Date.now()
-  progress.value = ev
-}
-
-function startRunClock() {
-  runStartedAt = Date.now()
-  phaseStartedAt.value = runStartedAt
-  elapsedMs.value = 0
-  clearInterval(elapsedTimer)
-  // 250 ms: fluessig genug fuer eine Sekundenanzeige, ohne unnoetige Renders.
-  elapsedTimer = setInterval(() => (elapsedMs.value = Date.now() - runStartedAt), 250)
-}
-function stopRunClock() {
-  clearInterval(elapsedTimer)
-  elapsedTimer = null
-  progress.value = null
-}
-
-// Welche Phasenkette gerade gilt (Analyse oder Reset).
-const activePhases = computed(() => (resetting.value ? RESET_PHASES : PHASES))
-const phaseIndex = computed(() => {
-  const list = activePhases.value
-  const i = list.findIndex((p) => p.key === progress.value?.phase)
-  return i === -1 ? (progress.value?.phase === 'done' ? list.length : 0) : i
-})
-// Anteil erledigter Phasen + Bruchteil der laufenden.
-//
-// Die Schreibphase kann keinen Zaehler liefern: better-sqlite3 arbeitet synchron, waehrend der
-// Transaktion kommt vom Server nichts. Statt den Ring dort minutenlang einfrieren zu lassen,
-// naehert er sich in solchen Phasen ZEITBASIERT dem Phasenende (asymptotisch, erreicht es nie) –
-// die Anzeige bleibt lebendig, ohne einen Fortschritt zu behaupten, der schon erreicht waere.
-const PHASE_TAU_MS = 9000
-// Fuellgrad der LAUFENDEN Phase (0..1). Eigene Groesse, weil zwei Anzeigen sie brauchen: der
-// Ring im Modal (als Teil der Gesamtquote) und die Phasenleiste im Header. Zweimal gerechnet
-// waere zweimal die Gelegenheit, auseinanderzulaufen.
-const currentPhaseFraction = computed(() => {
-  const p = progress.value
-  if (!p) return 0
-  if (p.phase === 'done') return 1
-  // ⚠️ Meldet die Phase einen ZAEHLER, ist er der Fortschritt – die Zeitkurve darf ihn nicht
-  // ueberschreiben. Genau das tat ein `Math.max(byTime, byCount)`: die Kantenphase laeuft bei
-  // grossen Importen minutenlang, die Kurve stand also laengst auf ihrem Deckel (90 % der Phase),
-  // waehrend der Server 2.000 von 2.680 meldete. Angezeigt wurden 99 % – die Anzeige behauptete
-  // etwas, das der Zaehler zwei Zeilen tiefer widerlegte.
-  if (p.total) return Math.max(0, Math.min(1, (p.done || 0) / p.total))
-  // Ohne Zaehler bleibt nur die Zeit: die Schreibphase blockiert synchron (better-sqlite3), von
-  // dort kommt bis zum Commit nichts. Asymptotisch und bei 90 % gedeckelt – so erreicht sie das
-  // Phasenende nie von selbst und behauptet nie, fertig zu sein.
-  // `now` aus dem tickenden elapsedMs ableiten – so ist die Interpolation reaktiv.
-  const now = runStartedAt + elapsedMs.value
-  return (1 - Math.exp(-Math.max(0, now - phaseStartedAt.value) / PHASE_TAU_MS)) * 0.9
-})
-const runPercent = computed(() => {
-  const p = progress.value
-  if (!p) return 0
-  if (p.phase === 'done') return 100
-  let acc = 0
-  const list = activePhases.value
-  for (let i = 0; i < phaseIndex.value; i++) acc += list[i].weight
-  const cur = list[phaseIndex.value]
-  if (cur) acc += cur.weight * currentPhaseFraction.value
-  return Math.max(1, Math.min(99, Math.round(acc * 100)))
-})
-// Fuellgrad EINER Phase fuer die Segmentleiste: durch = 1, laufend = ihr Bruchteil, offen = 0.
-const phaseFill = (i) => (i < phaseIndex.value ? 1 : i === phaseIndex.value ? currentPhaseFraction.value : 0)
-// Restzeit. Solange die laufende Phase ZAEHLT, kommt sie aus deren eigener Rate – die Gesamtquote
-// taugt dafuer nicht: sie haengt an den Phasengewichten und behauptete bei 99 % „0:03", waehrend
-// noch 680 Klassen vor dem Lauf lagen. Zur Restzeit der laufenden Phase kommt der Anteil der noch
-// offenen Phasen, hochgerechnet aus dem, was die laufende bisher gekostet hat.
-// Erst ab etwas Fortschritt, sonst schwankt die Schaetzung wild.
-const runRemainingMs = computed(() => {
-  const p = progress.value
-  if (!p || p.phase === 'done' || elapsedMs.value < 1500) return null
-  const list = activePhases.value
-  const cur = list[phaseIndex.value]
-  const done = p.done || 0
-  const phaseElapsed = runStartedAt + elapsedMs.value - phaseStartedAt.value
-  if (cur?.weight && p.total && done > 0 && phaseElapsed > 500) {
-    const phaseLeft = (phaseElapsed / done) * Math.max(0, p.total - done)
-    const restWeight = list.slice(phaseIndex.value + 1).reduce((n, x) => n + x.weight, 0)
-    return Math.round(phaseLeft + ((phaseElapsed + phaseLeft) / cur.weight) * restWeight)
-  }
-  // Zaehlerlose Phase (Schreiben) -> wie bisher aus der Gesamtquote.
-  const pct = runPercent.value
-  if (pct < 5 || pct >= 100) return null
-  return Math.round((elapsedMs.value / pct) * (100 - pct))
-})
-const runPhaseLabel = computed(() => activePhases.value[phaseIndex.value]?.label || 'Finishing up')
-// Was der Zaehler unter dem Ring zaehlt – je Phase etwas anderes.
-const runPhaseUnit = computed(() => activePhases.value[phaseIndex.value]?.unit || '')
+// Der Apparat dahinter (Phasen, gemessene Gewichte, Uhr, Prozent, Restzeit) liegt in
+// `useActivity` – er wird an ZWEI Stellen gebraucht: hier im Import-Modal und in der
+// Sidebar-Karte, die den Lauf auch dann noch zeigt, wenn man diese Ansicht verlassen hat.
+// Zweimal gerechnet waere zweimal die Gelegenheit, auseinanderzulaufen.
+const {
+  progress,
+  elapsedMs,
+  activePhases,
+  phaseIndex,
+  phaseFill,
+  runPercent,
+  runRemainingMs,
+  runPhaseLabel,
+  runPhaseUnit,
+} = useActivity()
 
 async function analyze() {
   if (!source.value.trim()) return
-  startRunClock()
-  progress.value = { phase: 'split', done: 0, total: 0 }
   try {
-    const res = await analyzeBatch(source.value, { onProgress: onRunProgress })
+    const res = await analyzeBatch(source.value)
     // DB-Duplikate -> erst nachfragen, dann ggf. mit overwrite erneut senden.
     if (res.needsConfirm) {
       pendingConflicts.value = res.conflicts
@@ -907,27 +799,19 @@ async function analyze() {
     finishBatch(res)
   } catch {
     // Fehler steht in `error` (Composable) und wird im Modal angezeigt.
-  } finally {
-    stopRunClock()
   }
 }
 
 async function confirmOverwrite() {
   confirming.value = true
   pendingConflicts.value = null // Dialog schliessen -> der Fortschritt im Modal wird sichtbar
-  startRunClock()
-  progress.value = { phase: 'split', done: 0, total: 0 }
   try {
-    const res = await analyzeBatch(source.value, {
-      overwrite: true,
-      onProgress: onRunProgress,
-    })
+    const res = await analyzeBatch(source.value, { overwrite: true })
     finishBatch(res)
   } catch {
     // Fehler steht in `error` (Composable).
   } finally {
     confirming.value = false
-    stopRunClock()
   }
 }
 function cancelOverwrite() {
@@ -998,13 +882,11 @@ function cancelReset() {
 async function confirmReset() {
   if (resetting.value) return
   resetting.value = true
-  // Derselbe Fortschritts-Apparat wie beim Analysieren: bei tausenden Klassen dauert auch das
-  // Loeschen spuerbar, und ein stummer Dialog laesst offen, ob ueberhaupt etwas passiert.
-  startRunClock()
-  progress.value = { phase: 'delete', done: 0, total: classCount.value }
+  // Derselbe Fortschritts-Apparat wie beim Analysieren (in `useActivity`): bei tausenden Klassen
+  // dauert auch das Loeschen spuerbar, und ein stummer Dialog laesst offen, ob etwas passiert.
   try {
     await cancelAllJobs() // laufende/abgeschlossene KI-Jobs stoppen + leeren
-    await resetAll({ onProgress: onRunProgress }) // alle Klassen aus der DB loeschen
+    await resetAll() // alle Klassen aus der DB loeschen
     resetEdges() // Frontend-Kanten-Spiegel sofort leeren
     // Lokalen View-State auf "frisch geoeffnet" zuruecksetzen.
     selectedFileId.value = null
@@ -1024,7 +906,6 @@ async function confirmReset() {
     setNotice(e.message, 'error')
   } finally {
     resetting.value = false
-    stopRunClock()
   }
 }
 
@@ -1388,7 +1269,7 @@ function onResetPanels() {
 
               <!-- Phasenkette: zeigt, was schon durch ist und was noch kommt. -->
               <div class="flex flex-wrap items-center justify-center gap-x-2 gap-y-2">
-                <template v-for="(p, i) in PHASES" :key="p.key">
+                <template v-for="(p, i) in activePhases" :key="p.key">
                   <span v-if="i" class="h-px w-4 bg-[var(--color-border)]" />
                   <span
                     class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-2xs font-medium transition"
@@ -1908,8 +1789,11 @@ function onResetPanels() {
                Dialog ist schmal, ein grosser Ring waere hier fehl am Platz. -->
           <div v-else class="mb-4">
             <div class="mb-1.5 flex items-baseline justify-between gap-2">
-              <span class="text-sm font-semibold text-[var(--color-text)]">{{ runPhaseLabel }}</span>
-              <span class="font-mono text-xs tabular-nums text-[var(--color-text-muted)]">{{ runPercent }}%</span>
+              <!-- Vor dem eigentlichen Loeschen laeuft `cancelAllJobs()` – dort gibt es noch keinen
+                   Lauf, und `runPhaseLabel` faellt ohne ihn auf die Analyse-Phasen zurueck. Ein
+                   „Splitting sources" im Loesch-Dialog waere eine Falschauskunft. -->
+              <span class="text-sm font-semibold text-[var(--color-text)]">{{ progress ? runPhaseLabel : 'Stopping AI queue' }}</span>
+              <span v-if="progress" class="font-mono text-xs tabular-nums text-[var(--color-text-muted)]">{{ runPercent }}%</span>
             </div>
             <div class="h-2 w-full overflow-hidden rounded-full bg-[var(--color-surface-offset)]">
               <div
