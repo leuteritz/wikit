@@ -8,22 +8,23 @@ A tiny, self-hosted personal wiki — light enough for a Raspberry Pi.
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Deploy to Raspberry Pi](https://github.com/leuteritz/wikit/actions/workflows/deploy.yml/badge.svg)](https://github.com/leuteritz/wikit/actions/workflows/deploy.yml)
 
-Wikit stores Markdown articles with full-text search, a relationship graph and local Java code
-analysis. There is no login, no cloud and no accounts — the entire knowledge base is a single SQLite
-file, so backup is copying one file and the whole app runs comfortably on a Pi.
+![Wikit — package tree, Java class dependency graph and class detail side by side](docs/screenshot.png)
+
+Markdown articles with full-text search, a relationship graph and local Java code analysis. No
+login, no cloud, no accounts — the whole knowledge base is a single SQLite file, so backup is
+copying one file.
 
 ## Features
 
-- **Markdown editor** — split-view editing (CodeMirror); HTML is rendered once on save with
-  server-side syntax highlighting (Shiki).
-- **Instant search** — `Ctrl/Cmd + K` fuzzy search backed by SQLite **FTS5** full-text indexing.
-- **Relationship graph** — typed links between articles, visualized with [Vue Flow](https://vueflow.dev).
-- **Java code analysis** — parse `.java` locally (no JDK), explore a class **dependency graph**, and
-  export classes as searchable wiki articles.
-- **AI summaries** — optional per-method and per-class summaries via [Ollama](https://ollama.com)
-  (local, no API key).
-- **Dark mode** — light/dark theme toggle.
-- **Backup = copy one file** — the database is a single SQLite file on the host.
+- **Markdown editor** — split view (CodeMirror); HTML is rendered once on save, server-side, with
+  Shiki syntax highlighting.
+- **Instant search** — `Ctrl/Cmd + K` over articles, classes, methods and raw source, backed by
+  SQLite **FTS5**.
+- **Relationship graph** — typed links between articles, drawn with [Vue Flow](https://vueflow.dev).
+- **Java code analysis** — parse `.java` locally (no JDK) and explore a class dependency graph.
+- **AI summaries** — optional, per method and per class, via [Ollama](https://ollama.com)
+  (local, no API key), configurable at runtime under `/bot`.
+- **Dark mode** and **backup = copy one file**.
 
 ## Tech stack
 
@@ -35,136 +36,81 @@ file, so backup is copying one file and the whole app runs comfortably on a Pi.
 | Database | SQLite + FTS5 full-text index |
 | AI       | [Ollama](https://ollama.com) — optional, local, no API key (default `qwen2.5-coder:3b`) |
 
-Architecture: an **nginx** container serves the built SPA and reverse-proxies `/api` to the
-**NestJS** backend; SQLite lives on the host as a bind-mount.
+An **nginx** container serves the built SPA and proxies `/api` to the **NestJS** backend; SQLite
+lives on the host as a bind-mount.
 
-## Deploy on Raspberry Pi (Docker)
-
-Two containers via Docker Compose: nginx (SPA + `/api` proxy) and the NestJS API.
+## Deploy (Docker)
 
 ```bash
 git clone https://github.com/leuteritz/wikit && cd wikit
-cp .env.example .env          # then edit — see Configuration below
+cp .env.example .env          # then edit — see below
 docker compose up -d --build
 # open http://<host>:${HTTP_PORT}   (default http://localhost)
 ```
 
-On first start the SQLite DB is created under `DATA_DIR` and seeded with a few demo articles.
+On first start the DB is created under `DATA_DIR` and seeded with a few demo articles.
 
-> **`better-sqlite3` is a native module** — build the images on the architecture they run on. On a
-> Pi, build natively (ARM64). Cross-building ARM64 images on x86 requires
-> `docker buildx --platform linux/arm64` (QEMU, slow); building on the Pi avoids that.
+> **`better-sqlite3` is native** — build the images on the architecture they run on (on a Pi:
+> natively ARM64). Cross-building needs `docker buildx --platform linux/arm64` (QEMU, slow).
 
-> **Portainer:** *Stacks → Add stack → Repository*, point it at this repo's `docker-compose.yml`,
-> set the same env vars, deploy.
-
-## Configuration (`.env`)
-
-Copy `.env.example` to `.env`. All values are optional; the Docker-relevant ones:
+### Configuration (`.env`)
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `VITE_WIKI_TITLE` | `Wikit` | Display name in the header / browser tab. **Baked in at build time** — change it and rebuild. |
-| `HTTP_PORT` | `80` | Public port the nginx frontend is published on (`HTTP_PORT:80` → container `80`). |
-| `DATA_DIR` | `./data` | Host directory holding the SQLite DB (bind-mounted to `/data`). On a Pi use an **absolute** path owned by UID `1000`. |
-| `OLLAMA_URL` | `http://localhost:11434/api/generate` | Ollama endpoint for AI summaries. In Docker use `http://host.docker.internal:11434/api/generate`. |
-| `OLLAMA_MODEL` | `qwen2.5-coder:3b` | Model used for AI summaries. |
+| `VITE_WIKI_TITLE` | `Wikit` | Name in header and tab. **Baked in at build time** — change it and rebuild. |
+| `HTTP_PORT` | `80` | Public port of the nginx frontend. |
+| `DATA_DIR` | `./data` | Host directory holding the SQLite DB (mounted to `/data`). On a Pi use an **absolute** path owned by UID `1000`. |
+| `OLLAMA_URL` | `http://localhost:11434/api/generate` | Ollama endpoint. In Docker: `http://host.docker.internal:11434/api/generate`. |
+| `OLLAMA_MODEL` | `qwen2.5-coder:3b` | Model for AI summaries. |
 | `OLLAMA_TIMEOUT_MS` | `20000` | Abort and fall back to Javadoc if the model is too slow. |
-| `WIKI_BODY_LIMIT` | `64mb` | Largest accepted request body. Only the bulk paste in the Java Analyzer gets anywhere near it. Raising it means also raising `client_max_body_size` in `deploy/nginx.conf` — nginx rejects first otherwise. |
+| `WIKI_BODY_LIMIT` | `64mb` | Largest accepted body. Raising it means raising `client_max_body_size` in `deploy/nginx.conf` too — nginx rejects first otherwise. |
 
-> `PORT`, `HOST` and `WIKI_DB` in `.env.example` are for **bare-metal** runs only — in Docker the
-> backend always listens on `3000` internally and uses `/data/wiki.db`.
+The three `OLLAMA_*` values are only the **default**; anything set under `/bot` wins. `PORT`, `HOST`
+and `WIKI_DB` in `.env.example` are for bare-metal runs only.
 
 ## Java code analysis
 
-Open the **Java Analyzer** from the top bar:
-
-1. **Analyze.** Paste or upload a `.java` file. The source is parsed **locally** with `java-parser`
-   (pure JS — no JDK, no `javac`); class, methods, parameters, imports and Javadoc are stored.
-2. **Explore the graph.** Every node answers two questions at a glance: a chip in front of the name
-   marks **what it is** (class / interface / enum / annotation), the badge on the right marks its
-   **role** in the dependency net (source / consumer / hub / isolated); edges are method calls,
-   type usages and plain imports between analyzed classes (external imports such as
-   `java.util.List` are listed in the detail panel, not drawn). The legend (bottom right) spells
-   out every category. Classes are laid out **grouped by package**: every package gets its own zone,
-   and the zones themselves are stacked along the direction of the dependencies. Click a zone label
-   to focus that package, toggle the grouping and the edge kinds in the toolbar, and hover a class
-   to fade out everything that is not connected to it. Large code bases start one level up, with a
-   node per package: there, a bundled edge (“17 class relations”) opens the list of pairs behind it.
-   Each row explains the relation in plain words and unfolds the actual code — where the method
-   comes from (package, file, line) and the exact line where it is called. Every one of those is
-   clickable and jumps into the source with that line highlighted.
-   Filtering the class list steers the graph too: it shows the matches themselves, and the classes
-   around them as soon as that stays readable — beyond that they are one click away, on a button
-   above the graph that spells out what it does (“Show 78 related classes”). Only relations that
-   touch a match are drawn; how the neighbours relate to each other is a different question. With
-   the surroundings in view, classes of the same package are laid out side by side inside a tinted
-   frame carrying the package name; a class that is the only one from its package stays unframed.
-   A second search box sits in the top right corner **of the graph** and answers a different
-   question: not *which* classes to draw, but where something is in the picture you already have.
-   It matches class names, packages and the **method names on the edges** — everything else fades,
-   nothing moves. Prefixes narrow it down (`m:` method, `c:` class, `p:` package, `t:` type,
-   `r:` role), `review:` lights up every uncertain edge and `manual:` every hand-made one; the
-   prefixes appear as clickable chips when the empty box is focused. `Enter` / `Shift`+`Enter`
-   walks the hits and moves the camera to each one.
-   An opened package never stands alone: whatever it connects to **outside** itself comes with it —
-   as single classes while there are few, as one node per foreign package once there are many
-   (“bom · 12 linked”). Those bundled edges open the same list of class pairs, so a relation that
-   leaves the package is still traceable down to the line of code. A toggle in the toolbar turns the
-   surroundings off when you want to read one package on its own.
-3. **Search inside a class.** The `Source` tab of the detail panel carries its own search bar next
-   to the tabs: type there (or press `Ctrl`/`Cmd`+`F` anywhere in the panel) and every hit is
-   highlighted, with a counter and `Enter` / `Shift`+`Enter` to walk through them — match case,
-   whole word and regular expressions are one click away, `Esc` clears everything. Selecting a
-   variable in the code is the same gesture: the name lands in the search bar with *whole word*
-   turned on, so all its occurrences light up and the same arrows step from one to the next,
-   starting at the one you marked.
-4. **Export.** Turn a class into a normal Markdown article — from then on it is in the sidebar and
-   **full-text searchable** (FTS5) like any other note.
+1. **Add code.** Paste or drop `.java` files anywhere on the view. Sources are parsed **locally**
+   with `java-parser` (pure JS — no JDK); classes, members, parameters, imports and Javadoc are
+   stored.
+2. **Explore the graph.** Each card says what a class **is** (class / interface / enum / record /
+   utility / …) and how it **connects** (source / consumer / hub / isolated); classes are grouped
+   into package zones. Edges are method calls, field accesses, type usages and plain imports — click
+   one and the detail column shows the definition and every call site, down to the line.
+3. **Search.** `Ctrl/Cmd + K` searches names *and* raw source with match case, whole word and regex;
+   a second box inside the graph highlights classes, packages and method names without moving
+   anything.
+4. **Export.** Turn a class into a normal Markdown article — from then on it is full-text
+   searchable like any other note.
 
 ## AI summaries (Ollama)
 
-AI summaries are optional and powered by a separate, local [Ollama](https://ollama.com) server.
-Without it everything works — summaries fall back to the parsed Javadoc.
+Optional. Without Ollama everything works; summaries fall back to the parsed Javadoc.
 
 ```bash
-curl -fsSL https://ollama.com/install.sh | sh   # Linux / Pi (Win/macOS: installer from ollama.com)
+curl -fsSL https://ollama.com/install.sh | sh   # Linux / Pi
 ollama pull qwen2.5-coder:3b                     # ~2 GB, code-tuned, small enough for a Pi
 ```
 
-The class summary and each method are generated sequentially by a server-side queue and streamed
-onto the page via Server-Sent Events. Three ways to run the model:
+Host, model, sampling and the prompts themselves are configured at runtime under `/bot` — no
+restart. Summaries are generated by a server-side queue and streamed onto the page (SSE). Ollama may
+run on the same host or on a stronger LAN machine (`OLLAMA_HOST=0.0.0.0 ollama serve`).
 
-- **Same host** — install Ollama on the Wikit machine; set
-  `OLLAMA_URL=http://host.docker.internal:11434/api/generate` for the container.
-- **Stronger LAN machine** — run `OLLAMA_HOST=0.0.0.0 ollama serve` elsewhere and point
-  `OLLAMA_URL=http://<host>:11434/api/generate`.
-- **No AI** — don't install Ollama; summaries use the Javadoc fallback.
+## Backup
 
-## Data backup
-
-The entire knowledge base is **one SQLite file** (plus its `-wal` / `-shm` sidecars) under
-`DATA_DIR`. Because it is a host bind-mount, image rebuilds and `docker compose down` never touch it.
+The whole knowledge base is **one SQLite file** (plus its `-wal` / `-shm` sidecars) under
+`DATA_DIR`. It is a host bind-mount, so rebuilds and `docker compose down` never touch it.
 
 ```bash
-# Backup: copy the directory (WAL-safe — fine to copy while running)
-cp -a /opt/wikit/data /opt/wikit/backups/wiki-$(date +%F)
-# Restore: docker compose down → copy the directory back → docker compose up -d
+cp -a /opt/wikit/data /opt/wikit/backups/wiki-$(date +%F)   # WAL-safe while running
 ```
 
-## CI/CD pipeline (GitHub Actions)
+## CI/CD
 
-A self-hosted runner on the Pi gives push-to-deploy without exposing any inbound port (the runner
-polls GitHub outbound over HTTPS and builds **natively on ARM64**). Setup:
-
-1. **Repo → Settings → Actions → Runners → New self-hosted runner** (Linux/ARM64). Run `config.sh`
-   with `--labels self-hosted,linux,ARM64`, then `sudo ./svc.sh install && sudo ./svc.sh start`.
-2. Give the runner Docker access: `sudo usermod -aG docker $USER` (then restart the service).
-3. Place the persistent env file once outside the checkout: `sudo cp .env /opt/wikit/.env` (the
-   deploy job copies it in before running compose).
-
-Every push to `master` then runs the GitHub-hosted `build-check` (`npm ci && npm run build`), and on
-success the Pi runner redeploys with `docker compose up -d --build`. Workflow:
+A self-hosted runner on the Pi gives push-to-deploy without any inbound port. Register it with
+`--labels self-hosted,linux,ARM64`, give it Docker access (`usermod -aG docker $USER`) and place the
+env file once at `/opt/wikit/.env`. Every push to `master` then runs `build-check` on GitHub and, on
+success, `docker compose up -d --build` on the Pi — see
 [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
 
 ## License
