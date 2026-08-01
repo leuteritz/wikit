@@ -15,6 +15,7 @@ import { buildPackageTree, countClasses, filterClasses, LANGUAGES } from '../com
 import { usePanelResize } from '../composables/usePanelResize.js'
 import { useNotifications } from '../composables/useNotifications.js'
 import BusyState from '../components/BusyState.vue'
+import ActivityProgress from '../components/ActivityProgress.vue'
 import JavaCodeEditor from '../components/java/JavaCodeEditor.vue'
 import JavaDependencyGraph from '../components/java/JavaDependencyGraph.vue'
 import JavaClassDetail from '../components/java/JavaClassDetail.vue'
@@ -842,17 +843,9 @@ function finishBatch(res) {
 // `useActivity` – er wird an ZWEI Stellen gebraucht: hier im Import-Modal und in der
 // Sidebar-Karte, die den Lauf auch dann noch zeigt, wenn man diese Ansicht verlassen hat.
 // Zweimal gerechnet waere zweimal die Gelegenheit, auseinanderzulaufen.
-const {
-  progress,
-  elapsedMs,
-  activePhases,
-  phaseIndex,
-  phaseFill,
-  runPercent,
-  runRemainingMs,
-  runPhaseLabel,
-  runPhaseUnit,
-} = useActivity()
+// Die Aufschluesselung (Phasenkette, Zaehler, Zeiten) rendert `ActivityProgress`; hier bleiben nur
+// die Werte, die das Reset-Overlay dieser Ansicht selbst anschreibt.
+const { progress, elapsedMs, runPercent, runRemainingMs, runPhaseLabel } = useActivity()
 
 async function analyze() {
   if (!source.value.trim()) return
@@ -1017,64 +1010,17 @@ function onResetPanels() {
         </div>
 
         <!--
-          Laufender Import: die Command-Bar wird zur Live-Anzeige. Sie steht an der Stelle der
-          Bestandsmetriken, weil beides dieselbe Frage beantwortet ("was ist gerade da?") und
-          waehrend eines Laufs die laufende Zahl die interessantere ist – nebeneinander waeren
-          es zwei Zahlenreihen, die um denselben Blick konkurrieren.
-
-          Aufgeschluesselt heisst: je Server-Phase ein Segment, dessen BREITE dem Zeitgewicht
-          der Phase entspricht (PHASES[].weight). Damit zeigt die Leiste nicht nur "62 %",
-          sondern auch, welcher Abschnitt gerade laeuft und wie viel Weg er noch hat – bei
-          einem Import, der Minuten braucht, ist das der Unterschied zwischen "es tut sich
-          etwas" und "es haengt". Klick stellt das Modal wieder her.
+          Hier stand der Fortschritts-Chip des laufenden Imports (Phasenleiste, Prozent, Restzeit).
+          Er ist ENTFALLEN: dieselbe Auskunft steht seit der Aktivitaets-Karte in der Sidebar, also
+          auf JEDER Ansicht – und ein Lauf, der auf dem Server weiterlaeuft, gehoert nicht in die
+          Kopfzeile einer einzelnen Ansicht. Zwei Anzeigen desselben Laufs waeren ausserdem zwei
+          Stellen, an denen man dieselbe Zahl pflegen muss. Die Einzelheiten (Phasenkette, Zaehler,
+          Zeiten) liegen einen Klick auf die Karte entfernt; die Bestandsmetriken unten bleiben
+          waehrend eines Laufs stehen, statt dem Chip Platz zu machen.
         -->
-        <button
-          v-if="analyzing && progress"
-          type="button"
-          class="run-chip group flex min-w-0 items-center gap-2.5 rounded-xl border border-[color-mix(in_srgb,var(--color-accent)_35%,transparent)] bg-[var(--color-accent-soft)] py-1.5 pl-2.5 pr-3 text-left transition hover:border-[var(--color-accent)]"
-          :title="`${runPhaseLabel} – ${runPercent}% done, ${formatDuration(elapsedMs)} elapsed${
-            runRemainingMs != null ? `, about ${formatDuration(runRemainingMs)} left` : ''
-          }. Click to reopen the progress dialog.`"
-          @click="showNew = true"
-        >
-          <Icon icon="lucide:loader-2" class="h-4 w-4 shrink-0 animate-spin text-[var(--color-accent)]" />
-          <div class="flex min-w-0 flex-col gap-1">
-            <div class="flex min-w-0 items-baseline gap-2">
-              <span class="truncate text-2xs font-semibold text-[var(--color-accent)]">{{ runPhaseLabel }}</span>
-              <span class="shrink-0 font-mono text-2xs font-semibold tabular-nums text-[var(--color-accent)]">{{ runPercent }}%</span>
-              <span class="hidden shrink-0 font-mono text-2xs tabular-nums text-[var(--color-text-muted)] sm:inline">
-                {{ formatDuration(elapsedMs) }}
-                <template v-if="runRemainingMs != null">
-                  <span class="opacity-40">·</span> {{ formatDuration(runRemainingMs) }}<span class="opacity-60"> left</span>
-                </template>
-              </span>
-            </div>
-            <!-- Segmentleiste: eine Spalte je Phase, Spaltenbreite = Gewicht der Phase. -->
-            <div
-              class="grid h-1 w-[13rem] gap-px lg:w-[17rem]"
-              :style="{ gridTemplateColumns: activePhases.map((p) => `${p.weight}fr`).join(' ') }"
-            >
-              <span
-                v-for="(p, i) in activePhases"
-                :key="p.key"
-                class="relative overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--color-accent)_18%,transparent)]"
-              >
-                <span
-                  class="absolute inset-y-0 left-0 rounded-full bg-[var(--color-accent)] transition-[width] duration-500 ease-out"
-                  :style="{ width: phaseFill(i) * 100 + '%' }"
-                />
-              </span>
-            </div>
-          </div>
-          <!-- Nur als Affordanz: das Modal ist einen Klick entfernt, nicht weg. -->
-          <Icon
-            icon="lucide:maximize-2"
-            class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)] opacity-0 transition group-hover:opacity-70"
-          />
-        </button>
 
         <!-- Live-Metriken: monospace + gedaempft. Zahlen tragen die Information, nicht die Farbe. -->
-        <div v-else-if="files.length" class="hidden items-center gap-2.5 font-mono text-2xs text-[var(--color-text-muted)] md:flex">
+        <div v-if="files.length" class="hidden items-center gap-2.5 font-mono text-2xs text-[var(--color-text-muted)] md:flex">
           <span v-for="lang in LANGUAGES" :key="lang.id" class="inline-flex items-center gap-1.5">
             <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />{{ lang.label }}
           </span>
@@ -1282,7 +1228,7 @@ function onResetPanels() {
                 </button>
               </div>
               <!-- Waehrend eines Laufs ist das kein Abbrechen, sondern ein Wegstellen: der Import
-                   laeuft weiter, die Command-Bar traegt ihn sichtbar (run-chip). Icon + Titel
+                   laeuft weiter, die Sidebar-Karte traegt ihn sichtbar. Icon + Titel
                    sagen das auch – ein "×" an dieser Stelle laese "abbrechen" erwarten. -->
               <button
                 type="button"
@@ -1298,83 +1244,12 @@ function onResetPanels() {
             <!-- Laufender Durchgang: der Editor weicht der Fortschrittsanzeige. Bei 150.000 Zeilen
                  laeuft dieser eine Request minutenlang – „wie weit" und „wie lange noch" sind dann
                  die einzigen Fragen, die zaehlen. -->
-            <div v-if="analyzing && progress" class="flex min-h-0 flex-1 flex-col items-center justify-center gap-6 p-8">
-              <!-- Ring: Gesamtquote aus den gewichteten Server-Phasen. -->
-              <div class="relative grid h-44 w-44 shrink-0 place-items-center">
-                <svg class="h-44 w-44 -rotate-90" viewBox="0 0 120 120">
-                  <circle cx="60" cy="60" r="54" fill="none" stroke="var(--color-surface-offset)" stroke-width="8" />
-                  <circle
-                    cx="60"
-                    cy="60"
-                    r="54"
-                    fill="none"
-                    stroke="var(--color-accent)"
-                    stroke-width="8"
-                    stroke-linecap="round"
-                    :stroke-dasharray="339.29"
-                    :stroke-dashoffset="339.29 * (1 - runPercent / 100)"
-                    style="transition: stroke-dashoffset 0.4s ease"
-                  />
-                </svg>
-                <div class="absolute grid place-items-center">
-                  <span class="font-mono text-3xl font-bold tabular-nums text-[var(--color-text)]">{{ runPercent }}<span class="text-lg text-[var(--color-text-muted)]">%</span></span>
-                  <!-- Zaehler nur, solange er auch zaehlt: die Schreibphase kann keinen liefern
-                       (synchrone Transaktion), ein stehendes „0/5.000" waere irrefuehrend.
-                       Die Einheit steht dabei: je Phase zaehlt er etwas anderes, und ohne das Wort
-                       liest sich „2.000/2.680" wie die Grundlage der Prozentzahl darueber – die es
-                       nicht ist (die Phase ist nur EIN Abschnitt des Laufs). -->
-                  <span v-if="progress.total && progress.done" class="mt-0.5 font-mono text-2xs tabular-nums text-[var(--color-text-muted)]">
-                    {{ nf.format(progress.done) }}/{{ nf.format(progress.total) }}
-                    <span v-if="runPhaseUnit" class="opacity-70">{{ runPhaseUnit }}</span>
-                  </span>
-                </div>
-              </div>
-
-              <div class="text-center">
-                <p class="text-sm font-semibold text-[var(--color-text)]">{{ runPhaseLabel }}</p>
-                <p class="mt-1 text-xs text-[var(--color-text-muted)]">
-                  You can close this – the run continues and stays visible in the top bar.
-                </p>
-              </div>
-
-              <!-- Phasenkette: zeigt, was schon durch ist und was noch kommt. -->
-              <div class="flex flex-wrap items-center justify-center gap-x-2 gap-y-2">
-                <template v-for="(p, i) in activePhases" :key="p.key">
-                  <span v-if="i" class="h-px w-4 bg-[var(--color-border)]" />
-                  <span
-                    class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-2xs font-medium transition"
-                    :class="i < phaseIndex
-                      ? 'border-[color-mix(in_srgb,var(--color-success)_40%,transparent)] bg-[color-mix(in_srgb,var(--color-success)_12%,transparent)] text-[var(--color-success)]'
-                      : i === phaseIndex
-                        ? 'border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]'
-                        : 'border-[var(--color-border)] text-[var(--color-text-muted)] opacity-60'"
-                  >
-                    <Icon
-                      v-if="i < phaseIndex"
-                      icon="lucide:check"
-                      class="h-3 w-3"
-                    />
-                    <Icon v-else-if="i === phaseIndex" icon="lucide:loader-2" class="h-3 w-3 animate-spin" />
-                    <span v-else class="h-1 w-1 rounded-full bg-current" />
-                    {{ p.label }}
-                  </span>
-                </template>
-              </div>
-
-              <!-- Die zwei Zeiten: verstrichen und geschaetzte Restzeit. -->
-              <div class="flex items-stretch gap-3">
-                <div class="min-w-[8.5rem] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 text-center">
-                  <div class="font-mono text-xl font-semibold tabular-nums text-[var(--color-text)]">{{ formatDuration(elapsedMs) }}</div>
-                  <div class="mt-1 text-3xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">elapsed</div>
-                </div>
-                <div class="min-w-[8.5rem] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 text-center">
-                  <div class="font-mono text-xl font-semibold tabular-nums text-[var(--color-text)]">
-                    {{ runRemainingMs != null ? formatDuration(runRemainingMs) : '–:––' }}
-                  </div>
-                  <div class="mt-1 text-3xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">remaining</div>
-                </div>
-              </div>
-            </div>
+            <!-- Ring, Phasenkette und Zeiten stehen in `ActivityProgress` – derselben Komponente,
+                 die auch das Detailfenster der Sidebar-Karte zeigt. Zwei Abschriften waeren zwei
+                 Gelegenheiten, verschiedene Prozentzahlen ueber denselben Lauf zu behaupten. -->
+            <ActivityProgress v-if="analyzing && progress">
+              <template #note>You can close this – the run continues and stays visible in the sidebar.</template>
+            </ActivityProgress>
 
             <!-- Arbeitsflaeche: ab lg zweispaltig und in sich scrollend, darunter gestapelt. -->
             <div v-else class="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_300px] lg:overflow-hidden">
@@ -2246,28 +2121,8 @@ function onResetPanels() {
   opacity: 0.9;
 }
 
-/* Der Live-Chip eines laufenden Imports. Er atmet leicht – nicht als Zierde: waehrend der
-   Schreibphase kann der Server minutenlang keinen Zaehler liefern, und eine vollkommen
-   stehende Anzeige liest sich dann wie ein Absturz. Der Puls sitzt auf der Randfarbe
-   (box-shadow), nicht auf der Groesse: nichts darf in der Command-Bar wandern. */
-.run-chip {
-  animation: run-chip-pulse 2.4s ease-in-out infinite;
-}
-@keyframes run-chip-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 26%, transparent);
-  }
-  50% {
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 6%, transparent);
-  }
-}
-/* Wer Bewegung abbestellt hat, bekommt den Chip ruhig – die Zahlen tragen die Aussage ohnehin. */
-@media (prefers-reduced-motion: reduce) {
-  .run-chip {
-    animation: none;
-  }
-}
+/* Der Live-Chip des laufenden Imports und sein Puls sind mit dem Chip selbst entfallen – der Lauf
+   steht jetzt in der Sidebar-Karte, die ihre eigene, ruhigere Auszeichnung traegt. */
 
 /* Klick-Feedback der Aktions-Buttons: gedrueckt 0.96, federt in 150ms auf 1.0 zurueck. */
 .action-btn {

@@ -80,13 +80,22 @@ const SIDEBAR_IDS = {
   default: ['search', 'goto-code', 'goto-wiki', 'help'],
 }
 
-export function sidebarShortcuts(routePath) {
+// Seit die Fortschrittskarte einen FESTEN Platz darueber hat, teilen sich beide den unteren Teil
+// der Spalte – vorher trat die eine an die Stelle der anderen. Drei Zeilen sind das, was daneben
+// auf jeder Fensterhoehe sicher passt; `help` faellt dabei bewusst weg, weil die Kopfzeile der
+// Liste ohnehin ins `?`-Overlay fuehrt und dessen Taste selbst traegt.
+export const SIDEBAR_LIMIT = 3
+
+export function sidebarShortcuts(routePath, limit = SIDEBAR_LIMIT) {
   const ids = routePath.startsWith('/code')
     ? SIDEBAR_IDS.code
     : routePath.startsWith('/bot')
       ? SIDEBAR_IDS.bot
       : SIDEBAR_IDS.default
-  return ids.map((id) => SHORTCUTS.find((s) => s.id === id)).filter(Boolean)
+  return ids
+    .map((id) => SHORTCUTS.find((s) => s.id === id))
+    .filter(Boolean)
+    .slice(0, limit)
 }
 
 export const SHORTCUT_GROUPS = [

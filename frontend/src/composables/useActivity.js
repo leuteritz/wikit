@@ -18,6 +18,7 @@
 // darum zeigt die Karte beide statt eines von beiden zu verschweigen.
 import { ref, computed } from 'vue'
 import { api } from '../lib/api.js'
+import { formatRelative } from '../lib/format.js'
 import { useJavaQueue } from './useJavaQueue.js'
 
 // --- Phasen ------------------------------------------------------------------------------------
@@ -64,10 +65,24 @@ const run = ref(null) // { kind, progress: { phase, done, total }, phaseStartedA
 const result = ref(null) // { kind, ok, message }
 const elapsedMs = ref(0)
 
+// Der letzte abgeschlossene Lauf – anders als `result` bleibt er stehen. Die Sidebar-Karte hat seit
+// jeher einen festen Platz, und „nichts laeuft" ist dort keine Auskunft: die Frage im Ruhezustand
+// ist „was war zuletzt, und ging es gut?".
+const lastRun = ref(null) // { kind, ok, message, at, durationMs }
+// Ob das Detail-Fenster offen ist. Der Zustand liegt HIER und nicht in `App.vue`, weil ihn zwei
+// Stellen setzen (Klick auf die Sidebar-Karte, ESC) und eine dritte ihn liest.
+const detailOpen = ref(false)
+
 const RESULT_LINGER_MS = 6000
+// Grobe Uhr fuer „vor 2 Minuten". Eigener, langsamer Takt: die Sekundenuhr laeuft nur waehrend
+// eines Laufs, die Altersangabe muss aber auch danach noch weiterzaehlen.
+const AGO_TICK_MS = 30000
+const AGO_MAX_MS = 3600000
+const nowTick = ref(Date.now())
 let runStartedAt = 0
 let elapsedTimer = null
 let resultTimer = null
+let agoTimer = null
 
 // --- Uhr ---------------------------------------------------------------------------------------
 // Sie tickt genau einmal fuer die ganze App. Vorher lief sie in jeder Komponente, die eine Dauer
@@ -106,15 +121,35 @@ function report(ev) {
 }
 
 function end({ kind, ok = true, message = '' } = {}) {
+  const took = elapsedMs.value
   stopClock()
   run.value = null
   if (!message) {
+    // `summarize` gab null zurueck: der Lauf ist noch nicht zu Ende (Import mit Rueckfrage wegen
+    // Duplikaten). Dann gibt es auch nichts zu berichten – weder als Ergebnis noch als „zuletzt".
     result.value = null
     return
   }
   result.value = { kind, ok, message }
+  lastRun.value = { kind, ok, message, at: Date.now(), durationMs: took }
+  startAgoClock()
   clearTimeout(resultTimer)
   resultTimer = setTimeout(() => (result.value = null), RESULT_LINGER_MS)
+}
+
+// Laeuft nur, solange die Altersangabe sich ueberhaupt noch aendert: nach einer Stunde steht dort
+// ohnehin „an hour ago", und ein Interval, das bis zum Tab-Ende weitertickt, um nichts zu
+// aktualisieren, ist reine Arbeit ohne Anzeige.
+function startAgoClock() {
+  clearInterval(agoTimer)
+  nowTick.value = Date.now()
+  agoTimer = setInterval(() => {
+    nowTick.value = Date.now()
+    if (nowTick.value - (lastRun.value?.at || 0) > AGO_MAX_MS) {
+      clearInterval(agoTimer)
+      agoTimer = null
+    }
+  }, AGO_TICK_MS)
 }
 
 // Ergebnis von Hand wegnehmen (die Karte hat kein ×, aber ein neuer Lauf soll den alten Stand
@@ -281,6 +316,27 @@ const queue = computed(() => {
 const busy = computed(() => !!run.value || !!queue.value)
 const anything = computed(() => busy.value || !!result.value)
 
+// --- Zuletzt / Detailfenster ---------------------------------------------------------------
+// Alter des letzten Laufs. Haengt an `nowTick`, damit die Angabe von selbst weiterlaeuft – ohne das
+// stuende „just now" auch noch nach einer halben Stunde da.
+const lastRunAgo = computed(() => {
+  const l = lastRun.value
+  if (!l) return ''
+  void nowTick.value
+  return formatRelative(new Date(l.at).toISOString())
+})
+// Titel/Icon des letzten Laufs kommen aus derselben Tabelle wie die des laufenden – sonst hiesse
+// derselbe Vorgang je nach Zustand anders.
+const lastRunTitle = computed(() => KINDS[lastRun.value?.kind]?.title || '')
+const lastRunIcon = computed(() => KINDS[lastRun.value?.kind]?.icon || 'lucide:activity')
+
+function openDetail() {
+  detailOpen.value = true
+}
+function closeDetail() {
+  detailOpen.value = false
+}
+
 export function useActivity() {
   return {
     // Lauf (SSE)
@@ -301,6 +357,14 @@ export function useActivity() {
     // Abschluss
     result,
     clearResult,
+    lastRun,
+    lastRunAgo,
+    lastRunTitle,
+    lastRunIcon,
+    // Detailfenster (Sidebar-Karte -> Modal)
+    detailOpen,
+    openDetail,
+    closeDetail,
     // Gesamt
     busy,
     anything,

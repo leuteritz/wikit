@@ -6,6 +6,7 @@ import ShortcutsOverlay from './components/ShortcutsOverlay.vue'
 import { sidebarShortcuts, keyChips, isTypingTarget } from './lib/shortcuts.js'
 import NotificationHost from './components/NotificationHost.vue'
 import ActivityCard from './components/ActivityCard.vue'
+import ActivityModal from './components/ActivityModal.vue'
 import { useArticles } from './composables/useArticles.js'
 import { useJavaAnalyzer } from './composables/useJavaAnalyzer.js'
 import { useJavaQueue } from './composables/useJavaQueue.js'
@@ -20,7 +21,7 @@ const { files, fetchFiles } = useJavaAnalyzer()
 const { probe: probeQueue } = useJavaQueue()
 // „Laeuft gerade etwas Langes?" – die Frage betrifft jede Ansicht, denn Import, Reset,
 // Kanten-Neuberechnung und KI-Queue laufen im Server weiter, wenn man die Code-Ansicht verlaesst.
-const { busy: activityBusy } = useActivity()
+const { busy: activityBusy, closeDetail: closeActivity } = useActivity()
 const { theme, toggle: toggleTheme } = useTheme()
 // Verbindungsstand des Bots. Er haengt an der Sidebar, weil die Frage „antwortet die KI ueberhaupt?"
 // jede Ansicht betrifft – ein Massenlauf gegen einen abgeschalteten Ollama-Server faellt sonst
@@ -54,6 +55,9 @@ function onKey(e) {
   if (e.key === 'Escape') {
     searchOpen.value = false
     shortcutsOpen.value = false
+    // Das Aktivitaets-Fenster schliesst hier mit, nicht in der Komponente: ESC gehoert der Ansicht,
+    // die es abfaengt (dieselbe Regel wie bei den Kanten-Panels in `CodeView`).
+    closeActivity()
     return
   }
   if (typing || e.ctrlKey || e.metaKey || e.altKey) return
@@ -210,10 +214,11 @@ function isActive(to) {
            in einem `title` finden. Hier ist Platz (die Spalte ist unten leer), und die Liste bleibt
            kurz: alles Weitere ist einen Tastendruck entfernt (`?`). Nur im breiten Layout – in der
            Icon-Spalte waere sie unlesbar.
-           Waehrend eines Laufs tritt die Fortschrittskarte an ihre Stelle: beides zusammen
-           passt in der Hoehe nicht, und wer gerade auf einen Import wartet, schlaegt keine
-           Tastenkuerzel nach. -->
-      <div v-if="!activityBusy" class="mb-3 hidden lg:block">
+           Sie bleibt waehrend eines Laufs stehen: dass ein Import laeuft, ist kein Grund, dem
+           Nutzer die Bedienung wegzunehmen – und ein Block, der kommt und geht, laesst den unteren
+           Teil der Sidebar bei jedem Start und jedem Ende springen. Damit beides sicher
+           nebeneinander passt, zeigt die Liste `SIDEBAR_LIMIT` Zeilen (lib/shortcuts.js). -->
+      <div class="mb-3 hidden lg:block">
         <button
           type="button"
           class="mb-1.5 flex w-full items-center gap-1.5 px-2 font-mono text-[0.59375rem] font-semibold tracking-[0.16em] text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
@@ -221,7 +226,10 @@ function isActive(to) {
           @click="shortcutsOpen = true"
         >
           SHORTCUTS
-          <Icon icon="lucide:arrow-up-right" class="h-3 w-3 opacity-60" />
+          <!-- Die Taste steht am Einstieg, seit `help` nicht mehr in der gekuerzten Liste steht –
+               sonst waere die Uebersicht nur noch mit der Maus erreichbar. -->
+          <kbd class="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1 py-px font-mono text-[0.59375rem] font-medium text-[var(--color-text)]">?</kbd>
+          <Icon icon="lucide:arrow-up-right" class="ml-auto h-3 w-3 opacity-60" />
         </button>
         <ul class="space-y-1">
           <li
@@ -281,6 +289,11 @@ function isActive(to) {
 
     <SearchPalette :open="searchOpen" @close="searchOpen = false" />
     <ShortcutsOverlay :open="shortcutsOpen" @close="shortcutsOpen = false" />
+
+    <!-- Detail zur Fortschrittskarte. Steht hier und nicht in der Code-Ansicht, weil der Lauf
+         ueberall sichtbar ist – seinen Einzelheiten in genau eine Ansicht zu legen waere derselbe
+         Fehler, den die Karte gerade behoben hat. Der Offen-Zustand liegt in `useActivity`. -->
+    <ActivityModal />
 
     <!-- Globale Rueckmeldungen. Steht hier, damit sie auf JEDER Route erscheinen – ein Fehler
          soll nicht davon abhaengen, welche Ansicht ihn ausgeloest hat. -->
