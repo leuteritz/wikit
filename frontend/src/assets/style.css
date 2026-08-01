@@ -517,6 +517,21 @@ html.dark {
 
 /* Vue Flow Basisstyles werden in den Komponenten importiert. */
 
+/* Eine Karte ist der Gegenstand, eine Linie nur die Beziehung dazwischen: KEINE Kante und KEIN
+   Kanten-Label darf ueber einer Klassenkarte liegen. Vue Flow haengt drei Geschwister in den
+   Transform-Layer – je Kante ein `.vue-flow__edges`-SVG, dann das Label-Overlay
+   `.vue-flow__edge-labels`, zuletzt den Knoten-Container `.vue-flow__nodes`. Ohne eigenen z-index
+   entscheidet die DOM-Reihenfolge, und die faellt richtig aus; sobald ein Label aber selbst einen
+   z-index traegt, ueberholt es jede Karte. Genau das taten `.me-label--hot` (2) und `--pinned` (3)
+   in ManagedEdge.vue: sie sind dafuer gedacht, sich von ANDEREN LABELN abzuheben, und deckten
+   damit die Karte zu, die sie kreuzen. Der eigene Stapelkontext am Knoten-Container haelt beide
+   Ordnungen getrennt – die Labels ordnen sich weiter untereinander, liegen aber alle zusammen
+   unter den Karten. Deshalb hier und nicht als kleinerer z-index am Label: dort waere es eine
+   Zahl, die beim naechsten Label-Zustand wieder zu gross gewaehlt wird. */
+.vue-flow__nodes {
+  z-index: 10;
+}
+
 /* Weiche Ueberblendung von Farbe/Staerke beim (De-)Aktivieren des Call-Highlights. */
 .vue-flow__edge .vue-flow__edge-path {
   transition: stroke 0.15s ease, stroke-width 0.15s ease;
