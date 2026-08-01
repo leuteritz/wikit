@@ -16,13 +16,16 @@
 // oder ESC – und ESC routet CodeView, nicht dieses Panel: es ist kein Modal mehr, also darf es
 // nicht jede ESC-Taste des Fensters an sich ziehen (im Klassenfilter oder im Editor meint sie
 // etwas anderes). HTTP nur ueber lib/api.js.
-import { computed, watch, onUnmounted, ref } from 'vue'
+import { computed, watch, onUnmounted, ref, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../../lib/api.js'
 import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
 import { parseParamNames, markParamOccurrences, toggleParamHighlight as onParamClick } from '../../lib/javaParams.js'
 // Gutter/Fenster-Aufbereitung des Shiki-HTML – geteilt mit JavaBundlePanel (s. lib/javaCode.js).
-import { addLineNumbers, buildCallWindow } from '../../lib/javaCode.js'
+// `shikiText`/`paintMatches`/`clearMatches` tragen die Suche in diesem Panel (s. unten).
+import { addLineNumbers, buildCallWindow, shikiText, paintMatches, clearMatches } from '../../lib/javaCode.js'
+// Dieselbe Musterlogik wie die Suchleiste im Source-Tab und in der globalen Palette.
+import { findMatches, MATCH_LIMIT } from '../../lib/codeSearch.js'
 // Identitaetsfarbe je Methode: Definition oben, Aufrufstelle unten und Token im Code teilen sie.
 import { buildMethodColorMap, methodColorVars, markMethodCalls } from '../../lib/javaMethodColors.js'
 import { copyToClipboard } from '../../lib/clipboard.js'
@@ -217,6 +220,175 @@ async function loadUsageSnippets() {
   }
 }
 
+// --- Suche IN der Beziehung -------------------------------------------------------------------
+// Dieselbe Leiste und dieselbe Musterlogik wie im Source-Tab (`JavaClassDetail`) und in der
+// globalen Palette: Feld, Zaehler, drei Modus-Schalter, vor/zurueck, Enter/Shift+Enter, ESC leert.
+// Wer eine Beziehung liest, sucht darin dasselbe, was er im Quelltext suchen wuerde – zwei
+// verschiedene Suchen ueber denselben Code waeren zwei Antworten auf eine Frage.
+//
+// Zwei Unterschiede zum Source-Tab, beide aus der Bauart dieses Panels:
+//  * Der Untergrund ist server-gerendertes Shiki-HTML, nicht CodeMirror. Die Bruecke ist
+//    `shikiText` – derselbe Text, aus dem die Offsets stammen, gelesen aus genau den
+//    `.line`-Elementen, die anschliessend markiert werden (wie in der Suchvorschau der Palette).
+//  * Es ist nicht EIN Text, sondern viele: je Methodendefinition ein Block (`.edge-code`) und je
+//    Aufrufstelle ein Fenster (`.edge-usage-code`). Jeder Block traegt deshalb seine eigene
+//    Trefferliste, und die Reihenfolge im DOM (erst Definitionen, dann Aufrufstellen) ist zugleich
+//    die Reihenfolge des Zaehlers – „3 von 12" laeuft also von der Quelle zum Anwender, genau wie
+//    der Pfeil im Panel. Gefiltert wird NICHT: eine Karte ohne Treffer ist Teil der Beziehung und
+//    verschwindet nicht, nur weil man gerade nach etwas anderem sucht.
+const bodyEl = ref(null)
+const searchInput = ref(null)
+const search = ref('')
+const searchOpts = ref({ caseSensitive: false, wholeWord: false, regex: false })
+// Freilaufender Zaehler; der Modulo unten macht das Umlaufen daraus (wie im Source-Tab).
+const searchCursor = ref(0)
+
+const SEARCH_TOGGLES = [
+  { key: 'caseSensitive', icon: 'lucide:case-sensitive', title: 'Match case' },
+  { key: 'wholeWord', icon: 'lucide:whole-word', title: 'Match whole word' },
+  { key: 'regex', icon: 'lucide:regex', title: 'Use regular expression' },
+]
+
+// Ein Eintrag je gerendertem Code-Block: { el, side: 'source' | 'consumer', matches }.
+const blocks = ref([])
+const searchError = ref('')
+const searchCapped = ref(false)
+
+const hitCount = computed(() => blocks.value.reduce((n, b) => n + b.matches.length, 0))
+
+const activeMatch = computed(() => {
+  const n = hitCount.value
+  if (!n) return -1
+  return ((searchCursor.value % n) + n) % n
+})
+
+// Wo steht das Gesuchte – in der Definition oder an den Aufrufstellen? Die Frage stellt sich nur in
+// diesem Panel, und sie ist der Grund, warum die Suche hier mehr ist als ein Textfilter: „0 in the
+// definition, 5 at the call sites" beantwortet, ob ein Name zur Klasse gehoert oder nur benutzt wird.
+const sideCounts = computed(() => {
+  const out = { source: 0, consumer: 0 }
+  for (const b of blocks.value) out[b.side] += b.matches.length
+  return out
+})
+
+const searchCounter = computed(() => {
+  if (!search.value) return ''
+  if (searchError.value) return 'Invalid regex'
+  if (!hitCount.value) return 'No results'
+  return `${activeMatch.value + 1}/${hitCount.value}${searchCapped.value ? '+' : ''}`
+})
+const searchCounterTitle = computed(() => {
+  if (searchError.value) return searchError.value
+  if (searchCapped.value) return `Showing the first ${MATCH_LIMIT} matches per code block`
+  return ''
+})
+const searchFailed = computed(() => !!search.value && (!!searchError.value || !hitCount.value))
+
+// Treffer je Block einsammeln. Laeuft auf dem GEMOUNTETEN DOM (nach `nextTick`), nicht auf den
+// HTML-Strings: die Query aendert sich bei jedem Tastendruck, und ein neuer `v-html`-String waere
+// jedes Mal ein kompletter Neuaufbau saemtlicher Bloecke.
+async function scanBlocks() {
+  await nextTick()
+  const root = bodyEl.value
+  if (!root) {
+    blocks.value = []
+    return
+  }
+  const els = [...root.querySelectorAll('.edge-code, .edge-usage-code')]
+  if (!search.value) {
+    els.forEach(clearMatches)
+    blocks.value = []
+    searchError.value = ''
+    searchCapped.value = false
+    return
+  }
+  const cfg = { query: search.value, ...searchOpts.value }
+  let error = ''
+  let capped = false
+  const next = els.map((el) => {
+    const r = findMatches(shikiText(el), cfg)
+    if (r.error) error = r.error
+    if (r.capped) capped = true
+    return { el, side: el.classList.contains('edge-usage-code') ? 'consumer' : 'source', matches: r.matches }
+  })
+  searchError.value = error
+  searchCapped.value = capped
+  blocks.value = next
+}
+
+// Markieren + den aktiven Treffer anfahren – beides aus derselben Trefferliste, sonst liefe der
+// Zaehler irgendwann gegen eine andere Markierung. `paintMatches` raeumt jeden Block selbst auf,
+// ein Block ohne Treffer wird also mit leerer Liste sauber zurueckgesetzt.
+function paintActive() {
+  let seen = 0
+  for (const b of blocks.value) {
+    const local = activeMatch.value - seen
+    paintMatches(b.el, b.matches, local >= 0 && local < b.matches.length ? local : -1)
+    seen += b.matches.length
+  }
+  scrollToActive()
+}
+
+// Den aktiven Treffer in den Blick holen, ohne `scrollIntoView()`: das bewegt jeden Vorfahren mit,
+// also auch die Spalten daneben. Ein Drittel von oben – darueber bleibt Kontext stehen.
+function scrollToActive() {
+  const box = bodyEl.value
+  const el = box?.querySelector('.cs-hit--active')
+  if (!box || !el) return
+  const delta = el.getBoundingClientRect().top - box.getBoundingClientRect().top
+  box.scrollTop = Math.max(0, box.scrollTop + delta - box.clientHeight / 3)
+}
+
+// EIN Watcher fuer alles, was die Markierung beeinflusst – auch fuer die nachgeladenen Snippets:
+// die Bloecke entstehen erst, wenn ihr Code eintrifft, und eine Suche, die vor dem Code getippt
+// wurde, muss danach trotzdem leuchten. Der Cursor loest den Scan mit aus (statt nur das Malen):
+// ueber ein paar kleine Bloecke ist er billig und kann so nicht gegen einen veralteten Stand laufen.
+watch([search, searchOpts, searchCursor, snippets, usageSnippets], async () => {
+  await scanBlocks()
+  paintActive()
+})
+
+// Jede Aenderung an Query oder Optionen beginnt wieder beim ersten Treffer.
+function setQuery(value) {
+  search.value = value
+  searchCursor.value = 0
+}
+function toggleSearchOpt(key) {
+  searchOpts.value = { ...searchOpts.value, [key]: !searchOpts.value[key] }
+  searchCursor.value = 0
+}
+function stepMatch(delta) {
+  if (hitCount.value) searchCursor.value += delta
+}
+function closeSearch() {
+  search.value = ''
+  searchCursor.value = 0
+  searchInput.value?.blur()
+}
+
+// Klick auf eine der beiden Bilanz-Zahlen: zum ersten Treffer dieser Seite. Die Zahl allein sagt,
+// DASS dort etwas steht – der Sprung dorthin ist die naheliegende naechste Frage.
+function jumpToSide(side) {
+  let seen = 0
+  for (const b of blocks.value) {
+    if (b.side === side && b.matches.length) {
+      searchCursor.value = seen
+      return
+    }
+    seen += b.matches.length
+  }
+}
+
+// Ctrl+F, wenn dieses Panel vorn steht. Der Tastendruck selbst wird NICHT hier abgefangen: die
+// Regel „trifft, was im Blick ist" braucht alle Kandidaten und liegt deshalb in CodeView – sonst
+// entscheiden zwei window-Listener dasselbe und man kann nicht mehr sagen, welcher gewinnt.
+async function focusSearch() {
+  await nextTick()
+  searchInput.value?.focus()
+  searchInput.value?.select()
+}
+defineExpose({ focusSearch })
+
 // Kopier-Logik: ein gemeinsamer Zustand für alle Blöcke (Quelle 'src:<name>' / Verwendung
 // 'use:<name>'). Nach 1,5 s zurücksetzen. Kein fetch – nur Clipboard-API.
 const copiedKey = ref(null)
@@ -263,6 +435,18 @@ function openUsage(c) {
 
 // Eine offene Loesch-Bestaetigung gehoert zu GENAU der Kante, an der sie aufgerufen wurde.
 watch(() => props.edge, () => (confirmingDelete.value = null))
+
+// Die Suche gehoert zu GENAU dieser Beziehung (dieselbe Regel wie beim Klassenwechsel im
+// Source-Tab). Sie haengt bewusst an der IDENTITAET der Kante und nicht am `edge`-Objekt: das
+// wird beim Uebergang vom Platzhalter zu den geladenen Daten ohnehin ausgetauscht, und ein
+// waehrend des Ladens getippter Begriff waere sonst genau dann weg, wenn der Code eintrifft.
+watch(
+  () => (props.edge ? `${props.edge.fromFileId} ${props.edge.toFileId} ${props.edge.kind}` : null),
+  () => {
+    search.value = ''
+    searchCursor.value = 0
+  },
+)
 
 // Die DATEN steuern das Nachladen – ausdruecklich nicht `visible`.
 // Grund: Das Panel oeffnet inzwischen sofort mit einem Platzhalter (`loading`), dessen `callSites`
@@ -332,9 +516,126 @@ watch(
               <Icon icon="lucide:arrow-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
               <span class="truncate" :title="edge.fromClass">{{ edge.fromClass }}</span>
             </div>
+
+            <!-- Suche IN der Beziehung. Eigene Zeile ueber die volle Panelbreite – aus demselben
+                 Grund wie im Source-Tab: die Leiste traegt Feld, Zaehler, drei Modus-Schalter und
+                 die Navigation, und die draengen sich neben den Klassennamen auf jeder
+                 Spaltenbreite. Waehrend des Ladens gibt es keinen Code, in dem man suchen koennte –
+                 ein Feld, das nichts finden kann, waere ein Angebot ins Leere. -->
+            <div v-if="!loading" class="mt-2">
+              <div
+                class="flex w-full min-w-0 flex-wrap items-center gap-0.5 rounded-lg border bg-[var(--color-surface)] px-1.5 py-0.5 transition"
+                :class="searchFailed ? 'border-[var(--color-danger)]' : 'border-[var(--color-border)] focus-within:border-[var(--color-accent)]'"
+              >
+                <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
+                <input
+                  ref="searchInput"
+                  :value="search"
+                  type="text"
+                  :placeholder="`Search this ${isField ? 'access' : 'call'}…`"
+                  aria-label="Search the code of this relation"
+                  spellcheck="false"
+                  class="min-w-[5rem] flex-1 bg-transparent py-0.5 text-xs text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
+                  @input="setQuery($event.target.value)"
+                  @keydown.enter.prevent="stepMatch($event.shiftKey ? -1 : 1)"
+                  @keydown.esc.prevent.stop="closeSearch"
+                />
+                <span
+                  v-if="search"
+                  class="shrink-0 whitespace-nowrap px-0.5 text-3xs tabular-nums"
+                  :class="searchFailed ? 'text-[var(--color-danger)]' : 'text-[var(--color-text-muted)]'"
+                  :title="searchCounterTitle"
+                >{{ searchCounter }}</span>
+
+                <!-- Modus-Schalter (Aa / ganzes Wort / Regex) – dieselben drei wie ueberall sonst. -->
+                <button
+                  v-for="o in SEARCH_TOGGLES"
+                  :key="o.key"
+                  type="button"
+                  class="grid h-5 w-5 shrink-0 place-items-center rounded transition"
+                  :class="searchOpts[o.key]
+                    ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)]'
+                    : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]'"
+                  :title="o.title"
+                  :aria-pressed="searchOpts[o.key]"
+                  @click="toggleSearchOpt(o.key)"
+                >
+                  <Icon :icon="o.icon" class="h-3.5 w-3.5" />
+                </button>
+
+                <!-- Navigation als EINE Einheit: in einer schmalen Spalte bricht die Leiste intern
+                     um, und ein einzeln abgetrennter Weiter-Pfeil waere dort ein Bedienelement
+                     ohne Zusammenhang. -->
+                <div class="ml-auto flex shrink-0 items-center gap-0.5">
+                  <span class="mx-0.5 h-4 w-px shrink-0 bg-[var(--color-border)]" />
+                  <button
+                    type="button"
+                    class="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-40 disabled:hover:bg-transparent"
+                    title="Previous match (Shift+Enter)"
+                    :disabled="!hitCount"
+                    @click="stepMatch(-1)"
+                  >
+                    <Icon icon="lucide:chevron-up" class="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    class="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-40 disabled:hover:bg-transparent"
+                    title="Next match (Enter)"
+                    :disabled="!hitCount"
+                    @click="stepMatch(1)"
+                  >
+                    <Icon icon="lucide:chevron-down" class="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    v-if="search"
+                    type="button"
+                    class="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+                    title="Clear search (Esc)"
+                    @click="closeSearch"
+                  >
+                    <Icon icon="lucide:x" class="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              <!-- Die Bilanz der beiden Seiten – die eine Frage, die sich NUR hier stellt: steht das
+                   Gesuchte in der Definition oder an den Aufrufstellen? Ein Klick springt zum ersten
+                   Treffer der Seite; eine Seite ohne Treffer ist gedaempft und nicht anklickbar,
+                   denn „0" ist hier eine Aussage und kein Ziel. -->
+              <div v-if="search && !searchError" class="mt-1 flex flex-wrap items-center gap-1">
+                <button
+                  type="button"
+                  class="side-chip"
+                  :class="{ 'is-empty': !sideCounts.source }"
+                  :disabled="!sideCounts.source"
+                  :title="sideCounts.source
+                    ? `Jump to the first match in the ${memberWord} definition in ${edge.toClass}`
+                    : `Not found in the ${memberWord} definition in ${edge.toClass}`"
+                  @click="jumpToSide('source')"
+                >
+                  <Icon icon="lucide:file-code" class="h-3 w-3 shrink-0" />
+                  <span class="tabular-nums">{{ sideCounts.source }}</span>
+                  defines
+                </button>
+                <button
+                  type="button"
+                  class="side-chip"
+                  :class="{ 'is-empty': !sideCounts.consumer }"
+                  :disabled="!sideCounts.consumer"
+                  :title="sideCounts.consumer
+                    ? `Jump to the first match at the ${isField ? 'access' : 'call'} sites in ${edge.fromClass}`
+                    : `Not found at the ${isField ? 'access' : 'call'} sites in ${edge.fromClass}`"
+                  @click="jumpToSide('consumer')"
+                >
+                  <Icon icon="lucide:corner-down-right" class="h-3 w-3 shrink-0" />
+                  <span class="tabular-nums">{{ sideCounts.consumer }}</span>
+                  {{ isField ? 'reads' : 'calls' }}
+                </button>
+              </div>
+            </div>
           </header>
 
-          <div class="min-h-0 flex-1 overflow-y-auto">
+          <div ref="bodyEl" class="min-h-0 flex-1 overflow-y-auto">
             <!-- Warten hat EINE Form (`BusyState`) – und sie steht dort, wo das Ergebnis erscheinen
                  wird, nicht als Spinner irgendwo über dem Graphen. Das Skelett hat so viele Zeilen
                  wie die Kante Methoden trägt, damit das Panel beim Eintreffen nicht springt. -->
@@ -676,6 +977,45 @@ watch(
 .review-note :where(code) {
   @apply rounded px-1;
   background-color: color-mix(in srgb, var(--color-warning) 16%, transparent);
+}
+
+/* --- Suche IN der Beziehung -------------------------------------------------------------------
+   Treffer tragen die Gold-Familie von `mark` (style.css) – dieselbe Farbe wie jeder andere
+   Suchtreffer in Wikit (Quelltext-Suche, Graph-Suche, Suchpalette). Aktiv vs. passiv unterscheiden
+   Deckkraft und Ring, NICHT die Farbe: eine zweite Hue waere eine zweite Bedeutung.
+   `color: inherit` ist Pflicht, sonst zieht der Browser-Default fuer `mark` (schwarz auf gelb) die
+   Shiki-Farbe des umgebenden Tokens weg – und die Bloecke hier sind durchgehend `code-dark`. */
+.edge-code :deep(mark.cs-hit),
+.edge-usage-code :deep(mark.cs-hit) {
+  background: color-mix(in srgb, var(--color-warning) 32%, transparent);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.edge-code :deep(mark.cs-hit--active),
+.edge-usage-code :deep(mark.cs-hit--active) {
+  background: color-mix(in srgb, var(--color-warning) 62%, transparent);
+  box-shadow: 0 0 0 1px var(--color-warning);
+}
+
+/* Bilanz je Seite der Beziehung. Traegt die Treffer-Farbe, solange es dort etwas zu holen gibt –
+   damit gehoert der Chip sichtbar zur Suche und nicht zu den Kanten-Badges darueber. */
+.side-chip {
+  @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-3xs font-semibold transition;
+  color: var(--color-warning);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 40%, transparent);
+  background-color: color-mix(in srgb, var(--color-warning) 12%, transparent);
+}
+.side-chip:hover:not(.is-empty) {
+  background-color: color-mix(in srgb, var(--color-warning) 24%, transparent);
+}
+/* Keine Treffer auf dieser Seite: die Zahl bleibt lesbar (sie IST die Auskunft), aber der Chip
+   verliert Farbe und Klickbarkeit – ein Sprung ins Nichts waere ein Angebot ohne Ziel. */
+.side-chip.is-empty {
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+  background-color: transparent;
+  cursor: default;
 }
 
 /* Art der Beziehung im Kopf: dasselbe Zeichen und dieselbe Farbe wie am Kanten-Label im Graphen

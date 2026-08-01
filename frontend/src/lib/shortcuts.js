@@ -51,7 +51,7 @@ export const SHORTCUTS = [
     label: 'Find',
     // Die kontextabhaengige Regel steht als Text daneben – ein Kuerzel, das zwei Dinge tut, muss
     // sagen, wovon es abhaengt, sonst ist es zweimal geraten.
-    hint: 'in the open class, or in the graph when none is open',
+    hint: 'in the open relation, else the open class, else the graph',
   },
   { id: 'find-graph', keys: ['mod+shift+f'], scope: 'code', label: 'Find in graph', hint: 'always the graph field' },
   { id: 'analyze', keys: ['mod+enter'], scope: 'code', label: 'Run analysis', hint: 'inside “Add code”' },

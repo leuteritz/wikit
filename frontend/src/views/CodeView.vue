@@ -56,8 +56,8 @@ const {
 const source = ref('')
 const filename = ref('')
 const inputMode = ref('paste') // 'paste' = Editor | 'file' = .java-Datei(en) hochladen
-// Ziele der Tastenkuerzel: Filterfeld (/), Graph (0, Alt+←, Ctrl+Shift+F) und das Klassen-Panel
-// (Ctrl+F). Sie liegen hier, weil CodeView die Kuerzel routet – s. onKeydown.
+// Ziele der Tastenkuerzel: Filterfeld (/), Graph (0, Alt+←, Ctrl+Shift+F) sowie Klassen- bzw.
+// Kanten-Panel (Ctrl+F). Sie liegen hier, weil CodeView die Kuerzel routet – s. onKeydown.
 const filterInput = ref(null)
 const graphRef = ref(null)
 const detailRef = ref(null)
@@ -77,6 +77,10 @@ const handoffSearch = ref(null)
 const relation = ref(null) // vom Graphen gemeldet: { kind: 'edge' | 'bundle', … } | null
 const detailTab = ref('class') // 'class' | 'relation'
 const showRelation = computed(() => !!relation.value && detailTab.value === 'relation')
+// Nur die Einzelbeziehung traegt eine eigene Suchleiste (die Aggregatliste zeigt keinen Code, in
+// dem man suchen koennte) – Ctrl+F darf also nur dort dorthin gehen.
+const edgeDetailRef = ref(null)
+const relationSearchable = computed(() => showRelation.value && relation.value?.kind === 'edge')
 // Der Klassen-Reiter traegt den Namen der geoeffneten Klasse: „Class" allein liesse offen, wohin
 // er zurueckfuehrt – und genau das ist die Frage, wenn man aus einer Beziehung heraus schaut.
 const selectedFile = computed(() => files.value.find((f) => f.id === selectedFileId.value) || null)
@@ -334,15 +338,18 @@ function onKeydown(e) {
   const typing = isTypingTarget(document.activeElement)
 
   // --- Suchen: EINE Regel, an EINER Stelle ----------------------------------------------------
-  // Ctrl+F trifft, was im Blick ist: ist eine Klasse offen, deren Quelltext; sonst den Graphen.
+  // Ctrl+F trifft, was im Blick ist: steht eine Beziehung vorn, deren Code; sonst die offene
+  // Klasse; sonst der Graph. Die Beziehung geht vor, weil sie den Klassen-Reiter gerade verdeckt –
+  // eine Suche in etwas, das man nicht sieht, waere die falsche Antwort auf denselben Tastendruck.
   // Ctrl+Shift+F meint immer den Graphen. `preventDefault` schaltet dabei Chromes eigene Suche ab –
   // die faende im virtualisierten Editor ohnehin nur den sichtbaren Ausschnitt und im Graphen
   // (SVG/Canvas-Karten) praktisch nichts.
   if (mod && key === 'f' && !e.altKey) {
-    const wantGraph = e.shiftKey || !detailRef.value?.isReady?.()
     e.preventDefault()
-    if (wantGraph) graphRef.value?.focusFind?.()
-    else detailRef.value?.focusSearch?.()
+    if (e.shiftKey) graphRef.value?.focusFind?.()
+    else if (relationSearchable.value) edgeDetailRef.value?.focusSearch?.()
+    else if (detailRef.value?.isReady?.()) detailRef.value.focusSearch()
+    else graphRef.value?.focusFind?.()
     return
   }
 
@@ -1630,6 +1637,7 @@ function onResetPanels() {
             :loading="relation.loading"
             :loading-since="relation.since"
             :back="relation.back"
+            ref="edgeDetailRef"
             @close="onRelationClose"
             @delete-edge="(id) => graphRef?.deleteRelationEdge?.(id)"
           />
