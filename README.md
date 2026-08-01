@@ -19,7 +19,7 @@ copying one file.
 - **Markdown editor** — split view (CodeMirror); HTML is rendered once on save, server-side, with
   Shiki syntax highlighting.
 - **Instant search** — `Ctrl/Cmd + K` over articles, classes, methods and raw source, backed by
-  SQLite **FTS5**.
+  SQLite **FTS5** (a trigram index answers substrings and punctuation without reading any file).
 - **Relationship graph** — typed links between articles, drawn with [Vue Flow](https://vueflow.dev).
 - **Java code analysis** — parse `.java` locally (no JDK) and explore a class dependency graph.
 - **AI summaries** — optional, per method and per class, via [Ollama](https://ollama.com)

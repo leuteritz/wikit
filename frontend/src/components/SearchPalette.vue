@@ -172,12 +172,22 @@ const elapsedLabel = computed(() => (elapsed.value >= 1000 ? `${(elapsed.value /
 
 let nameTimer = null
 let codeTimer = null
+// Die Token verwerfen eine ueberholte ANTWORT – der Request lief trotzdem zu Ende. Auf einer
+// grossen Codebasis ist das der teuerste Teil des Tippens: better-sqlite3 arbeitet synchron, also
+// blockiert jede aufgelaufene Suche auch die naechste (und die Vorschau daneben). Deshalb wird die
+// vorige Anfrage abgebrochen, nicht nur ignoriert.
+let codeAbort = null
+function abortCodeRequest() {
+  codeAbort?.abort()
+  codeAbort = null
+}
 let nameToken = 0
 let codeToken = 0
 
 watch([term, () => parsed.value.scope, opts], ([q, scope]) => {
   clearTimeout(nameTimer)
   clearTimeout(codeTimer)
+  abortCodeRequest()
 
   if (!q) {
     symbolHits.value = []
@@ -226,16 +236,21 @@ watch([term, () => parsed.value.scope, opts], ([q, scope]) => {
     codeLoading.value = true
     codeTimer = setTimeout(async () => {
       const token = ++codeToken
+      const ctrl = new AbortController()
+      codeAbort = ctrl
       try {
-        const res = await api.searchJavaCode(q, opts.value)
+        const res = await api.searchJavaCode(q, opts.value, ctrl.signal)
         if (token !== codeToken) return
         codeResult.value = res
         codeError.value = ''
       } catch (e) {
-        if (token !== codeToken) return
+        // Ein Abbruch ist die Folge des naechsten Anschlags – der hat den Zustand bereits neu
+        // gesetzt. Als Fehler angezeigt stuende beim Tippen dauernd „Code search failed".
+        if (e?.name === 'AbortError' || token !== codeToken) return
         codeResult.value = null
         codeError.value = e?.message || 'Code search failed'
       } finally {
+        if (codeAbort === ctrl) codeAbort = null
         if (token === codeToken) codeLoading.value = false
       }
     }, CODE_DEBOUNCE_MS)
@@ -364,13 +379,20 @@ const busyLabel = computed(() => {
 // nicht". Und auch der vollstaendige Lauf sagt es: „12 Treffer" beantwortet nicht, ob in 30 oder in
 // 2600 Klassen gesucht wurde. Der Regex-/Interpunktions-Weg kann den FTS-Index nicht nutzen und
 // liest der Reihe nach – deshalb steht dabei, welcher Weg es war.
+// Was der Satz sagen muss, haengt am Weg: der Index kennt JEDE Klasse, gelesen wurden nur die
+// Kandidaten – „25 of 3000 classes read" laese sich dort wie ein Deckel, obwohl nichts fehlt.
+// Der Vollscan dagegen bricht wirklich ab, und dann ist genau das die Auskunft.
 const scanNote = computed(() => {
   const code = codeResult.value
   if (!code || !code.totalFiles) return ''
-  if (code.truncated) {
-    return `Stopped after ${code.scannedFiles} of ${code.totalFiles} classes — narrow the search for the rest.`
+  if (code.mode === 'scan') {
+    return code.truncated
+      ? `Stopped after ${code.scannedFiles} of ${code.totalFiles} classes — narrow the search for the rest.`
+      : `${code.scannedFiles} of ${code.totalFiles} classes read · full scan`
   }
-  return `${code.scannedFiles} of ${code.totalFiles} classes read · ${code.mode === 'scan' ? 'full scan' : 'index'}`
+  return code.truncated
+    ? `More classes match than fit the list — narrow the search for the rest.`
+    : `All ${code.totalFiles} classes covered · indexed (${code.scannedFiles} read)`
 })
 
 // --- Vorschau ------------------------------------------------------------------------------
@@ -592,6 +614,7 @@ watch(flatItems, (list) => {
 onUnmounted(() => {
   clearTimeout(nameTimer)
   clearTimeout(codeTimer)
+  abortCodeRequest()
   clearTimeout(previewTimer)
   clearTimeout(hoverTimer)
 })
@@ -958,9 +981,9 @@ const shortPackage = (pkg) => pkg || 'default package'
               </div>
               <BusyState
                 class="px-4"
-                :title="`Reading source of ${files.length} classes…`"
-                :detail="opts.regex ? 'regex: every class is read in order' : 'index first, full scan if it finds nothing'"
-                hint="The server reads stored sources line by line — narrow the term to make it shorter."
+                :title="opts.regex ? `Reading source of ${files.length} classes…` : 'Searching source code…'"
+                :detail="opts.regex ? 'regex: every class is read in order' : `trigram index over ${files.length} classes`"
+                hint="A regular expression cannot be answered from the index — the server reads every stored source in order. Turn it off to make this instant."
                 :since="startedAt"
               />
             </template>
@@ -1224,8 +1247,11 @@ const shortPackage = (pkg) => pkg || 'default package'
           <template v-else-if="term">
             No results for “{{ term }}”.
             <p v-if="codeResult" class="mt-1 text-2xs opacity-70">
-              Searched {{ codeResult.scannedFiles }} of {{ codeResult.totalFiles }} classes
-              ({{ codeResult.mode === 'scan' ? 'full scan' : 'indexed' }}), {{ articles.length }} articles.
+              <template v-if="codeResult.mode === 'scan'">
+                Searched {{ codeResult.scannedFiles }} of {{ codeResult.totalFiles }} classes (full scan),
+              </template>
+              <template v-else>Searched all {{ codeResult.totalFiles }} classes (indexed),</template>
+              {{ articles.length }} articles.
             </p>
           </template>
           <template v-else>Type to search articles, classes and source code…</template>

@@ -37,8 +37,12 @@ async function http(method, url, body, opts = {}) {
       method,
       headers: body ? { 'Content-Type': 'application/json' } : undefined,
       body: body ? JSON.stringify(body) : undefined,
+      signal: opts.signal,
     })
   } catch (e) {
+    // Abgebrochen (der Aufrufer hat weitergetippt) ist kein Fehler: durchreichen, ohne Toast und
+    // ohne die „Server nicht erreichbar"-Meldung, die hier sonst folgen wuerde.
+    if (e?.name === 'AbortError') throw e
     // fetch wirft nur, wenn die Anfrage gar nicht erst ankam: Server aus, Netz weg, DNS. Die
     // Browser-Meldung dazu („Failed to fetch") sagt niemandem etwas – hier steht, was zu tun ist.
     const err = new Error('Cannot reach the server. Is the backend running?')
@@ -125,13 +129,16 @@ export const api = {
   // Zeilengenaue Suche im Quelltext aller Klassen (globale Suchpalette). Gleiche Schalter wie die
   // Suchleiste im Quellcode-Tab. `silent`: die Palette tippt – ein Toast je Anschlag waere eine
   // Kaskade; der Fehler steht dort an Ort und Stelle in der Ergebnisliste.
-  searchJavaCode: (q, { caseSensitive = false, wholeWord = false, regex = false } = {}) =>
+  // `signal`: die Palette bricht die vorige Suche ab, sobald weitergetippt wird – sonst arbeitet
+  // der Server (better-sqlite3 blockiert synchron) noch Anfragen ab, deren Ergebnis niemand mehr
+  // sehen will, und die aktuelle steht dahinter in der Schlange.
+  searchJavaCode: (q, { caseSensitive = false, wholeWord = false, regex = false } = {}, signal) =>
     http(
       'GET',
       `/java/code-search?q=${encodeURIComponent(q)}&case=${caseSensitive ? 1 : 0}` +
         `&word=${wholeWord ? 1 : 0}&regex=${regex ? 1 : 0}`,
       null,
-      { silent: true },
+      { silent: true, signal },
     ),
   // Shiki-gehighlightetes Fenster um eine Quellzeile (Vorschau der Suchpalette).
   // `full`: statt des Fensters die GANZE Klasse (Treffer auf den Klassennamen meint die Klasse).

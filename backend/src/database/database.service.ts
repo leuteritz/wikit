@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { COLUMN_MIGRATIONS, JAVA_FTS_DDL, SCHEMA } from './schema';
+import { COLUMN_MIGRATIONS, JAVA_FTS_DDL, JAVA_SRC_FTS_DDL, SCHEMA } from './schema';
 import { FtsService } from './fts.service';
 
 // Entspricht initDb() aus dem alten db.js: legt Schema + FTS5-Index an (idempotent).
@@ -34,6 +34,26 @@ export class DatabaseService implements OnModuleInit {
 
     await this.migrateJavaFilesCheck();
     await this.migrateJavaFtsSource();
+    await this.ensureJavaSourceIndex();
+  }
+
+  // Trigram-Index ueber den Rohquelltext anlegen und fuer den Bestand nachtragen.
+  //
+  // ⚠️ Der Nachbau wird BEWUSST NICHT abgewartet. Bei einigen tausend Klassen laeuft er auf einem
+  // Pi in Sekunden bis Minuten, und solange antwortete der Server auf nichts – der Start haengt
+  // dann an einer Beschleunigung, die niemand angefordert hat. Bis er durch ist, sucht
+  // `codeSearch` ueber den alten Weg weiter (Praefix-Index + Vollscan): langsamer, aber richtig.
+  private async ensureJavaSourceIndex(): Promise<void> {
+    try {
+      await this.dataSource.query(JAVA_SRC_FTS_DDL);
+      this.fts.setSourceIndexAvailable(true);
+    } catch (e: any) {
+      // Aeltere SQLite kennt `contentless_delete` nicht -> ohne Index weiterlaufen, nicht abbrechen.
+      this.fts.setSourceIndexAvailable(false);
+      this.logger.warn(`Code-Suchindex nicht verfuegbar (${e?.message || e}) – Suche laeuft ohne ihn.`);
+      return;
+    }
+    void this.fts.backfillSourceIndex();
   }
 
   // Einmalige Constraint-Migration: `java_files.class_type` trug einen CHECK auf

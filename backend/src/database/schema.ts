@@ -183,6 +183,32 @@ export const JAVA_FTS_DDL = `CREATE VIRTUAL TABLE IF NOT EXISTS java_fts USING f
   tokenize = 'unicode61 remove_diacritics 2'
 )`;
 
+// Zweiter Index ueber DENSELBEN Rohquelltext – mit `trigram` statt `unicode61`, und genau darin
+// liegt der Zweck: unicode61 matcht nur Token-PRAEFIXE, die Code-Suche fragt aber nach beliebigen
+// TEILSTRINGEN (`ById` in `findById`), nach Interpunktion (`repo.get(`, die der Wort-Tokenizer
+// wegwirft) und ohne Ruecksicht auf Gross-/Kleinschreibung. Jede solche Anfrage fiel bisher auf den
+// Vollscan zurueck – gemessen 1500 gelesene Quelltexte pro Tastendruck; mit Trigram sind es 0-1 ms
+// Kandidatenauswahl (s. „Warum die Code-Suche einen zweiten Index hat" in CLAUDE.md).
+//
+// `content=''`, weil der Text bereits in `java_files.raw_source` steht – ein zweites Mal speichern
+// wuerde die DB unnoetig aufblaehen (gemessen 84,5 MB statt 53,7 MB bei 28,3 MB Quelltext).
+// `contentless_delete=1` (SQLite >= 3.47) haelt trotzdem ein normales DELETE offen, damit die
+// Pflege exakt dieselbe Form hat wie bei java_fts: DELETE + INSERT.
+//
+// NICHT Teil von SCHEMA: `contentless_delete` kennt aeltere SQLite nicht, und SCHEMA laeuft als
+// eine Kette – ein Fehler darin risse den Start mit. Angelegt wird die Tabelle deshalb einzeln und
+// mit Fallback in DatabaseService.ensureJavaSourceIndex().
+export const JAVA_SRC_FTS_DDL = `CREATE VIRTUAL TABLE IF NOT EXISTS java_src_fts USING fts5(
+  source,
+  tokenize = 'trigram',
+  content = '',
+  contentless_delete = 1
+)`;
+
+// Kuerzeste Anfrage, die der Trigram-Index beantworten kann. Darunter (1-2 Zeichen) gibt es kein
+// vollstaendiges Trigramm -> der Index kann nichts ausschliessen, es bleibt beim alten Weg.
+export const TRIGRAM_MIN_CHARS = 3;
+
 // Spaltenweise Nachruest-Migration fuer bestehende DBs: SQLite kann kein
 // `ADD COLUMN IF NOT EXISTS`, daher pro Spalte ueber PRAGMA table_info pruefen.
 // Wird nach SCHEMA in DatabaseService.onModuleInit ausgefuehrt (idempotent).

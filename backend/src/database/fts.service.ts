@@ -1,6 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager } from 'typeorm';
+import { TRIGRAM_MIN_CHARS } from './schema';
+
+// Wie viele Quelltexte der Nachbau am Stueck indiziert, bevor er den Event-Loop freigibt.
+// Dieselbe Regel wie in analyzeBatch/recomputeAutoEdges: eine lange synchrone Schleife blockiert
+// den ganzen Server, und dieser Lauf startet ausgerechnet dann, wenn jemand die Seite oeffnet.
+const BACKFILL_CHUNK = 200;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // FTS5-AUSNAHME: TypeORM unterstuetzt FTS5 nicht nativ. Volltext-Indexpflege und
@@ -10,7 +16,112 @@ import { DataSource, EntityManager } from 'typeorm';
 // ──────────────────────────────────────────────────────────────────────────────
 @Injectable()
 export class FtsService {
+  private readonly logger = new Logger(FtsService.name);
+
+  // Zustand des Trigram-Quelltextindex (s. JAVA_SRC_FTS_DDL). `available` = die Tabelle existiert
+  // (aeltere SQLite kann sie nicht anlegen), `ready` = sie deckt JEDE gespeicherte Klasse ab.
+  // Nur wenn beides gilt, darf `codeSearch` dem Index glauben, dass „keine Kandidaten" auch
+  // „keine Treffer" heisst – waehrend des Nachbaus waere das eine Falschauskunft.
+  private srcIndexAvailable = false;
+  private srcIndexReady = false;
+  private backfillRunning = false;
+
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+
+  // --- Trigram-Quelltextindex --------------------------------------------------------------
+
+  sourceIndexUsable(): boolean {
+    return this.srcIndexAvailable && this.srcIndexReady;
+  }
+
+  sourceIndexState(): { available: boolean; ready: boolean; building: boolean } {
+    return { available: this.srcIndexAvailable, ready: this.srcIndexReady, building: this.backfillRunning };
+  }
+
+  setSourceIndexAvailable(available: boolean): void {
+    this.srcIndexAvailable = available;
+  }
+
+  // Fehlt dem Index eine gespeicherte Klasse, wird sie nachgetragen – in Haeppchen, damit der
+  // Server waehrenddessen antwortet. Laeuft im Hintergrund beim Start (DatabaseService) und ist
+  // idempotent: der Abgleich fragt, welche java_files.id im Index FEHLEN, nicht wie viele es sind.
+  // Kein persistiertes „fertig"-Flag: eine Zahl in `settings` waere eine zweite Wahrheit, die nach
+  // einem Absturz mitten im Lauf luegen wuerde.
+  async backfillSourceIndex(): Promise<void> {
+    if (!this.srcIndexAvailable || this.backfillRunning) return;
+    this.backfillRunning = true;
+    const started = Date.now();
+    let done = 0;
+    try {
+      for (;;) {
+        const rows: Array<{ id: number }> = await this.dataSource.query(
+          `SELECT id FROM java_files
+           WHERE id NOT IN (SELECT rowid FROM java_src_fts)
+           ORDER BY id LIMIT ?`,
+          [BACKFILL_CHUNK],
+        );
+        if (!rows.length) break;
+        await this.dataSource.transaction(async (manager) => {
+          for (const { id } of rows) await this.indexJavaSource(manager, id);
+        });
+        done += rows.length;
+        // Event-Loop freigeben (s. BACKFILL_CHUNK).
+        await new Promise((r) => setImmediate(r));
+      }
+      this.srcIndexReady = true;
+      if (done) this.logger.log(`Code-Suchindex ergaenzt: ${done} Klassen in ${Date.now() - started} ms`);
+    } catch (e: any) {
+      // Ein gescheiterter Nachbau darf den Server nicht mitnehmen: die Suche laeuft dann weiter
+      // ueber den alten Weg (Praefix-Index + Vollscan), nur eben langsam.
+      this.srcIndexReady = false;
+      this.logger.error(`Code-Suchindex konnte nicht ergaenzt werden: ${e?.message || e}`);
+    } finally {
+      this.backfillRunning = false;
+    }
+  }
+
+  // Eintrag einer Klasse im Trigram-Index erneuern. DELETE + INSERT wie bei java_fts – moeglich,
+  // weil die Tabelle mit `contentless_delete=1` angelegt ist.
+  async indexJavaSource(manager: EntityManager, fileId: number, source?: string): Promise<void> {
+    if (!this.srcIndexAvailable) return;
+    let text = source;
+    if (text == null) {
+      const rows = await manager.query('SELECT raw_source FROM java_files WHERE id = ?', [fileId]);
+      text = rows[0]?.raw_source ?? null;
+    }
+    await manager.query('DELETE FROM java_src_fts WHERE rowid = ?', [fileId]);
+    if (text == null) return;
+    await manager.query('INSERT INTO java_src_fts (rowid, source) VALUES (?,?)', [fileId, text]);
+  }
+
+  // Beim Loeschen von Klassen: der Index haelt keine Fremdschluessel, also muss die Zeile hier weg.
+  // Bleibt sie stehen, nennt der Index eine Datei, die es nicht mehr gibt – der Scan findet sie
+  // nicht und die Suche verliert stillschweigend ihren Deckel an eine Leiche.
+  async removeJavaSources(manager: EntityManager, fileIds: number[]): Promise<void> {
+    if (!this.srcIndexAvailable || !fileIds.length) return;
+    const marks = fileIds.map(() => '?').join(',');
+    await manager.query(`DELETE FROM java_src_fts WHERE rowid IN (${marks})`, fileIds);
+  }
+
+  // Kandidaten fuer die zeilengenaue Code-Suche aus dem Trigram-Index: BELIEBIGE Teilstrings,
+  // Interpunktion inbegriffen, Gross-/Kleinschreibung egal (der exakte Scan sortiert danach aus,
+  // was die Optionen des Nutzers ausschliessen). Anders als beim Praefix-Index ist ein leeres
+  // Ergebnis hier eine ECHTE Aussage: was der Trigram-Index nicht kennt, steht in keiner Klasse.
+  async candidateJavaFileIdsBySource(q: string, limit = 300): Promise<number[]> {
+    const term = (q || '').trim();
+    if (!this.srcIndexAvailable || term.length < TRIGRAM_MIN_CHARS) return [];
+    // FTS5-Phrase: die gesamte Eingabe ist EIN Suchstring, `"` darin wird verdoppelt.
+    const phrase = `"${term.replace(/"/g, '""')}"`;
+    try {
+      const rows = await this.dataSource.query(
+        `SELECT rowid AS id FROM java_src_fts WHERE java_src_fts MATCH ? ORDER BY rowid LIMIT ?`,
+        [phrase, limit],
+      );
+      return rows.map((r: any) => Number(r.id)).filter((n: number) => Number.isFinite(n));
+    } catch {
+      return [];
+    }
+  }
 
   // Aktualisiert den FTS-Eintrag eines Artikels (Tags werden mit eingebettet).
   // Erwartet den Transaktions-`manager`, damit es in derselben Transaktion laeuft.
@@ -67,6 +178,10 @@ export class FtsService {
       'INSERT INTO java_fts (rowid, class_name, package, methods, descriptions, source) VALUES (?,?,?,?,?,?)',
       [f.id, f.class_name, f.package || '', methods, descriptions, f.raw_source || ''],
     );
+    // Der Trigram-Index haengt an DIESEM Aufruf, nicht an einem eigenen an jeder Schreibstelle:
+    // analyze, analyze-batch, Overwrite und die KI-Summary rufen `indexJavaFile` bereits alle auf.
+    // Ein zweiter Aufruf je Endpunkt waere genau die Zeile, die man beim naechsten vergisst.
+    await this.indexJavaSource(manager, f.id, f.raw_source || '');
   }
 
   // Sucht in den gespeicherten Java-Analysen nach passendem Kontext (Prompt-Enrichment).

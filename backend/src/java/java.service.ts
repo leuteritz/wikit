@@ -882,7 +882,27 @@ export class JavaService {
     const repo = this.ds.getRepository(JavaFile);
     const totalFiles = await repo.count();
 
-    // Kandidaten (Index-Weg) oder alle Ids (Scan-Weg).
+    // Weg 1: Trigram-Index. Er kennt jeden Teilstring ab TRIGRAM_MIN_CHARS – also ist seine
+    // Antwort VOLLSTAENDIG, und „keine Kandidaten" heisst hier wirklich „kommt nirgends vor".
+    // Genau das spart den Vollscan, der bisher jede solche Anfrage kostete.
+    if (!params.regex && this.fts.sourceIndexUsable()) {
+      const ids = await this.fts.candidateJavaFileIdsBySource(query, CODE_SEARCH_CANDIDATES);
+      const result = await this.scanFiles(repo, ids, re, { context, maxFiles });
+      return {
+        query,
+        mode: 'index',
+        totalFiles,
+        scannedFiles: result.scanned,
+        // Der Deckel liegt jetzt bei den KANDIDATEN, nicht bei den gelesenen Dateien: mehr
+        // Kandidaten als CODE_SEARCH_CANDIDATES heisst, dass es weitere Klassen mit Treffern gibt.
+        truncated: result.truncated || ids.length >= CODE_SEARCH_CANDIDATES,
+        totalMatches: result.files.reduce((sum, f) => sum + f.matchCount, 0),
+        files: result.files,
+      };
+    }
+
+    // Weg 2 (Regex, sehr kurze Eingabe, Index noch im Aufbau): Kandidaten aus dem Praefix-Index
+    // oder Vollscan. Unveraendert – nur noch selten erreicht.
     let mode: 'index' | 'scan' = 'scan';
     let ids: number[] = [];
     if (!params.regex) {
@@ -1057,8 +1077,9 @@ export class JavaService {
       const slice = ids.slice(i, i + CHUNK);
       await this.ds.transaction(async (manager) => {
         const marks = slice.map(() => '?').join(',');
-        // FTS5 hat keine Fremdschluessel -> Indexzeilen explizit entfernen.
+        // FTS5 hat keine Fremdschluessel -> Indexzeilen explizit entfernen. BEIDE Indizes.
         await manager.query(`DELETE FROM java_fts WHERE rowid IN (${marks})`, slice);
+        await this.fts.removeJavaSources(manager, slice);
         // java_methods / java_dependencies / java_file_versions haengen per ON DELETE CASCADE dran.
         await manager.getRepository(JavaFile).delete(slice);
       });
@@ -1085,6 +1106,7 @@ export class JavaService {
       // Klassennamen VOR dem Loeschen merken -> alle Kanten dieser Klasse mitentfernen.
       const file = await manager.getRepository(JavaFile).findOne({ where: { id } });
       await manager.query('DELETE FROM java_fts WHERE rowid = ?', [id]);
+      await this.fts.removeJavaSources(manager, [id]);
       await manager.getRepository(JavaFile).delete({ id });
       // ALLE Kanten dieser Klasse entfernen (aktiv + manuell + verworfene Tombstones).
       // Sonst ueberleben verworfene Auto-Kanten (dismissed=1) das Loeschen/den Komplett-Reset
