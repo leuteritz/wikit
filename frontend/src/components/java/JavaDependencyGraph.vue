@@ -42,6 +42,7 @@ import {
 } from '../../lib/packageGraph.js'
 import { layoutFlat, layoutClustered, layoutRadial } from '../../lib/graphLayout.js'
 import { parseGraphQuery, matchNode, matchEdge, GRAPH_QUERY_HELP } from '../../lib/graphQuery.js'
+import { codeState, patchCodeState } from '../../lib/codeState.js'
 import BusyState from '../BusyState.vue'
 // Kanten-Detail und Aggregat-Aufloesung rendert CodeView in Spalte 3 – der Graph rechnet sie nur
 // und meldet sie als `relation` nach oben (s. dortiger Kommentar am Emit).
@@ -360,8 +361,14 @@ watch(
 // Bei einer grossen Codebasis ist ein Knoten je Klasse unlesbar. Der Graph zeigt dann die
 // Packages als Aggregatknoten; ein Klick steigt eine Ebene ab, bis die Klassen erreicht sind.
 // `zoomPath` = aktuell geoeffneter Pfad, `showClasses` = manuelles Aufklappen dieser Ebene.
-const zoomPath = ref(null) // null -> noch nicht gesetzt, faellt auf rootPath zurueck
-const showClasses = ref(false)
+//
+// Beides ueberlebt den Reload (s. `lib/codeState.js`): welche Ebene offen ist, IST die Ansicht –
+// sie beim naechsten Besuch wieder auf die Wurzel zu stellen, hiesse den Weg dorthin noch einmal
+// zu verlangen. Der gemerkte Stand liegt im selben Schluessel wie der Klassenfilter von CodeView,
+// weil beide zusammen erst einen Ausschnitt ergeben.
+const saved = codeState()
+const zoomPath = ref(saved.path ?? null) // null -> noch nicht gesetzt, faellt auf rootPath zurueck
+const showClasses = ref(!!saved.classes)
 
 // Startpfad = laengster gemeinsamer Package-Praefix. Liegt alles unter com.acme, waere die
 // oberste Ebene sonst ein einziger Knoten "com".
@@ -428,6 +435,28 @@ const scopedFiles = computed(() => {
   if (!base) return files
   return files.filter((f) => f.package === base || String(f.package || '').startsWith(base + '.'))
 })
+
+// Ein gemerkter Pfad ist eine Erinnerung, keine Garantie: das Package kann seit dem letzten Besuch
+// geloescht worden sein, und eine leere Flaeche ohne erkennbaren Grund ist schlimmer als die
+// Uebersicht. Geprueft wird EINMAL, sobald die Dateiliste ueberhaupt etwas enthaelt – vorher heisst
+// „keine Klasse unter dem Pfad" nur „noch nicht geladen". Der Watcher auf `rootPath` daneben faengt
+// den anderen Fall ab (der gemeinsame Praefix hat sich verschoben).
+let savedPathChecked = false
+watch(
+  () => (props.files || []).length,
+  (n) => {
+    if (savedPathChecked || !n) return
+    savedPathChecked = true
+    if (zoomPath.value == null || scopedFiles.value.length) return
+    zoomPath.value = null
+    // Und den Verwurf auch merken: die Dateiliste kann schon stehen, wenn dieser Watcher laeuft
+    // (Rueckkehr aus dem Wiki) – dann ist das hier noch das Setup, der Schreiber unten ist erst
+    // danach registriert und saehe die Aenderung nie. Der Pfad bliebe gespeichert und muesste bei
+    // jedem Start neu verworfen werden.
+    patchCodeState({ path: null })
+  },
+  { immediate: true },
+)
 // --- Suchmodus: Treffer + direkte Nachbarschaft ----------------------------------------------
 // Nur die Treffer zu zeigen waere ein Graph ohne Kanten – gerade bei einem einzigen Treffer.
 // Deshalb kommt eine Hop-Ebene Kontext dazu: die Klassen, die den Treffer nutzen oder von ihm
@@ -489,18 +518,28 @@ const CONTEXT_NODE_LIMIT = 10 // hoechstens so viele Aggregatknoten
 // formuliert „63 Karten" als Absicht. Was ueber der Nachbarzahl liegt, wird ausgeblendet.
 const CONTEXT_STEPS = [0, 8, 20, 40, 80, 160, 400]
 
-const contextOverride = ref(null) // null = automatisch, sonst die gewaehlte Stufe
-const contextExpanded = ref(new Set()) // aufgeklappte Nachbar-Packages (Pfad)
+// Der gemerkte Stand des letzten Besuchs gehoert zu GENAU der Suche, die damals lief – deshalb
+// wird die Anfrage mitgemerkt und nicht bloss ein Schalter gesetzt (dasselbe Muster wie
+// `egoOverride` in CodeView, und aus demselben Grund: der Filter links steht beim Start sofort,
+// der Graph erfaehrt ihn erst nach seinem Debounce – dazwischen liegt genau ein Wechsel von '' auf
+// die Suche, und der wuerde die Stufe sonst als „neue Suche" verwerfen).
+let pendingContext = saved.search && saved.context ? { query: saved.search, ...saved.context } : null
+const contextOverride = ref(pendingContext?.budget ?? null) // null = automatisch, sonst die gewaehlte Stufe
+const contextExpanded = ref(new Set(pendingContext?.expanded || [])) // aufgeklappte Nachbar-Packages (Pfad)
 
 // Genau ein Treffer -> Stern mit Mitte (nur dafuer taugt das radiale Layout).
 const egoCenterId = computed(() =>
   searchActive.value && props.matchIds.length === 1 ? props.matchIds[0] : null,
 )
 // Jede neue Suche faengt bei der Voreinstellung an: eine mitgeschleppte Stufe oder ein
-// aufgeklapptes Package gehoerten zu einem anderen Ergebnis.
-watch([() => props.searchQuery, egoCenterId], () => {
-  contextOverride.value = null
-  contextExpanded.value = new Set()
+// aufgeklapptes Package gehoerten zu einem anderen Ergebnis. Ausnahme ist genau ein Lauf: der
+// gemerkte Stand, wenn die Suche ankommt, zu der er gehoert – danach ist er verbraucht, sonst
+// wuerde er eine spaetere Wahl des Nutzers bei derselben Suche wieder ueberschreiben.
+watch([() => props.searchQuery, egoCenterId], ([q]) => {
+  const restore = pendingContext?.query === (q || '') ? pendingContext : null
+  pendingContext = null
+  contextOverride.value = restore?.budget ?? null
+  contextExpanded.value = new Set(restore?.expanded || [])
 })
 
 // Stufen, die es bei DIESEM Ergebnis ueberhaupt gibt: alles oberhalb der Nachbarzahl waere
@@ -1431,7 +1470,7 @@ const edges = computed(() => {
 // sie setzt nur Treffer-/Daempfungs-Klassen, kostet also keinen dagre-Lauf, und nichts springt.
 // Die Kanten pruefen sich selbst (ManagedEdge liest den Zustand aus dem Composable), damit bei
 // jedem Tastendruck nicht der komplette Kanten-Store neu geschrieben wird.
-const findInput = ref('')
+const findInput = ref(saved.find || '')
 const findCursor = ref(0)
 const findFocused = ref(false)
 const findField = ref(null)
@@ -1489,9 +1528,25 @@ function isFindHit(nodeId) {
   return findNodeHitSet.value.has(nodeId) || findEdgeEnds.value.has(nodeId)
 }
 
-// Zustand nach unten reichen: die Kanten lesen ihn selbst.
-watch(findInput, (v) => setGraphQuery(v))
+// Zustand nach unten reichen: die Kanten lesen ihn selbst. `immediate`, weil das Feld beim Mount
+// bereits gefuellt sein kann (gemerkte Bildsuche) – und weil der geteilte Zustand aus einem
+// frueheren Mount sonst stehenbliebe (useJavaGraph ist ein Modul-Singleton).
+watch(findInput, (v) => setGraphQuery(v), { immediate: true })
 watch(findNodeHits, (ids) => setGraphHitNodes(ids), { immediate: true })
+
+// --- Den Ausschnitt merken --------------------------------------------------------------------
+// Alles, was AM GRAPHEN den Ausschnitt ausmacht, in einem Zug: Ebene, aufgeklappte Klassen,
+// Kontextstufe samt aufgeklappten Nachbar-Packages und die Suche im Bild. Der Klassenfilter und
+// die geoeffnete Klasse kommen aus CodeView in denselben Schluessel (s. lib/codeState.js).
+// Kein `immediate`: beim Mount steht dort bereits genau das, was hier gerade gelesen wurde.
+watch([zoomPath, showClasses, contextOverride, contextExpanded, findInput], () =>
+  patchCodeState({
+    path: zoomPath.value,
+    classes: showClasses.value,
+    find: findInput.value,
+    context: { budget: contextOverride.value, expanded: [...contextExpanded.value] },
+  }),
+)
 watch(findQuery, () => {
   findCursor.value = 0
 })

@@ -30,6 +30,7 @@ import { Icon } from '../lib/icons.js'
 import { detectJavaClasses } from '../lib/javaDetect.js'
 import { formatEta, formatDuration } from '../lib/format.js'
 import { isTypingTarget } from '../lib/shortcuts.js'
+import { codeState, patchCodeState, clearCodeState } from '../lib/codeState.js'
 
 const { files, loading: filesLoading, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFileId, lastTargetLine, lastTargetEndLine, lastSearchQuery, lastSearchOpts, openAddCode, deleteFile, resetAll } =
   useJavaAnalyzer()
@@ -61,6 +62,22 @@ const inputMode = ref('paste') // 'paste' = Editor | 'file' = .java-Datei(en) ho
 const filterInput = ref(null)
 const graphRef = ref(null)
 const detailRef = ref(null)
+// --- Der Arbeitsstand ueberlebt den Reload ----------------------------------------------------
+// Wer sich in einen Ausschnitt hineingearbeitet hat (Filter gesetzt, Package geoeffnet, Klasse
+// aufgeschlagen), verliert das bisher bei jedem F5 und bei jedem Ausflug ins Wiki – und muss den
+// Weg dorthin noch einmal gehen, obwohl er ihn schon kennt. Gemerkt wird deshalb der ORT, nicht
+// die Handlung: Filter, offene Klasse und Baumfaltung hier, Ebene/Kontextstufe/Bildsuche im
+// Graphen (beides ueber `lib/codeState.js`, dort steht warum ein gemeinsamer Schluessel).
+// Die refs starten direkt mit dem gemerkten Wert – nicht in `onMounted`: der Graph liest seinen
+// Teil beim eigenen Setup, und ein Filter, der erst nach dem ersten Bild nachrutscht, waere ein
+// zweites Layout fuer denselben Zustand.
+const savedState = codeState()
+// ⚠️ Die gemerkte KLASSE ist der eine Wert, der nicht sofort gesetzt werden darf: das Detail-Panel
+// laedt sie, sobald es sie sieht – also bevor die Dateiliste ueberhaupt da ist. Ist sie inzwischen
+// geloescht, ist das ein 404, und ein fehlgeschlagener Request meldet sich in diesem Programm
+// selbst (globaler Toast). Der Nutzer bekaeme beim blossen Oeffnen der Ansicht einen Fehler
+// serviert, den er nicht verursacht hat. Gesetzt wird sie deshalb erst nach `fetchFiles`, wenn es
+// sie noch gibt (s. onMounted).
 const selectedFileId = ref(null)
 const activeTargetLine = ref(null) // Ziel-Quellzeile fuer das Detail-Panel (Such-Sprung)
 const activeTargetEndLine = ref(null) // Ziel-End-Zeile -> markiert den gesamten Methodenbereich
@@ -124,14 +141,14 @@ function onRelationClose(reason) {
   }
   closeRelation()
 }
-const search = ref('') // was im Feld steht – reagiert sofort auf jeden Tastendruck
+const search = ref(savedState.search || '') // was im Feld steht – reagiert sofort auf jeden Tastendruck
 // …und was daraus tatsaechlich gefiltert wird. Getrennt, weil an EINEM Tastendruck der halbe
 // Bildschirm haengt: Trefferliste, Package-Baum, alle Baumzeilen und der Graph (der bei wenigen
 // Treffern sein dagre-Layout neu rechnet). Bei einigen tausend Klassen kostet das mehr Zeit, als
 // zwischen zwei Anschlaegen liegt – die Eingabe fuehlt sich dann zaeh an, obwohl nur die Folge
 // davon teuer ist. Der Ruecklauf auf „leer" laeuft ohne Verzoegerung: Filter loeschen soll sich
 // nicht anfuehlen wie ein Nachladen.
-const appliedSearch = ref('')
+const appliedSearch = ref(savedState.search || '')
 const SEARCH_DEBOUNCE_MS = 160
 let searchTimer = null
 watch(search, (v, prev) => {
@@ -151,7 +168,7 @@ watch(search, (v, prev) => {
   }, SEARCH_DEBOUNCE_MS)
 })
 const showNew = ref(false)
-const collapsed = reactive({}) // packagePfad -> true (eingeklappt)
+const collapsed = reactive({ ...(savedState.tree || {}) }) // packagePfad -> true (eingeklappt)
 const pendingDelete = ref(null)
 const deleting = ref(false)
 const pendingConflicts = ref(null) // FQCN-Liste vorhandener Klassen -> Ueberschreiben-Dialog
@@ -161,6 +178,15 @@ const pendingReset = ref(false) // Komplett-Reset-Dialog offen?
 const resetting = ref(false) // Spinner waehrend des Komplett-Resets
 const queueOpen = ref(false) // KI-Queue-Modal offen?
 const exportOpen = ref(false) // Export-Modal (alle Klassen als ein Text) offen?
+
+// Gemerkt wird der ANGEWENDETE Filter, nicht der Feldinhalt: nur er hat den Ausschnitt bestimmt,
+// den man wiederhaben will (dieselbe Trennung wie bei `hl()` und dem Graphen).
+watch([appliedSearch, selectedFileId], () =>
+  patchCodeState({ search: appliedSearch.value, fileId: selectedFileId.value }),
+)
+// `collapsed` ist reactive -> der Watcher ist automatisch tief. Gespeichert wird eine flache
+// Kopie: das reactive Objekt selbst laesst sich nicht serialisieren, ohne den Proxy mitzunehmen.
+watch(collapsed, () => patchCodeState({ tree: { ...collapsed } }))
 
 // --- Fluechtige Rueckmeldungen ---------------------------------------------------------------
 // Laufen ueber den GLOBALEN Toast-Stapel (useNotifications + NotificationHost in App.vue). Vorher
@@ -382,6 +408,20 @@ onMounted(async () => {
   releasePolling = ensurePolling()
   window.addEventListener('keydown', onKeydown)
   await fetchFiles()
+  // Der gemerkte Stand ist eine Erinnerung, keine Garantie: die Klasse kann seit dem letzten Besuch
+  // geloescht worden sein, und ein Filter ohne jede Klasse dahinter zeigte links „no matches" statt
+  // der Einladung, welche hinzuzufuegen. Erst PRUEFEN, dann der Hand-off – der sticht beides, weil
+  // er eine Absicht von JETZT ist (Sprung aus der globalen Suche, Landing-„Add code").
+  if (savedState.fileId != null && files.value.some((f) => f.id === savedState.fileId)) {
+    selectedFileId.value = savedState.fileId
+  } else if (savedState.fileId != null) {
+    patchCodeState({ fileId: null })
+  }
+  if (!files.value.length && search.value) {
+    clearTimeout(searchTimer)
+    search.value = ''
+    appliedSearch.value = ''
+  }
   consumeHandoff()
   // Beim ersten Laden noch nichts vorhanden -> Neu-Panel aufklappen.
   if (!files.value.length) showNew.value = true
@@ -966,10 +1006,12 @@ async function confirmReset() {
     filename.value = ''
     search.value = ''
     clearNotifications()
-    clearEdgeReturn()
     pendingDelete.value = null
     pendingConflicts.value = null
     for (const k of Object.keys(collapsed)) delete collapsed[k]
+    // Es gibt keine Klassen mehr, also auch keinen Ort, an dem man stehen koennte: der gemerkte
+    // Stand faellt mit ihnen weg (auch der Teil, den der Graph geschrieben hat – ein Schluessel).
+    clearCodeState()
     showNew.value = true // Neu-Panel einladend wieder aufklappen
     pendingReset.value = false
   } catch (e) {
