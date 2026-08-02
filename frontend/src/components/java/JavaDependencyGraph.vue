@@ -108,6 +108,7 @@ const {
   setGraphHitNodes,
   pinnedEdge,
   setPinnedEdge,
+  setLabelObstacles,
 } = useJavaGraph()
 // Detailabruf einer einzelnen Klasse (Methodenruempfe fuers Edge-Panel) – die Liste traegt sie nicht.
 const { getFile } = useJavaAnalyzer()
@@ -1368,6 +1369,28 @@ const layout = computed(() => {
 })
 
 const nodes = computed(() => layout.value.nodes)
+
+// Die gezeichneten Karten sind die Hindernisse der Kanten-Labels (Begruendung in useJavaGraph):
+// jedes Label sucht sich damit selbst einen freien Platz an seiner Linie, statt halb unter einer
+// Karte zu verschwinden. Hier statt im `layout`-computed, weil das eine reine Rechnung bleiben
+// soll – ein Seiteneffekt darin liefe bei jedem Leser erneut. Die Zonen zaehlen NICHT mit: sie
+// liegen als Hintergrund hinter allem und verdecken nichts.
+watch(
+  nodes,
+  (list) => {
+    const s = rootScale.value
+    setLabelObstacles(
+      list.map((n) => ({
+        x: n.position.x,
+        y: n.position.y,
+        w: (n.type === 'pkg' ? PKG_W : NODE_W) * s,
+        h: (n.type === 'pkg' ? PKG_H : NODE_H) * s,
+      })),
+    )
+  },
+  { immediate: true },
+)
+
 // Package-Zonen (Hintergrund-Layer, s. Template). Leer, wenn flach gelayoutet wurde.
 const zones = computed(() => layout.value.zones || [])
 // Anzahl referenzierter, aber nicht geladener Klassen (fuer den Legenden-Hinweis).

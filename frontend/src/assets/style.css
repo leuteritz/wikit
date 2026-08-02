@@ -527,7 +527,10 @@ html.dark {
    damit die Karte zu, die sie kreuzen. Der eigene Stapelkontext am Knoten-Container haelt beide
    Ordnungen getrennt – die Labels ordnen sich weiter untereinander, liegen aber alle zusammen
    unter den Karten. Deshalb hier und nicht als kleinerer z-index am Label: dort waere es eine
-   Zahl, die beim naechsten Label-Zustand wieder zu gross gewaehlt wird. */
+   Zahl, die beim naechsten Label-Zustand wieder zu gross gewaehlt wird.
+   Das ist aber nur die GARANTIE, nicht die Loesung: ein Label UNTER einer Karte ist unlesbar.
+   Damit es gar nicht erst dort landet, weicht es der Karte aus (`freeLabelY` in useJavaGraph,
+   `labelDodge` in ManagedEdge). Diese Regel hier faengt nur, was sich nicht aufloesen laesst. */
 .vue-flow__nodes {
   z-index: 10;
 }

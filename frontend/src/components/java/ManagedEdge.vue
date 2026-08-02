@@ -84,8 +84,39 @@ const pathData = computed(() =>
   }),
 )
 const edgePath = computed(() => pathData.value[0])
+
+// --- Das Label weicht den Karten aus ------------------------------------------------------------
+// Karten liegen ueber den Labels (`.vue-flow__nodes` in style.css) – ein Label auf einer Karte
+// waere also ein halb abgeschnittenes Wort. Statt die Stapelreihenfolge umzudrehen (dann deckte
+// die Beschriftung den Gegenstand zu), rueckt das Label an seiner eigenen Linie so weit hoch oder
+// runter, bis es frei steht; `freeLabelY` kennt dafuer die Rechtecke aller gezeichneten Karten.
+//
+// Gerechnet wird auf dem UNGEFAECHERTEN Mittelpunkt (labelX = Mitte beider Enden, also genau um
+// fanOffset verschoben): so sehen alle parallelen Kanten desselben Paars dieselbe Ausgangslage,
+// bekommen dieselbe Verschiebung – und der gestaffelte Stapel bleibt ein Stapel, statt beim
+// Ausweichen auseinanderzufallen. Aus demselben Grund ist die Sondenbreite eine KONSTANTE und
+// nicht die (je Methodenname andere) echte Labelbreite: eine Breite pro Label ergaebe pro Label
+// eine andere Verschiebung. Sie ist bewusst grosszuegig – lieber ein Label zu frueh ausweichen
+// lassen als eines zu spaet.
+const PROBE_W = 150 // px angenommene Labelbreite bei 16px-Root
+const PROBE_H = 22 // px Labelhoehe (Text + Innenabstand + Rahmen)
+const PROBE_GAP = 7 // px Luft zwischen Kartenrand und Label
+
+const baseX = computed(() => pathData.value[1] - fanOffset.value)
+const baseY = computed(() => pathData.value[2])
+const labelDodge = computed(() => {
+  // Neu rechnen, sobald der Graph ein neues Layout gemeldet hat (die Boxen selbst sind nicht
+  // reaktiv – s. useJavaGraph).
+  void labelObstacleVersion.value
+  const s = rootScale.value
+  const count = props.data?.parallelCount || 1
+  // Der ganze Stapel paralleler Labels weicht als EIN Block aus -> Sonde umfasst alle.
+  const halfW = ((PROBE_W + SPREAD * (count - 1)) * s) / 2
+  const halfH = ((PROBE_H + LABEL_STEP * (count - 1)) * s) / 2
+  return freeLabelY(baseX.value, baseY.value, halfW, halfH, PROBE_GAP * s) - baseY.value
+})
 const labelX = computed(() => pathData.value[1])
-const labelY = computed(() => pathData.value[2] + labelStagger.value)
+const labelY = computed(() => baseY.value + labelDodge.value + labelStagger.value)
 
 const d = computed(() => props.data || {})
 // Feldzugriff statt Methodenaufruf: dieselbe Kante, aber der Name traegt keine Klammern und die
@@ -108,8 +139,21 @@ const openTitle = computed(() =>
 // Zeigt die Maus auf einen Knoten, bleiben nur dessen eigene Kanten stehen; alles andere faellt
 // fast auf null. Der Zustand kommt aus dem Composable, NICHT ueber `data`: sonst muesste der
 // Parent bei jeder Mausbewegung saemtliche Kanten neu in den Vue-Flow-Store schreiben.
-const { hoveredNode, hoverPalette, hoveredEdge, setHoveredEdge, clearHoveredEdge, pinnedEdge, graphQuery, graphHitNodes } =
-  useJavaGraph()
+// `labelObstacleVersion`/`freeLabelY` gehoeren zum Ausweichen der Labels (s. oben bei labelDodge)
+// und liegen aus demselben Grund im Composable: die Kante fragt selbst, statt dass der Parent bei
+// jedem Layout Positionen in den Kanten-Store schreibt.
+const {
+  hoveredNode,
+  hoverPalette,
+  hoveredEdge,
+  setHoveredEdge,
+  clearHoveredEdge,
+  pinnedEdge,
+  graphQuery,
+  graphHitNodes,
+  labelObstacleVersion,
+  freeLabelY,
+} = useJavaGraph()
 
 // Knoten-Hover: die Linie traegt die Identitaetsfarbe des Nachbarn an ihrem ANDEREN Ende – genau
 // die Farbe, die dort auch die Karte traegt (Palette: `neighbourPalette` in JavaDependencyGraph).

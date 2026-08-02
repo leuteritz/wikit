@@ -82,6 +82,94 @@ const hoveredEdge = ref(null)
 const graphQuery = ref('')
 const graphHitNodes = ref(new Set())
 
+// --- Kanten-Labels weichen den Karten aus --------------------------------------------------------
+// Eine Karte ist der Gegenstand, das Label nur die Beschriftung der Linie dazwischen – deshalb
+// liegen Karten ueber den Labels (`.vue-flow__nodes { z-index: 10 }` in style.css). Diese
+// Stapelreihenfolge ist aber nur die GARANTIE, dass kein Label eine Karte zudeckt; sie macht ein
+// verdecktes Label unlesbar. Der eigentliche Weg ist, dass das Label gar nicht erst unter einer
+// Karte landet: der Graph meldet nach jedem Layout die Rechtecke aller gezeichneten Karten
+// (Flow-Koordinaten), und jedes Label sucht sich damit den naechstgelegenen freien Platz.
+// Ausgewichen wird SENKRECHT, weil dort auch die Linie verlaeuft (Smoothstep, Handles oben/unten):
+// das Label rutscht an seiner eigenen Kante entlang und bleibt ihr damit zugeordnet. Horizontal
+// waere es ein Kaestchen neben einer fremden Linie.
+// Warum ein Raster und keine Liste: ein Ausschnitt hat bis zu 400 Karten und ebenso viele Labels –
+// jedes gegen jedes waere je Layout ein sechsstelliges Produkt.
+const OBSTACLE_CELL = 200 // px Kantenlaenge einer Rasterzelle (Flow-Koordinaten)
+// Weiter als das weicht kein Label aus: was zwei Kartenreihen entfernt steht, liest niemand mehr
+// als Beschriftung DIESER Linie. Findet sich darin nichts, bleibt das Label, wo es war.
+const LABEL_SHIFT_MAX = 260
+let obstacleGrid = new Map()
+// Nur eine Version als Ref, nicht die Boxen selbst: die Labels lesen die Rechtecke nie, sie
+// brauchen bloss den Anstoss, ihre Position nach einem neuen Layout neu zu rechnen.
+const labelObstacleVersion = ref(0)
+
+// boxes: [{ x, y, w, h }] – linke obere Ecke + Groesse, wie Vue Flow die Knoten fuehrt.
+function setLabelObstacles(boxes) {
+  const grid = new Map()
+  for (const b of boxes || []) {
+    const cx1 = Math.floor((b.x + b.w) / OBSTACLE_CELL)
+    const cy1 = Math.floor((b.y + b.h) / OBSTACLE_CELL)
+    for (let cx = Math.floor(b.x / OBSTACLE_CELL); cx <= cx1; cx++) {
+      for (let cy = Math.floor(b.y / OBSTACLE_CELL); cy <= cy1; cy++) {
+        const key = `${cx}|${cy}`
+        const bucket = grid.get(key)
+        if (bucket) bucket.push(b)
+        else grid.set(key, [b])
+      }
+    }
+  }
+  obstacleGrid = grid
+  labelObstacleVersion.value++
+}
+
+// Naechstgelegenes freies y fuer einen Label-MITTELPUNKT bei (x, y) mit den halben Kantenlaengen
+// halfW/halfH. `gap` ist der Mindestabstand zwischen Kartenrand und Labelrand.
+function freeLabelY(x, y, halfW, halfH, gap = 6) {
+  const left = x - halfW
+  const right = x + halfW
+  // Verbotene Mittelpunkte auf der y-Achse: jede Karte im senkrechten Korridor sperrt ihre eigene
+  // Hoehe plus die halbe Labelhoehe an beiden Enden – an der Intervallgrenze beruehren sich die
+  // Raender gerade nicht mehr.
+  const blocked = []
+  const seen = new Set()
+  const cx1 = Math.floor(right / OBSTACLE_CELL)
+  const cy1 = Math.floor((y + LABEL_SHIFT_MAX) / OBSTACLE_CELL)
+  for (let cx = Math.floor(left / OBSTACLE_CELL); cx <= cx1; cx++) {
+    for (let cy = Math.floor((y - LABEL_SHIFT_MAX) / OBSTACLE_CELL); cy <= cy1; cy++) {
+      const bucket = obstacleGrid.get(`${cx}|${cy}`)
+      if (!bucket) continue
+      for (const b of bucket) {
+        // Eine Karte liegt in bis zu vier abgefragten Zellen – ohne die Merkliste stuende sie
+        // mehrfach in `blocked` (harmlos fuer das Ergebnis, aber unnoetige Arbeit).
+        if (seen.has(b)) continue
+        seen.add(b)
+        if (b.x + b.w <= left || b.x >= right) continue
+        blocked.push([b.y - halfH - gap, b.y + b.h + halfH + gap])
+      }
+    }
+  }
+  if (!blocked.length) return y
+  blocked.sort((a, b) => a[0] - b[0])
+  // Ueberlappende Sperren verschmelzen: erst danach ist die GRENZE eines Intervalls garantiert
+  // frei – ohne den Schritt landete das Label womoeglich in der naechsten Karte.
+  const merged = [[blocked[0][0], blocked[0][1]]]
+  for (let i = 1; i < blocked.length; i++) {
+    const last = merged[merged.length - 1]
+    if (blocked[i][0] <= last[1]) last[1] = Math.max(last[1], blocked[i][1])
+    else merged.push([blocked[i][0], blocked[i][1]])
+  }
+  for (const [a, b] of merged) {
+    if (y < a) break // sortiert -> ab hier liegt alles unterhalb des Labels
+    if (y <= b) {
+      const shifted = y - a <= b - y ? a : b
+      // Zu weit ist keine Beschriftung mehr: dann lieber stehen bleiben (die Karte deckt das Label
+      // dann teilweise, aber es steht wenigstens an seiner Linie).
+      return Math.abs(shifted - y) > LABEL_SHIFT_MAX ? y : shifted
+    }
+  }
+  return y
+}
+
 // Der frühere Rueckweg-Apparat (`edgeReturn`/`edgeReturnToken`) ist ersatzlos entfallen: er war
 // die Antwort darauf, dass das Kanten-MODAL beim Sprung in den Code zuklappte und die Beziehung
 // mitnahm. Seit das Detail in der rechten Spalte steht, bleibt es beim Sprung schlicht geoeffnet
@@ -221,6 +309,10 @@ export function useJavaGraph() {
     setGraphHitNodes(ids) {
       graphHitNodes.value = ids instanceof Set ? ids : new Set(ids || [])
     },
+    // --- Ausweichende Kanten-Labels (Begruendung oben) ----------------------------------------
+    labelObstacleVersion,
+    setLabelObstacles,
+    freeLabelY,
     // Nur loeschen, wenn wirklich noch DIESE Kante steht: beim Wandern von Kante A nach B feuert
     // As `mouseleave` teils nach Bs `mouseenter` – ohne die Pruefung bliebe gar nichts markiert.
     clearHoveredEdge(id) {
