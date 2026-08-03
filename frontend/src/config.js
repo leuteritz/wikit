@@ -19,4 +19,9 @@ export const WIKI_VERSION =
 // Root-package.json (dieselbe Datei wie die Nummer, s. vite.config.js). Die Nummer allein sagt
 // niemandem, was sich geaendert hat; der Satz steht deshalb direkt darunter in der Sidebar.
 // Leer = die Zeile entfaellt, statt eine leere Flaeche stehen zu lassen.
-export const WIKI_WHATS_NEW = typeof __APP_WHATS_NEW__ !== 'undefined' ? __APP_WHATS_NEW__ : ''
+//
+// Der Schlusspunkt wird HIER gesetzt, nicht im Feld: es ist ein Satz, und ob er einen bekommt, darf
+// nicht davon abhaengen, ob beim Pflegen jemand daran gedacht hat. Ein vorhandenes Satzzeichen
+// (. ! ? …) bleibt unangetastet.
+const _whatsNew = (typeof __APP_WHATS_NEW__ !== 'undefined' ? __APP_WHATS_NEW__ : '').trim()
+export const WIKI_WHATS_NEW = _whatsNew && !/[.!?…]$/.test(_whatsNew) ? `${_whatsNew}.` : _whatsNew

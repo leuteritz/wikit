@@ -143,13 +143,13 @@ function isActive(to) {
       <!-- Was diese Fassung gebracht hat. Steht UNTER der Nummer, weil es dieselbe Auskunft
            weiterfuehrt – und ausserhalb des Links: wer den Satz liest, will nicht zur Startseite.
            Der Text kommt aus `whatsNew` in der Root-package.json (s. config.js) und wird bei jedem
-           Versions-Bump mitgepflegt. Zwei Zeilen sind das Maximum, der Rest steht im Tooltip. -->
+           Versions-Bump mitgepflegt. Der Rahmen macht aus der Zeile eine Notiz statt eines
+           angehaengten Halbsatzes; zwei Zeilen sind das Maximum, der Rest steht im Tooltip. -->
       <p
         v-if="WIKI_WHATS_NEW"
-        class="mb-1 hidden items-start gap-1.5 px-2 pt-1.5 text-3xs leading-snug text-[var(--color-text-muted)] lg:flex"
+        class="mb-1 mt-1.5 hidden rounded-lg border border-[var(--color-border)] px-2 py-1.5 text-3xs leading-snug text-[var(--color-text-muted)] lg:block"
         :title="WIKI_WHATS_NEW"
       >
-        <Icon icon="lucide:sparkles" class="mt-px h-3 w-3 shrink-0 text-[var(--color-accent)]" />
         <span class="line-clamp-2">{{ WIKI_WHATS_NEW }}</span>
       </p>
 

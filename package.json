@@ -1,6 +1,6 @@
 {
   "name": "wikit",
-  "version": "3.99.0",
+  "version": "3.100.0",
   "whatsNew": "One search for classes, relations and roles",
   "private": true,
   "type": "module",
