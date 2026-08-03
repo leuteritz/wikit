@@ -697,11 +697,11 @@ function toggleFolder(path, open) {
   focusGraphOnPackage(path)
 }
 
-// --- Alles auf-/zuklappen ---------------------------------------------------------------------
-// Einzeln zuklappen ist bei tiefen Paketbaeumen keine Option: wer sich durch `com.acme.a.b.c`
-// gearbeitet hat, muesste denselben Weg rueckwaerts klicken, um wieder Ueberblick zu bekommen.
-// Ein Knopf, ZWEI Richtungen: was er tut, haengt daran, ob ueberhaupt noch etwas offen ist –
-// zwei getrennte Knoepfe waeren einer zuviel, von dem immer nur einer sinnvoll ist.
+// --- Jeder Ordner des Baums, in Reihenfolge ----------------------------------------------------
+// Gebraucht fuer „du bist hier" (der Baum klappt den Weg zur Graph-Ebene auf) und fuer die
+// Zuordnung kompaktierter Knoten. Ein Knopf „alles auf-/zuklappen" hing frueher auch daran; er ist
+// entfallen, weil er neben dem Suchfeld stand und ihm Breite nahm, obwohl er waehrend einer Suche
+// gar nicht bedienbar war (dort steht ohnehin jeder Treffer-Ordner offen).
 const folderPaths = computed(() => {
   const out = []
   const walk = (nodes) => {
@@ -713,23 +713,13 @@ const folderPaths = computed(() => {
   walk(tree.value)
   return out
 })
-// Ein offener Ordner ist immer auch sichtbar (seine Vorfahren sind es dann ebenfalls) -> die
-// gerenderten Zeilen reichen als Antwort, der Baum muss dafuer nicht zweimal durchlaufen werden.
-const anyFolderOpen = computed(() => rows.value.some((r) => r.kind === 'folder' && r.open))
-// Bewusst OHNE focusGraphOnPackage: „alles zuklappen" ist eine Aussage ueber den Baum, keine
-// Ortsangabe – der Graph soll dabei stehen bleiben, wo er ist.
-function setAllFolders(open) {
-  for (const p of folderPaths.value) collapsed[p] = !open
-}
-
 // --- Graph -> Baum: „du bist hier" -----------------------------------------------------------
 // Der Graph zeigt immer genau eine Ebene. Welche das ist, beantwortete bisher nur sein eigenes
 // Breadcrumb – wer sich per Zonenkopf und Package-Knoten drei Ebenen tief geklickt hatte, fand den
 // Ort links im Baum nicht wieder, obwohl der Baum die Navigation ist. Der Baum folgt deshalb jeder
 // Ebene, die der Graph meldet: Weg aufklappen, Ebene markieren, Zeile in den Blick holen.
 // Bewusst NUR aufdecken – nichts zuklappen: was man selbst geoeffnet hat, soll ein Klick im
-// Graphen nicht wegnehmen (dieselbe Zurueckhaltung wie „alles zuklappen", das den Graphen in Ruhe
-// laesst).
+// Graphen nicht wegnehmen.
 const activePath = ref(null) // Package-Pfad, den der Graph gerade zeigt
 const treeListEl = ref(null)
 
@@ -1457,48 +1447,32 @@ function onResetPanels() {
           <!-- DIE Suche der Ansicht: sie filtert diesen Baum, stellt den Graphen auf die Treffer
                und markiert sie dort. Im Graphen stand dafuer frueher ein zweites Feld – zwei
                Eingaben fuer dieselbe Frage, von denen man die richtige erst kennen musste.
-               Falt-Umschalter in DERSELBEN Zeile: er wirkt auf den ganzen Baum, gehoert also neben
-               dessen Kopf – aber eine eigene Zeile ist er nicht wert. -->
-          <div class="flex items-center gap-1.5">
-            <div class="relative min-w-0 flex-1">
-              <Icon icon="lucide:search" class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]" />
-              <input
-                ref="filterInput"
-                v-model="search"
-                type="text"
-                spellcheck="false"
-                placeholder="Search classes…  /"
-                :title="GRAPH_QUERY_HELP"
-                class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 pl-8 pr-7 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
-                @focus="searchFocused = true"
-                @blur="searchFocused = false"
-                @keydown.enter.prevent="stepMatch($event.shiftKey ? -1 : 1)"
-                @keydown.esc="onSearchEsc"
-              />
-              <button
-                v-if="search"
-                type="button"
-                class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
-                title="Clear search (Esc)"
-                @click="search = ''"
-              >
-                <Icon icon="lucide:x" class="h-3.5 w-3.5" />
-              </button>
-            </div>
+               Das Feld hat die ganze Zeile: neben ihm stand der Falt-Umschalter des Baums und nahm
+               ihm ein Sechstel der Breite – ausgerechnet ein Knopf, der waehrend einer Suche
+               deaktiviert ist. Gefaltet wird jetzt am Ordner selbst. -->
+          <div class="relative">
+            <Icon icon="lucide:search" class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]" />
+            <input
+              ref="filterInput"
+              v-model="search"
+              type="text"
+              spellcheck="false"
+              placeholder="Search classes…  /"
+              :title="GRAPH_QUERY_HELP"
+              class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pl-8 pr-7 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
+              @focus="searchFocused = true"
+              @blur="searchFocused = false"
+              @keydown.enter.prevent="stepMatch($event.shiftKey ? -1 : 1)"
+              @keydown.esc="onSearchEsc"
+            />
             <button
-              v-if="rows.length"
+              v-if="search"
               type="button"
-              class="grid w-[2.125rem] shrink-0 self-stretch place-items-center rounded-lg border border-[var(--color-border)] text-[var(--color-text-muted)] transition hover:border-[var(--color-accent)] hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:pointer-events-none disabled:opacity-40"
-              :disabled="searching || !folderPaths.length"
-              :aria-label="anyFolderOpen ? 'Collapse all packages' : 'Expand all packages'"
-              :title="searching
-                ? 'While filtering, every matching package stays open'
-                : anyFolderOpen
-                  ? 'Collapse all packages'
-                  : 'Expand all packages'"
-              @click="setAllFolders(!anyFolderOpen)"
+              class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
+              title="Clear search (Esc)"
+              @click="search = ''"
             >
-              <Icon :icon="anyFolderOpen ? 'lucide:fold-vertical' : 'lucide:unfold-vertical'" class="h-4 w-4" />
+              <Icon icon="lucide:x" class="h-3.5 w-3.5" />
             </button>
           </div>
           <!-- Facetten: erscheinen im leeren, fokussierten Feld und tragen sich per Klick selbst
