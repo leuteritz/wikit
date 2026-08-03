@@ -496,9 +496,15 @@ function applyFacet(prefix) {
   search.value = prefix
   filterInput.value?.focus()
 }
-// Von Treffer zu Treffer faehrt der GRAPH – er hat die Kamera. Hier liegt nur die Taste.
+// Von Treffer zu Treffer faehrt der GRAPH – er hat die Kamera. Hier liegt die Taste und die
+// Folge daraus: der angefahrene Treffer wird auch rechts aufgeschlagen. „Hinfahren, aber die
+// Klasse nicht zeigen" waere derselbe halbe Schritt wie vorher beim Tippen.
 function stepMatch(delta) {
-  graphRef.value?.stepFind?.(delta)
+  const fileId = graphRef.value?.stepFind?.(delta)
+  if (fileId == null || fileId === selectedFileId.value) return
+  activeTargetLine.value = null
+  activeTargetEndLine.value = null
+  selectedFileId.value = fileId
 }
 const hasMatches = computed(() => searching.value && (filteredFiles.value.length > 0 || queryEdges.value > 0))
 // Esc im Feld leert die Suche. `stop`, weil ESC sonst zugleich die offene Beziehung schliesst –
@@ -592,14 +598,20 @@ watch([searching, filteredFiles], ([on, list]) => {
   graphSearchTimer = setTimeout(() => {
     graphMatchIds.value = list.map((f) => f.id)
     graphQuery.value = appliedSearch.value
-    // Genau EINE Klasse gefunden: dann ist die Suche beantwortet, und die Antwort gehoert
-    // aufgeschlagen. Vorher zeigte der Graph die Klasse, waehrend die rechte Spalte leer blieb –
-    // man musste den Treffer, den man gerade gefunden hatte, noch einmal anklicken.
-    // Nur, wenn nicht ohnehin schon etwas anderes offen ist, das der Nutzer selbst gewaehlt hat.
-    if (list.length === 1 && selectedFileId.value !== list[0].id) {
+    // Der beste Treffer wird GEZEIGT, nicht nur markiert: rechts aufgeschlagen und im Bild
+    // angefahren. Vorher passierte das nur bei genau einem Treffer – bei drei Treffern stand die
+    // Antwort im Bild, die rechte Spalte blieb leer, und man musste die Klasse, die man gerade
+    // gefunden hatte, noch einmal anklicken. `list[0]` ist bei freiem Text der bestgerankte Treffer
+    // (`filterClasses`: Praefix > enthaelt > Package), bei den Facetten der erste der Liste.
+    // Weiterblaettern mit ↵ / ↑ ↓ schlaegt die naechste Klasse genauso auf (s. stepMatch).
+    // Kamera und Auswahl nur bei einem WECHSEL – wer weitertippt und dieselbe Klasse behaelt, soll
+    // nicht bei jedem Anschlag noch einmal angefahren werden.
+    const best = list[0]
+    if (best && selectedFileId.value !== best.id) {
       activeTargetLine.value = null
       activeTargetEndLine.value = null
-      selectedFileId.value = list[0].id
+      selectedFileId.value = best.id
+      centerGraphOnFile(best.id)
     }
   }, GRAPH_SEARCH_DELAY_MS)
 })
@@ -668,6 +680,15 @@ function focusGraphOnFile(file) {
   graphFocusPath.value = file?.package || ''
   graphFocusFileId.value = file?.id ?? null
   treeDrivenPath = graphFocusPath.value
+  graphFocusToken.value = ++focusSeq
+}
+// Nur die KAMERA auf eine Klasse, ohne die Ebene zu verstellen (`focusPath` bleibt null, der
+// Fokus-Watcher im Graphen ueberspringt den Ebenenteil dann). Gebraucht fuer die Suche: dort
+// zeichnet der Graph ohnehin die Treffer – ein Ebenenwechsel obendrauf waere eine zweite Bewegung
+// und liesse den Ausschnitt nach dem Leeren des Feldes woanders stehen.
+function centerGraphOnFile(fileId) {
+  graphFocusPath.value = null
+  graphFocusFileId.value = fileId ?? null
   graphFocusToken.value = ++focusSeq
 }
 

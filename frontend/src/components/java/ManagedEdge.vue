@@ -181,9 +181,16 @@ const isFindHit = computed(() => {
   const hits = graphHitNodes.value
   return hits.has(d.value.sourceId) && hits.has(d.value.targetId)
 })
+// Eine Linie, die AN einem Treffer haengt, gehoert zu ihm: sie sagt, woran die gefundene Klasse
+// haengt. Sie mit 0.07 wegzublenden liess den Treffer im Bild schweben, ohne eine einzige seiner
+// Beziehungen – und genau die sind der Grund, warum er in einem Graphen steht.
+const touchesHit = computed(() => {
+  const hits = graphHitNodes.value
+  return hits.has(d.value.sourceId) || hits.has(d.value.targetId)
+})
 // Bei aktiver Suche tritt alles zurueck, was nicht dazugehoert – dieselbe Daempfung wie beim Hover,
 // damit im Bild nur EINE Sprache fuer „gerade nicht gemeint" existiert.
-const findDimmed = computed(() => !!findQuery.value && !isFindHit.value)
+const findDimmed = computed(() => !!findQuery.value && !isFindHit.value && !touchesHit.value)
 
 // --- Hover auf der KANTE ---------------------------------------------------------------------
 // Die Linie selbst ist 2 px schmal und damit kaum zu treffen. Darum liegt ein unsichtbarer,

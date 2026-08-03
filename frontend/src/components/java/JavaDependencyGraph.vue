@@ -904,7 +904,14 @@ watch(
         showClasses.value = false
       })
     }
-    if (props.focusFileId != null) pendingFocusNode.value = `c:${props.focusFileId}`
+    if (props.focusFileId != null) {
+      const id = `c:${props.focusFileId}`
+      // Steht die Karte schon im Bild und wechselt gerade keine Ebene (der Fall „Suchtreffer
+      // anfahren"), faehrt die Kamera sofort – der Geometrie-Watcher unten feuert nur bei NEUER
+      // Geometrie und liesse den Sprung sonst aus.
+      if (props.focusPath == null && nodes.value.some((n) => n.id === id)) centerOnNode(id)
+      else pendingFocusNode.value = id
+    }
   },
 )
 
@@ -1553,22 +1560,32 @@ watch(findQuery, () => {
 // Von Treffer zu Treffer: der Graph faehrt hin, statt dass man ihn absucht. Karten zuerst, sonst
 // die Endpunkte der getroffenen Kanten (bei `review:`/`m:` gibt es oft nur Kanten-Treffer).
 const findTargets = computed(() => (findNodeHits.value.length ? findNodeHits.value : [...findEdgeEnds.value]))
-function stepFind(delta) {
-  const list = findTargets.value
-  if (!list.length) return
-  findCursor.value = ((findCursor.value + delta) % list.length + list.length) % list.length
-  const node = nodes.value.find((n) => n.id === list[findCursor.value])
-  if (!node) return
-  // Bewusst `setCenter` statt `fitView([node])`: fitView rechnet einen eigenen Zoom aus dem
-  // Padding und liess den Ausschnitt bei kleinen Treffermengen unveraendert. Hier soll nur die
-  // Kamera fahren – der Zoom bleibt, wie der Nutzer ihn eingestellt hat (nur nach unten begrenzt,
-  // damit ein Treffer im weit herausgezoomten Bild ueberhaupt lesbar ankommt).
+// ⚠️ Kamera auf EINEN Knoten: `setCenter`, nicht `fitView({ nodes: [...] })`. fitView mit einer
+// Knotenliste bleibt hier wirkungslos – gemessen: der Ausschnitt stand nach einem Klassen-Klick im
+// Baum unveraendert da (25 -> 22 Knoten, Viewport-Transform identisch). Ein stiller No-Op sieht aus
+// wie „der Graph springt eben nicht", deshalb faehrt hier alles ueber diese eine Funktion.
+// Der Zoom bleibt, wie der Nutzer ihn eingestellt hat – nur nach unten begrenzt, damit ein Treffer
+// im weit herausgezoomten Bild ueberhaupt lesbar ankommt.
+// Rueckgabe: die Datei-Id des angefahrenen Knotens (oder null) – CodeView schlaegt sie rechts auf.
+function centerOnNode(nodeId) {
+  const node = nodes.value.find((n) => n.id === nodeId)
+  if (!node) return null
   const w = (node.type === 'pkg' ? PKG_W : NODE_W) * rootScale.value
   const h = (node.type === 'pkg' ? PKG_H : NODE_H) * rootScale.value
   setCenter(node.position.x + w / 2, node.position.y + h / 2, {
     zoom: Math.max(viewport.value?.zoom ?? 1, 0.75),
     duration: 320,
   })
+  return node.data?.fileId ?? null
+}
+
+// Gibt die Datei-Id des angefahrenen Treffers zurueck: die Kamera allein waere der halbe Schritt –
+// man saehe die Karte und muesste sie trotzdem anklicken, um zu lesen, was drin steht.
+function stepFind(delta) {
+  const list = findTargets.value
+  if (!list.length) return null
+  findCursor.value = ((findCursor.value + delta) % list.length + list.length) % list.length
+  return centerOnNode(list[findCursor.value])
 }
 // `stepFind` wird von aussen gerufen (Enter bzw. ↑/↓ am Suchfeld in CodeView) – bewusst eine
 // Methode und kein Prop: „fahr zum naechsten Treffer" ist ein Ereignis, kein Zustand; als Prop
@@ -1749,11 +1766,10 @@ watch(
     const hasFocus = focusId && nodes.value.some((n) => n.id === focusId)
     // maxZoom deckelt, damit einzelne Knoten nicht auf Plakatgroesse aufgeblasen werden – aber
     // nicht mehr bei exakt 1: ein Graph aus wenigen Klassen liess damit den halben Canvas leer,
-    // waehrend die Karten unnoetig klein blieben.
+    // waehrend die Karten unnoetig klein blieben. Der Einzelknoten laeuft ueber `centerOnNode`
+    // (s. dort: fitView mit Knotenliste bewegt hier gar nichts).
     const fit = () =>
-      hasFocus
-        ? fitView({ nodes: [{ id: focusId }], padding: 1.6, maxZoom: 1.25, duration: 300 })
-        : fitView({ padding: 0.18, maxZoom: 1.15, duration: 200 })
+      hasFocus ? centerOnNode(focusId) : fitView({ padding: 0.18, maxZoom: 1.15, duration: 200 })
     if (hasFocus) pendingFocusNode.value = null
     requestAnimationFrame(fit)
     // Zweiter Anlauf: fitView rechnet mit den GEMESSENEN Knotengroessen. Werden viele Knoten auf
@@ -3432,12 +3448,56 @@ watch(
   border-color: var(--role);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--role) 35%, transparent), 0 6px 16px color-mix(in srgb, var(--role) 30%, transparent);
 }
-/* Suchtreffer: klarer Ring in der Akzentfarbe – die Rolle bleibt an Streifen und Glyph ablesbar. */
+/* Suchtreffer: klarer Ring in der Akzentfarbe – die Rolle bleibt an Streifen und Glyph ablesbar.
+   Dazu einen Hauch groesser: eine Trefferkarte soll aus dem Feld hervortreten, nicht nur „die
+   anderen sind blasser" sein. Der Faktor ist bewusst klein – 1.04 liest sich als Betonung, alles
+   darueber als anderes Layout (die Karten stehen dicht, und das Layout kennt die Skalierung nicht). */
 .vf-card--match {
   border-color: var(--color-accent);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 55%, transparent), 0 6px 18px color-mix(in srgb, var(--color-accent) 28%, transparent);
+  transform: scale(1.04);
 }
-/* Mitgezeigte Nachbarschaft: sichtbar, aber eindeutig zweite Reihe. */
+/* Der Hover setzt `transform` sonst zurueck und die Karte schrumpfte beim Draufzeigen. */
+.vf-card--match:hover {
+  transform: translateY(-1px) scale(1.04);
+}
+/* DER Treffer, der gerade rechts aufgeschlagen ist: das Bild sagt, welche der Karten gemeint ist.
+   Ein Ring laeuft zweimal nach aussen – lange genug, um den Blick zu holen, kurz genug, um nicht
+   zu blinken. Kein `filter`/`drop-shadow` (s. Stolperfalle: der Compositor zeichnet den Graphen
+   sonst schwarz) – der Schein sind gestapelte `box-shadow`-Ringe, und animiert wird nur EINE Karte. */
+.vf-card--match.vf-card--selected {
+  border-color: var(--color-accent);
+  transform: scale(1.07);
+  animation: vf-match-pulse 1.05s ease-out 2 both;
+}
+.vf-card--match.vf-card--selected:hover {
+  transform: translateY(-1px) scale(1.07);
+}
+@keyframes vf-match-pulse {
+  0% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 90%, transparent),
+      0 0 0 0 color-mix(in srgb, var(--color-accent) 45%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 70%, transparent),
+      0 0 0 16px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 60%, transparent),
+      0 10px 26px color-mix(in srgb, var(--color-accent) 32%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vf-card--match.vf-card--selected {
+    animation: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 60%, transparent),
+      0 10px 26px color-mix(in srgb, var(--color-accent) 32%, transparent);
+  }
+}
+/* Mitgezeigte Nachbarschaft: sichtbar, aber eindeutig zweite Reihe. Bewusst NICHT weiter gedaempft,
+   um Treffer hervorzuheben: waehrend einer Suche traegt dieselbe Karte ohnehin `--dim` (0.14, die
+   Sprache fuer „gerade nicht gemeint"), und dieser Wert gilt dann. Der Treffer tritt stattdessen
+   selbst hervor – s. `--match` oben. */
 .vf-card--context {
   opacity: 0.5;
 }

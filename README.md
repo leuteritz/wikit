@@ -81,9 +81,10 @@ and `WIKI_DB` in `.env.example` are for bare-metal runs only.
    one and the detail column shows the definition and every call site, down to the line. Where you
    left off — filter, open package, context step and selected class — comes back on the next visit.
 3. **Search.** `Ctrl/Cmd + K` searches names *and* raw source with match case, whole word and regex.
-   Inside the view, one field next to the class list does everything: it filters the tree, focuses
-   the graph on the matches and highlights them — `m:` finds a called method, `t:` a kind of class,
-   `review:` every uncertain relation.
+   Inside the view, one field next to the class list does everything: it filters the tree, drives
+   the graph to the best match and opens that class on the right — `↵` walks to the next one.
+   Prefixes narrow it down: `m:` finds a called method, `t:` a kind of class, `review:` every
+   uncertain relation.
 4. **Export.** Turn a class into a normal Markdown article — from then on it is full-text
    searchable like any other note.
 
