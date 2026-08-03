@@ -13,7 +13,7 @@ import { useJavaQueue } from './composables/useJavaQueue.js'
 import { useActivity } from './composables/useActivity.js'
 import { useBot } from './composables/useBot.js'
 import { useTheme } from './composables/useTheme.js'
-import { WIKI_TITLE, WIKI_ICON, WIKI_VERSION } from './config.js'
+import { WIKI_TITLE, WIKI_ICON, WIKI_VERSION, WIKI_WHATS_NEW } from './config.js'
 import { Icon } from './lib/icons.js'
 
 const { load, articles } = useArticles()
@@ -124,20 +124,34 @@ function isActive(to) {
     <aside
       class="flex h-full w-16 shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-4 lg:w-60 lg:px-3"
     >
-      <!-- Brand: Wikit-Icon bleibt IMMER neben dem Titel -->
+      <!-- Brand: Wikit-Icon bleibt IMMER neben dem Titel. Die Version steht als Chip statt als
+           graue Zeile – sie ist die Auskunft „welche Fassung laeuft hier", nicht eine Fussnote.
+           „· LOCAL" ist entfallen: dass es lokal laeuft, sagt schon die ganze Anwendung. -->
       <RouterLink
         to="/"
-        class="mb-1 flex items-center gap-2.5 rounded-lg px-1 py-1.5 transition hover:bg-[var(--color-surface-offset)] lg:px-2"
+        class="flex items-center gap-2.5 rounded-lg px-1 py-1.5 transition hover:bg-[var(--color-surface-offset)] lg:px-2"
         title="Home"
       >
         <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
           <Icon :icon="WIKI_ICON" class="text-xl" />
         </span>
-        <span class="hidden min-w-0 flex-col leading-tight lg:flex">
+        <span class="hidden min-w-0 flex-col items-start gap-0.5 leading-tight lg:flex">
           <span class="truncate font-mono text-[0.9375rem] font-semibold tracking-tight text-[var(--color-text)]">{{ WIKI_TITLE }}</span>
-          <span class="font-mono text-2xs font-medium tracking-[0.1em] text-[var(--color-text-muted)]">v{{ WIKI_VERSION }} · LOCAL</span>
+          <span class="rounded bg-[var(--color-accent-soft)] px-1.5 py-px font-mono text-2xs font-semibold tracking-[0.06em] text-[var(--color-accent)]">v{{ WIKI_VERSION }}</span>
         </span>
       </RouterLink>
+      <!-- Was diese Fassung gebracht hat. Steht UNTER der Nummer, weil es dieselbe Auskunft
+           weiterfuehrt – und ausserhalb des Links: wer den Satz liest, will nicht zur Startseite.
+           Der Text kommt aus `whatsNew` in der Root-package.json (s. config.js) und wird bei jedem
+           Versions-Bump mitgepflegt. Zwei Zeilen sind das Maximum, der Rest steht im Tooltip. -->
+      <p
+        v-if="WIKI_WHATS_NEW"
+        class="mb-1 hidden items-start gap-1.5 px-2 pt-1.5 text-3xs leading-snug text-[var(--color-text-muted)] lg:flex"
+        :title="WIKI_WHATS_NEW"
+      >
+        <Icon icon="lucide:sparkles" class="mt-px h-3 w-3 shrink-0 text-[var(--color-accent)]" />
+        <span class="line-clamp-2">{{ WIKI_WHATS_NEW }}</span>
+      </p>
 
       <!-- Suche (oeffnet die Palette) -->
       <button

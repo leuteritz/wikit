@@ -7,6 +7,11 @@ import tailwindcss from '@tailwindcss/vite'
 // process.env.npm_package_version, das je nach npm-Aufrufkontext leer/falsch waere) und
 // injizieren sie zur Build-Zeit als globale Konstante __APP_VERSION__ (vite `define`,
 // nicht import.meta.env). Der Header liest daraus WIKI_VERSION (s. config.js).
+//
+// `whatsNew` steht in DERSELBEN Datei und wird mit derselben Regel gepflegt: die Nummer sagt,
+// WELCHE Fassung laeuft, der Satz sagt, WAS sie gebracht hat. Bewusst nicht aus `git log`
+// gezogen – das Docker-Image wird ohne `.git` gebaut, und ein Commit-Betreff ist fuer
+// Entwickler geschrieben, nicht fuer die Sidebar.
 const rootPkg = JSON.parse(
   readFileSync(new URL('../package.json', import.meta.url), 'utf-8'),
 )
@@ -16,6 +21,7 @@ const rootPkg = JSON.parse(
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(rootPkg.version),
+    __APP_WHATS_NEW__: JSON.stringify(rootPkg.whatsNew || ''),
   },
   plugins: [vue(), tailwindcss()],
   server: {

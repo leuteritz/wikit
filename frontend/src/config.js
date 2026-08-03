@@ -14,3 +14,9 @@ export const WIKI_ICON = 'ph:books-duotone'
 const _versionParts = (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0').split('.')
 export const WIKI_VERSION =
   _versionParts.length >= 2 ? `${_versionParts[0]}.${_versionParts[1]}` : _versionParts.join('.')
+
+// Was diese Fassung gebracht hat – EIN kurzer englischer Satz, gepflegt im Feld `whatsNew` der
+// Root-package.json (dieselbe Datei wie die Nummer, s. vite.config.js). Die Nummer allein sagt
+// niemandem, was sich geaendert hat; der Satz steht deshalb direkt darunter in der Sidebar.
+// Leer = die Zeile entfaellt, statt eine leere Flaeche stehen zu lassen.
+export const WIKI_WHATS_NEW = typeof __APP_WHATS_NEW__ !== 'undefined' ? __APP_WHATS_NEW__ : ''
