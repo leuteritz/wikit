@@ -1634,7 +1634,8 @@ function isDimmed(nodeId) {
   // Reihenfolge mit Absicht: der Hover ist die feinere Geste und darf INNERHALB eines Suchergebnisses
   // weiter isolieren. Liegt die Maus nirgends, bestimmt die angeklickte Kante das Bild, und erst
   // danach die Suche.
-  if (!h && !hoveredEdge.value && !pinnedEdge.value && findQuery.value) return !isFindHit(nodeId)
+  if (!h && !hoveredEdge.value && !pinnedEdge.value && findQuery.value)
+    return !isFindHit(nodeId) && !findNeighbourSet.value.has(nodeId)
   if (h) return h !== nodeId && !neighbours.value.get(h)?.has(nodeId)
   // Hover auf einer KANTE: nur ihre beiden Endpunkte bleiben stehen. Schaerfer als beim
   // Knoten-Hover (dort bleibt die ganze Nachbarschaft) – eine Kante ist genau eine Beziehung
@@ -1643,6 +1644,31 @@ function isDimmed(nodeId) {
   if (he) return he.sourceId !== nodeId && he.targetId !== nodeId
   return false
 }
+// --- „Haengt an einem Treffer" ------------------------------------------------------------------
+// Die Linie zwischen Treffer und Nachbar leuchtet (s. `touchesHit` in ManagedEdge) – die Karte an
+// ihrem Ende lag aber bei 0.14 und war nicht mehr zu lesen. Eine Linie, die zu einem Geist fuehrt,
+// ist keine Auskunft: sie sagt „hier haengt etwas dran" und verschweigt genau, was.
+//
+// Drei Stufen, und jede beantwortet eine andere Frage (so steht es auch in der Legende):
+//   Treffer     – das Gesuchte. Akzentfarbe, Ring, groesser.
+//   verbunden   – haengt daran. Volle Deckkraft, KEIN Akzent: sie traegt weiter ihre eigene
+//                 Rollen-/Typ-/Package-Farbe, sonst waere die Trefferfarbe plotzlich die Farbe von
+//                 zwanzig Karten und saehe aus wie zwanzig Treffer.
+//   gedaempft   – gerade nicht gemeint.
+const findNeighbourSet = computed(() => {
+  if (!findQuery.value) return new Set()
+  const out = new Set()
+  for (const id of findNodeHitSet.value) {
+    for (const n of neighbours.value.get(id) || []) out.add(n)
+  }
+  for (const id of findEdgeEnds.value) out.add(id)
+  return out
+})
+// Nur die Nachbarn, die NICHT selbst Treffer sind – die Karte soll genau einen Zustand tragen.
+function isFindNeighbour(nodeId) {
+  return !!findQuery.value && findNeighbourSet.value.has(nodeId) && !findNodeHitSet.value.has(nodeId)
+}
+
 // Endpunkt der angeklickten Kante? Traegt einen bleibenden Ring statt des fluechtigen Hover-Rings.
 function isPinnedEnd(nodeId) {
   const p = pinnedEdge.value
@@ -2416,6 +2442,7 @@ watch(
             {
               'vf-card--selected': selectedId === data.fileId,
               'vf-card--match': data.isMatch,
+              'vf-card--near': isFindNeighbour(`c:${data.fileId}`),
               'vf-card--context': data.isContext,
               'vf-card--dim': isDimmed(`c:${data.fileId}`),
               'vf-card--focus': !!focusColor(`c:${data.fileId}`),
@@ -2473,6 +2500,7 @@ watch(
           class="vf-pkgcard"
           :class="{
             'vf-pkgcard--related': data.related,
+            'vf-card--near': isFindNeighbour(`p:${data.path}`),
             'vf-card--dim': isDimmed(`p:${data.path}`),
             'vf-card--focus': !!focusColor(`p:${data.path}`),
             'vf-card--pinned': isPinnedEnd(`p:${data.path}`),
@@ -2944,9 +2972,15 @@ watch(
             <span class="legend-version">v2</span>
             <span>version · history</span>
           </div>
+          <!-- Die drei Stufen einer Suche in der Reihenfolge, in der man sie liest: was gesucht war,
+               was daran haengt, was gerade nicht gemeint ist. -->
           <div class="legend-row">
             <span class="legend-state legend-state--match" />
             <span>Search match</span>
+          </div>
+          <div class="legend-row">
+            <span class="legend-state legend-state--near" />
+            <span>Connected to a match · keeps its own role colour</span>
           </div>
           <div class="legend-row">
             <span class="legend-state legend-state--context" />
@@ -3493,6 +3527,19 @@ watch(
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 60%, transparent),
       0 10px 26px color-mix(in srgb, var(--color-accent) 32%, transparent);
   }
+}
+/* An einem Treffer haengende Karte: voll lesbar, aber ohne Akzent – ihre Farben bleiben die
+   eigenen (Rolle im Streifen, Typ im Chip, Package im Punkt), damit die Akzentfarbe weiterhin
+   „Treffer" heisst und nicht „irgendwie beteiligt". Der Ring ist ihre ROLLENfarbe, also dieselbe
+   Sprache wie der Streifen daneben – gedaempfter als der Ring der ausgewaehlten Karte, sonst saehen
+   zwanzig Nachbarn aus wie zwanzig Auswahlen. */
+/* Zwei Klassen im Selektor, weil dieselbe Karte im Suchmodus auch `--context` traegt (sie ist ja
+   nicht der Treffer) – und dessen halbe Deckkraft stuende sonst weiter darueber. */
+.vf-card.vf-card--near {
+  opacity: 1;
+  border-color: color-mix(in srgb, var(--role) 50%, var(--color-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--role) 30%, transparent),
+    0 3px 12px color-mix(in srgb, var(--role) 18%, transparent);
 }
 /* Mitgezeigte Nachbarschaft: sichtbar, aber eindeutig zweite Reihe. Bewusst NICHT weiter gedaempft,
    um Treffer hervorzuheben: waehrend einer Suche traegt dieselbe Karte ohnehin `--dim` (0.14, die
@@ -4068,6 +4115,12 @@ watch(
 .legend-state--match {
   border-color: var(--color-accent);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+/* „Haengt an einem Treffer": derselbe zurueckhaltende Ring wie im Canvas, in der Rollenfarbe –
+   hier stellvertretend die Hub-Farbe, weil die Legende keine einzelne Karte meint. */
+.legend-state--near {
+  border-color: color-mix(in srgb, var(--color-role-hub) 55%, var(--color-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-role-hub) 30%, transparent);
 }
 /* Kontext: derselbe Effekt wie im Canvas (halbe Deckkraft, gestrichelt = „nicht der Ausschnitt"). */
 .legend-state--context {
