@@ -9,11 +9,11 @@ export const WIKI_TITLE = import.meta.env.VITE_WIKI_TITLE || 'Wikit'
 export const WIKI_ICON = 'ph:books-duotone'
 
 // App-Version, zur Build-Zeit aus der Root-package.json injiziert (vite `define` ->
-// globales __APP_VERSION__, s. vite.config.js). Anzeige als MAJOR.MINOR (z. B. "2.0").
-// Schema/Bump-Regeln siehe README ("Versionierung"). Nie hardcoden - immer hierueber.
-const _versionParts = (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0').split('.')
-export const WIKI_VERSION =
-  _versionParts.length >= 2 ? `${_versionParts[0]}.${_versionParts[1]}` : _versionParts.join('.')
+// globales __APP_VERSION__, s. vite.config.js). Angezeigt wird sie VOLLSTAENDIG (MAJOR.MINOR.PATCH,
+// z. B. "4.0.1") – frueher schnitt der Badge auf MAJOR.MINOR, was seit dem dreistelligen Schema die
+// Haelfte der Bumps unsichtbar machte: zwei Fassungen mit verschiedenen Fixes hiessen beide "4.0".
+// Bump-Regeln stehen in CLAUDE.md („Versionierung"). Nie hardcoden – immer hierueber.
+export const WIKI_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0'
 
 // Was diese Fassung gebracht hat – EIN kurzer englischer Satz, gepflegt im Feld `whatsNew` der
 // Root-package.json (dieselbe Datei wie die Nummer, s. vite.config.js). Die Nummer allein sagt
