@@ -100,6 +100,12 @@ const KIND_META = {
   },
 }
 
+// Zwei Anlaesse, EINE Liste: die Aufloesung einer Aggregatkante (gerichtet, „alles von hier nach
+// dort") und die Verbindung zweier Karten (ungerichtet, „alles zwischen diesen beiden"). Nur der
+// Kopf unterscheidet sich – ein Pfeil nach rechts waere ueber einer beidseitigen Verbindung eine
+// Falschauskunft, und „Bundled relations" beschriebe nicht, wonach gefragt wurde.
+const isConnection = computed(() => props.bundle?.mode === 'connection')
+
 const relations = computed(() => props.bundle?.relations || [])
 const filtered = computed(() => {
   const q = query.value.trim().toLowerCase()
@@ -319,17 +325,24 @@ watch(
             <!-- Kein ×: geschlossen wird ueber den Umschalter direkt darueber (bzw. ESC). Zwei
                  Schliessen-Knoepfe im selben Blickfeld lassen offen, ob sie dasselbe tun. -->
             <h2 class="flex min-w-0 items-center gap-2 text-sm font-bold text-[var(--color-text)]">
-              <Icon icon="lucide:git-fork" class="h-4 w-4 shrink-0 text-[var(--color-thistle)]" />
-              <span class="truncate">Bundled relations</span>
+              <Icon
+                :icon="isConnection ? 'lucide:share-2' : 'lucide:git-fork'"
+                class="h-4 w-4 shrink-0 text-[var(--color-thistle)]"
+              />
+              <span class="truncate">{{ isConnection ? 'Connection' : 'Bundled relations' }}</span>
             </h2>
 
-            <!-- Richtung des Buendels: definierende Seite -> nutzende Seite, wie der Pfeil im Graph. -->
+            <!-- Richtung des Buendels: definierende Seite -> nutzende Seite, wie der Pfeil im Graph.
+                 Eine Verbindung dagegen hat keine Richtung – ihre einzelnen Zeilen schon. -->
             <div class="mt-2 flex items-center gap-2 text-[0.8125rem]">
               <span class="bundle-end">
                 <Icon :icon="bundle.fromIsClass ? 'lucide:box' : 'lucide:folder'" class="h-3.5 w-3.5 shrink-0" />
                 <span class="truncate">{{ bundle.fromLabel }}</span>
               </span>
-              <Icon icon="lucide:arrow-right" class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
+              <Icon
+                :icon="isConnection ? 'lucide:arrow-left-right' : 'lucide:arrow-right'"
+                class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]"
+              />
               <span class="bundle-end">
                 <Icon :icon="bundle.toIsClass ? 'lucide:box' : 'lucide:folder'" class="h-3.5 w-3.5 shrink-0" />
                 <span class="truncate">{{ bundle.toLabel }}</span>
@@ -347,7 +360,12 @@ watch(
             </div>
 
             <!-- Einordnung fuer alle, die den Graphen zum ersten Mal sehen. -->
-            <p class="bp-intro">
+            <p v-if="isConnection" class="bp-intro">
+              Everything that ties the two boxes above together, in both directions. Each row below is
+              <b>one class using another</b> — the left class defines something, the right class uses it.
+              Open a row to see the exact lines of code.
+            </p>
+            <p v-else class="bp-intro">
               This one edge stands for every connection between the two boxes above. Each row below is
               <b>one class using another</b> — the left class defines something, the right class uses it.
               Open a row to see the exact lines of code.

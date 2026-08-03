@@ -105,6 +105,7 @@ const {
   clearHighlightedDef,
   hoveredNode,
   hoverPalette,
+  hoverAnchor,
   setHoveredNode,
   hoveredEdge,
   setHoveredEdge,
@@ -1636,6 +1637,8 @@ function isDimmed(nodeId) {
   // danach die Suche.
   if (!h && !hoveredEdge.value && !pinnedEdge.value && findQuery.value)
     return !isFindHit(nodeId) && !findNeighbourSet.value.has(nodeId)
+  // Anker gesetzt: es geht um EINE Verbindung, also bleiben genau ihre zwei Enden stehen.
+  if (h && hoverAnchor.value) return nodeId !== h && nodeId !== hoverAnchor.value
   if (h) return h !== nodeId && !neighbours.value.get(h)?.has(nodeId)
   // Hover auf einer KANTE: nur ihre beiden Endpunkte bleiben stehen. Schaerfer als beim
   // Knoten-Hover (dort bleibt die ganze Nachbarschaft) – eine Kante ist genau eine Beziehung
@@ -1696,6 +1699,43 @@ function neighbourPalette(nodeId) {
   return new Map(sorted.map((id, i) => [id, HOVER_COLORS[i % HOVER_COLORS.length]]))
 }
 
+// --- Der Anker: die offene Klasse als Bezugspunkt ------------------------------------------------
+// Wer eine Klasse aufgeschlagen hat, sieht im Bild alle ihre Beziehungen auf einmal. Der Hover auf
+// einen Nachbarn beantwortete bis dahin eine ANDERE Frage – er zeigte dessen eigene Nachbarschaft,
+// also ein halbes Dutzend Klassen, die mit der aufgeschlagenen nichts zu tun haben. Gefragt ist:
+// „was genau verbindet die beiden?" Also bleiben nur noch der Anker, der gehoverte Knoten und die
+// Linien dazwischen stehen.
+// Der Anker gilt nur, wenn beide ueber eine GEZEICHNETE Kante zusammenhaengen: sonst gibt es keine
+// Verbindung zu isolieren, und es bleibt beim bisherigen Nachbarschafts-Fokus.
+const anchorId = computed(() => (props.selectedId != null ? `c:${props.selectedId}` : null))
+function anchorFor(nodeId) {
+  const a = anchorId.value
+  if (!a || a === nodeId) return null
+  return neighbours.value.get(a)?.has(nodeId) ? a : null
+}
+// Die staerkste Aussage faerbt die Verbindung: ein Aufruf sagt mehr als ein Import, und die Farbe
+// am Ring beider Karten ist dieselbe wie an der Linie – eine Aussage, ein Ton.
+const KIND_RANK = { call: 4, field: 3, uses: 2, import: 1, aggregate: 0 }
+function connectionColor(aId, bId) {
+  let best = null
+  for (const e of layout.value.edges) {
+    const d = e.data || {}
+    if (!((d.sourceId === aId && d.targetId === bId) || (d.sourceId === bId && d.targetId === aId))) continue
+    if (!best || (KIND_RANK[d.kind] ?? 0) > (KIND_RANK[best.kind] ?? 0)) best = d
+  }
+  return best?.edgeStyle?.stroke || 'var(--color-accent)'
+}
+// Im Ankerfall gibt es nichts auseinanderzuhalten – es sind genau zwei Karten und eine Verbindung.
+// Also KEINE sechs Identitaetsfarben, sondern EINE: beide Karten und jede Linie dazwischen tragen
+// sie, und damit ist sichtbar, dass sie zusammen eine einzige Aussage sind.
+function pairPalette(anchor, nodeId) {
+  const color = connectionColor(anchor, nodeId)
+  return new Map([
+    [anchor, color],
+    [nodeId, color],
+  ])
+}
+
 // Farbe, die eine Karte im Hover-Fokus traegt (Rahmen + Ring; der Streifen bleibt die ROLLE – was
 // eine Klasse im Netz ist, aendert sich durch einen Hover nicht). Zwei Faelle, eine Regel: die
 // Karte traegt die Farbe der Linie, die zu ihr fuehrt.
@@ -1705,6 +1745,9 @@ function neighbourPalette(nodeId) {
 //   unterschiedenen Dinge; eine siebte Farbe in der Mitte wuerde nur eine Zuordnung vortaeuschen.
 function focusColor(nodeId) {
   const h = hoveredNode.value
+  // Ankerfall: BEIDE Enden tragen die Farbe der Verbindung – hier gibt es keinen „Bezugspunkt
+  // gegen den Rest", sondern zwei gleichrangige Enden einer einzigen Aussage.
+  if (h && hoverAnchor.value) return hoverPalette.value?.get(nodeId) || null
   if (h) return h === nodeId ? null : hoverPalette.value?.get(nodeId) || null
   // Angeklickte Kante: dieselbe Regel wie beim Kanten-Hover, nur bleibend – die Karte traegt die
   // Farbe der Linie, die zu ihr fuehrt.
@@ -1725,18 +1768,26 @@ function onNodeEnter({ node }) {
     // Knoten schlaegt Kante: liegt die Maus auf einer Karte, ist die Karte gemeint. Ohne das
     // Zuruecksetzen blieben beide Hervorhebungen gleichzeitig stehen und wuerden sich widersprechen.
     setHoveredEdge(null)
-    // Die Palette entsteht genau hier, einmal je Hover – nicht als computed pro Karte: sie haengt
-    // an der Nachbarschaft, und die aendert sich waehrend eines Hovers nicht.
-    setHoveredNode(id, id ? neighbourPalette(id) : null)
+    // Haengt die Karte an der offenen Klasse, ist EINE Verbindung gemeint – sonst wie bisher die
+    // Nachbarschaft dieser Karte. Palette und Anker entstehen genau hier, einmal je Hover, nicht
+    // als computed pro Karte: beide haengen an der Nachbarschaft, und die aendert sich waehrend
+    // eines Hovers nicht.
+    const anchor = id ? anchorFor(id) : null
+    setHoveredNode(id, id ? (anchor ? pairPalette(anchor, id) : neighbourPalette(id)) : null, anchor)
+    // …und rechts steht sie dann auch. Ein Bild, das eine Beziehung isoliert, aber nicht sagt,
+    // WAS sie ist, laesst genau die Frage offen, wegen der man hingezeigt hat.
+    if (anchor) previewSoon('node', () => showConnection(anchor, id))
   }, NODE_HOVER_INTENT_MS)
 }
 function onNodeLeave() {
   clearTimeout(nodeHoverTimer)
   setHoveredNode(null)
+  endPreviewFrom('node')
 }
 // Modul-State: beim Verlassen des Code-Tabs koennte sonst ein gedimmter Graph zurueckbleiben.
 onUnmounted(() => {
   clearTimeout(nodeHoverTimer)
+  clearTimeout(previewTimer)
   setHoveredNode(null)
   setHoveredEdge(null)
 })
@@ -1759,7 +1810,21 @@ function onNodeClick({ node }) {
     drillTo(node.data?.path || '')
     return
   }
-  if (node?.data?.fileId != null) emit('select', node.data.fileId)
+  if (node?.data?.fileId == null) return
+  // Kam die Karte mit einer Vorschau daher, gibt ihr der Klick Halt: die Beziehung bleibt rechts
+  // stehen, das Bild markiert sie weiter (Pin auf dem PAAR – eine Verbindung besteht oft aus
+  // mehreren Linien), und die angeklickte Klasse wird der neue Anker. So laeuft man die Kante
+  // entlang, statt bei jedem Schritt neu suchen zu muessen.
+  const anchor = anchorFor(node.id)
+  if (anchor) {
+    clearTimeout(previewTimer)
+    // Schneller geklickt als die Vorschau steht -> dieselbe Ansicht jetzt aufbauen.
+    if (!previewing.value) showConnection(anchor, node.id)
+    dropPreview()
+    relationPick.value++
+    pinnedRaw.value = { pair: true, sourceId: anchor, targetId: node.id, color: connectionColor(anchor, node.id) }
+  }
+  emit('select', node.data.fileId)
 }
 function resetView() {
   setViewport({ x: 0, y: 0, zoom: 1 })
@@ -2071,11 +2136,19 @@ function labelForKey(key) {
 const bundleKeys = computed(() => {
   const m = new Map(insideKeys.value)
   for (const [id, key] of neighbourhood.value.keyByFileId) if (!m.has(id)) m.set(id, key)
+  // Nachbarklassen, die als EIGENE KARTE gezeichnet sind, sind im Bild Klassen und nicht ihr
+  // Package – sonst faende die Verbindung zwischen zwei gezeichneten Karten nichts. Sicher, weil
+  // genau dann kein Aggregatknoten existiert (`relatedNodes` ist leer, s. dort): die Warnung oben
+  // gilt dem umgekehrten Fall, in dem ein `c:`-Schluessel eine Package-Zuordnung ueberschrieb.
+  if (relatedAsClasses.value) for (const f of relatedFiles.value) m.set(f.id, `c:${f.id}`)
   return m
 })
 
-function relationsBetween(sourceKey, targetKey) {
-  const keyOf = bundleKeys.value
+// Die eine Rechnung hinter zwei Fragen: „was steckt in dieser Aggregatkante?" (`relationsBetween`,
+// gerichtet) und „was verbindet diese beiden Karten?" (`connectionRelations`, beide Richtungen).
+// `accepts(provider, consumer)` entscheidet, welche Paare mitzaehlen – alles andere (Gruppierung,
+// Rangfolge, Import-Fallback) ist fuer beide identisch und darf es deshalb nur einmal geben.
+function collectRelations(accepts) {
   const files = props.files || []
   const groups = new Map()
   const add = (provider, consumer, kind, method) => {
@@ -2098,7 +2171,7 @@ function relationsBetween(sourceKey, targetKey) {
     // Graph gezählt hat, und die angeschriebene Zahl stimmte nicht mehr mit der Liste überein.
     const { consumer, provider } = endsOf(e, resolveClass)
     if (!consumer || !provider || consumer.id === provider.id) continue
-    if (keyOf.get(provider.id) !== sourceKey || keyOf.get(consumer.id) !== targetKey) continue
+    if (!accepts(provider, consumer)) continue
     add(
       provider,
       consumer,
@@ -2119,7 +2192,7 @@ function relationsBetween(sourceKey, targetKey) {
     for (const dep of f.dependencies || []) {
       const provider = resolveClass(simpleName(dep), f)
       if (!provider || provider.id === f.id) continue
-      if (keyOf.get(provider.id) !== sourceKey || keyOf.get(f.id) !== targetKey) continue
+      if (!accepts(provider, f)) continue
       if (groups.has(`${provider.id}->${f.id}`)) continue
       add(provider, f, 'import', null)
     }
@@ -2134,10 +2207,29 @@ function relationsBetween(sourceKey, targetKey) {
   )
 }
 
+// Aggregatkante: alles, was von `sourceKey` nach `targetKey` zeigt.
+function relationsBetween(sourceKey, targetKey) {
+  const keyOf = bundleKeys.value
+  return collectRelations((p, c) => keyOf.get(p.id) === sourceKey && keyOf.get(c.id) === targetKey)
+}
+
+// Verbindung zweier Knoten: dasselbe in BEIDE Richtungen. Eine Verbindung hat keine Richtung – ihre
+// einzelnen Beziehungen schon, und genau die stehen dann als Zeilen untereinander. In EINEM Lauf,
+// nicht zweimal `relationsBetween`: sonst zaehlt derselbe Kantenbestand doppelt durch.
+function connectionRelations(aKey, bKey) {
+  const keyOf = bundleKeys.value
+  return collectRelations((p, c) => {
+    const kp = keyOf.get(p.id)
+    const kc = keyOf.get(c.id)
+    return (kp === aKey && kc === bKey) || (kp === bKey && kc === aKey)
+  })
+}
+
 function openBundlePanel(d) {
   if (!d || d.kind !== 'aggregate') return
   const relations = relationsBetween(d.sourceId, d.targetId)
   activeBundle.value = {
+    mode: 'aggregate',
     fromLabel: labelForKey(d.sourceId),
     toLabel: labelForKey(d.targetId),
     fromIsClass: String(d.sourceId).startsWith('c:'),
@@ -2146,6 +2238,136 @@ function openBundlePanel(d) {
     relations,
   }
 }
+
+// --- Die VERBINDUNG zweier Knoten zeigen --------------------------------------------------------
+// Antwort auf „was genau haengt zwischen diesen beiden?" – also auf den Hover ueber einen Nachbarn
+// der offenen Klasse und auf den Klick darauf. Zwei Auspraegungen, EINE Frage:
+//   * genau eine Beziehung mit Mitgliedern -> direkt die reiche Kanten-Ansicht. Eine Liste mit
+//     einem einzigen Eintrag waere ein Umweg um dieselbe Auskunft, und sie zeigt weniger
+//     (Signaturen, alle Aufrufstellen, eigene Suche).
+//   * sonst -> die Liste, gruppiert nach Klassenpaar und Richtung. Auch reine `uses`/`import`-
+//     Beziehungen stehen darin: das Panel belegt sie mit den Zeilen, in denen der Typ auftaucht,
+//     statt leer zu bleiben.
+// Rueckgabe: ob es ueberhaupt etwas zu zeigen gab.
+//
+// Spalte 3 zeigt IMMER genau eines von beidem – deshalb wird der jeweils andere Zustand geloescht
+// und ein noch laufender Ladevorgang entwertet (`edgeToken`), bevor etwas Neues Platz nimmt.
+function clearRelationState() {
+  edgeToken++
+  edgePanelLoading.value = false
+  activeEdge.value = null
+  activeBundle.value = null
+}
+
+// Was zeigt eine einzelne LINIE? Genau sich selbst – ausser sie traegt keine Mitglieder
+// (`uses`/`import`): dann ist die Verbindung ihrer beiden Enden die einzige Auskunft, die es gibt,
+// und die Linie steht darin als eigene Zeile mit ihren Fundstellen im Quelltext.
+function showEdgeRelation(data) {
+  if (!data) return false
+  if (data.kind === 'aggregate' || data.kind === 'call' || data.kind === 'field') {
+    clearRelationState()
+    if (data.kind === 'aggregate') openBundlePanel(data)
+    else openEdgePanel(data)
+    return true
+  }
+  return showConnection(data.sourceId, data.targetId)
+}
+
+function showConnection(aKey, bKey) {
+  const relations = connectionRelations(aKey, bKey)
+  if (!relations.length) return false
+  const single = relations.length === 1 && relations[0].methods.length ? relations[0] : null
+  clearRelationState()
+  if (single) {
+    // Nicht awaiten: das Panel oeffnet sofort mit dem, was ohne Request bekannt ist (s. dort).
+    openRelationCode(single)
+    return true
+  }
+  activeBundle.value = {
+    mode: 'connection',
+    fromLabel: labelForKey(aKey),
+    toLabel: labelForKey(bKey),
+    fromIsClass: String(aKey).startsWith('c:'),
+    toIsClass: String(bKey).startsWith('c:'),
+    count: relations.length,
+    relations,
+  }
+  return true
+}
+
+// --- Vorschau: die Beziehung unter der Maus, ohne Klick ------------------------------------------
+// Wer auf eine Linie oder auf einen Nachbarn der offenen Klasse zeigt, liest die Beziehung rechts
+// schon, bevor er klickt. Der geklickte Stand wird dafuer beiseitegelegt und beim Verlassen Zeichen
+// fuer Zeichen zurueckgeholt: eine Vorschau darf nichts wegnehmen, was jemand ausgewaehlt hat.
+// Der Klick macht aus ihr den Stand – ohne irgendetwas neu zu laden, es steht ja bereits da.
+const previewing = ref(false)
+// Zaehler statt Flag: „der Nutzer hat DAS hier gewaehlt" ist ein Ereignis – ein Flag muesste jemand
+// wieder zuruecksetzen, und genau das vergisst man an der dritten Aufrufstelle.
+const relationPick = ref(0)
+let stashed = null
+// Woher kam die Vorschau? Knoten- und Kanten-Hover loeschen sich gegenseitig, und nur die Geste,
+// die sie geoeffnet hat, darf sie auch wieder schliessen.
+let previewSource = null // 'node' | 'edge' | null
+// Der Hover-Fokus im Bild sitzt nach 90 ms (s. NODE_HOVER_INTENT_MS); das PANEL wartet laenger.
+// Beim Queren eines dichten Feldes ist jede Vorschau sonst zwei Requests je gestreifter Karte –
+// und ein Panel, das im Vorbeiziehen dreimal wechselt, liest ohnehin niemand.
+const PREVIEW_DELAY_MS = 180
+let previewTimer = null
+
+// Rueckgabe: ob beiseitegelegt werden konnte. Laedt rechts noch der geklickte Stand, gibt es
+// nichts sauber Zurueckholbares – eine halb geladene Beziehung waere nach der Vorschau fuer immer
+// halb. Dann lieber keine Vorschau als ein Panel, dem der Code fehlt.
+function beginPreview() {
+  if (previewing.value) return true
+  if (edgePanelLoading.value) return false
+  stashed = { edge: activeEdge.value, bundle: activeBundle.value }
+  previewing.value = true
+  return true
+}
+function endPreview() {
+  clearTimeout(previewTimer)
+  previewSource = null
+  if (!previewing.value) return
+  // Ein noch laufender Vorschau-Ladevorgang darf den zurueckgeholten Stand nicht ueberschreiben.
+  edgeToken++
+  edgePanelLoading.value = false
+  activeEdge.value = stashed?.edge ?? null
+  activeBundle.value = stashed?.bundle ?? null
+  stashed = null
+  previewing.value = false
+}
+// Aus der Vorschau wird der Stand (Klick) – oder sie wird verworfen, weil etwas anderes rechts
+// Platz nimmt (ESC, Klick ins Leere). Beides heisst: nichts mehr zurueckholen.
+function dropPreview() {
+  clearTimeout(previewTimer)
+  previewSource = null
+  stashed = null
+  previewing.value = false
+}
+// `show` wird erst nach der Verzoegerung gerufen und muss melden, ob es etwas zu zeigen gab: eine
+// begonnene Vorschau ohne Inhalt waere ein Zustand, den niemand mehr aufloest.
+function previewSoon(source, show) {
+  clearTimeout(previewTimer)
+  previewSource = source
+  previewTimer = setTimeout(() => {
+    if (!beginPreview()) return
+    if (!show()) endPreview()
+  }, PREVIEW_DELAY_MS)
+}
+// Nur die Geste beenden, die auch begonnen hat (Knoten-Hover loescht den Kanten-Hover und
+// umgekehrt – ohne die Pruefung raeumte die eine der anderen die Vorschau weg).
+function endPreviewFrom(source) {
+  if (previewSource === source) endPreview()
+}
+
+// Der Kanten-Hover entsteht in ManagedEdge (die Kante liest den geteilten Zustand selbst, s. dort).
+// Also hoert der Graph darauf, statt einen weiteren Rueckkanal zu bauen: er allein kennt die
+// Kantendaten und die Dateiliste, aus denen die Beziehung rechts entsteht.
+watch(hoveredEdge, (he) => {
+  if (!he) return endPreviewFrom('edge')
+  const data = layout.value.edges.find((e) => e.id === he.id)?.data
+  previewSoon('edge', () => showEdgeRelation(data))
+})
 function closeBundlePanel() {
   activeBundle.value = null
   // Steht darueber noch eine Einzelkante aus dieser Liste, gehoert der Pin weiterhin ihr.
@@ -2187,6 +2409,11 @@ function openRelationCode(rel) {
 // markierte im Bild aber nichts.
 function openRelation(d, edgeId = null) {
   if (!d || (d.kind !== 'aggregate' && d.kind !== 'call' && d.kind !== 'field')) return
+  // Der Klick uebernimmt, was die Vorschau schon zeigt – ohne das Verwerfen wuerde das naechste
+  // `mouseleave` den beiseitegelegten Stand zurueckholen und die eben geoeffnete Beziehung wieder
+  // wegnehmen.
+  dropPreview()
+  relationPick.value++
   // Der Pin ist die Ortsangabe zum Detail rechts: dieselbe Form wie beim Kanten-Hover, damit
   // Karten, Linie und Label ihn ohne zweite Regel lesen koennen.
   pinnedRaw.value = {
@@ -2202,6 +2429,7 @@ function onEdgeClick({ edge }) {
   openRelation(edge?.data, edge?.id)
 }
 function closeEdgePanel() {
+  dropPreview()
   // Ein noch laufender Ladevorgang darf das Panel nicht wieder aufziehen.
   edgeToken++
   edgePanelLoading.value = false
@@ -2216,16 +2444,22 @@ function closeEdgePanel() {
 // des Ladens – das Detail oeffnet sofort mit dem, was bekannt ist, s. `openEdgePanel`).
 // Die Einzelkante gewinnt gegen das Buendel: „Full details" oeffnet sie AUS der Liste heraus, und
 // beim Schliessen kommt genau diese Liste wieder zum Vorschein.
+// `preview` unterscheidet „das steht hier, weil die Maus darauf zeigt" von „das wurde gewaehlt":
+// eine Vorschau darf sich keine Spaltenbreite leihen und den Reiter nur voruebergehend nach vorn
+// holen. `pick` zaehlt die bewussten Entscheidungen – daran erkennt CodeView, ob die Vorschau
+// zurueckgefallen oder per Klick uebernommen worden ist (ein Flag muesste jemand zuruecksetzen).
 watch(
-  [activeEdge, edgePanelLoading, edgePanelSince, activeBundle],
+  [activeEdge, edgePanelLoading, edgePanelSince, activeBundle, previewing],
   () => {
+    const meta = { preview: previewing.value, pick: relationPick.value }
     if (activeEdge.value) {
       emit('relation', {
         kind: 'edge',
         edge: activeEdge.value,
         loading: edgePanelLoading.value,
         since: edgePanelSince.value,
-        back: activeBundle.value ? 'Bundled relations' : null,
+        back: activeBundle.value ? (activeBundle.value.mode === 'connection' ? 'Connection' : 'Bundled relations') : null,
+        ...meta,
       })
     } else if (activeBundle.value) {
       emit('relation', {
@@ -2233,6 +2467,7 @@ watch(
         bundle: activeBundle.value,
         loadDetail: loadRelationDetail,
         openRelation: openRelationCode,
+        ...meta,
       })
     } else {
       emit('relation', null)
@@ -2253,6 +2488,9 @@ function onPaneClick() {
 // bin fertig mit dieser Beziehung" – dann auch die Liste darunter, sonst spraenge sie beim
 // Schliessen der Einzelkante wieder auf.
 function closeRelation() {
+  // Auch die beiseitegelegte Vorschau: „fertig" heisst fertig, sonst kaeme sie beim naechsten
+  // Verlassen einer Karte wieder hervor.
+  dropPreview()
   edgeToken++
   edgePanelLoading.value = false
   activeEdge.value = null
@@ -2960,7 +3198,10 @@ watch(
             Arrows point from the definition to the class using it.<br />
             An italic label means the running implementation is not fixed here.<br />
             Hover a class to isolate its connections —<br />
-            each neighbour shares a colour with the line leading to it.
+            each neighbour shares a colour with the line leading to it.<br />
+            With a class open on the right, hovering a neighbour keeps<br />
+            just that one connection — and reads it out beside the graph.<br />
+            Click it to keep it and step over to that class.
           </p>
 
           <div class="legend-head mt-1.5">Badges &amp; states</div>

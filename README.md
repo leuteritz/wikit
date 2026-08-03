@@ -77,9 +77,11 @@ and `WIKI_DB` in `.env.example` are for bare-metal runs only.
    stored.
 2. **Explore the graph.** Each card says what a class **is** (class / interface / enum / record /
    utility / …) and how it **connects** (source / consumer / hub / isolated); classes are grouped
-   into package zones. Edges are method calls, field accesses, type usages and plain imports — click
-   one and the detail column shows the definition and every call site, down to the line. Where you
-   left off — filter, open package, context step and selected class — comes back on the next visit.
+   into package zones. Edges are method calls, field accesses, type usages and plain imports — point
+   at one and the detail column already shows the definition and every call site, down to the line.
+   With a class open, hovering a neighbour keeps **just that one connection** in the picture and
+   reads it out beside the graph; clicking keeps it and steps over to that class. Where you left
+   off — filter, open package, context step and selected class — comes back on the next visit.
 3. **Search.** `Ctrl/Cmd + K` searches names *and* raw source with match case, whole word and regex.
    Inside the view, one field next to the class list does everything: it filters the tree, drives
    the graph to the best match and opens that class on the right — `↵` walks to the next one.

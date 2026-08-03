@@ -29,6 +29,7 @@ import chevronDown from '@iconify-icons/lucide/chevron-down'
 import chevronLeft from '@iconify-icons/lucide/chevron-left'
 import chevronRight from '@iconify-icons/lucide/chevron-right'
 import arrowRight from '@iconify-icons/lucide/arrow-right'
+import arrowLeftRight from '@iconify-icons/lucide/arrow-left-right'
 import sparkles from '@iconify-icons/lucide/sparkles'
 import list from '@iconify-icons/lucide/list'
 import foldVertical from '@iconify-icons/lucide/fold-vertical'
@@ -119,6 +120,7 @@ const ICONS = {
   'lucide:chevron-left': chevronLeft,
   'lucide:chevron-right': chevronRight,
   'lucide:arrow-right': arrowRight,
+  'lucide:arrow-left-right': arrowLeftRight,
   'lucide:sparkles': sparkles,
   'lucide:list': list,
   'lucide:fold-vertical': foldVertical,

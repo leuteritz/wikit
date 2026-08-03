@@ -46,6 +46,19 @@ const highlightedDef = ref(null)
 // Vue Flow neu geschrieben werden (bei einigen hundert Kanten sichtbar traege).
 const hoveredNode = ref(null)
 
+// Anker des Hover-Fokus: die rechts geoeffnete Klasse (`c:<fileId>`) – gesetzt NUR, solange der
+// gehoverte Knoten ueber mindestens eine gezeichnete Kante an ihr haengt. Dann meint der Hover
+// nicht mehr „die Nachbarschaft dieses Knotens", sondern GENAU EINE Verbindung: Ankerkarte,
+// gehoverte Karte und die Linien dazwischen bleiben stehen, alles andere faellt weg.
+//
+// Warum ueberhaupt: wer eine Klasse aufgeschlagen hat, sieht ihre saemtlichen Beziehungen auf
+// einmal. Der Hover auf einen Nachbarn beantwortete bis dahin eine ANDERE Frage – er zeigte dessen
+// eigene Nachbarschaft und damit ein halbes Dutzend Klassen, die mit der aufgeschlagenen nichts zu
+// tun haben. Gefragt ist aber: „was genau verbindet die beiden?"
+// Liegt der Hover woanders (keine offene Klasse, kein Bezug zu ihr), bleibt es beim alten
+// Verhalten – ohne Anker gibt es keine Verbindung, die man isolieren koennte.
+const hoverAnchor = ref(null)
+
 // Identitaetsfarbe je Nachbar des gehoverten Knotens: `Map<nodeId, CSS-Farbe>` | null.
 // Ein Hub hat schnell ein Dutzend Nachbarn, und bisher trugen alle Linien dorthin dieselbe
 // Art-Farbe (call/uses/import) – welche Linie zu welcher Karte gehoert, war in einem dichten Feld
@@ -64,7 +77,20 @@ const hoverPalette = ref(null)
 // Gesetzt wird er vom Graphen (er kennt Kanten-Ids, Endpunkte und Farbe), gelöscht beim
 // Schliessen des Details oder sobald keiner der beiden Endpunkte mehr gezeichnet wird – ein Pin
 // auf zwei unsichtbaren Knoten wuerde SAEMTLICHE Karten daempfen und das Bild leerraeumen.
+//
+// ZWEI Formen, eine Frage: der Klick auf eine LINIE pinnt genau sie (`id`), der Klick auf eine
+// KARTE die ganze Verbindung zweier Knoten (`pair: true`) – und die besteht oft aus mehreren
+// Linien in beide Richtungen. `pinCovers` ist die eine Stelle, an der das entschieden wird.
 const pinnedEdge = ref(null)
+
+// Ungeordnetes Knotenpaar: eine Verbindung hat keine Richtung, ihre einzelnen Kanten schon.
+const samePair = (a1, a2, b1, b2) => (a1 === b1 && a2 === b2) || (a1 === b2 && a2 === b1)
+
+// Gehoert diese Kante zum Pin? Einzelkante ueber die Vue-Flow-Id, Verbindung ueber das Knotenpaar.
+function pinCovers(pin, edgeId, sourceId, targetId) {
+  if (!pin) return false
+  return pin.pair ? samePair(pin.sourceId, pin.targetId, sourceId, targetId) : pin.id === edgeId
+}
 
 // Gegenstueck fuer die KANTE unter der Maus: `{ id, sourceId, targetId, color }` | null.
 // Eine Kante ist eine Aussage ueber ZWEI Klassen – wer sie ansieht, will wissen, welche beiden.
@@ -280,11 +306,13 @@ export function useJavaGraph() {
     // --- Hover-Fokus (Graph) ------------------------------------------------------------------
     hoveredNode,
     hoverPalette,
-    // Palette und Knoten immer zusammen setzen: eine Farbzuordnung ohne den Knoten, zu dem sie
-    // gehoert, waere ein Zustand, den niemand mehr aufloest.
-    setHoveredNode(nodeId, palette = null) {
+    hoverAnchor,
+    // Palette, Anker und Knoten immer zusammen setzen: eine Farbzuordnung ohne den Knoten, zu dem
+    // sie gehoert, waere ein Zustand, den niemand mehr aufloest – fuer den Anker gilt dasselbe.
+    setHoveredNode(nodeId, palette = null, anchor = null) {
       hoveredNode.value = nodeId
       hoverPalette.value = nodeId ? palette : null
+      hoverAnchor.value = nodeId ? anchor : null
     },
     hoveredEdge,
     setHoveredEdge(payload) {
@@ -292,6 +320,8 @@ export function useJavaGraph() {
     },
     // --- Angeklickte Kante (Detail rechts offen) ----------------------------------------------
     pinnedEdge,
+    pinCovers,
+    samePair,
     setPinnedEdge(payload) {
       // Referenzgleichheit pruefen: der Graph setzt den Pin aus einem watchEffect ueber dem
       // Layout, und ein unveraenderter Wert wuerde sonst jede Karte und jede Kante ihre Daempfung

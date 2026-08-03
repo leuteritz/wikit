@@ -112,21 +112,47 @@ const selectedFile = computed(() => files.value.find((f) => f.id === selectedFil
 // Der Graph rechnet, diese Ansicht zeigt. Das Detail oeffnet SOFORT (mit dem, was ohne Request
 // bekannt ist) und meldet sich waehrend des Ladens erneut – deshalb kommen hier mehrere Meldungen
 // zu einem Klick, und nur die erste darf Platz nehmen.
+// Eine VORSCHAU (`preview`) ist dasselbe Panel, nur weil die Maus gerade darauf zeigt. Sie darf
+// deshalb zwei Dinge nicht: sich Spaltenbreite leihen (das Layout waehrend eines Hovers umzustellen
+// waere eine Bewegung, die niemand ausgeloest hat) und den Umschalter dauerhaft umlegen. Der Reiter
+// wird nur voruebergehend nach vorn geholt und danach genau dorthin zurueckgestellt, wo er stand.
+let tabBeforePreview = null
+let lastPick = 0
 function onRelation(payload) {
   const wasOpen = !!relation.value
   relation.value = payload
   if (!payload) {
     detailTab.value = 'class'
+    tabBeforePreview = null
     releaseFocus()
     return
   }
+  // Gewaehlt oder bloss angeschaut? Steigt der Zaehler, war es ein Klick – dann bleibt die
+  // Beziehung vorn, auch wenn zuvor der Klassen-Reiter offen war.
+  const picked = payload.pick !== lastPick
+  lastPick = payload.pick ?? lastPick
+  if (payload.preview) {
+    if (tabBeforePreview === null) tabBeforePreview = detailTab.value
+    detailTab.value = 'relation'
+    return
+  }
+  // Vorschau vorbei, ohne dass jemand geklickt hat -> zurueck auf den gemerkten Reiter.
+  if (!picked && tabBeforePreview !== null) {
+    detailTab.value = tabBeforePreview
+    tabBeforePreview = null
+    return
+  }
+  tabBeforePreview = null
   detailTab.value = 'relation'
-  if (wasOpen) return
+  if (wasOpen && !picked) return
   // Zwei Codebloecke uebereinander (Definition + Aufrufstelle) brauchen Breite – dieselbe geliehene
-  // Aufteilung wie beim Sprung aus der globalen Suche, samt Rueckgabe beim Schliessen. Und der
-  // Graph muss seinen Ausschnitt nachziehen, weil ihm dabei ein knappes Viertel Flaeche fehlt.
-  focusRight()
-  refitGraphSoon(300)
+  // Aufteilung wie beim Sprung aus der globalen Suche, samt Rueckgabe beim Schliessen. Ein Klick auf
+  // eine Nachbarkarte laeuft ueber `selectFile`, und das gibt die Breite zuerst zurueck – deshalb
+  // wird sie hier auch dann wieder geliehen, wenn schon eine Beziehung offen war.
+  // Die Kamera zieht nur beim ERSTEN Mal nach: sonst faehrt sie bei jedem Schritt entlang der
+  // Kanten neu, obwohl sich an der Flaeche nichts mehr aendert.
+  const grew = focusRight()
+  if (grew && !wasOpen) refitGraphSoon(300)
 }
 
 // ×/ESC/Klick ins Leere: fertig mit der Beziehung. Der Zustand liegt im Graphen (dort entsteht er),

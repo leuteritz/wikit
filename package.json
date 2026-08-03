@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.0.0",
-  "whatsNew": "One search for classes, relations and roles",
+  "version": "4.1.0",
+  "whatsNew": "Hover a neighbour to read that one relation",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

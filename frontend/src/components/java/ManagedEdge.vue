@@ -145,15 +145,25 @@ const openTitle = computed(() =>
 const {
   hoveredNode,
   hoverPalette,
+  hoverAnchor,
   hoveredEdge,
   setHoveredEdge,
   clearHoveredEdge,
   pinnedEdge,
+  pinCovers,
+  samePair,
   graphQuery,
   graphHitNodes,
   labelObstacleVersion,
   freeLabelY,
 } = useJavaGraph()
+
+// Verbindet diese Kante den gehoverten Knoten mit dem Anker (der rechts offenen Klasse)?
+const isAnchorPair = computed(() => {
+  const a = hoverAnchor.value
+  const h = hoveredNode.value
+  return !!a && !!h && samePair(a, h, d.value.sourceId, d.value.targetId)
+})
 
 // Knoten-Hover: die Linie traegt die Identitaetsfarbe des Nachbarn an ihrem ANDEREN Ende – genau
 // die Farbe, die dort auch die Karte traegt (Palette: `neighbourPalette` in JavaDependencyGraph).
@@ -203,8 +213,9 @@ const edgeColor = computed(() => neighbourColor.value || kindColor.value)
 const isHovered = computed(() => hoveredEdge.value?.id === props.id)
 // Angeklickt = ihr Detail steht rechts offen. Dieselbe Wirkung wie der Hover, nur bleibend – der
 // Blick wandert zwischen Code und Bild hin und her, und die Linie muss beim Zurueckschauen noch
-// dieselbe sein.
-const isPinned = computed(() => pinnedEdge.value?.id === props.id)
+// dieselbe sein. Ein Klick auf eine KARTE pinnt die ganze Verbindung, also womoeglich mehrere
+// Linien – welche gemeint sind, entscheidet `pinCovers` (eine Regel, s. useJavaGraph).
+const isPinned = computed(() => pinCovers(pinnedEdge.value, props.id, d.value.sourceId, d.value.targetId))
 
 // Hover-ABSICHT, nicht blosse Beruehrung: wer die Maus quer ueber ein dichtes Kantenfeld zieht,
 // streift Dutzende Trefferflaechen und liess dabei den halben Graphen im Stroboskop auf- und
@@ -236,6 +247,9 @@ onUnmounted(() => clearTimeout(hoverTimer))
 
 const dimmed = computed(() => {
   const h = hoveredNode.value
+  // Anker gesetzt (offene Klasse + der gehoverte Knoten haengt an ihr): dann ist EINE Verbindung
+  // gemeint, nicht eine Nachbarschaft – es bleiben nur die Linien zwischen genau diesen beiden.
+  if (h && hoverAnchor.value) return !isAnchorPair.value
   if (h) return d.value.sourceId !== h && d.value.targetId !== h
   // Steht die Maus auf einer anderen Kante, tritt diese hier zurueck – sonst bliebe die
   // hervorgehobene Beziehung in einem dichten Graphen genauso unlesbar wie vorher.
@@ -265,8 +279,10 @@ const pathStyle = computed(() => {
   const tint = neighbourColor.value ? { stroke: neighbourColor.value } : null
   // Direkt gehoverte oder angeklickte Kante: kraeftiger als der blosse Nachbarschafts-Fokus. Der
   // Schein kommt NICHT von `filter: drop-shadow` (s. .me-glow unten), sondern von zwei breiteren
-  // Pfaden darunter.
-  if (isHovered.value || isPinned.value) return { ...base, opacity: 1, strokeWidth: (base.strokeWidth || 2) + 1.4 }
+  // Pfaden darunter. Die Linie zwischen offener Klasse und gehovertem Nachbarn zaehlt genauso: sie
+  // IST in diesem Moment die Frage, nicht bloss eine von zwanzig Linien am selben Knoten.
+  if (isHovered.value || isPinned.value || isAnchorPair.value)
+    return { ...base, ...tint, opacity: 1, strokeWidth: (base.strokeWidth || 2) + 1.4 }
   // Suchtreffer: kraeftig wie eine gehoverte Kante, aber ohne deren Extra-Breite – bei zwanzig
   // Treffern gleichzeitig waere das ein Balkenbild.
   if (isFindHit.value) return { ...base, ...tint, opacity: 1, strokeWidth: (base.strokeWidth || 2) + 0.7 }
@@ -287,7 +303,9 @@ const pathStyle = computed(() => {
 const tinted = computed(() => !!neighbourColor.value && !dimmed.value)
 
 const baseWidth = computed(() => Number(d.value.edgeStyle?.strokeWidth) || 2)
-const glowing = computed(() => isHovered.value || isPinned.value || !!d.value.isHighlighted || isFindHit.value)
+const glowing = computed(
+  () => isHovered.value || isPinned.value || isAnchorPair.value || !!d.value.isHighlighted || isFindHit.value,
+)
 // Nur die „aufleuchtende" Kante (Code-Tab-Klick) pulsiert – beim Hover waere Bewegung unruhig,
 // und bei der angeklickten Kante erst recht: ihr Detail steht minutenlang offen.
 const pulsing = computed(() => !!d.value.isHighlighted && !isHovered.value && !isPinned.value)
@@ -334,7 +352,7 @@ const pulsing = computed(() => !!d.value.isHighlighted && !isHovered.value && !i
   <!-- Laufender Punkt auf der gehoverten Kante: zeigt die RICHTUNG der Beziehung, die aus einer
        ruhenden Linie mit Pfeilspitze allein nur schwer abzulesen ist. Nur EINE Kante ist je
        gehovert -> genau eine Animation, unabhaengig von der Graph-Groesse. -->
-  <circle v-if="isHovered" class="me-flow" :r="3.5 * rootScale" :fill="edgeColor">
+  <circle v-if="isHovered || isAnchorPair" class="me-flow" :r="3.5 * rootScale" :fill="edgeColor">
     <animateMotion dur="1.4s" repeatCount="indefinite" :path="edgePath" />
   </circle>
 
@@ -345,7 +363,7 @@ const pulsing = computed(() => !!d.value.isHighlighted && !isHovered.value && !i
       class="me-label me-label--agg"
       :class="{
         'me-label--dim': dimmed,
-        'me-label--hot': isHovered || isPinned,
+        'me-label--hot': isHovered || isPinned || isAnchorPair,
         'me-label--pinned': isPinned,
         'me-label--find': isFindHit && !isHovered,
         'me-label--tint': tinted,
@@ -391,7 +409,7 @@ const pulsing = computed(() => !!d.value.isHighlighted && !isHovered.value && !i
         'me-label--selected': selected,
         'me-label--lit': d.isHighlighted,
         'me-label--dim': dimmed,
-        'me-label--hot': isHovered || isPinned,
+        'me-label--hot': isHovered || isPinned || isAnchorPair,
         'me-label--pinned': isPinned,
         'me-label--find': isFindHit && !isHovered,
         'me-label--tint': tinted,
