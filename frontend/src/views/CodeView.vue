@@ -31,6 +31,7 @@ import { detectJavaClasses } from '../lib/javaDetect.js'
 import { formatEta, formatDuration } from '../lib/format.js'
 import { isTypingTarget } from '../lib/shortcuts.js'
 import { codeState, patchCodeState, clearCodeState } from '../lib/codeState.js'
+import { parseGraphQuery, queryFiles, QUERY_FACETS, GRAPH_QUERY_HELP } from '../lib/graphQuery.js'
 
 const { files, loading: filesLoading, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFileId, lastTargetLine, lastTargetEndLine, lastSearchQuery, lastSearchOpts, openAddCode, deleteFile, resetAll } =
   useJavaAnalyzer()
@@ -38,7 +39,9 @@ const { files, loading: filesLoading, fetchFiles, analyzeBatch, analyzing, error
 const filesStartedAt = ref(Date.now())
 const { summary: queueSummary, enqueueMany, enqueueAllUnanalyzed, cancelJob, cancelAllJobs, progressFor, ensurePolling } =
   useJavaQueue()
-const { recomputeEdges, recomputing, recomputeProgress, resetEdges } = useJavaGraph()
+// `edges` sind die gespeicherten Klassenbeziehungen: die Suche beantwortet `m:`/`review:`/`manual:`
+// daraus (s. queryFiles) – aus dem BESTAND, nicht aus dem gerade gezeichneten Ausschnitt.
+const { edges: serverEdges, recomputeEdges, recomputing, recomputeProgress, resetEdges } = useJavaGraph()
 const { push, clearAll: clearNotifications } = useNotifications()
 // Verschiebbare Spaltenbreiten des 3-Spalten-Layouts (Drag-to-Resize + Reset).
 const {
@@ -57,9 +60,13 @@ const {
 const source = ref('')
 const filename = ref('')
 const inputMode = ref('paste') // 'paste' = Editor | 'file' = .java-Datei(en) hochladen
-// Ziele der Tastenkuerzel: Filterfeld (/), Graph (0, Alt+←, Ctrl+Shift+F) sowie Klassen- bzw.
+// Ziele der Tastenkuerzel: Suchfeld (/, Ctrl+Shift+F), Graph (0, Alt+←) sowie Klassen- bzw.
 // Kanten-Panel (Ctrl+F). Sie liegen hier, weil CodeView die Kuerzel routet – s. onKeydown.
 const filterInput = ref(null)
+function focusFilter() {
+  filterInput.value?.focus()
+  filterInput.value?.select()
+}
 const graphRef = ref(null)
 const detailRef = ref(null)
 // --- Der Arbeitsstand ueberlebt den Reload ----------------------------------------------------
@@ -365,17 +372,17 @@ function onKeydown(e) {
 
   // --- Suchen: EINE Regel, an EINER Stelle ----------------------------------------------------
   // Ctrl+F trifft, was im Blick ist: steht eine Beziehung vorn, deren Code; sonst die offene
-  // Klasse; sonst der Graph. Die Beziehung geht vor, weil sie den Klassen-Reiter gerade verdeckt –
-  // eine Suche in etwas, das man nicht sieht, waere die falsche Antwort auf denselben Tastendruck.
-  // Ctrl+Shift+F meint immer den Graphen. `preventDefault` schaltet dabei Chromes eigene Suche ab –
-  // die faende im virtualisierten Editor ohnehin nur den sichtbaren Ausschnitt und im Graphen
-  // (SVG/Canvas-Karten) praktisch nichts.
+  // Klasse; sonst die Suche links (Klassen, Packages, Beziehungen). Die Beziehung geht vor, weil
+  // sie den Klassen-Reiter gerade verdeckt – eine Suche in etwas, das man nicht sieht, waere die
+  // falsche Antwort auf denselben Tastendruck. Ctrl+Shift+F meint immer die Suche links.
+  // `preventDefault` schaltet dabei Chromes eigene Suche ab – die faende im virtualisierten Editor
+  // ohnehin nur den sichtbaren Ausschnitt und im Graphen (SVG/Canvas-Karten) praktisch nichts.
   if (mod && key === 'f' && !e.altKey) {
     e.preventDefault()
-    if (e.shiftKey) graphRef.value?.focusFind?.()
+    if (e.shiftKey) focusFilter()
     else if (relationSearchable.value) edgeDetailRef.value?.focusSearch?.()
     else if (detailRef.value?.isReady?.()) detailRef.value.focusSearch()
-    else graphRef.value?.focusFind?.()
+    else focusFilter()
     return
   }
 
@@ -388,12 +395,11 @@ function onKeydown(e) {
     return
   }
 
-  // `/` springt in den Klassenfilter (wie in GitHub/GitLab). Ohne Modifier – deshalb erst hier,
-  // hinter der Tipp-Pruefung.
+  // `/` springt in die Suche (wie in GitHub/GitLab). Ohne Modifier – deshalb erst hier, hinter der
+  // Tipp-Pruefung.
   if (e.key === '/') {
     e.preventDefault()
-    filterInput.value?.focus()
-    filterInput.value?.select()
+    focusFilter()
     return
   }
   // `0` passt den Graphen ins Bild.
@@ -444,9 +450,64 @@ const classCount = computed(() => files.value.length)
 const packageCount = computed(() => new Set(files.value.map((f) => f.package || '(default)')).size)
 const analyzedCount = computed(() => files.value.filter((f) => f.description).length)
 
-// --- Package-Baum (gefiltert) -> flache Zeilenliste fuer iteratives Rendern ---
-const filteredFiles = computed(() => filterClasses(files.value, appliedSearch.value))
-const searching = computed(() => appliedSearch.value.trim().length > 0)
+// --- Die EINE Suche der Ansicht ---------------------------------------------------------------
+// Ein Feld, eine Trefferliste, drei Darstellungen: der Baum zeigt sie, der Graph zeichnet sie samt
+// Umgebung, und dort sind sie markiert. Frueher war das zweierlei (Filter hier, zweites Feld im
+// Bild) – zwei Antworten auf dieselbe Frage, die bei einem Fuzzy-Treffer sichtbar auseinanderliefen.
+//
+// Gelesen wird die Abfrage in lib/graphQuery.js: `parseGraphQuery` versteht die Facetten,
+// `queryFiles` beantwortet sie ueber den Bestand. Zwei Faelle bleiben hier:
+//   * `scope: 'names'` – freier Text. Die Klassen sucht `filterClasses` (Rang + Fuzzy), weil ein
+//     Tippfehler sonst kein Ergebnis haette.
+//   * `scope: 'picture'` – `r:`. Nur der Graph kennt Rollen; er meldet seine Treffer (`find-result`),
+//     der Baum filtert darauf, und das Bild bleibt stehen (s. `graphMatchIds`).
+const parsedQuery = computed(() => parseGraphQuery(appliedSearch.value))
+const queryResult = computed(() =>
+  queryFiles({ files: files.value, serverEdges: serverEdges.value }, parsedQuery.value),
+)
+// Treffer, die nur der gezeichnete Graph bestimmen kann (`r:`).
+const pictureIds = ref([])
+function onFindResult(ids) {
+  pictureIds.value = ids || []
+}
+const filteredFiles = computed(() => {
+  const q = parsedQuery.value
+  if (!q) return files.value
+  const { fileIds, scope } = queryResult.value
+  if (scope === 'picture') {
+    const ids = new Set(pictureIds.value)
+    return files.value.filter((f) => ids.has(f.id))
+  }
+  if (fileIds) return files.value.filter((f) => fileIds.has(f.id))
+  return filterClasses(files.value, q.term)
+})
+// „Es wird gesucht" heisst: die Eingabe IST eine Abfrage. Ein angefangenes `m:` ohne Begriff ist
+// keine – sonst stuende „0 of 25 match", waehrend der Nutzer noch tippt.
+const searching = computed(() => !!parsedQuery.value)
+// Kanten sind bei `m:`/`review:`/`manual:` das eigentliche Ergebnis – die Klassenzahl allein
+// verschwiege, wie viele Beziehungen dahinterstehen.
+const queryEdges = computed(() => queryResult.value.edges)
+
+// --- Bedienung des Feldes ---------------------------------------------------------------------
+// Die Facetten stehen nicht in einem Tooltip, den niemand oeffnet: sie erscheinen im leeren,
+// fokussierten Feld und tragen sich per Klick selbst ein (dieselbe Bauart wie in SearchPalette).
+const searchFocused = ref(false)
+function applyFacet(prefix) {
+  search.value = prefix
+  filterInput.value?.focus()
+}
+// Von Treffer zu Treffer faehrt der GRAPH – er hat die Kamera. Hier liegt nur die Taste.
+function stepMatch(delta) {
+  graphRef.value?.stepFind?.(delta)
+}
+const hasMatches = computed(() => searching.value && (filteredFiles.value.length > 0 || queryEdges.value > 0))
+// Esc im Feld leert die Suche. `stop`, weil ESC sonst zugleich die offene Beziehung schliesst –
+// zwei Wirkungen auf einen Tastendruck, von denen man nur eine gemeint hat.
+function onSearchEsc(e) {
+  if (!search.value) return
+  e.stopPropagation()
+  search.value = ''
+}
 // Bei aktiver Suche steht JEDER Treffer-Ordner offen (s. folderOpen) – „a" in einer Codebasis mit
 // tausenden Klassen hiesse also tausende Zeilen, jede mit eigenen Icon-Komponenten. Das rendert
 // niemand mehr, und lesen kann man es auch nicht. Der Baum zeigt deshalb die ersten Treffer und
@@ -505,8 +566,18 @@ watch([searching, filteredFiles], ([on, list]) => {
   clearTimeout(graphSearchTimer)
   if (!on) {
     egoOverride = null
+    pictureIds.value = []
     graphMatchIds.value = []
     graphQuery.value = ''
+    return
+  }
+  // `r:` fragt das BILD: der Graph markiert und meldet, was er gefunden hat – gezeichnet wird
+  // nichts Neues. Traege er die Treffer auch als Ausschnitt, liefe es im Kreis (anderer Ausschnitt
+  // -> andere Rollen -> andere Treffer). Ohne Verzoegerung, weil kein Layout entsteht.
+  if (queryResult.value.scope === 'picture') {
+    egoOverride = null
+    graphMatchIds.value = []
+    graphQuery.value = appliedSearch.value
     return
   }
   // Der Sprung hat den Graphen bereits auf diese eine Klasse gestellt – der Filter, den er dabei
@@ -1382,10 +1453,12 @@ function onResetPanels() {
     >
       <!-- Spalte 1: Suche + Package-Tree -->
       <section class="flex min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]">
-        <div class="shrink-0 border-b border-[var(--color-border)] p-2">
-          <!-- Filter + Falt-Umschalter in EINER Zeile: der Knopf wirkt auf den ganzen Baum, gehoert
-               also neben dessen Kopf – aber eine eigene Zeile ist er nicht wert. Als Icon in
-               Feldhoehe steht er da, wo man ihn sucht, ohne dem Baum Platz wegzunehmen. -->
+        <div class="relative z-20 shrink-0 border-b border-[var(--color-border)] p-2">
+          <!-- DIE Suche der Ansicht: sie filtert diesen Baum, stellt den Graphen auf die Treffer
+               und markiert sie dort. Im Graphen stand dafuer frueher ein zweites Feld – zwei
+               Eingaben fuer dieselbe Frage, von denen man die richtige erst kennen musste.
+               Falt-Umschalter in DERSELBEN Zeile: er wirkt auf den ganzen Baum, gehoert also neben
+               dessen Kopf – aber eine eigene Zeile ist er nicht wert. -->
           <div class="flex items-center gap-1.5">
             <div class="relative min-w-0 flex-1">
               <Icon icon="lucide:search" class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]" />
@@ -1393,14 +1466,20 @@ function onResetPanels() {
                 ref="filterInput"
                 v-model="search"
                 type="text"
-                placeholder="Filter classes…  /"
+                spellcheck="false"
+                placeholder="Search classes…  /"
+                :title="GRAPH_QUERY_HELP"
                 class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 pl-8 pr-7 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
+                @focus="searchFocused = true"
+                @blur="searchFocused = false"
+                @keydown.enter.prevent="stepMatch($event.shiftKey ? -1 : 1)"
+                @keydown.esc="onSearchEsc"
               />
               <button
                 v-if="search"
                 type="button"
                 class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
-                title="Clear filter"
+                title="Clear search (Esc)"
                 @click="search = ''"
               >
                 <Icon icon="lucide:x" class="h-3.5 w-3.5" />
@@ -1422,15 +1501,64 @@ function onResetPanels() {
               <Icon :icon="anyFolderOpen ? 'lucide:fold-vertical' : 'lucide:unfold-vertical'" class="h-4 w-4" />
             </button>
           </div>
+          <!-- Facetten: erscheinen im leeren, fokussierten Feld und tragen sich per Klick selbst
+               ein. In einem Tooltip wuerde sie niemand finden. Sie liegen UEBER dem Baum, nicht im
+               Fluss darueber: sonst rutschte er bei jedem Klick ins Feld um ihre Hoehe nach unten. -->
+          <div
+            v-if="searchFocused && !search"
+            class="absolute left-2 right-2 top-full z-30 flex flex-wrap items-center gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1.5 shadow-lg"
+          >
+            <span class="font-mono text-3xs uppercase tracking-[0.12em] text-[var(--color-text-muted)]">Narrow it down</span>
+            <button
+              v-for="f in QUERY_FACETS"
+              :key="f.prefix"
+              type="button"
+              class="flex items-center gap-1 rounded-full border border-[var(--color-border)] px-2 py-0.5 text-3xs text-[var(--color-text-muted)] transition hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
+              @mousedown.prevent="applyFacet(f.prefix)"
+            >
+              <code class="font-mono text-[var(--color-accent)]">{{ f.prefix }}</code>{{ f.label }}
+            </button>
+          </div>
           <!-- Trefferbilanz. Ist die Liste gedeckelt, steht es DANEBEN – ein Baum, der nur einen
-               Teil zeigt, darf nicht aussehen wie das vollstaendige Ergebnis. -->
+               Teil zeigt, darf nicht aussehen wie das vollstaendige Ergebnis. Kanten stehen dabei,
+               wo sie die eigentliche Antwort sind (`m:`, `review:`, `manual:`). -->
           <p v-if="searching" class="mt-1.5 flex items-center gap-1.5 px-1 font-mono text-3xs text-[var(--color-text-muted)]">
-            <span>{{ filteredFiles.length }} of {{ classCount }} match</span>
+            <!-- „classes" und „relations" ausschreiben: die Leiste im Graphen zaehlt daneben die
+                 Beziehungen des AUSSCHNITTS. Zwei Zahlen unter demselben Wort waeren eine
+                 Verwechslung, die niemand aufloest. -->
+            <span>{{ filteredFiles.length }}/{{ classCount }} classes</span>
+            <span
+              v-if="queryEdges"
+              :title="`${queryEdges} stored relation${queryEdges === 1 ? '' : 's'} match — the classes at their ends are the list above`"
+            >· {{ queryEdges }} relation{{ queryEdges === 1 ? '' : 's' }}</span>
             <span
               v-if="treeTruncated > 0"
               class="rounded bg-[color-mix(in_srgb,var(--color-warning)_16%,transparent)] px-1 text-[var(--color-warning)]"
               :title="`Only the first ${TREE_MATCH_LIMIT} are listed – keep typing to narrow it down`"
             >first {{ TREE_MATCH_LIMIT }}</span>
+            <!-- Von Treffer zu Treffer faehrt der GRAPH. Die Knoepfe stehen in DIESER Zeile und
+                 nicht neben dem Feld: dort nahmen sie ihm ein Drittel seiner Breite, und die Zeile
+                 gibt es ohnehin nur, solange gesucht wird. -->
+            <span class="ml-auto flex shrink-0 items-center gap-0.5">
+              <button
+                type="button"
+                class="grid h-5 w-5 place-items-center rounded transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:pointer-events-none disabled:opacity-35"
+                title="Previous match (Shift+↵) — the graph moves to it"
+                :disabled="!hasMatches"
+                @click="stepMatch(-1)"
+              >
+                <Icon icon="lucide:chevron-up" class="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                class="grid h-5 w-5 place-items-center rounded transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:pointer-events-none disabled:opacity-35"
+                title="Next match (↵) — the graph moves to it"
+                :disabled="!hasMatches"
+                @click="stepMatch(1)"
+              >
+                <Icon icon="lucide:chevron-down" class="h-3.5 w-3.5" />
+              </button>
+            </span>
           </p>
         </div>
 
@@ -1533,6 +1661,11 @@ function onResetPanels() {
             <template v-if="searching">
               <Icon icon="lucide:search" class="mx-auto mb-2 h-6 w-6 text-[var(--color-text-muted)] opacity-40" />
               <p class="text-xs text-[var(--color-text-muted)]">No class matches “{{ appliedSearch }}”.</p>
+              <!-- `r:` fragt den gezeichneten Graphen. Zeigt der gerade Packages, gibt es dort keine
+                   Rollen zu finden – ohne diesen Satz sieht das aus wie „es gibt keine Hubs". -->
+              <p v-if="queryResult.scope === 'picture'" class="mt-1.5 text-3xs text-[var(--color-text-muted)]">
+                A role belongs to a class in the drawn graph — open a package or switch to Classes.
+              </p>
             </template>
             <!-- Ohne Klassen ist „Add code" die einzige sinnvolle Handlung – und seit die
                  Startseite ihre Drop-Zone abgegeben hat, ist dies der Ort, an dem man sie erwartet.
@@ -1582,6 +1715,7 @@ function onResetPanels() {
           @navigate="onGraphNavigate"
           @pane-click="releaseFocus"
           @clear-search="search = ''"
+          @find-result="onFindResult"
           @relation="onRelation"
         />
       </div>

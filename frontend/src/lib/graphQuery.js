@@ -1,10 +1,17 @@
-// Suche IM gezeichneten Graphen. REINE Funktionen (testbar) – die Verdrahtung liegt in
-// JavaDependencyGraph (Knoten, Suchfeld) und ManagedEdge (Kanten).
+// Die Abfragesprache der Code-Ansicht. REINE Funktionen (testbar) – die Verdrahtung liegt in
+// CodeView (das Suchfeld, der Baum), JavaDependencyGraph (Knoten) und ManagedEdge (Kanten).
 //
-// Bewusst etwas anderes als der Klassenfilter der linken Spalte: DER bestimmt, was ueberhaupt
-// gezeichnet wird (und rechnet dafuer ein neues Layout). Diese Suche laesst das Bild unveraendert
-// und beantwortet „wo ist das hier drin?" – deshalb kostet sie keinen dagre-Lauf und die Karten
-// springen beim Tippen nicht.
+// Es gibt genau EINE Suche: das Feld links im Kopf der Klassenliste. Sie filtert den Baum, stellt
+// den Graphen auf die Treffer samt Umgebung und markiert sie dort. Frueher war das zweierlei – ein
+// Filter links und ein zweites Feld im Bild –, und beide beantworteten dieselbe Frage
+// unterschiedlich: der Filter unscharf (Rang + Fuzzy), das Bild woertlich. Bei einem
+// Tippfehler-Treffer zeichnete der Graph deshalb Karten, die er selbst nicht markierte.
+//
+// `parseGraphQuery` liest die Eingabe, `queryFiles` beantwortet sie ueber den BESTAND (Klassen und
+// gespeicherte Kanten), `matchNode`/`matchEdge` beantworten sie im BILD. Der Unterschied ist keine
+// Geschmacksfrage: eine Rolle (`r:`) entsteht erst im gezeichneten Ausschnitt – siehe `queryFiles`.
+
+import { indexFilesByName, resolveClassByName, endsOf } from './packageGraph.js'
 
 // Praefixe: ein Buchstabe + Doppelpunkt. Kurz genug, um sie zu tippen, statt sie zu suchen.
 const FIELD_BY_PREFIX = {
@@ -19,9 +26,21 @@ const FIELD_BY_PREFIX = {
 const FLAGS = new Set(['review', 'manual'])
 
 export const GRAPH_QUERY_HELP =
-  'Find in the drawn graph: type any name (class, package or called method). ' +
-  'Prefixes narrow it down — m: method, c: class, p: package, t: type (interface, enum, data…), ' +
-  'r: role (hub, provider, consumer). review: shows every uncertain edge, manual: every hand-made one.'
+  'Search classes, packages and relations: type any name and the list, the graph and its highlights ' +
+  'follow it. Prefixes narrow it down — m: method, c: class, p: package, t: type (interface, enum, ' +
+  'data…), r: role (hub, provider, consumer — within the drawn graph). review: shows every uncertain ' +
+  'edge, manual: every hand-made one.'
+
+// Die Facetten als Liste: EINE Quelle für die Chips unter dem Suchfeld und die Hilfe darüber.
+export const QUERY_FACETS = [
+  { prefix: 'c:', label: 'class' },
+  { prefix: 'p:', label: 'package' },
+  { prefix: 'm:', label: 'method' },
+  { prefix: 't:', label: 'type' },
+  { prefix: 'r:', label: 'role' },
+  { prefix: 'review:', label: 'uncertain edges' },
+  { prefix: 'manual:', label: 'hand-made edges' },
+]
 
 /**
  * Eingabe -> Abfrage oder null (leer / nur ein Praefix ohne Begriff).
@@ -81,6 +100,78 @@ export function matchNode(data, q) {
     default:
       return cls.includes(term) || pkg.includes(term)
   }
+}
+
+/** Passt eine KLASSE (Eintrag der Klassenliste) auf eine Namensfacette? */
+function matchFile(f, q) {
+  const term = q.term
+  switch (q.field) {
+    case 'class':
+      return String(f.class_name || '').toLowerCase().includes(term)
+    case 'package':
+      return String(f.package || '').toLowerCase().includes(term)
+    case 'type':
+      return String(f.stereotype || f.class_type || '').toLowerCase().includes(term)
+    default:
+      return false
+  }
+}
+
+// Server-Kante (`java_edges`) in die Form bringen, die `matchEdge` liest. Die gezeichnete Kante
+// traegt ihre Methoden gebuendelt (`methods[]`), die gespeicherte genau eine – gemeint ist beide
+// Male dasselbe, deshalb eine Uebersetzung statt einer zweiten Matcher-Fassung.
+const serverEdgeData = (e) => ({
+  method: e.method_name || '',
+  isManual: !!e.is_manual,
+  needsReview: !e.is_manual && Number(e.confidence ?? 1) < 1,
+})
+
+/**
+ * Die Abfrage gegen den BESTAND beantworten (alle Klassen, alle gespeicherten Kanten) – nicht
+ * gegen das Bild. `m: lookup` findet damit auch, was gerade nicht gezeichnet ist.
+ *
+ * @returns {{ fileIds: Set<number>|null, edges: number, scope: 'names'|'files'|'picture' }}
+ *   fileIds === null      – reine NAMENSsuche: der Aufrufer nimmt seine eigene Trefferliste
+ *                           (`filterClasses`, Rang + Fuzzy statt woertlich).
+ *   scope === 'picture'   – nur der gezeichnete Ausschnitt kann sie beantworten (`r:`, s. u.).
+ *   edges                 – wie viele gespeicherte Kanten die Abfrage trifft (Bilanz im Feld).
+ */
+export function queryFiles({ files = [], serverEdges = [] } = {}, q) {
+  if (!q) return { fileIds: null, edges: 0, scope: 'names' }
+
+  // ⚠️ `r:` ist die einzige Facette, die der Bestand NICHT beantworten kann: die Rolle einer Klasse
+  // (hub/provider/consumer/isolated) entsteht aus den Beziehungen des gezeichneten Ausschnitts.
+  // Sie global zu rechnen waere eine zweite Wahrheit neben der Karte, und den Ausschnitt danach neu
+  // zu zeichnen liefe im Kreis: neu gezeichnet -> andere Rollen -> andere Treffer.
+  if (q.field === 'role') return { fileIds: null, edges: 0, scope: 'picture' }
+
+  // Kantenfacetten: die Antwort steht in den Kanten, gefragt sind die Klassen daran.
+  if (q.flag || q.field === 'method') {
+    const index = indexFilesByName(files)
+    const resolve = (name, consumer, pkg) => resolveClassByName(index, name, consumer, pkg)
+    const fileIds = new Set()
+    let edges = 0
+    for (const e of serverEdges) {
+      if (!matchEdge(serverEdgeData(e), q)) continue
+      edges++
+      const { consumer, provider } = endsOf(e, resolve)
+      if (consumer) fileIds.add(consumer.id)
+      if (provider) fileIds.add(provider.id)
+    }
+    return { fileIds, edges, scope: 'files' }
+  }
+
+  if (q.field === 'class' || q.field === 'package' || q.field === 'type') {
+    const fileIds = new Set()
+    for (const f of files) if (matchFile(f, q)) fileIds.add(f.id)
+    return { fileIds, edges: 0, scope: 'files' }
+  }
+
+  // Freier Text: die Klassen sucht der Aufrufer (unscharf, als Tippfehler-Netz), die Kanten werden
+  // nur gezaehlt – sonst zoege ein Methodenname stillschweigend fremde Klassen in die Trefferliste.
+  let edges = 0
+  for (const e of serverEdges) if (matchEdge(serverEdgeData(e), q)) edges++
+  return { fileIds: null, edges, scope: 'names' }
 }
 
 /** Passt eine KANTE auf die Abfrage? */

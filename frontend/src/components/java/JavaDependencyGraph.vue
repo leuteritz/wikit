@@ -41,7 +41,7 @@ import {
   resolveClassByName,
 } from '../../lib/packageGraph.js'
 import { layoutFlat, layoutClustered, layoutRadial } from '../../lib/graphLayout.js'
-import { parseGraphQuery, matchNode, matchEdge, GRAPH_QUERY_HELP } from '../../lib/graphQuery.js'
+import { parseGraphQuery, matchNode, matchEdge } from '../../lib/graphQuery.js'
 import { codeState, patchCodeState } from '../../lib/codeState.js'
 import BusyState from '../BusyState.vue'
 // Kanten-Detail und Aggregat-Aufloesung rendert CodeView in Spalte 3 – der Graph rechnet sie nur
@@ -79,7 +79,10 @@ const props = defineProps({
 //   null – nichts offen
 // Die zwei Funktionen im Bundle-Payload sind dieselbe Bauart wie `data.onOpen` an den Kanten:
 // die Rechnung bleibt dort, wo ihre Daten liegen, und wandert nicht in die View.
-const emit = defineEmits(['select', 'clear-search', 'navigate', 'pane-click', 'relation'])
+// `find-result` = „das habe ICH gefunden" – nur fuer `r:` (Rolle): sie entsteht erst in diesem
+// Ausschnitt, also kann die Klassenliste links sie nicht selbst beantworten und filtert auf diese
+// Meldung (s. lib/graphQuery.js -> queryFiles).
+const emit = defineEmits(['select', 'clear-search', 'navigate', 'pane-click', 'relation', 'find-result'])
 
 const { theme } = useTheme()
 // `viewport` wird fuer den Zonen-Layer gebraucht: er liegt HINTER dem Canvas und muss dessen
@@ -1464,34 +1467,31 @@ const edges = computed(() => {
   })
 })
 
-// --- Suche IM gezeichneten Graphen ------------------------------------------------------------
-// Unterschied zum Klassenfilter der linken Spalte: DER bestimmt, was gezeichnet wird, und rechnet
-// dafuer ein Layout. Diese Suche laesst das Bild stehen und beantwortet „wo ist das hier drin?" –
-// sie setzt nur Treffer-/Daempfungs-Klassen, kostet also keinen dagre-Lauf, und nichts springt.
-// Die Kanten pruefen sich selbst (ManagedEdge liest den Zustand aus dem Composable), damit bei
-// jedem Tastendruck nicht der komplette Kanten-Store neu geschrieben wird.
-const findInput = ref(saved.find || '')
+// --- Die Suche IM Bild --------------------------------------------------------------------------
+// Die Eingabe steht links im Kopf der Klassenliste (CodeView) – hier ankommen tut sie als
+// `searchQuery`, zusammen mit der Trefferliste `matchIds`. Frueher hatte der Graph ein eigenes
+// Feld; damit gab es zwei Antworten auf dieselbe Frage, denn `matchIds` entstehen unscharf
+// (Rang + Fuzzy) und die Markierung hier woertlich. Deshalb gilt jetzt:
+//
+//   * KLASSENkarten folgen `matchIds` – dieselbe Menge, die der Baum zeigt und die der Ausschnitt
+//     zeichnet. Eine gezeichnete, aber unmarkierte Trefferkarte kann es nicht mehr geben.
+//   * Package-Aggregate und `r:` (Rolle) pruefen sich weiter selbst: ein Aggregat hat keine Datei,
+//     und die Rolle entsteht ueberhaupt erst in diesem Ausschnitt (s. lib/graphQuery.js).
+//   * Kanten pruefen sich selbst (ManagedEdge liest den Zustand aus dem Composable), damit bei
+//     jedem Tastendruck nicht der komplette Kanten-Store neu geschrieben wird.
 const findCursor = ref(0)
-const findFocused = ref(false)
-const findField = ref(null)
-const findQuery = computed(() => parseGraphQuery(findInput.value))
-
-// Praefix-Chips: machen die Facetten entdeckbar, statt sie in einem Tooltip zu verstecken.
-const FIND_HINTS = [
-  { prefix: 'm:', label: 'method' },
-  { prefix: 'c:', label: 'class' },
-  { prefix: 'p:', label: 'package' },
-  { prefix: 't:', label: 'type' },
-  { prefix: 'r:', label: 'role' },
-  { prefix: 'review:', label: 'uncertain edges' },
-  { prefix: 'manual:', label: 'hand-made edges' },
-]
+const findQuery = computed(() => parseGraphQuery(props.searchQuery))
 
 // Getroffene Karten in ZEICHENreihenfolge -> „weiter" laeuft stabil durch dasselbe Bild.
 const findNodeHits = computed(() => {
   const q = findQuery.value
   if (!q) return []
-  return nodes.value.filter((n) => matchNode(n.data, q)).map((n) => n.id)
+  return nodes.value
+    .filter((n) => {
+      const fid = n.data?.fileId
+      return fid != null && q.field !== 'role' ? matchIdSet.value.has(fid) : matchNode(n.data, q)
+    })
+    .map((n) => n.id)
 })
 const findNodeHitSet = computed(() => new Set(findNodeHits.value))
 // Eine Kante gilt als getroffen, wenn ihr Methodenname passt ODER sie zwei Treffer verbindet –
@@ -1512,38 +1512,37 @@ const findEdgeEnds = computed(() => {
   }
   return s
 })
-const findTotal = computed(() => findNodeHits.value.length + findEdgeHits.value.length)
-const findCounter = computed(() => {
-  if (!findQuery.value) return ''
-  const n = findNodeHits.value.length
-  const e = findEdgeHits.value.length
-  if (!n && !e) return 'No match'
-  const parts = []
-  if (n) parts.push(`${n} class${n === 1 ? '' : 'es'}`)
-  if (e) parts.push(`${e} edge${e === 1 ? '' : 's'}`)
-  return parts.join(' · ')
-})
 // Ist eine Karte vom aktuellen Fund betroffen (selbst getroffen oder Endpunkt einer Treffer-Kante)?
 function isFindHit(nodeId) {
   return findNodeHitSet.value.has(nodeId) || findEdgeEnds.value.has(nodeId)
 }
 
-// Zustand nach unten reichen: die Kanten lesen ihn selbst. `immediate`, weil das Feld beim Mount
-// bereits gefuellt sein kann (gemerkte Bildsuche) – und weil der geteilte Zustand aus einem
-// frueheren Mount sonst stehenbliebe (useJavaGraph ist ein Modul-Singleton).
-watch(findInput, (v) => setGraphQuery(v), { immediate: true })
+// Zustand nach unten reichen: die Kanten lesen ihn selbst. `immediate`, weil die Ansicht mit einer
+// gemerkten Suche startet – und weil der geteilte Zustand aus einem frueheren Mount sonst
+// stehenbliebe (useJavaGraph ist ein Modul-Singleton).
+watch(() => props.searchQuery, (v) => setGraphQuery(v), { immediate: true })
 watch(findNodeHits, (ids) => setGraphHitNodes(ids), { immediate: true })
 
+// `r:` (Rolle) ist die einzige Facette, die nur DIESER Ausschnitt beantworten kann – die Klassen
+// dazu kennt die linke Spalte nicht. Also meldet der Graph seine Treffer nach oben, und der Baum
+// filtert darauf (Begruendung in lib/graphQuery.js).
+watch([findNodeHits, findQuery], ([ids, q]) => {
+  if (q?.field !== 'role') return
+  emit(
+    'find-result',
+    ids.map((id) => nodes.value.find((n) => n.id === id)?.data?.fileId).filter((v) => v != null),
+  )
+})
+
 // --- Den Ausschnitt merken --------------------------------------------------------------------
-// Alles, was AM GRAPHEN den Ausschnitt ausmacht, in einem Zug: Ebene, aufgeklappte Klassen,
-// Kontextstufe samt aufgeklappten Nachbar-Packages und die Suche im Bild. Der Klassenfilter und
-// die geoeffnete Klasse kommen aus CodeView in denselben Schluessel (s. lib/codeState.js).
+// Alles, was AM GRAPHEN den Ausschnitt ausmacht, in einem Zug: Ebene, aufgeklappte Klassen und
+// Kontextstufe samt aufgeklappten Nachbar-Packages. Die Suche und die geoeffnete Klasse kommen aus
+// CodeView in denselben Schluessel (s. lib/codeState.js).
 // Kein `immediate`: beim Mount steht dort bereits genau das, was hier gerade gelesen wurde.
-watch([zoomPath, showClasses, contextOverride, contextExpanded, findInput], () =>
+watch([zoomPath, showClasses, contextOverride, contextExpanded], () =>
   patchCodeState({
     path: zoomPath.value,
     classes: showClasses.value,
-    find: findInput.value,
     context: { budget: contextOverride.value, expanded: [...contextExpanded.value] },
   }),
 )
@@ -1571,34 +1570,20 @@ function stepFind(delta) {
     duration: 320,
   })
 }
-function clearFind() {
-  findInput.value = ''
-  findCursor.value = 0
-  findField.value?.blur()
-}
-function applyHint(prefix) {
-  findInput.value = prefix
-  findField.value?.focus()
-}
-
-// Tastatur-Zugriff von aussen (CodeView routet die Kuerzel – EIN Handler, EINE Regel).
-// Bewusst Methoden statt eines Props: „fokussiere jetzt" ist ein Ereignis, kein Zustand; als
-// Prop braeuchte es einen Zaehler wie bei `focusToken`, nur um dasselbe zweimal ausloesen zu koennen.
-function focusFind() {
-  findField.value?.focus()
-  findField.value?.select()
-}
+// `stepFind` wird von aussen gerufen (Enter bzw. ↑/↓ am Suchfeld in CodeView) – bewusst eine
+// Methode und kein Prop: „fahr zum naechsten Treffer" ist ein Ereignis, kein Zustand; als Prop
+// braeuchte es einen Zaehler wie bei `focusToken`, nur um dasselbe zweimal ausloesen zu koennen.
 // `fitToView` nimmt Optionen an: der Aufrufer weiss, ob er die Tastatur bedient (0 -> sofort, so
 // schnell wie ein Tastendruck) oder eine Ansicht aufraeumt (dann ein ruhiger Schwenk statt eines
 // Sprungs). Die Grundwerte bleiben dieselben, damit beide Wege denselben Ausschnitt ergeben.
 defineExpose({
-  focusFind,
+  stepFind,
   fitToView: (opts = {}) => fitView({ padding: 0.18, maxZoom: 1.15, duration: 200, ...opts }),
   drillUp,
   // Das Detail steht rechts, bedient wird es also auch von dort (× / ESC / Klick ins Leere).
   // Der Zustand bleibt trotzdem hier: er entsteht aus Kanten, Dateiliste und Ebenen-Schluesseln,
   // die CodeView gar nicht hat. Deshalb Methoden und keine Props – „schliess jetzt" bzw. „loesch
-  // diese Kante" sind Ereignisse, keine Zustaende (gleiche Begruendung wie bei `focusFind`).
+  // diese Kante" sind Ereignisse, keine Zustaende (gleiche Begruendung wie bei `stepFind`).
   closeRelation,
   closeEdgeDetail: closeEdgePanel, // nur die Einzelkante: darunter kann eine Aggregatliste stehen
   deleteRelationEdge: onDeleteEdge,
@@ -2719,62 +2704,12 @@ watch(
       </div>
     </div>
 
-    <!-- Suche IM Bild (oben rechts, die einzige freie Ecke). Sie aendert den Ausschnitt nicht –
-         sie sagt, wo im aktuellen Graphen etwas steckt, und daempft den Rest. -->
-    <div v-if="files.length" class="vf-find" :class="{ 'is-active': !!findQuery }">
-      <div class="vf-find-row">
-        <Icon icon="lucide:search" class="vf-find-icon" />
-        <input
-          ref="findField"
-          v-model="findInput"
-          type="text"
-          class="vf-find-input"
-          placeholder="Find in graph…"
-          aria-label="Find in graph"
-          spellcheck="false"
-          :title="GRAPH_QUERY_HELP"
-          @focus="findFocused = true"
-          @blur="findFocused = false"
-          @keydown.enter.prevent="stepFind($event.shiftKey ? -1 : 1)"
-          @keydown.esc.prevent="clearFind"
-        />
-        <span v-if="findQuery" class="vf-find-count" :class="{ 'is-empty': !findTotal }">{{ findCounter }}</span>
-        <button
-          type="button"
-          class="vf-find-btn"
-          title="Previous hit (Shift+Enter)"
-          :disabled="!findTargets.length"
-          @click="stepFind(-1)"
-        >
-          <Icon icon="lucide:chevron-up" class="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
-          class="vf-find-btn"
-          title="Next hit (Enter) — the graph moves to it"
-          :disabled="!findTargets.length"
-          @click="stepFind(1)"
-        >
-          <Icon icon="lucide:chevron-down" class="h-3.5 w-3.5" />
-        </button>
-        <button v-if="findInput" type="button" class="vf-find-btn" title="Clear (Esc)" @click="clearFind">
-          <Icon icon="lucide:x" class="h-3.5 w-3.5" />
-        </button>
-      </div>
-      <!-- Die Facetten stehen nicht in einem Tooltip, den niemand oeffnet: sie erscheinen beim
-           ersten Klick ins leere Feld und tragen sich per Klick selbst ein. -->
-      <div v-if="findFocused && !findInput" class="vf-find-hints">
-        <button
-          v-for="h in FIND_HINTS"
-          :key="h.prefix"
-          type="button"
-          class="vf-find-hint"
-          @mousedown.prevent="applyHint(h.prefix)"
-        >
-          <code>{{ h.prefix }}</code>{{ h.label }}
-        </button>
-      </div>
-    </div>
+    <!-- Hier stand das zweite Suchfeld („Find in graph"). Die Suche der Ansicht steht jetzt EINMAL,
+         links im Kopf der Klassenliste (CodeView): sie filtert den Baum, stellt diesen Ausschnitt
+         auf ihre Treffer und markiert sie hier. Zwei Felder waren zwei Antworten auf dieselbe
+         Frage – und die Facetten (m:, review:, manual:) waren nur im Bild erreichbar, obwohl sie
+         Klassen betreffen, die links stehen. Die Trefferzahl steht am Feld, die Bilanz des
+         Ausschnitts weiterhin in der Leiste rechts. -->
 
     <!-- Hier stand die Schaltflaeche „Show N related classes" mittig ueber dem Graphen. Sie ist in
          die Leiste links gewandert und dort zur Stufenleiter geworden: dieselbe Frage wie beim
@@ -3434,114 +3369,9 @@ watch(
 
 
 
-/* --- Suche im gezeichneten Graphen (oben rechts) ---------------------------------------------
-   Deckender Hintergrund, kein backdrop-filter (s. Stolperfalle „kein filter im Graphen"). */
-.vf-find {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 6;
-  display: flex;
-  width: 19rem;
-  /* Die Spalte oben links (`.vf-topleft`, 15rem) hat Vorrang: sie ist die Einstellung, dieses Feld
-     ist die Zugabe. Gemessen bei 1280 lief es sonst 51 px unter die Layer-Karte – dort ist die
-     Graphflaeche nur ~513 px breit. Der Abzug ist etwas groesser als die Spalte selbst, damit
-     zwischen beiden eine Luecke bleibt statt einer Beruehrung. */
-  max-width: min(calc(100% - 20px), calc(100% - 17rem));
-  flex-direction: column;
-  gap: 4px;
-}
-.vf-find-row {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  border-radius: 10px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-2);
-  padding: 3px 6px;
-  box-shadow: 0 2px 10px rgb(0 0 0 / 0.08);
-  transition: border-color 0.15s ease;
-}
-.vf-find.is-active .vf-find-row,
-.vf-find-row:focus-within {
-  border-color: var(--color-accent);
-}
-.vf-find-icon {
-  width: 0.875rem;
-  height: 0.875rem;
-  flex-shrink: 0;
-  color: var(--color-text-muted);
-}
-.vf-find-input {
-  min-width: 0;
-  flex: 1;
-  background: transparent;
-  padding: 3px 2px;
-  font-size: 0.75rem;
-  color: var(--color-text);
-  outline: none;
-}
-.vf-find-input::placeholder {
-  color: var(--color-text-muted);
-}
-.vf-find-count {
-  flex-shrink: 0;
-  white-space: nowrap;
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  font-size: 0.625rem;
-  color: var(--color-text-muted);
-}
-.vf-find-count.is-empty {
-  color: var(--color-danger);
-}
-.vf-find-btn {
-  display: grid;
-  height: 1.25rem;
-  width: 1.25rem;
-  flex-shrink: 0;
-  place-items: center;
-  border-radius: 5px;
-  color: var(--color-text-muted);
-  transition: background 0.15s ease, color 0.15s ease;
-}
-.vf-find-btn:hover:not(:disabled) {
-  background: var(--color-surface-offset);
-  color: var(--color-text);
-}
-.vf-find-btn:disabled {
-  opacity: 0.35;
-}
-/* Facetten-Chips: erscheinen im leeren, fokussierten Feld und tragen sich per Klick ein. */
-.vf-find-hints {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
-  border-radius: 10px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-2);
-  padding: 5px 6px;
-  box-shadow: 0 2px 10px rgb(0 0 0 / 0.08);
-}
-.vf-find-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  border-radius: 6px;
-  background: var(--color-surface-offset);
-  padding: 1px 5px;
-  font-size: 0.625rem;
-  color: var(--color-text-muted);
-  transition: background 0.15s ease, color 0.15s ease;
-}
-.vf-find-hint:hover {
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
-}
-.vf-find-hint code {
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  font-weight: 700;
-  color: var(--color-accent);
-}
+/* Das Suchfeld im Bild ist entfallen – die Suche der Ansicht steht links im Kopf der Klassenliste
+   (CodeView). Zwei Felder waren zwei Antworten auf dieselbe Frage; die Begruendung steht im
+   Template an der Stelle, an der das Feld sass. */
 
 /* Die Schaltflaeche `.vf-ctx-toggle` („Show N related classes", mittig ueber dem Graphen) ist
    entfallen: dieselbe Frage beantwortet jetzt die Stufenleiter in der Leiste links, fuer einen

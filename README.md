@@ -80,9 +80,10 @@ and `WIKI_DB` in `.env.example` are for bare-metal runs only.
    into package zones. Edges are method calls, field accesses, type usages and plain imports — click
    one and the detail column shows the definition and every call site, down to the line. Where you
    left off — filter, open package, context step and selected class — comes back on the next visit.
-3. **Search.** `Ctrl/Cmd + K` searches names *and* raw source with match case, whole word and regex;
-   a second box inside the graph highlights classes, packages and method names without moving
-   anything.
+3. **Search.** `Ctrl/Cmd + K` searches names *and* raw source with match case, whole word and regex.
+   Inside the view, one field next to the class list does everything: it filters the tree, focuses
+   the graph on the matches and highlights them — `m:` finds a called method, `t:` a kind of class,
+   `review:` every uncertain relation.
 4. **Export.** Turn a class into a normal Markdown article — from then on it is full-text
    searchable like any other note.
 

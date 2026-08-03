@@ -70,6 +70,19 @@ export function resolveClassByName(index, name, consumer = null, pkg = null) {
   return list[0];
 }
 
+// Beide Enden einer Server-Kante zuordnen. Die Kante traegt ihre Packages selbst mit
+// (`source_pkg`/`target_pkg`) – damit ist die Zuordnung exakt statt geraten; NULL bei Altbestand,
+// dann greift wieder die Namensaufloesung ueber die Importe der nutzenden Klasse.
+//
+// Steht hier und nicht in der Graph-Komponente, weil inzwischen auch die Suche (lib/graphQuery.js)
+// Kanten auf Klassen abbildet: zwei Fassungen derselben Zuordnung waeren zwei Antworten auf die
+// Frage „welche Klasse meint diese Kante?".
+export function endsOf(e, resolve) {
+  const consumer = resolve(e.source_class, null, e.source_pkg ?? null);
+  const provider = resolve(e.target_class, consumer, e.target_pkg ?? null);
+  return { consumer, provider };
+}
+
 // Laengster gemeinsamer Package-Praefix aller Klassen. Liegt alles unter `com.acme`, waere die
 // oberste Ebene sonst ein einziger Knoten „com" – ein Klick ohne Information. Wir starten
 // stattdessen dort, wo sich die Codebasis zum ersten Mal verzweigt.

@@ -43,7 +43,7 @@ export const SHORTCUTS = [
   { id: 'close', keys: ['esc'], scope: 'global', label: 'Close / clear', hint: 'modal, panel or search field' },
 
   // --- Code-Ansicht ---
-  { id: 'filter', keys: ['/'], scope: 'code', label: 'Filter classes', hint: 'jumps into the list filter on the left' },
+  { id: 'filter', keys: ['/'], scope: 'code', label: 'Search classes', hint: 'jumps into the search on the left' },
   {
     id: 'find',
     keys: ['mod+f'],
@@ -51,9 +51,10 @@ export const SHORTCUTS = [
     label: 'Find',
     // Die kontextabhaengige Regel steht als Text daneben – ein Kuerzel, das zwei Dinge tut, muss
     // sagen, wovon es abhaengt, sonst ist es zweimal geraten.
-    hint: 'in the open relation, else the open class, else the graph',
+    hint: 'in the open relation, else the open class, else the search on the left',
   },
-  { id: 'find-graph', keys: ['mod+shift+f'], scope: 'code', label: 'Find in graph', hint: 'always the graph field' },
+  { id: 'find-graph', keys: ['mod+shift+f'], scope: 'code', label: 'Jump to search', hint: 'the search on the left, whatever is open' },
+  { id: 'step', keys: ['enter'], scope: 'code', label: 'Next match', hint: 'in the search — the graph moves to it, Shift+↵ goes back' },
   { id: 'analyze', keys: ['mod+enter'], scope: 'code', label: 'Run analysis', hint: 'inside “Add code”' },
 
   // --- Bot-Bereich ---
@@ -63,7 +64,6 @@ export const SHORTCUTS = [
   // --- Graph ---
   { id: 'fit', keys: ['0'], scope: 'graph', label: 'Fit graph to view' },
   { id: 'up', keys: ['alt+left'], scope: 'graph', label: 'One package level up' },
-  { id: 'step', keys: ['enter'], scope: 'graph', label: 'Next match', hint: 'Shift+↵ for the previous one' },
 
   // --- Suche ---
   { id: 'nav', keys: ['up', 'down'], scope: 'search', label: 'Move through results' },
