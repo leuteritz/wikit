@@ -1630,23 +1630,40 @@ const neighbours = computed(() => {
   }
   return m
 })
-function isDimmed(nodeId) {
+// ZWEI Staerken, nicht eine: `soft` (0.14) fuer die Suche, `hard` (0.04) fuer den Fokus auf genau
+// eine Sache. Der Unterschied ist keine Geschmacksfrage, sondern die Zahl der gemeinten Dinge –
+// eine Suche meint mehrere Treffer samt ihrer Nachbarschaft und muss die uebrigen Karten als
+// Umfeld lesbar lassen; ein Hover meint genau eine Verbindung, und daneben soll nichts mehr
+// mitreden. Gemessen war der alte Einheitswert der Grund, warum der Fokus nicht ankam: die Linien
+// lagen bei 0.07, die Karten bei 0.14 – und eine Karte traegt Rahmen, Grund und Schatten, ist also
+// bei gleicher Deckkraft ungleich praesenter als eine 2 px schmale Linie.
+// Rueckgabe: `'hard' | 'soft' | null`.
+function dimLevel(nodeId) {
   const h = hoveredNode.value
   // Reihenfolge mit Absicht: der Hover ist die feinere Geste und darf INNERHALB eines Suchergebnisses
   // weiter isolieren. Liegt die Maus nirgends, bestimmt die angeklickte Kante das Bild, und erst
   // danach die Suche.
   if (!h && !hoveredEdge.value && !pinnedEdge.value && findQuery.value)
-    return !isFindHit(nodeId) && !findNeighbourSet.value.has(nodeId)
+    return !isFindHit(nodeId) && !findNeighbourSet.value.has(nodeId) ? 'soft' : null
   // Anker gesetzt: es geht um EINE Verbindung, also bleiben genau ihre zwei Enden stehen.
-  if (h && hoverAnchor.value) return nodeId !== h && nodeId !== hoverAnchor.value
-  if (h) return h !== nodeId && !neighbours.value.get(h)?.has(nodeId)
+  if (h && hoverAnchor.value) return nodeId !== h && nodeId !== hoverAnchor.value ? 'hard' : null
+  // Ohne Anker meint der Hover eine ganze Nachbarschaft – mehrere Karten, wie bei der Suche.
+  // Deshalb hier die weiche Stufe: sie zeigt, woraus isoliert wurde.
+  if (h) return h !== nodeId && !neighbours.value.get(h)?.has(nodeId) ? 'soft' : null
   // Hover auf einer KANTE: nur ihre beiden Endpunkte bleiben stehen. Schaerfer als beim
   // Knoten-Hover (dort bleibt die ganze Nachbarschaft) – eine Kante ist genau eine Beziehung
   // zwischen genau zwei Klassen, und das soll man auch so sehen.
   const he = hoveredEdge.value || pinnedEdge.value
-  if (he) return he.sourceId !== nodeId && he.targetId !== nodeId
-  return false
+  if (he) return he.sourceId !== nodeId && he.targetId !== nodeId ? 'hard' : null
+  return null
 }
+// Liegt der Blick gerade auf EINER Sache? Dann treten auch die Dinge zurueck, die gar keine Knoten
+// sind: die Package-Zonen und ihre Koepfe liegen ausserhalb von Vue Flow und dimmten deshalb bisher
+// nicht mit – eine vollflaechige, voll deckende Zonenordnung hinter zwei isolierten Karten macht
+// genau den Fokus wieder zunichte, um den es geht.
+const focusActive = computed(
+  () => (!!hoveredNode.value && !!hoverAnchor.value) || !!hoveredEdge.value || !!pinnedEdge.value,
+)
 // --- „Haengt an einem Treffer" ------------------------------------------------------------------
 // Die Linie zwischen Treffer und Nachbar leuchtet (s. `touchesHit` in ManagedEdge) – die Karte an
 // ihrem Ende lag aber bei 0.14 und war nicht mehr zu lesen. Eine Linie, die zu einem Geist fuehrt,
@@ -2641,7 +2658,12 @@ watch(
 
     <!-- Package-Zonen, Flaeche: liegt HINTER dem Canvas, damit Kanten und Knoten darueber laufen.
          Rein dekorativ (pointer-events: none) – geklickt wird die Kopfzeile im vorderen Layer. -->
-    <div v-if="files.length && zones.length" class="vf-zonelayer" :style="viewportStyle">
+    <div
+      v-if="files.length && zones.length"
+      class="vf-zonelayer"
+      :class="{ 'vf-zonelayer--muted': focusActive }"
+      :style="viewportStyle"
+    >
       <div
         v-for="z in zones"
         :key="z.key"
@@ -2682,7 +2704,8 @@ watch(
               'vf-card--match': data.isMatch,
               'vf-card--near': isFindNeighbour(`c:${data.fileId}`),
               'vf-card--context': data.isContext,
-              'vf-card--dim': isDimmed(`c:${data.fileId}`),
+              'vf-card--dim': dimLevel(`c:${data.fileId}`) === 'soft',
+              'vf-card--mute': dimLevel(`c:${data.fileId}`) === 'hard',
               'vf-card--focus': !!focusColor(`c:${data.fileId}`),
               'vf-card--pinned': isPinnedEnd(`c:${data.fileId}`),
               'vf-card--find': findNodeHitSet.has(`c:${data.fileId}`),
@@ -2739,7 +2762,8 @@ watch(
           :class="{
             'vf-pkgcard--related': data.related,
             'vf-card--near': isFindNeighbour(`p:${data.path}`),
-            'vf-card--dim': isDimmed(`p:${data.path}`),
+            'vf-card--dim': dimLevel(`p:${data.path}`) === 'soft',
+            'vf-card--mute': dimLevel(`p:${data.path}`) === 'hard',
             'vf-card--focus': !!focusColor(`p:${data.path}`),
             'vf-card--pinned': isPinnedEnd(`p:${data.path}`),
             'vf-card--find': findNodeHitSet.has(`p:${data.path}`),
@@ -2798,7 +2822,12 @@ watch(
     <!-- Package-Zonen, Kopfzeile: liegt VOR dem Canvas, weil das Vue-Flow-Pane sonst jeden Klick
          abfaengt. Der Layer selbst ist durchlaessig, nur die Pille nimmt Klicks an – sie sitzt im
          Kopfbereich der Zone, den das Layout freihaelt, und ueberdeckt daher keinen Knoten. -->
-    <div v-if="files.length && zones.length" class="vf-zonelayer vf-zonelayer--front" :style="viewportStyle">
+    <div
+      v-if="files.length && zones.length"
+      class="vf-zonelayer vf-zonelayer--front"
+      :class="{ 'vf-zonelayer--muted': focusActive }"
+      :style="viewportStyle"
+    >
       <button
         v-for="z in zones"
         :key="z.key"
@@ -4209,9 +4238,19 @@ watch(
   z-index: 0;
   transform-origin: 0 0;
   pointer-events: none;
+  transition: opacity 0.15s ease;
 }
 .vf-zonelayer--front {
   z-index: 3;
+}
+/* Isoliert der Graph gerade EINE Verbindung, treten auch die Zonen zurueck. Sie liegen ausserhalb
+   von Vue Flow und wurden von der Knoten-Daempfung nie erfasst – eine vollflaechige Package-Ordnung
+   in voller Deckkraft hinter zwei isolierten Karten nimmt genau den Fokus wieder zurueck, um den es
+   geht. Auf dem ganzen Layer statt je Zone: der Layer ist ohnehin eine Ebene, und ein Wert schlaegt
+   nicht auf jede einzelne Zone durch. Die Koepfe bleiben bedienbar (pointer-events unveraendert),
+   nur eben leise – der Weg in ein Package geht waehrend eines Hovers nicht verloren. */
+.vf-zonelayer--muted {
+  opacity: 0.18;
 }
 .vf-zone {
   position: absolute;
@@ -4275,6 +4314,22 @@ watch(
 .vf-card--dim:hover {
   opacity: 0.14;
 }
+/* Fokus auf GENAU EINE Sache (Hover mit Anker, gehoverte oder angeklickte Kante): alles andere geht
+   so weit zurueck wie die Linien (0.07) – eine Karte traegt Rahmen, Grund und Schatten und ist bei
+   gleicher Deckkraft deutlich praesenter als eine 2 px schmale Linie, deshalb noch etwas darunter.
+   Kein `filter: grayscale/blur` als Ergaenzung: der Compositor zeichnet den Graphen dann schwarz
+   (s. Stolperfalle im Projekt-Wissen). Zwei Klassen im Selektor, weil dieselbe Karte im Suchmodus
+   `--near` (opacity 1) tragen kann und die Regel sonst unterliegt. */
+.vf-card.vf-card--mute,
+.vf-pkgcard.vf-card--mute {
+  opacity: 0.04;
+}
+/* Auch beim Darueberfahren: waehrend eine Verbindung isoliert ist, gehoert das Bild ihr. Sonst
+   leuchtet jede Karte wieder auf, ueber die der Weg der Maus zufaellig fuehrt. */
+.vf-card.vf-card--mute:hover,
+.vf-pkgcard.vf-card--mute:hover {
+  opacity: 0.04;
+}
 /* Karte im Hover-Fokus. Ring + Schein in der FARBE DER LINIE, die zu ihr fuehrt (nicht der Rolle):
    beim Kanten-Hover ist das die Farbe der Kante, beim Knoten-Hover die Identitaetsfarbe dieses
    Nachbarn (s. focusColor/neighbourPalette im Script). So gehoeren Linie, Label und Karte sichtbar
@@ -4294,13 +4349,53 @@ watch(
   z-index: 1;
 }
 
-.vf-card--focus,
-.vf-pkgcard.vf-card--focus {
+/* ⚠️ Zwei Klassen im Selektor UND eine eigene :hover-Fassung: `.vf-card:hover` ist (0,2,0) und
+   ueberschrieb hier sonst Ring und Transform – ausgerechnet an der Karte unter der Maus, also der
+   einen, die den Fokus am deutlichsten tragen muesste. Gemessen: sie trug `--focus`, zeigte aber
+   den allgemeinen Hover-Schatten.
+   Der Ring liegt aussen (box-shadow) und die Karte waechst nur um 3 % – gross genug, um vor dem
+   ausgeblendeten Feld zu stehen, klein genug, dass das Layout nicht verspringt. */
+.vf-card.vf-card--focus,
+.vf-card.vf-card--focus:hover,
+.vf-pkgcard.vf-card--focus,
+.vf-pkgcard.vf-card--focus:hover {
   border-color: var(--edge);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--edge) 45%, transparent),
-    0 8px 22px color-mix(in srgb, var(--edge) 30%, transparent);
-  transform: translateY(-1px);
-  z-index: 1;
+  /* Vier gestapelte Schatten statt eines: schmale Trennlinie zum Grund, deckender Ring, weicher
+     Schein, tiefe Ablage. Der Schein ist der Ersatz fuer `filter: drop-shadow` (dort zeichnet der
+     Compositor den Graphen schwarz). */
+  box-shadow: 0 0 0 1px var(--color-surface),
+    0 0 0 4px color-mix(in srgb, var(--edge) 62%, transparent),
+    0 0 26px 2px color-mix(in srgb, var(--edge) 32%, transparent),
+    0 12px 30px color-mix(in srgb, var(--edge) 24%, transparent);
+  transform: translateY(-1px) scale(1.03);
+  z-index: 3;
+}
+/* Einmalige Ring-Expansion beim Setzen des Fokus – derselbe Gedanke wie `vf-match-pulse` bei der
+   Suche, nur kuerzer und nur einmal: sie holt den Blick auf die Verbindung, ohne beim Verweilen
+   weiterzublinken. */
+/* Bewusst OHNE `both`: mit fill-mode bliebe der Endkeyframe stehen und wuerde den weichen Schein
+   der Regel oben dauerhaft ueberschreiben. So gilt nach 0.4 s wieder der Normalzustand. */
+.vf-card.vf-card--focus {
+  animation: vf-focus-in 0.4s ease-out 1;
+}
+@keyframes vf-focus-in {
+  0% {
+    box-shadow: 0 0 0 1px var(--color-surface),
+      0 0 0 4px color-mix(in srgb, var(--edge) 62%, transparent),
+      0 0 0 0 color-mix(in srgb, var(--edge) 45%, transparent),
+      0 12px 30px color-mix(in srgb, var(--edge) 24%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 1px var(--color-surface),
+      0 0 0 4px color-mix(in srgb, var(--edge) 62%, transparent),
+      0 0 0 14px transparent,
+      0 12px 30px color-mix(in srgb, var(--edge) 24%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vf-card.vf-card--focus {
+    animation: none;
+  }
 }
 /* Endpunkt der ANGEKLICKTEN Kante (ihr Detail steht rechts offen). Dieselbe Farbe wie der
    Hover-Ring – es ist dieselbe Aussage –, aber deutlich fester: der Hover-Ring verschwindet, sobald
