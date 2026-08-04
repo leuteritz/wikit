@@ -39,6 +39,7 @@ import {
   breadcrumbFor,
   indexFilesByName,
   resolveClassByName,
+  resolveImport,
 } from '../../lib/packageGraph.js'
 import { layoutFlat, layoutClustered, layoutRadial } from '../../lib/graphLayout.js'
 import { parseGraphQuery, matchNode, matchEdge } from '../../lib/graphQuery.js'
@@ -409,7 +410,8 @@ const allClassEdges = computed(() => {
   }
   for (const f of files) {
     for (const dep of f.dependencies || []) {
-      const target = resolveClass(simpleName(dep), f)
+      // Ueber die volle FQCN, nicht ueber den einfachen Namen (s. resolveImport).
+      const target = resolveImport(filesByName.value, dep)
       if (!target || target.id === f.id) continue
       const key = `${target.id}->${f.id}`
       if (pairs.has(key)) continue
@@ -1117,7 +1119,10 @@ const layout = computed(() => {
   // 2) Interne Import-Kanten (nur, wenn nicht bereits Call-Kante; nur geladene Ziele).
   for (const f of files) {
     for (const dep of f.dependencies || []) {
-      const target = resolveHere(simpleName(dep), f)
+      // Wildcard nennt keine Klasse – weder eine Kante noch ein „externer" Eintrag (das war bisher
+      // ein `*` im Zaehler der ausgeblendeten Klassen).
+      if (String(dep).endsWith('.*')) continue
+      const target = resolveImport(known, dep)
       if (!target) {
         externalRefs.add(simpleName(dep)) // importierte Klasse nicht geladen -> extern, ausgeblendet
         continue
@@ -2239,7 +2244,7 @@ function collectRelations(accepts) {
   // Import-Fallback: nur fuer Paare, die noch gar keine Beziehung haben (wie im Graph).
   for (const f of files) {
     for (const dep of f.dependencies || []) {
-      const provider = resolveClass(simpleName(dep), f)
+      const provider = resolveImport(filesByName.value, dep)
       if (!provider || provider.id === f.id) continue
       if (!accepts(provider, f)) continue
       if (groups.has(`${provider.id}->${f.id}`)) continue

@@ -70,6 +70,27 @@ export function resolveClassByName(index, name, consumer = null, pkg = null) {
   return list[0];
 }
 
+// Eine IMPORT-Zeile auf eine geladene Klasse abbilden. Das ist bewusst KEINE Namensaufloesung wie
+// oben, sondern ein Nachschlagen ueber die volle FQCN: die Zeile NENNT die Klasse vollstaendig, es
+// ist also nichts zu raten. Ueber den einfachen Namen zu gehen war nachweislich falsch –
+// `import java.util.Map.Entry` erzeugte eine Import-Kante auf die einzige eigene Klasse namens
+// `Entry` (gemeldet an `efw.n8n.N8nDeploy` -> `efw.util.rep.intranet.staff.base.Entry`), obwohl die
+// Datei Javas `Map.Entry` meint. Zwei Festlegungen:
+//   * Wildcards (`p.q.*`) nennen keine Klasse und ergeben deshalb keine Kante (wie bisher).
+//   * Genestete Typen (`a.b.Outer.Inner`) fallen auf den umschliessenden Typ zurueck – DEN kann es
+//     im Bestand geben, den inneren nicht (er ist kein eigener Knoten). `java.util.Map` gibt es
+//     dort nicht, also bleibt die Zeile folgenlos; `efw.util.KeyVal.Pair` findet `KeyVal`.
+export function resolveImport(index, dep) {
+  const fqn = String(dep ?? '')
+  if (!fqn || fqn.endsWith('.*')) return null
+  const parts = fqn.split('.')
+  for (let i = parts.length; i > 1; i--) {
+    const hit = (index?.get(parts[i - 1]) || []).find((f) => (f.package || '') === parts.slice(0, i - 1).join('.'))
+    if (hit) return hit
+  }
+  return null
+}
+
 // Beide Enden einer Server-Kante zuordnen. Die Kante traegt ihre Packages selbst mit
 // (`source_pkg`/`target_pkg`) – damit ist die Zuordnung exakt statt geraten; NULL bei Altbestand,
 // dann greift wieder die Namensaufloesung ueber die Importe der nutzenden Klasse.

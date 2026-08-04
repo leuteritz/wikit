@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.2.2",
-  "whatsNew": "The legend now explains the edge labels",
+  "version": "4.2.3",
+  "whatsNew": "Import edges no longer hit same-named classes",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",
