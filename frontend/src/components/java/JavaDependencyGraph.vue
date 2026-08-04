@@ -118,6 +118,8 @@ const {
   selectionAnchor,
   selectionPalette,
   setSelectionColors,
+  graphPreview,
+  setGraphPreview,
 } = useJavaGraph()
 // Detailabruf einer einzelnen Klasse (Methodenruempfe fuers Edge-Panel) – die Liste traegt sie nicht.
 const { getFile } = useJavaAnalyzer()
@@ -1647,6 +1649,11 @@ const neighbours = computed(() => {
 // bei gleicher Deckkraft ungleich praesenter als eine 2 px schmale Linie.
 // Rueckgabe: `'hard' | 'soft' | null`.
 function dimLevel(nodeId) {
+  // Vorschau aus der Ansichts-Karte steht vorn: waehrend ihrer liegt die Maus ausserhalb des
+  // Canvas, es kann also weder ein Hover noch eine angeklickte Kante widersprechen. `soft` und
+  // nicht `hard`, weil eine Kantenart mehrere Karten meint (dieselbe Regel wie bei der Suche).
+  const pv = graphPreview.value
+  if (pv?.nodes) return pv.nodes.has(nodeId) ? null : 'soft'
   const h = hoveredNode.value
   // Reihenfolge mit Absicht: der Hover ist die feinere Geste und darf INNERHALB eines Suchergebnisses
   // weiter isolieren. Liegt die Maus nirgends, bestimmt die angeklickte Kante das Bild, und erst
@@ -1672,6 +1679,63 @@ function dimLevel(nodeId) {
 const focusActive = computed(
   () => (!!hoveredNode.value && !!hoverAnchor.value) || !!hoveredEdge.value || !!pinnedEdge.value,
 )
+
+// --- Vorschau: die Ansichts-Karte zeigt im BILD, was ein Eintrag meint --------------------------
+// „Calls" ist ein Wort; welche der sechzig Linien damit gemeint sind, sagt es nicht. Beim
+// Verweilen auf einem Eintrag bleibt deshalb genau seine Teilmenge stehen und der Rest tritt
+// zurueck – dieselbe Sprache wie beim Hover im Bild, nur von aussen ausgeloest. Drei Festlegungen:
+//   (1) Gerechnet wird auf dem GEZEICHNETEN Layout, nicht auf dem Bestand: die Frage lautet „was
+//       davon sehe ich hier?". Findet sich nichts, gibt es auch keine Vorschau – ein leergeraeumtes
+//       Bild waere die Antwort auf eine Frage, die niemand gestellt hat.
+//   (2) `zones` daempft NICHTS: „Group by package" ordnet die Karten, es waehlt keine aus. Gezeigt
+//       wird stattdessen die Ordnung selbst (die Zonen treten hervor).
+//   (3) Erst nach kurzem Verweilen (wie `HOVER_DELAY` im Bild), damit ein Schwenk ueber vier
+//       Zeilen nicht viermal alle Knoten neu bewertet. Verlassen wirkt sofort.
+const PREVIEW_HOLD_MS = 90
+let viewPreviewTimer = null
+const relatedNodeIds = computed(
+  () =>
+    new Set(
+      relatedAsClasses.value ? relatedFiles.value.map((f) => `c:${f.id}`) : relatedNodes.value.map((n) => n.id),
+    ),
+)
+function viewPreviewFor(key) {
+  if (key === 'zones') return { edges: null, nodes: null, zones: true }
+  const rel = relatedNodeIds.value
+  const keep =
+    key === 'related'
+      ? (e) => rel.has(e.source) || rel.has(e.target)
+      : (e) => (e.data?.kind || '') === key
+  const edges = new Set()
+  const nodes = new Set(key === 'related' ? rel : [])
+  for (const e of layout.value.edges) {
+    if (!keep(e)) continue
+    edges.add(e.id)
+    nodes.add(e.source)
+    nodes.add(e.target)
+  }
+  return edges.size || nodes.size ? { edges, nodes, zones: false } : null
+}
+function startViewPreview(key) {
+  clearTimeout(viewPreviewTimer)
+  viewPreviewTimer = setTimeout(() => setGraphPreview(viewPreviewFor(key)), PREVIEW_HOLD_MS)
+}
+function endViewPreview() {
+  clearTimeout(viewPreviewTimer)
+  setGraphPreview(null)
+}
+onUnmounted(() => clearTimeout(viewPreviewTimer))
+// Zaehler je Kantenart – was im Bild wirklich gezeichnet ist. Auf der Package-Ebene sind alle
+// Linien Buendel, also steht dort ueberall null: „diese Art ist hier keine eigene Linie" ist eine
+// Auskunft, eine erfundene Zahl waere keine.
+const edgeKindCounts = computed(() => {
+  const m = { call: 0, field: 0, uses: 0, import: 0 }
+  for (const e of layout.value.edges) {
+    const k = e.data?.kind
+    if (k in m) m[k]++
+  }
+  return m
+})
 // --- „Haengt an einem Treffer" ------------------------------------------------------------------
 // Die Linie zwischen Treffer und Nachbar leuchtet (s. `touchesHit` in ManagedEdge) – die Karte an
 // ihrem Ende lag aber bei 0.14 und war nicht mehr zu lesen. Eine Linie, die zu einem Geist fuehrt,
@@ -2698,7 +2762,7 @@ watch(
     <div
       v-if="files.length && zones.length"
       class="vf-zonelayer"
-      :class="{ 'vf-zonelayer--muted': focusActive }"
+      :class="{ 'vf-zonelayer--muted': focusActive, 'vf-zonelayer--lit': graphPreview?.zones }"
       :style="viewportStyle"
     >
       <div
@@ -2864,7 +2928,7 @@ watch(
     <div
       v-if="files.length && zones.length"
       class="vf-zonelayer vf-zonelayer--front"
-      :class="{ 'vf-zonelayer--muted': focusActive }"
+      :class="{ 'vf-zonelayer--muted': focusActive, 'vf-zonelayer--lit': graphPreview?.zones }"
       :style="viewportStyle"
     >
       <button
@@ -3054,48 +3118,24 @@ watch(
       </div>
     </div>
 
-    <!-- Hier stand das zweite Suchfeld („Find in graph"). Die Suche der Ansicht steht jetzt EINMAL,
-         links im Kopf der Klassenliste (CodeView): sie filtert den Baum, stellt diesen Ausschnitt
-         auf ihre Treffer und markiert sie hier. Zwei Felder waren zwei Antworten auf dieselbe
-         Frage – und die Facetten (m:, review:, manual:) waren nur im Bild erreichbar, obwohl sie
-         Klassen betreffen, die links stehen. Die Trefferzahl steht am Feld, die Bilanz des
-         Ausschnitts weiterhin in der Leiste rechts. -->
+    <!-- ===== Karte oben rechts: WAS wird gezeichnet? ==========================================
+         Ebene, Gruppierung, Umgebung und die Kantenarten standen bis zuletzt im Dock unten links,
+         in einer Zeile mit Zoom und Fit: „wo schaue ich hin?" und „was ist ueberhaupt im Bild?"
+         sahen damit gleich aus, obwohl das zwei Fragen sind – und die Kanten-Pillen brachen bei
+         schmaler Spalte in eine zweite Zeile um. Als eigene Karte hat die Auswahl Platz fuer das,
+         was eine Pille nie tragen konnte: die Anzahl je Art und die Vorschau (s. `startPreview`).
+         Gegenueber der Context-Karte oben links, gleiche Materialsprache. -->
+    <div v-if="files.length" class="vf-topright">
+      <div class="vf-view" @mouseleave="endViewPreview">
+        <div class="vf-view-head">
+          <Icon icon="lucide:sliders-horizontal" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+          <span class="vf-view-title">View</span>
+        </div>
 
-    <!-- Hier stand die Schaltflaeche „Show N related classes" mittig ueber dem Graphen. Sie ist in
-         die Leiste links gewandert und dort zur Stufenleiter geworden: dieselbe Frage wie beim
-         einzelnen Treffer, deshalb dieselbe Bedienung an derselben Stelle – und statt „alles oder
-         nichts" eine Stufe, die zum Ergebnis passt. -->
-
-    <!-- Canvas-Chrome unten: Werkzeuge links, Legende rechts. Beide schweben am unteren Rand,
-         damit die obere Canvas-Haelfte (wo dagre die Wurzelknoten setzt) frei bleibt. -->
-    <div v-if="files.length" class="vf-dock vf-dock--left">
-      <button
-        type="button"
-        class="vf-tool"
-        v-tip="{ title: 'Zoom in' }"
-        @click="zoomIn()"
-      >
-        <Icon icon="lucide:zoom-in" class="h-4 w-4" />
-      </button>
-      <button type="button" class="vf-tool" v-tip="{ title: 'Zoom out' }" @click="zoomOut()">
-        <Icon icon="lucide:zoom-out" class="h-4 w-4" />
-      </button>
-      <span class="vf-dock-sep" />
-      <button type="button" class="vf-tool" v-tip="{ title: 'Fit to view', hint: 'Also on the 0 key.' }" @click="fitView()">
-        <Icon icon="lucide:maximize" class="h-4 w-4" />
-      </button>
-      <button type="button" class="vf-tool" v-tip="{ title: 'Reset view', hint: 'Back to 100 % at the origin.' }" @click="resetView">
-        <Icon icon="lucide:rotate-ccw" class="h-4 w-4" />
-      </button>
-
-      <!-- Ebene: Packages oder Klassen. Der Umschalter stand am ENDE der Kopfzeile oben links –
-           und rutschte dort bei langen Pfaden unter das Suchfeld oben rechts. Er gehoert ohnehin
-           hierher: das Dock beantwortet „was wird gezeichnet?", die Kopfzeile „wo bin ich?".
-           Als Segment statt als Wechselknopf, weil ein Wechselknopf immer den ANDEREN Zustand
-           beschriftet – man liest „Classes" und ist in der Package-Ebene. -->
-      <template v-if="level.groups.length">
-        <span class="vf-dock-sep" />
-        <div class="vf-seg">
+        <!-- Ebene: Packages oder Klassen. Als Segment statt als Wechselknopf, weil ein
+             Wechselknopf immer den ANDEREN Zustand beschriftet – man liest „Classes" und ist in
+             der Package-Ebene. -->
+        <div v-if="level.groups.length" class="vf-seg vf-seg--wide">
           <button
             type="button"
             class="vf-seg-btn"
@@ -3120,57 +3160,120 @@ watch(
             Classes
           </button>
         </div>
-      </template>
-      <!-- Zonen an/aus. Auf der Package-Ebene gibt es nichts zu gruppieren – dort ist jeder
-           Knoten bereits ein Package. -->
-      <template v-if="!packageMode">
-        <span class="vf-dock-sep" />
+
+        <!-- Zonen an/aus. Auf der Package-Ebene gibt es nichts zu gruppieren – dort ist jeder
+             Knoten bereits ein Package. Die Vorschau daempft hier nichts, sie laesst die Zonen
+             hervortreten: eine Ordnung waehlt keine Karten aus. -->
         <button
+          v-if="!packageMode"
           type="button"
-          class="vf-tool"
+          class="vf-opt"
           :class="{ 'is-on': groupByPackage }"
           v-tip="groupByPackage
             ? { title: 'Grouped by package', hint: 'Click to lay out all classes in one run, without zones.' }
             : { title: 'Group by package', hint: 'One layout per package, then over the zones — faster and easier to read.' }"
-          @click="toggleGrouping"
+          @mouseenter="startViewPreview('zones')"
+          @focus="startViewPreview('zones')"
+          @mouseleave="endViewPreview"
+          @blur="endViewPreview"
+          @click="endViewPreview(); toggleGrouping()"
         >
-          <Icon icon="lucide:package" class="h-4 w-4" />
+          <span class="vf-opt-box"><Icon v-if="groupByPackage" icon="lucide:check" class="h-3 w-3" /></span>
+          <Icon icon="lucide:package" class="vf-opt-ic" />
+          <span class="vf-opt-label">Group by package</span>
         </button>
-      </template>
-      <!-- Umgebung an/aus. Gilt in BEIDEN Modi (Package-Ebene wie Klassen): die Frage „wen beruehrt
-           das hier?" haengt nicht daran, wie fein der Ausschnitt gerade gezeichnet wird. Auf der
-           obersten Ebene gibt es kein Aussen -> gesperrt statt wirkungslos. -->
+
+        <!-- Umgebung an/aus. Gilt in BEIDEN Modi: die Frage „wen beruehrt das hier?" haengt nicht
+             daran, wie fein der Ausschnitt gerade gezeichnet wird. Auf der obersten Ebene gibt es
+             kein Aussen -> gesperrt statt wirkungslos. -->
+        <button
+          type="button"
+          class="vf-opt"
+          :class="{ 'is-on': showRelated }"
+          :disabled="!basePath || basePath === rootPath"
+          v-tip="!basePath || basePath === rootPath
+            ? { title: 'Nothing outside this scope', hint: 'You are at the top level — everything is already in the picture.' }
+            : showRelated
+              ? { title: 'Neighbours shown', hint: 'Click to hide what this scope connects to outside itself.' }
+              : { title: 'Show neighbours', hint: 'Draws what this scope uses and what uses it, outside itself.' }"
+          @mouseenter="startViewPreview('related')"
+          @focus="startViewPreview('related')"
+          @mouseleave="endViewPreview"
+          @blur="endViewPreview"
+          @click="endViewPreview(); toggleRelated()"
+        >
+          <span class="vf-opt-box"><Icon v-if="showRelated" icon="lucide:check" class="h-3 w-3" /></span>
+          <Icon icon="lucide:share-2" class="vf-opt-ic" />
+          <span class="vf-opt-label">Neighbours</span>
+          <span v-if="showRelated && relatedSummary" class="vf-opt-num">
+            +{{ relatedSummary.classes || relatedSummary.packages }}
+          </span>
+        </button>
+
+        <!-- Kantenarten einzeln abschaltbar: die schnellste Art, ein ueberladenes Bild
+             aufzuraeumen. Ausgeblendete Kanten wirken auch nicht mehr auf die Platzierung.
+             Die Zahl ist das, was im Bild steht – auf der Package-Ebene sind alle Linien Buendel,
+             dort steht deshalb „–" statt einer erfundenen Zahl. -->
+        <div class="vf-view-sep" />
+        <button
+          v-for="k in EDGE_KINDS"
+          :key="k.key"
+          type="button"
+          class="vf-opt vf-opt--kind"
+          :class="{ 'is-on': edgeFilter[k.key] }"
+          :style="{ '--c': k.color }"
+          v-tip="edgeFilter[k.key]
+            ? { title: `Hide ${k.label.toLowerCase()}`, hint: 'Hidden edges also stop steering the layout.' }
+            : { title: `Show ${k.label.toLowerCase()}`, hint: 'Edges steer the layout — showing them changes the placement.' }"
+          @mouseenter="startViewPreview(k.key)"
+          @focus="startViewPreview(k.key)"
+          @mouseleave="endViewPreview"
+          @blur="endViewPreview"
+          @click="endViewPreview(); toggleEdgeKind(k.key)"
+        >
+          <span class="vf-opt-box"><Icon v-if="edgeFilter[k.key]" icon="lucide:check" class="h-3 w-3" /></span>
+          <span class="vf-opt-line" :class="`vf-opt-line--${k.key}`" />
+          <span class="vf-opt-label">{{ k.label }}</span>
+          <span class="vf-opt-num">{{ edgeKindCounts[k.key] || '–' }}</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Hier stand das zweite Suchfeld („Find in graph"). Die Suche der Ansicht steht jetzt EINMAL,
+         links im Kopf der Klassenliste (CodeView): sie filtert den Baum, stellt diesen Ausschnitt
+         auf ihre Treffer und markiert sie hier. Zwei Felder waren zwei Antworten auf dieselbe
+         Frage – und die Facetten (m:, review:, manual:) waren nur im Bild erreichbar, obwohl sie
+         Klassen betreffen, die links stehen. Die Trefferzahl steht am Feld, die Bilanz des
+         Ausschnitts weiterhin in der Leiste rechts. -->
+
+    <!-- Hier stand die Schaltflaeche „Show N related classes" mittig ueber dem Graphen. Sie ist in
+         die Leiste links gewandert und dort zur Stufenleiter geworden: dieselbe Frage wie beim
+         einzelnen Treffer, deshalb dieselbe Bedienung an derselben Stelle – und statt „alles oder
+         nichts" eine Stufe, die zum Ergebnis passt. -->
+
+    <!-- Canvas-Chrome unten: Kamera-Werkzeuge links, Legende rechts. Beide schweben am unteren
+         Rand, damit die obere Canvas-Haelfte (wo dagre die Wurzelknoten setzt) frei bleibt.
+         Hier standen bis zuletzt auch Ebene, Gruppierung, Umgebung und die Kanten-Filter – sie
+         sind in die Ansichts-Karte oben rechts gewandert: „wo schaue ich hin?" und „was ist
+         ueberhaupt im Bild?" sahen in einer Zeile gleich aus, sind aber zwei Fragen. -->
+    <div v-if="files.length" class="vf-dock vf-dock--left">
       <button
         type="button"
         class="vf-tool"
-        :class="{ 'is-on': showRelated }"
-        :disabled="!basePath || basePath === rootPath"
-        v-tip="!basePath || basePath === rootPath
-          ? { title: 'Nothing outside this scope', hint: 'You are at the top level — everything is already in the picture.' }
-          : showRelated
-            ? { title: 'Neighbours shown', hint: 'Click to hide what this scope connects to outside itself.' }
-            : { title: 'Show neighbours', hint: 'Draws what this scope uses and what uses it, outside itself.' }"
-        @click="toggleRelated"
+        v-tip="{ title: 'Zoom in' }"
+        @click="zoomIn()"
       >
-        <Icon icon="lucide:share-2" class="h-4 w-4" />
+        <Icon icon="lucide:zoom-in" class="h-4 w-4" />
       </button>
-      <!-- Kantenarten einzeln abschaltbar: die schnellste Art, ein ueberladenes Bild aufzuraeumen.
-           Ausgeblendete Kanten wirken auch nicht mehr auf die Platzierung. -->
+      <button type="button" class="vf-tool" v-tip="{ title: 'Zoom out' }" @click="zoomOut()">
+        <Icon icon="lucide:zoom-out" class="h-4 w-4" />
+      </button>
       <span class="vf-dock-sep" />
-      <button
-        v-for="k in EDGE_KINDS"
-        :key="k.key"
-        type="button"
-        class="vf-chip"
-        :class="{ 'is-off': !edgeFilter[k.key] }"
-        :style="{ '--c': k.color }"
-        v-tip="edgeFilter[k.key]
-          ? { title: `Hide ${k.label.toLowerCase()}`, hint: 'Hidden edges also stop steering the layout.' }
-          : { title: `Show ${k.label.toLowerCase()}`, hint: 'Edges steer the layout — showing them changes the placement.' }"
-        @click="toggleEdgeKind(k.key)"
-      >
-        <span class="vf-chip-line" />
-        {{ k.label }}
+      <button type="button" class="vf-tool" v-tip="{ title: 'Fit to view', hint: 'Also on the 0 key.' }" @click="fitView()">
+        <Icon icon="lucide:maximize" class="h-4 w-4" />
+      </button>
+      <button type="button" class="vf-tool" v-tip="{ title: 'Reset view', hint: 'Back to 100 % at the origin.' }" @click="resetView">
+        <Icon icon="lucide:rotate-ccw" class="h-4 w-4" />
       </button>
     </div>
 
@@ -3669,6 +3772,139 @@ watch(
   flex-direction: column;
   gap: 8px;
 }
+/* --- Ansichts-Karte oben rechts ------------------------------------------------------------
+   Gegenstueck zur Context-Karte oben links, gleiche Materialsprache: „wieviel Umgebung?" links,
+   „was wird gezeichnet?" rechts. Deckend statt `backdrop-filter` (s. Stolperfalle „kein filter im
+   Graphen") – die Karte liegt ueber der gesamten Layoutflaeche.
+   Breite bewusst schmal: sie darf bei 1280×800 nicht in die Karten hineinragen. */
+.vf-topright {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+  width: 12.5rem;
+  max-width: calc(100% - 20px);
+}
+.vf-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  padding: 8px;
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.1);
+}
+.vf-view-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px 6px;
+}
+.vf-view-title {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text);
+}
+.vf-view-sep {
+  height: 1px;
+  margin: 5px 2px;
+  background: var(--color-border);
+}
+/* Eine Zeile = eine An/Aus-Entscheidung. Das Kaestchen sagt den Zustand, das Muster die Sache,
+   die Zahl rechts, wieviel davon im Bild steht. */
+.vf-opt {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 7px;
+  border-radius: 8px;
+  padding: 4px 5px;
+  text-align: left;
+  font-size: 0.6875rem;
+  color: var(--color-text-muted);
+  transition: background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+.vf-opt:hover:not(:disabled) {
+  background: var(--color-surface-offset);
+  color: var(--color-text);
+}
+.vf-opt.is-on {
+  color: var(--color-text);
+}
+.vf-opt:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.vf-opt:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+.vf-opt-box {
+  display: grid;
+  height: 0.875rem;
+  width: 0.875rem;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 4px;
+  border: 1.5px solid var(--color-border-strong);
+  color: transparent;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.vf-opt.is-on .vf-opt-box {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-surface);
+}
+.vf-opt-ic {
+  height: 0.875rem;
+  width: 0.875rem;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+.vf-opt.is-on .vf-opt-ic {
+  color: var(--color-accent);
+  opacity: 1;
+}
+.vf-opt-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vf-opt-num {
+  flex-shrink: 0;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+}
+/* Das Muster spiegelt die Linie im Canvas (und die Legende): durchgezogen = call/field,
+   gestrichelt = uses, gepunktet = import. Aendert sich dort die Strichform, aendert sie sich hier
+   mit – sonst benennt die Karte eine Linie, die es so nicht gibt. */
+.vf-opt-line {
+  width: 14px;
+  height: 0;
+  flex-shrink: 0;
+  border-top: 2px solid var(--c);
+  border-radius: 999px;
+  opacity: 0.9;
+}
+.vf-opt-line--uses {
+  border-top-style: dashed;
+}
+.vf-opt-line--import {
+  border-top-style: dotted;
+}
+.vf-opt:not(.is-on) .vf-opt-line {
+  border-color: currentColor;
+  opacity: 0.4;
+}
+
 .vf-rail {
   display: flex;
   min-height: 0;
@@ -4316,6 +4552,16 @@ watch(
   opacity: 0.4;
   cursor: not-allowed;
 }
+/* In der Ansichts-Karte fuellt das Segment die Zeile: zwei gleich breite Haelften lesen sich als
+   Entweder-oder, zwei unterschiedlich breite als Knopf mit Anhaengsel. */
+.vf-seg--wide {
+  margin-bottom: 3px;
+}
+.vf-seg--wide .vf-seg-btn {
+  flex: 1;
+  justify-content: center;
+  padding: 3px 4px;
+}
 
 .vf-tool {
   display: grid;
@@ -4330,49 +4576,6 @@ watch(
   background: var(--color-surface-offset);
   color: var(--color-text);
 }
-/* Umschalter im Zustand „aktiv" (Package-Gruppierung). */
-.vf-tool.is-on {
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
-}
-
-/* --- Kanten-Filter (Pillen im Dock) ------------------------------------------------------- */
-.vf-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 24px;
-  flex-shrink: 0;
-  padding: 0 9px;
-  border-radius: 999px;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  color: var(--color-text);
-  background: color-mix(in srgb, var(--c) 16%, transparent);
-  transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
-}
-.vf-chip-line {
-  width: 12px;
-  height: 2px;
-  flex-shrink: 0;
-  border-radius: 999px;
-  background: var(--c);
-}
-/* Abgeschaltet: farblos und zurueckgenommen – der Unterschied muss ohne Hover erkennbar sein. */
-.vf-chip.is-off {
-  color: var(--color-text-muted);
-  background: transparent;
-  opacity: 0.6;
-}
-.vf-chip.is-off .vf-chip-line {
-  background: currentColor;
-  opacity: 0.45;
-}
-.vf-chip:hover {
-  opacity: 1;
-  color: var(--color-text);
-}
-
 /* --- Package-Zonen ------------------------------------------------------------------------
    Zwei Ebenen ausserhalb von Vue Flow, beide mit dem Viewport transformiert:
      .vf-zonelayer          – die Flaeche, HINTER dem Canvas (Kanten laufen darueber)
@@ -4398,9 +4601,18 @@ watch(
 .vf-zonelayer--muted {
   opacity: 0.18;
 }
+/* Gegenstueck zur Daempfung: zeigt die Maus in der Ansichts-Karte auf „Group by package", tritt
+   die Ordnung selbst hervor. Sie waehlt keine Karten aus – gedaempft wird deshalb nichts, es wird
+   nur die Zone deutlicher, die man sonst kaum sieht. */
+.vf-zonelayer--lit .vf-zone {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--pkg) 75%, transparent);
+  background: color-mix(in srgb, var(--pkg) 18%, transparent);
+}
 .vf-zone {
   position: absolute;
   border-radius: 18px;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
   /* Gestrichelt und sehr leise: die Zone ist Ordnung im Hintergrund, keine Aussage im Vordergrund. */
   border: 1px dashed color-mix(in srgb, var(--pkg) 38%, transparent);
   background: color-mix(in srgb, var(--pkg) 7%, transparent);

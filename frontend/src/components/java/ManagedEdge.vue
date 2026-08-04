@@ -212,7 +212,17 @@ const {
   reserveLabelSpot,
   selectionAnchor,
   selectionPalette,
+  graphPreview,
 } = useJavaGraph()
+
+// --- Vorschau aus der Ansichts-Karte ------------------------------------------------------------
+// Zeigt die Maus dort auf „Calls", bleiben genau die Call-Linien stehen. Die Kante prueft nur ihre
+// Mitgliedschaft in einer fertigen Menge (der Graph kennt sie, s. `setPreview` dort) – so gilt
+// dasselbe fuer Kantenarten, Nachbarn und Zonen, ohne dass die Kante die Frage kennen muss.
+// Waehrend der Vorschau liegt die Maus ausserhalb des Canvas: Hover, Pin und Suche koennen also
+// gar nicht widersprechen, und die Vorschau steht deshalb ganz vorn.
+const previewSet = computed(() => graphPreview.value?.edges || null)
+const previewHit = computed(() => !!previewSet.value?.has(props.id))
 
 // Verbindet diese Kante den gehoverten Knoten mit dem Anker (der rechts offenen Klasse)?
 const isAnchorPair = computed(() => {
@@ -312,6 +322,8 @@ function onEdgeLeave() {
 onUnmounted(() => clearTimeout(hoverTimer))
 
 const dimmed = computed(() => {
+  // Vorschau aus der Ansichts-Karte: sie steht vorn (die Maus ist dann nicht im Bild, s. oben).
+  if (previewSet.value) return !previewHit.value
   const h = hoveredNode.value
   // Anker gesetzt (offene Klasse + der gehoverte Knoten haengt an ihr): dann ist EINE Verbindung
   // gemeint, nicht eine Nachbarschaft – es bleiben nur die Linien zwischen genau diesen beiden.
@@ -328,7 +340,8 @@ const dimmed = computed(() => {
   return findDimmed.value
 })
 const focused = computed(
-  () => (!!hoveredNode.value || !!hoveredEdge.value || !!pinnedEdge.value) && !dimmed.value,
+  () =>
+    (!!hoveredNode.value || !!hoveredEdge.value || !!pinnedEdge.value || !!previewSet.value) && !dimmed.value,
 )
 
 // Die Kanten-Grundfarbe steht in data.edgeStyle; hier kommt nur der Fokus-Zustand darueber.

@@ -68,6 +68,16 @@ const hoverAnchor = ref(null)
 // `hoveredNode`: ManagedEdge liest sie selbst, statt dass der Kanten-Store neu geschrieben wird.
 const hoverPalette = ref(null)
 
+// --- Vorschau aus der Ansichts-Karte (oben rechts im Graphen) -----------------------------------
+// `{ edges: Set<edgeId> | null, nodes: Set<nodeId> | null, zones: boolean }` | null.
+// Wer mit der Maus auf „Calls" zeigt, fragt: WELCHE Linien sind das? Die Karte beantwortet das
+// nicht mit Text, sondern im Bild – die gemeinte Teilmenge bleibt stehen, der Rest tritt zurueck.
+// Deshalb eine fertige MENGE und kein Schluessel: so gilt dieselbe Mechanik fuer die Kantenarten
+// wie fuer „Neighbours" (Knoten) und „Group by package" (Zonen), und die Kante muss keine
+// Fallunterscheidung kennen. Liegt hier und nicht in der Graph-Komponente, weil ManagedEdge sie
+// SELBST liest – gleiche Begruendung wie bei `hoveredNode`.
+const graphPreview = ref(null)
+
 // --- Dieselbe Zuordnung, ohne dass man zeigen muss ----------------------------------------------
 // `selectionAnchor` ist die rechts GEOEFFNETE Klasse (`c:<fileId>` | null), `selectionPalette` die
 // Identitaetsfarbe je direktem Nachbarn – gleiche Bauart wie `hoverPalette`, nur bleibend.
@@ -473,6 +483,11 @@ export function useJavaGraph() {
       hoveredNode.value = nodeId
       hoverPalette.value = nodeId ? palette : null
       hoverAnchor.value = nodeId ? anchor : null
+    },
+    // --- Vorschau aus der Ansichts-Karte (Begruendung oben) -----------------------------------
+    graphPreview,
+    setGraphPreview(p) {
+      graphPreview.value = p || null
     },
     // --- Bleibende Zuordnungsfarben der offenen Klasse (Begruendung oben) ----------------------
     selectionAnchor,
