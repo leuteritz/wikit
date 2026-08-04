@@ -238,6 +238,8 @@ async function loadUsageSnippets() {
 //    verschwindet nicht, nur weil man gerade nach etwas anderem sucht.
 const bodyEl = ref(null)
 const searchInput = ref(null)
+const searchPicked = ref(false)
+let pickTimer = null
 const search = ref('')
 const searchOpts = ref({ caseSensitive: false, wholeWord: false, regex: false })
 // Freilaufender Zaehler; der Modulo unten macht das Umlaufen daraus (wie im Source-Tab).
@@ -437,6 +439,29 @@ async function onPickWord(event) {
   // und ohne sie waere „das angeklickte Vorkommen" nur eine Zahl ohne Bezug.
   await scanBlocks()
   searchCursor.value = cursorAt(block, offset)
+  handOverToSearch()
+}
+
+// Nach der Uebernahme gehoert die Tastatur der Leiste: ↵ / ⇧↵ blaettern durch die Treffer. Ohne
+// diesen Sprung stuende der Fokus weiter im Code, und die naheliegende naechste Taste taete nichts
+// – die Geste waere auf halbem Weg stehengeblieben.
+// Der Caret steht am ENDE statt den Begriff zu markieren: er wurde gerade bewusst gewaehlt, und
+// markiert uebergeben hiesse „gleich ueberschreiben" (das ist die Bedeutung von Strg+F, s.
+// `focusSearch`, nicht die dieser Geste).
+function handOverToSearch() {
+  const input = searchInput.value
+  if (!input) return
+  input.focus()
+  const end = input.value.length
+  input.setSelectionRange(end, end)
+  // Der Fokus ist nach einem Doppelklick im Code an einer anderen Stelle des Panels gelandet als
+  // der Blick. Ein einmaliger Ring sagt, wohin – ohne ihn wirkt die Leiste wie von selbst gefuellt.
+  searchPicked.value = false
+  clearTimeout(pickTimer)
+  requestAnimationFrame(() => {
+    searchPicked.value = true
+    pickTimer = setTimeout(() => (searchPicked.value = false), 700)
+  })
 }
 
 // Ctrl+F, wenn dieses Panel vorn steht. Der Tastendruck selbst wird NICHT hier abgefangen: die
@@ -464,6 +489,7 @@ async function copyCode(key, text) {
 }
 onUnmounted(() => {
   if (copyTimer) clearTimeout(copyTimer)
+  if (pickTimer) clearTimeout(pickTimer)
 })
 
 // Hand-off zu CodeView: Datei vorwaehlen + (optional) Zeile hervorheben, Panel schliessen.
@@ -585,7 +611,10 @@ watch(
             <div v-if="!loading" class="mt-2">
               <div
                 class="flex w-full min-w-0 flex-wrap items-center gap-0.5 rounded-lg border bg-[var(--color-surface)] px-1.5 py-0.5 transition"
-                :class="searchFailed ? 'border-[var(--color-danger)]' : 'border-[var(--color-border)] focus-within:border-[var(--color-accent)]'"
+                :class="[
+                  searchFailed ? 'border-[var(--color-danger)]' : 'border-[var(--color-border)] focus-within:border-[var(--color-accent)]',
+                  { 'search-picked': searchPicked },
+                ]"
               >
                 <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
                 <input
@@ -1057,6 +1086,28 @@ watch(
 .edge-usage-code :deep(mark.cs-hit--active) {
   background: color-mix(in srgb, var(--color-warning) 62%, transparent);
   box-shadow: 0 0 0 1px var(--color-warning);
+}
+
+/* Uebernahme aus dem Code: die Leiste hat gerade Begriff UND Tastatur bekommen. Ein einmaliger,
+   auslaufender Ring in der Akzentfarbe zeigt, wohin der Fokus gewandert ist – ohne ihn fuellt sich
+   das Feld am anderen Ende des Panels scheinbar von selbst. Bewusst `box-shadow` (kein `filter`)
+   und bewusst EINMAL: ein pulsierender Rahmen waere eine Daueraussage fuer ein Ereignis. */
+.search-picked {
+  animation: search-pick 0.7s ease-out;
+}
+@keyframes search-pick {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 60%, transparent);
+    border-color: var(--color-accent);
+  }
+  100% {
+    box-shadow: 0 0 0 7px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .search-picked {
+    animation: none;
+  }
 }
 
 /* Bilanz je Seite der Beziehung. Traegt die Treffer-Farbe, solange es dort etwas zu holen gibt –
