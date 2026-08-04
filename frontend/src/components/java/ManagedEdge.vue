@@ -178,6 +178,8 @@ const {
   graphHitNodes,
   labelObstacleVersion,
   reserveLabelY,
+  selectionAnchor,
+  selectionPalette,
 } = useJavaGraph()
 
 // Verbindet diese Kante den gehoverten Knoten mit dem Anker (der rechts offenen Klasse)?
@@ -193,12 +195,22 @@ const isAnchorPair = computed(() => {
 // welche Linie an welcher Karte endet, war nicht mehr zu sehen. Die Kantenart geht dabei nicht
 // verloren: sie steckt in der Strichform (durchgezogen = call, gestrichelt = uses/import), und die
 // Faerbung gilt nur, solange die Maus steht.
+// Dieselbe Zuordnung gilt BLEIBEND, sobald eine Klasse rechts offen ist (`selectionAnchor`): die
+// Linien zu ihren Nachbarn tragen deren Identitaetsfarbe, ohne dass man zeigen muss. Alle uebrigen
+// Linien behalten ihre ART-Farbe – umgefaerbt wird nur, was zur offenen Klasse fuehrt, sonst waere
+// die Legende (Calls/Fields/Uses/Imports) eine Luege. Die Art bleibt ohnehin an der Strichform
+// ablesbar (durchgezogen = call/field, gestrichelt = uses/import).
+// Vorrang Hover > Auswahl: die feinere Geste gewinnt. Ein Farbsprung entsteht dabei nicht, weil
+// `pairPalette` dieselbe Farbe uebernimmt (s. JavaDependencyGraph).
 const neighbourColor = computed(() => {
   const h = hoveredNode.value
   const palette = hoverPalette.value
-  if (!h || !palette) return null
-  const other = d.value.sourceId === h ? d.value.targetId : d.value.targetId === h ? d.value.sourceId : null
-  return other ? palette.get(other) || null : null
+  const anchor = h && palette ? h : selectionAnchor.value
+  const pal = h && palette ? palette : selectionPalette.value
+  if (!anchor || !pal) return null
+  const other =
+    d.value.sourceId === anchor ? d.value.targetId : d.value.targetId === anchor ? d.value.sourceId : null
+  return other ? pal.get(other) || null : null
 })
 
 // --- Suche im Graphen ---------------------------------------------------------------------------
@@ -309,7 +321,11 @@ const pathStyle = computed(() => {
   // Treffern gleichzeitig waere das ein Balkenbild.
   if (isFindHit.value) return { ...base, ...tint, opacity: 1, strokeWidth: (base.strokeWidth || 2) + 0.7 }
   if (focused.value) return { ...base, ...tint, opacity: 1, strokeWidth: (base.strokeWidth || 2) + 0.7 }
-  return base
+  // Ruhezustand – und trotzdem faerbig, wenn diese Linie zur OFFENEN Klasse fuehrt: dann traegt sie
+  // die Zuordnungsfarbe ihres Nachbarn (`neighbourColor` liest dafuer die bleibende
+  // `selectionPalette`). Nur die Farbe, keine Extra-Breite: betont wird weiterhin nur, worauf man
+  // zeigt. Ohne offene Klasse ist `tint` null und es bleibt bei der Art-Farbe.
+  return { ...base, ...tint }
 })
 
 // --- Schein um die betonte Kante ---------------------------------------------------------------

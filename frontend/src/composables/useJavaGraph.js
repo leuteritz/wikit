@@ -68,6 +68,21 @@ const hoverAnchor = ref(null)
 // `hoveredNode`: ManagedEdge liest sie selbst, statt dass der Kanten-Store neu geschrieben wird.
 const hoverPalette = ref(null)
 
+// --- Dieselbe Zuordnung, ohne dass man zeigen muss ----------------------------------------------
+// `selectionAnchor` ist die rechts GEOEFFNETE Klasse (`c:<fileId>` | null), `selectionPalette` die
+// Identitaetsfarbe je direktem Nachbarn – gleiche Bauart wie `hoverPalette`, nur bleibend.
+//
+// Warum: die Farbzuordnung „diese Karte gehoert an diese Linie" beantwortet eine Frage, die man
+// hat, sobald eine Klasse aufgeschlagen ist – nicht erst, wenn man mit der Maus darauf zeigt. Wer
+// ueber die globale Suche in eine Klasse springt, sieht ihre Beziehungen sofort; welche der zwoelf
+// Linien an welcher Karte endet, war bis dahin nur mit der Maus zu erfahren.
+//
+// Vorrang: Hover > Auswahl (die feinere Geste gewinnt, wie ueberall im Graphen). Der Hover FAERBT
+// dabei nicht um – er nimmt dieselbe Farbe (s. `pairPalette`), sonst spraenge die Verbindung beim
+// Draufzeigen in einen anderen Ton und die Zuordnung waere fuer einen Moment eine andere.
+const selectionAnchor = ref(null)
+const selectionPalette = ref(null)
+
 // Die ANGEKLICKTE Kante: `{ id, sourceId, targetId, color }` | null. Gleiche Form und gleiche
 // Wirkung wie `hoveredEdge` – nur bleibt sie stehen, solange ihr Detail in der rechten Spalte
 // offen ist. Sie ersetzt das frühere Modal als Ortsangabe: das Detail sagt, WAS die Beziehung
@@ -380,6 +395,15 @@ export function useJavaGraph() {
       hoveredNode.value = nodeId
       hoverPalette.value = nodeId ? palette : null
       hoverAnchor.value = nodeId ? anchor : null
+    },
+    // --- Bleibende Zuordnungsfarben der offenen Klasse (Begruendung oben) ----------------------
+    selectionAnchor,
+    selectionPalette,
+    // Anker und Palette immer zusammen: eine Farbzuordnung ohne den Knoten, auf den sie sich
+    // bezieht, waere ein Zustand, den niemand mehr aufloest (gleiche Regel wie beim Hover).
+    setSelectionColors(anchor, palette = null) {
+      selectionAnchor.value = anchor || null
+      selectionPalette.value = anchor ? palette : null
     },
     hoveredEdge,
     setHoveredEdge(payload) {

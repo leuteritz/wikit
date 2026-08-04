@@ -114,6 +114,9 @@ const {
   pinnedEdge,
   setPinnedEdge,
   setLabelObstacles,
+  selectionAnchor,
+  selectionPalette,
+  setSelectionColors,
 } = useJavaGraph()
 // Detailabruf einer einzelnen Klasse (Methodenruempfe fuers Edge-Panel) – die Liste traegt sie nicht.
 const { getFile } = useJavaAnalyzer()
@@ -1745,12 +1748,41 @@ function connectionColor(aId, bId) {
 // Im Ankerfall gibt es nichts auseinanderzuhalten – es sind genau zwei Karten und eine Verbindung.
 // Also KEINE sechs Identitaetsfarben, sondern EINE: beide Karten und jede Linie dazwischen tragen
 // sie, und damit ist sichtbar, dass sie zusammen eine einzige Aussage sind.
+// ⚠️ Welche EINE, steht schon fest, sobald die Klasse offen ist: der Nachbar traegt dann bereits
+// seine Zuordnungsfarbe (`selectionPalette`). Der Hover uebernimmt sie, statt auf die Art-Farbe zu
+// wechseln – sonst spraenge dieselbe Verbindung beim Draufzeigen in einen anderen Ton.
 function pairPalette(anchor, nodeId) {
-  const color = connectionColor(anchor, nodeId)
+  const color = selectionPalette.value?.get(nodeId) || connectionColor(anchor, nodeId)
   return new Map([
     [anchor, color],
     [nodeId, color],
   ])
+}
+
+// --- Zuordnungsfarben der offenen Klasse ---------------------------------------------------------
+// Dieselbe Palette wie beim Hover, nur bleibend: sobald eine Klasse rechts aufgeschlagen ist,
+// bekommt jeder ihrer direkten Nachbarn eine eigene Farbe – und die Linie dorthin dieselbe. Damit
+// beantwortet das Bild „welche dieser zwoelf Linien endet an welcher Karte?" ohne Mauszeiger.
+// Gerechnet wird hier (der Graph kennt Nachbarschaft und Lage), abgelegt im Composable, weil
+// `ManagedEdge` selbst liest – sonst muesste bei jeder Auswahl der komplette Kanten-Store neu
+// geschrieben werden.
+watchEffect(() => {
+  const a = anchorId.value
+  // Nur wenn die offene Klasse auch GEZEICHNET ist: eine Palette um einen Knoten, den niemand
+  // sieht, faerbte Karten nach einem Bezugspunkt ausserhalb des Bildes.
+  if (!a || !neighbours.value.has(a)) {
+    setSelectionColors(null)
+    return
+  }
+  setSelectionColors(a, neighbourPalette(a))
+})
+// Die Farbe, die eine Karte durch die offene Klasse traegt. Der Anker selbst bleibt neutral – er
+// ist der Bezugspunkt, nicht eines der unterschiedenen Dinge (gleiche Regel wie beim Hover), und
+// traegt ohnehin den Auswahl-Ring in seiner Rollenfarbe.
+function kinColor(nodeId) {
+  const a = selectionAnchor.value
+  if (!a || a === nodeId) return null
+  return selectionPalette.value?.get(nodeId) || null
 }
 
 // Farbe, die eine Karte im Hover-Fokus traegt (Rahmen + Ring; der Streifen bleibt die ROLLE – was
@@ -2707,11 +2739,12 @@ watch(
               'vf-card--dim': dimLevel(`c:${data.fileId}`) === 'soft',
               'vf-card--mute': dimLevel(`c:${data.fileId}`) === 'hard',
               'vf-card--focus': !!focusColor(`c:${data.fileId}`),
+              'vf-card--kin': !focusColor(`c:${data.fileId}`) && !!kinColor(`c:${data.fileId}`),
               'vf-card--pinned': isPinnedEnd(`c:${data.fileId}`),
               'vf-card--find': findNodeHitSet.has(`c:${data.fileId}`),
             },
           ]"
-          :style="{ '--pkg': data.color, '--edge': focusColor(`c:${data.fileId}`) }"
+          :style="{ '--pkg': data.color, '--edge': focusColor(`c:${data.fileId}`) || kinColor(`c:${data.fileId}`) }"
         >
           <Handle type="target" :position="Position.Top" class="vf-handle" />
           <span class="vf-strip" />
@@ -2765,10 +2798,11 @@ watch(
             'vf-card--dim': dimLevel(`p:${data.path}`) === 'soft',
             'vf-card--mute': dimLevel(`p:${data.path}`) === 'hard',
             'vf-card--focus': !!focusColor(`p:${data.path}`),
+            'vf-card--kin': !focusColor(`p:${data.path}`) && !!kinColor(`p:${data.path}`),
             'vf-card--pinned': isPinnedEnd(`p:${data.path}`),
             'vf-card--find': findNodeHitSet.has(`p:${data.path}`),
           }"
-          :style="{ '--pkg': data.color, '--edge': focusColor(`p:${data.path}`) }"
+          :style="{ '--pkg': data.color, '--edge': focusColor(`p:${data.path}`) || kinColor(`p:${data.path}`) }"
           :title="data.related
             ? `${data.path || '(default)'} — outside this scope, ${data.relations} relation${data.relations === 1 ? '' : 's'}. Click to open.`
             : `${data.path} — click to open`"
@@ -3223,11 +3257,18 @@ watch(
             <Icon icon="lucide:component" class="h-3.5 w-3.5 shrink-0 text-[var(--color-type-interface)]" />
             <span><b><i>italic</i></b> method — defined by an interface or abstract class</span>
           </div>
+          <!-- Ohne diesen Eintrag stimmten die Kantenfarben oben nur noch fuer einen Teil des
+               Bildes: die Linien zur offenen Klasse tragen eine ZUORDNUNGS-, keine Art-Farbe. -->
+          <div class="legend-row">
+            <span class="legend-line legend-line--kin" />
+            <span><b>Leads to the open class</b> — colour pairs each line with its neighbour card</span>
+          </div>
           <p class="legend-hint">
             Arrows point from the definition to the class using it.<br />
             An italic label means the running implementation is not fixed here.<br />
+            With a class open, every neighbour and the line to it share a colour;<br />
+            the line style still tells the kind (solid = call, dashed = uses).<br />
             Hover a class to isolate its connections —<br />
-            each neighbour shares a colour with the line leading to it.<br />
             With a class open on the right, hovering a neighbour keeps<br />
             just that one connection — and reads it out beside the graph.<br />
             Click it to keep it and step over to that class.
@@ -4066,6 +4107,17 @@ watch(
   height: 3px;
   box-shadow: 0 0 6px color-mix(in srgb, var(--color-edge-highlight) 70%, transparent);
 }
+/* Zuordnungsfarbe: hier steht keine EINE Farbe, sondern die Reihe – genau das ist die Aussage
+   („jede Linie eine andere"). Dieselben Tokens wie `HOVER_COLORS` im Skript. */
+.legend-line--kin {
+  background: linear-gradient(
+    to right,
+    var(--mc-0) 0 25%,
+    var(--mc-1) 25% 50%,
+    var(--mc-2) 50% 75%,
+    var(--mc-3) 75% 100%
+  );
+}
 .legend-hint {
   margin-top: 6px;
   padding-top: 6px;
@@ -4369,6 +4421,17 @@ watch(
     0 12px 30px color-mix(in srgb, var(--edge) 24%, transparent);
   transform: translateY(-1px) scale(1.03);
   z-index: 3;
+}
+/* Nachbar der OFFENEN Klasse: traegt seine Zuordnungsfarbe dauerhaft, aber leise – Rahmen und ein
+   1-px-Ring, sonst nichts. Bewusst NICHT `--focus`: dessen kraeftiger Ring, das Anheben und die
+   Ring-Expansion sind die Sprache fuer „genau diese eine Verbindung ist gemeint". Zwoelf Nachbarn
+   mit dieser Sprache waeren zwoelf Betonungen und damit keine. Die Rolle bleibt am Streifen und am
+   Badge ablesbar: die Zuordnungsfarbe sagt WELCHE Linie hierher fuehrt, nicht was die Klasse ist. */
+.vf-card.vf-card--kin,
+.vf-pkgcard.vf-card--kin {
+  border-color: color-mix(in srgb, var(--edge) 70%, var(--color-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--edge) 45%, transparent),
+    0 3px 12px color-mix(in srgb, var(--edge) 16%, transparent);
 }
 /* Einmalige Ring-Expansion beim Setzen des Fokus – derselbe Gedanke wie `vf-match-pulse` bei der
    Suche, nur kuerzer und nur einmal: sie holt den Blick auf die Verbindung, ohne beim Verweilen
