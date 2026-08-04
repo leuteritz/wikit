@@ -130,9 +130,11 @@ const graphHitNodes = ref(new Set())
 // verdecktes Label unlesbar. Der eigentliche Weg ist, dass das Label gar nicht erst unter einer
 // Karte landet: der Graph meldet nach jedem Layout die Rechtecke aller gezeichneten Karten
 // (Flow-Koordinaten), und jedes Label sucht sich damit den naechstgelegenen freien Platz.
-// Ausgewichen wird SENKRECHT, weil dort auch die Linie verlaeuft (Smoothstep, Handles oben/unten):
-// das Label rutscht an seiner eigenen Kante entlang und bleibt ihr damit zugeordnet. Horizontal
-// waere es ein Kaestchen neben einer fremden Linie.
+// Ausgewichen wird ENTLANG DER EIGENEN LINIE, in beiden Richtungen, in denen sie verlaeuft: eine
+// Smoothstep-Kante (Handles oben/unten) laeuft senkrecht aus den Karten heraus und WAAGERECHT
+// dazwischen – und genau auf diesem Mittelstueck sitzt der Label-Punkt. Deshalb wird zuerst
+// waagerecht gerueckt (Bewegung AUF der Linie) und erst danach senkrecht. Was in keiner der beiden
+// Richtungen einen Platz findet, bleibt liegen.
 // Warum ein Raster und keine Liste: ein Ausschnitt hat bis zu 400 Karten und ebenso viele Labels –
 // jedes gegen jedes waere je Layout ein sechsstelliges Produkt.
 const OBSTACLE_CELL = 200 // px Kantenlaenge einer Rasterzelle (Flow-Koordinaten)
@@ -146,10 +148,10 @@ let obstacleGrid = new Map()
 // „{} 3 methods"). Deshalb ist ein platziertes Label selbst ein Hindernis – es traegt sich nach
 // seiner Wahl in ein zweites Raster ein, und wer danach rechnet, weicht ihm aus.
 //
-// Reserviert wird je STAPEL, nicht je Kante: Schluessel ist der gerundete ungefaecherte
-// Mittelpunkt, also genau das, was alle parallelen Kanten eines Paares gemeinsam haben. Damit
-// bekommt der ganze Stapel EINE Verschiebung (er faellt beim Ausweichen nicht auseinander) und
-// belegt EIN Rechteck, statt sich selbst als Hindernis zu sehen.
+// Reserviert wird je STAPEL, nicht je Kante: Schluessel ist das ungeordnete Knotenpaar, also genau
+// die Gruppierung, nach der auch der Faecher `parallelIndex` vergibt. Damit bekommt der ganze
+// Stapel EINE Verschiebung (er faellt beim Ausweichen nicht auseinander) und belegt EIN Rechteck,
+// statt sich selbst als Hindernis zu sehen.
 let labelGrid = new Map()
 const labelSlots = new Map() // stapelKey -> { x, y, halfW, halfH, result, rect }
 // Nur eine Version als Ref, nicht die Boxen selbst: die Labels lesen die Rechtecke nie, sie
@@ -194,42 +196,37 @@ function setLabelObstacles(boxes) {
   labelObstacleVersion.value++
 }
 
-// Sperrintervalle auf der y-Achse aus EINEM Raster einsammeln: jedes Rechteck im senkrechten
-// Korridor [left, right] sperrt seine eigene Hoehe plus die halbe Labelhoehe an beiden Enden – an
-// der Intervallgrenze beruehren sich die Raender gerade nicht mehr.
-function blockedFrom(grid, left, right, y, halfH, gap, blocked, seen) {
-  const cx1 = Math.floor(right / OBSTACLE_CELL)
-  const cy1 = Math.floor((y + LABEL_SHIFT_MAX) / OBSTACLE_CELL)
-  for (let cx = Math.floor(left / OBSTACLE_CELL); cx <= cx1; cx++) {
-    for (let cy = Math.floor((y - LABEL_SHIFT_MAX) / OBSTACLE_CELL); cy <= cy1; cy++) {
-      const bucket = grid.get(`${cx}|${cy}`)
-      if (!bucket) continue
-      for (const b of bucket) {
-        // Ein Rechteck liegt in bis zu vier abgefragten Zellen – ohne die Merkliste stuende es
-        // mehrfach in `blocked` (harmlos fuer das Ergebnis, aber unnoetige Arbeit).
-        if (seen.has(b)) continue
-        seen.add(b)
-        if (b.x + b.w <= left || b.x >= right) continue
-        blocked.push([b.y - halfH - gap, b.y + b.h + halfH + gap])
+// Alle Rechtecke im Ausschnitt einsammeln – Karten UND bereits platzierte Labels, jedes genau
+// einmal (ein Rechteck liegt in bis zu vier abgefragten Zellen).
+function eachRect(x0, y0, x1, y1, fn) {
+  const seen = new Set()
+  const cx1 = Math.floor(x1 / OBSTACLE_CELL)
+  const cy1 = Math.floor(y1 / OBSTACLE_CELL)
+  for (const grid of [obstacleGrid, labelGrid]) {
+    for (let cx = Math.floor(x0 / OBSTACLE_CELL); cx <= cx1; cx++) {
+      for (let cy = Math.floor(y0 / OBSTACLE_CELL); cy <= cy1; cy++) {
+        const bucket = grid.get(`${cx}|${cy}`)
+        if (!bucket) continue
+        for (const b of bucket) {
+          if (seen.has(b)) continue
+          seen.add(b)
+          fn(b)
+        }
       }
     }
   }
 }
 
-// Naechstgelegenes freies y fuer einen Label-MITTELPUNKT bei (x, y) mit den halben Kantenlaengen
-// halfW/halfH. `gap` ist der Mindestabstand zwischen fremdem Rand und Labelrand. Gemieden werden
-// Karten UND bereits platzierte Labels.
-function freeLabelY(x, y, halfW, halfH, gap = 6) {
-  const left = x - halfW
-  const right = x + halfW
-  const blocked = []
-  const seen = new Set()
-  blockedFrom(obstacleGrid, left, right, y, halfH, gap, blocked, seen)
-  blockedFrom(labelGrid, left, right, y, halfH, gap, blocked, seen)
-  if (!blocked.length) return y
+// Naechster freier Punkt auf EINER Achse, gegeben die Sperrintervalle. `at` selbst, wenn dort
+// nichts liegt; sonst der naechstgelegene Intervallrand innerhalb von [lo, hi]. `null` heisst
+// „kein Platz" – erst das erlaubt dem Aufrufer, es auf der anderen Achse zu versuchen, statt
+// (wie frueher) stillschweigend auf dem besetzten Punkt liegen zu bleiben.
+function nearestFree(blocked, at, lo, hi) {
+  if (at < lo || at > hi) return null
+  if (!blocked.length) return at
   blocked.sort((a, b) => a[0] - b[0])
   // Ueberlappende Sperren verschmelzen: erst danach ist die GRENZE eines Intervalls garantiert
-  // frei – ohne den Schritt landete das Label womoeglich in der naechsten Karte.
+  // frei – ohne den Schritt landete das Label womoeglich im naechsten Hindernis.
   const merged = [[blocked[0][0], blocked[0][1]]]
   for (let i = 1; i < blocked.length; i++) {
     const last = merged[merged.length - 1]
@@ -237,20 +234,92 @@ function freeLabelY(x, y, halfW, halfH, gap = 6) {
     else merged.push([blocked[i][0], blocked[i][1]])
   }
   for (const [a, b] of merged) {
-    if (y < a) break // sortiert -> ab hier liegt alles unterhalb des Labels
-    if (y <= b) {
-      const shifted = y - a <= b - y ? a : b
-      // Zu weit ist keine Beschriftung mehr: dann lieber stehen bleiben (die Karte deckt das Label
-      // dann teilweise, aber es steht wenigstens an seiner Linie).
-      return Math.abs(shifted - y) > LABEL_SHIFT_MAX ? y : shifted
+    if (at < a) break // sortiert -> ab hier liegt alles jenseits des Labels
+    if (at <= b) {
+      // Beide Raender pruefen: der naehere kann ausserhalb des erlaubten Bereichs liegen, der
+      // fernere noch darin – nur einen zu betrachten hiesse Plaetze zu verschenken.
+      const ok = [a, b].filter((v) => v >= lo && v <= hi)
+      if (!ok.length) return null
+      return ok.reduce((best, v) => (Math.abs(v - at) < Math.abs(best - at) ? v : best))
     }
   }
-  return y
+  return at
 }
 
-// Platz SUCHEN und zugleich BELEGEN. `key` ist der Stapel (gerundeter ungefaecherter Mittelpunkt) –
-// alle parallelen Labels eines Paares fragen mit demselben Schluessel und denselben Massen und
-// bekommen daher dieselbe Antwort, ohne dass der Stapel sich selbst im Weg steht.
+// Naechstgelegenes freies y fuer einen Label-MITTELPUNKT bei (x, y): das Label rutscht an den
+// Endstuecken seiner Linie entlang. `gap` ist der Mindestabstand zwischen fremdem Rand und
+// Labelrand.
+function freeLabelY(x, y, halfW, halfH, gap) {
+  const left = x - halfW
+  const right = x + halfW
+  const blocked = []
+  eachRect(left, y - LABEL_SHIFT_MAX, right, y + LABEL_SHIFT_MAX, (b) => {
+    if (b.x + b.w <= left || b.x >= right) return
+    blocked.push([b.y - halfH - gap, b.y + b.h + halfH + gap])
+  })
+  return nearestFree(blocked, y, y - LABEL_SHIFT_MAX, y + LABEL_SHIFT_MAX)
+}
+
+// Ein Schritt zur Seite kostet mehr als derselbe Weg an der Linie entlang – er fuehrt von ihr weg.
+const SIDE_COST = 1.6
+
+// Dasselbe auf der WAAGERECHTEN: [lo, hi] ist das Stueck der eigenen Linie, auf dem das Label noch
+// vollstaendig liegt (der Mittelteil der Smoothstep-Kante, s. `slideRange` in ManagedEdge).
+function freeLabelX(x, y, halfW, halfH, gap, lo, hi) {
+  const top = y - halfH - gap
+  const bottom = y + halfH + gap
+  const blocked = []
+  eachRect(lo - halfW, top, hi + halfW, bottom, (b) => {
+    if (b.y + b.h <= top || b.y >= bottom) return
+    blocked.push([b.x - halfW - gap, b.x + b.w + halfW + gap])
+  })
+  return nearestFree(blocked, x, Math.max(lo, x - LABEL_SHIFT_MAX), Math.min(hi, x + LABEL_SHIFT_MAX))
+}
+
+// Der Platz fuer EIN Label(stapel), in der Reihenfolge, in der die Stelle noch zur Linie gehoert:
+//   1. waagerecht auf dem Mittelstueck – eine Bewegung AUF der Linie,
+//   2. senkrecht an den Endstuecken – dito, und der einzige Weg fuer fast senkrechte Kanten,
+//   3. eine Labelbreite DANEBEN, dort wieder senkrecht.
+// Stufe 3 ist noetig, weil in einer Kartenspalte pro Reihenluecke nur EIN Stapel Platz hat: eine
+// Karte sperrt ihre Hoehe plus zweimal die halbe Labelhoehe, und was davon uebrig bleibt, belegt
+// das erste Label ganz. Ohne sie blieben in einem dichten Ausschnitt Dutzende Beschriftungen genau
+// dort liegen, wo schon eine steht – zwei Labels aufeinander sind beide unlesbar, eines eine
+// Labelbreite neben seiner Linie ist noch zuzuordnen.
+//
+// Zwei Durchgaenge: erst mit der vollen Luft, dann auf Kante genaeht. Ein Label, das einen Rand
+// beruehrt, ist gelesen; zwei uebereinander sind es nicht – der Mindestabstand ist eine
+// Schoenheits-, keine Lesbarkeitsfrage und faellt deshalb zuerst.
+function placeLabel(x, y, halfW, halfH, gap, slide) {
+  return placeWithGap(x, y, halfW, halfH, gap, slide) || placeWithGap(x, y, halfW, halfH, 0, slide) || { x, y }
+}
+
+function placeWithGap(x, y, halfW, halfH, gap, slide) {
+  if (slide && slide.max > slide.min) {
+    const sx = freeLabelX(x, y, halfW, halfH, gap, slide.min, slide.max)
+    if (sx != null) return { x: sx, y }
+  }
+  const sy = freeLabelY(x, y, halfW, halfH, gap)
+  if (sy != null) return { x, y: sy }
+  // In halben Labelbreiten nach aussen: die feineren Stufen sind nicht ueberfluessig, weil eine zu
+  // kleine Verschiebung ohnehin nicht frei ist (die Rechtecke ueberlappten sich dann) – sie geben
+  // der Suche nur die Chance, den NAECHSTEN freien Platz zu finden statt den uebernaechsten.
+  let best = null
+  for (const step of [0.5, 1, 1.5, 2, 2.5, 3]) {
+    for (const dir of [1, -1]) {
+      const dx = step * halfW * dir
+      const cy = freeLabelY(x + dx, y, halfW, halfH, gap)
+      if (cy == null) continue
+      const cost = Math.abs(cy - y) + Math.abs(dx) * SIDE_COST
+      if (!best || cost < best.cost) best = { x: x + dx, y: cy, cost }
+    }
+  }
+  // Nichts frei: `null` heisst „mit diesem Abstand nicht" – der Aufrufer versucht es enger.
+  return best
+}
+
+// Platz SUCHEN und zugleich BELEGEN. `key` ist der Stapel (das ungeordnete Knotenpaar) – alle
+// parallelen Labels eines Paares fragen mit demselben Schluessel und denselben Massen und bekommen
+// daher dieselbe Antwort, ohne dass der Stapel sich selbst im Weg steht.
 //
 // ⚠️ Die Reihenfolge entscheidet, WER ausweicht: wer zuerst rechnet, bleibt stehen. Das ist die
 // Renderreihenfolge der Kanten und damit stabil, solange das Layout steht; bei einem neuen Layout
@@ -261,7 +330,16 @@ function freeLabelY(x, y, halfW, halfH, gap = 6) {
 // Die Belegung liegt bewusst NICHT in einem Ref: sie ist Zwischenergebnis einer Rechnung, kein
 // Zustand, den jemand beobachtet. Ein reaktives Raster wuerde jede Label-Platzierung sofort alle
 // anderen neu rechnen lassen – eine Kettenreaktion je Layout statt eines Durchlaufs.
-function reserveLabelY(key, x, y, halfW, halfH, gap = 6) {
+//
+// ZWEI Achsen, und die Reihenfolge folgt der Linie: `slide` ist das waagerechte Mittelstueck der
+// Smoothstep-Kante – genau dort sitzt der Label-Punkt, also ist ein Ruecken NACH LINKS ODER RECHTS
+// eine Bewegung AUF der Linie und damit die treueste. Senkrecht fuehrt vom Mittelstueck weg und ist
+// deshalb der zweite Versuch (er stimmt fuer die fast senkrechten Kanten, die gar kein Mittelstueck
+// haben – dort ist `slide` null). Gemessen im dichten Ausschnitt: senkrecht allein fand fuer 89 von
+// 146 Beschriftungen keinen Platz (naechste Luecke 300–450 px weit, Deckel ist LABEL_SHIFT_MAX) –
+// die blieben alle liegen und stapelten sich gegenseitig. Das war der Grund, dass „ausweichen"
+// zwischen den Kartenreihen praktisch nie stattfand.
+function reserveLabelSpot(key, x, y, halfW, halfH, gap = 6, slide = null) {
   const prev = labelSlots.get(key)
   // Unveraenderte Anfrage desselben Stapels: dieselbe Antwort. Ohne das wuerde das zweite Label
   // eines Stapels dem ersten ausweichen – sie sollen aber uebereinander stehen (`labelStagger`).
@@ -271,8 +349,8 @@ function reserveLabelY(key, x, y, halfW, halfH, gap = 6) {
     gridRemove(labelGrid, prev.rect)
     labelSlots.delete(key)
   }
-  const result = freeLabelY(x, y, halfW, halfH, gap)
-  const rect = { x: x - halfW, y: result - halfH, w: halfW * 2, h: halfH * 2 }
+  const result = placeLabel(x, y, halfW, halfH, gap, slide)
+  const rect = { x: result.x - halfW, y: result.y - halfH, w: halfW * 2, h: halfH * 2 }
   gridInsert(labelGrid, rect)
   labelSlots.set(key, { x, y, halfW, halfH, result, rect })
   return result
@@ -433,7 +511,7 @@ export function useJavaGraph() {
     // --- Ausweichende Kanten-Labels (Begruendung oben) ----------------------------------------
     labelObstacleVersion,
     setLabelObstacles,
-    reserveLabelY,
+    reserveLabelSpot,
     // Nur loeschen, wenn wirklich noch DIESE Kante steht: beim Wandern von Kante A nach B feuert
     // As `mouseleave` teils nach Bs `mouseenter` – ohne die Pruefung bliebe gar nichts markiert.
     clearHoveredEdge(id) {

@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.2.0",
-  "whatsNew": "Each neighbour of the open class has its colour",
+  "version": "4.2.1",
+  "whatsNew": "Edge labels never sit on top of each other",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

@@ -38,7 +38,15 @@ const { scale: rootScale } = useRootScale()
 // Basiswerte bei 16px-Root – beide haengen an der Root-Schriftgroesse, weil das Label mit ihr
 // waechst: bei festem Versatz wuerden gestapelte Labels auf einem 2K-Schirm uebereinanderlaufen.
 const SPREAD = 26 // px horizontaler Abstand zwischen parallelen Linien
-const LABEL_STEP = 20 // px vertikaler Versatz gestapelter Labels
+const PROBE_W = 100 // px angenommene Labelbreite bei 16px-Root (gemessen: 85–106)
+const PROBE_H = 22 // px Labelhoehe (Text + Innenabstand + Rahmen)
+const PROBE_GAP = 7 // px Luft zwischen fremdem Rand und Label
+// ⚠️ Der Versatz gestapelter Labels muss GROESSER sein als ein Label hoch ist – sonst ueberlappen
+// sich zwei Beschriftungen desselben Paares schon per Konstruktion, ganz ohne fremdes Hindernis
+// (gemessen: 20 px Versatz bei 22 px Hoehe = 2 px Ueberlappung an JEDEM Stapel). Deshalb steht hier
+// keine eigene Zahl, sondern die Labelhoehe plus Luft.
+const LABEL_GAP_Y = 4 // px Luft zwischen zwei gestapelten Labels
+const LABEL_STEP = PROBE_H + LABEL_GAP_Y // px vertikaler Versatz gestapelter Labels
 
 // Symmetrisch um die Mitte verteilen: jeder Index erhaelt einen eindeutigen Offset.
 const spread = (step) => {
@@ -88,22 +96,18 @@ const edgePath = computed(() => pathData.value[0])
 // --- Das Label weicht den Karten UND den anderen Labels aus -------------------------------------
 // Karten liegen ueber den Labels (`.vue-flow__nodes` in style.css) – ein Label auf einer Karte
 // waere also ein halb abgeschnittenes Wort. Statt die Stapelreihenfolge umzudrehen (dann deckte
-// die Beschriftung den Gegenstand zu), rueckt das Label an seiner eigenen Linie so weit hoch oder
-// runter, bis es frei steht; `reserveLabelY` kennt dafuer die Rechtecke aller gezeichneten Karten
-// – und die der bereits platzierten Labels: zwei Beschriftungen verschiedener Kanten koennen
-// denselben Punkt treffen (gemessen: „autoClose()" genau ueber „{} 3 methods"), und zwei
-// uebereinanderliegende Methodennamen sind so unlesbar wie einer unter einer Karte.
+// die Beschriftung den Gegenstand zu), rueckt das Label an seiner eigenen Linie, bis es frei steht;
+// `reserveLabelSpot` kennt dafuer die Rechtecke aller gezeichneten Karten – und die der bereits
+// platzierten Labels: zwei Beschriftungen verschiedener Kanten koennen denselben Punkt treffen
+// (gemessen: „autoClose()" genau ueber „{} 3 methods"), und zwei uebereinanderliegende
+// Methodennamen sind so unlesbar wie einer unter einer Karte.
 //
 // Gerechnet wird auf dem UNGEFAECHERTEN Mittelpunkt (labelX = Mitte beider Enden, also genau um
 // fanOffset verschoben): so sehen alle parallelen Kanten desselben Paars dieselbe Ausgangslage,
 // bekommen dieselbe Verschiebung – und der gestaffelte Stapel bleibt ein Stapel, statt beim
 // Ausweichen auseinanderzufallen. Aus demselben Grund ist die Sondenbreite eine KONSTANTE und
 // nicht die (je Methodenname andere) echte Labelbreite: eine Breite pro Label ergaebe pro Label
-// eine andere Verschiebung. Sie ist bewusst grosszuegig – lieber ein Label zu frueh ausweichen
-// lassen als eines zu spaet.
-const PROBE_W = 150 // px angenommene Labelbreite bei 16px-Root
-const PROBE_H = 22 // px Labelhoehe (Text + Innenabstand + Rahmen)
-const PROBE_GAP = 7 // px Luft zwischen Kartenrand und Label
+// eine andere Verschiebung.
 
 // Traegt diese Kante ueberhaupt eine Beschriftung? Dieselbe Bedingung wie die beiden
 // EdgeLabelRenderer im Template – eine zweite Formulierung waere die Gelegenheit, sie
@@ -115,18 +119,36 @@ const hasLabel = computed(() => {
 
 const baseX = computed(() => pathData.value[1] - fanOffset.value)
 const baseY = computed(() => pathData.value[2])
-const labelDodge = computed(() => {
+// Halbe Masse des GANZEN Stapels (alle parallelen Labels weichen als ein Block aus).
+const probeHalfW = computed(() => ((PROBE_W + SPREAD * ((props.data?.parallelCount || 1) - 1)) * rootScale.value) / 2)
+const probeHalfH = computed(
+  () => ((PROBE_H + LABEL_STEP * ((props.data?.parallelCount || 1) - 1)) * rootScale.value) / 2,
+)
+
+// Das waagerechte Mittelstueck der Smoothstep-Kante – dort, und nur dort, darf das Label seitlich
+// rutschen, ohne seine Linie zu verlassen. Es gibt es nur bei einer nach unten laufenden Kante
+// (Handles bottom -> top); geht die Kante aufwaerts, legt Vue Flow den Weg aussen herum und der
+// Mittelpunkt liegt nicht mehr auf einer Waagerechten. Der Rand `CORNER` haelt das Label von den
+// abgerundeten Ecken fern, `halfW` sorgt dafuer, dass es GANZ auf dem Stueck liegt.
+const CORNER = 12 // px Abstand zur Kurve am Ende des Mittelstuecks (16px-Root)
+const slideRange = computed(() => {
+  const margin = CORNER * rootScale.value + probeHalfW.value
+  const min = Math.min(props.sourceX, props.targetX) + margin
+  const max = Math.max(props.sourceX, props.targetX) - margin
+  if (max <= min) return null
+  // Zu flach: dann ist kein waagerechtes Stueck da, auf das man ruecken koennte.
+  if (props.targetY - props.sourceY < 4 * CORNER * rootScale.value) return null
+  return { min, max }
+})
+
+const labelSpot = computed(() => {
   // Neu rechnen, sobald der Graph ein neues Layout gemeldet hat (die Boxen selbst sind nicht
   // reaktiv – s. useJavaGraph).
   void labelObstacleVersion.value
+  const base = { x: baseX.value, y: baseY.value }
   // Kante ohne Beschriftung (import/uses) belegt auch keinen Platz – sonst verdraengte ein Label,
   // das gar nicht gezeichnet wird, ein echtes.
-  if (!hasLabel.value) return 0
-  const s = rootScale.value
-  const count = props.data?.parallelCount || 1
-  // Der ganze Stapel paralleler Labels weicht als EIN Block aus -> Sonde umfasst alle.
-  const halfW = ((PROBE_W + SPREAD * (count - 1)) * s) / 2
-  const halfH = ((PROBE_H + LABEL_STEP * (count - 1)) * s) / 2
+  if (!hasLabel.value) return base
   // Schluessel = das ungeordnete Knotenpaar, also GENAU die Gruppierung, nach der auch der Faecher
   // `parallelIndex` vergibt (s. JavaDependencyGraph). ⚠️ Nicht die POSITION als Schluessel nehmen:
   // zwei verschiedene Paare koennen exakt denselben Mittelpunkt haben (gemessen: 22 Labelpaare mit
@@ -135,10 +157,20 @@ const labelDodge = computed(() => {
   const sid = props.data?.sourceId
   const tid = props.data?.targetId
   const key = sid != null && tid != null ? [sid, tid].sort().join('|') : `edge:${props.id}`
-  return reserveLabelY(key, baseX.value, baseY.value, halfW, halfH, PROBE_GAP * s) - baseY.value
+  return reserveLabelSpot(
+    key,
+    base.x,
+    base.y,
+    probeHalfW.value,
+    probeHalfH.value,
+    PROBE_GAP * rootScale.value,
+    slideRange.value,
+  )
 })
-const labelX = computed(() => pathData.value[1])
-const labelY = computed(() => baseY.value + labelDodge.value + labelStagger.value)
+// Der Faecher (waagerecht) und die Staffelung (senkrecht) kommen NACH dem Ausweichen dazu: der
+// Stapel bewegt sich als Block, und jedes Label behaelt seinen Platz darin.
+const labelX = computed(() => labelSpot.value.x + fanOffset.value)
+const labelY = computed(() => labelSpot.value.y + labelStagger.value)
 
 const d = computed(() => props.data || {})
 // Feldzugriff statt Methodenaufruf: dieselbe Kante, aber der Name traegt keine Klammern und die
@@ -177,7 +209,7 @@ const {
   graphQuery,
   graphHitNodes,
   labelObstacleVersion,
-  reserveLabelY,
+  reserveLabelSpot,
   selectionAnchor,
   selectionPalette,
 } = useJavaGraph()
@@ -671,7 +703,14 @@ const pulsing = computed(() => !!d.value.isHighlighted && !isHovered.value && !i
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-edge-highlight) 45%, transparent),
     0 0 10px color-mix(in srgb, var(--color-edge-highlight) 55%, transparent);
 }
+/* inline-flex, nicht inline: ein Icon IM Textfluss steht auf der Grundlinie und zieht die Zeilenbox
+   um seine Unterlaenge auf – das Feld-Label („◇ CANCL") war dadurch anderthalbmal so hoch wie ein
+   Methoden-Label (gemessen: 31 statt 20 px) und passte nicht mehr in die Sonde, mit der die
+   Platzierung rechnet (PROBE_H). Alle Labels sind jetzt gleich hoch. */
 .me-method {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
