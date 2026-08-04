@@ -25,7 +25,7 @@ import { parseParamNames, markParamOccurrences, toggleParamHighlight as onParamC
 // `shikiText`/`paintMatches`/`clearMatches` tragen die Suche in diesem Panel (s. unten).
 import { addLineNumbers, buildCallWindow, shikiText, paintMatches, clearMatches } from '../../lib/javaCode.js'
 // Dieselbe Musterlogik wie die Suchleiste im Source-Tab und in der globalen Palette.
-import { findMatches, MATCH_LIMIT } from '../../lib/codeSearch.js'
+import { findMatches, indexAtOrAfter, isIdentifier, MATCH_LIMIT } from '../../lib/codeSearch.js'
 // Identitaetsfarbe je Methode: Definition oben, Aufrufstelle unten und Token im Code teilen sie.
 import { buildMethodColorMap, methodColorVars, markMethodCalls } from '../../lib/javaMethodColors.js'
 import { copyToClipboard } from '../../lib/clipboard.js'
@@ -377,6 +377,66 @@ function jumpToSide(side) {
     }
     seen += b.matches.length
   }
+}
+
+// --- Selektion im Code -> Suchbegriff ----------------------------------------------------------
+// Dieselbe Geste wie im Source-Tab (`JavaCodeEditor` meldet dort `select-word`): ein Doppelklick
+// (oder eine gezogene Selektion) auf einen Bezeichner beantwortet die Frage „wo steht das hier
+// noch?", ohne ihn abzutippen. Der Untergrund ist hier Shiki-HTML statt CodeMirror, also wird die
+// Auswahl aus der DOM-Selektion gelesen – aber die Regeln sind woertlich dieselben: mehrzeilige
+// oder sehr lange Selektionen sind kein Suchbegriff, ein Bezeichner setzt „Ganzes Wort" (`id` soll
+// nicht `valid` treffen), Regex geht aus, und die Gross-/Kleinschreibung bleibt, wie der Nutzer sie
+// gesetzt hat. Markiert wird anschliessend in JEDEM Block der Beziehung – Definition wie
+// Aufrufstellen –, das leistet die vorhandene Suche unveraendert.
+const MAX_PICK_LEN = 80
+
+// Offset der Selektion im Text, den `shikiText(block)` liefert – die Bezugsgroesse der Trefferliste.
+// Gerechnet wird ueber die `.line`-Elemente (Zeilenlaenge + je ein `\n`), genau wie dort: eine
+// Range vom Blockanfang bis zur Selektion enthielte die Zeilenumbrueche NICHT und laege damit pro
+// Zeile ein Zeichen daneben.
+function selectionOffset(block, range) {
+  const start = range.startContainer
+  const el = start.nodeType === 1 ? start : start.parentElement
+  const line = el?.closest('.line')
+  if (!line) return 0
+  const lines = [...block.querySelectorAll('.line')]
+  const idx = lines.indexOf(line)
+  if (idx < 0) return 0
+  let offset = 0
+  for (let i = 0; i < idx; i++) offset += lines[i].textContent.length + 1
+  const head = document.createRange()
+  head.selectNodeContents(line)
+  head.setEnd(start, range.startOffset)
+  return offset + head.toString().length
+}
+
+// Das angeklickte Vorkommen wird zum AKTIVEN Treffer – „weiter" setzt dort fort, wo der Blick
+// liegt, statt beim ersten Block der Beziehung. Die Bloecke davor zaehlen ihre Treffer bei, damit
+// der Zaehler dieselbe Reihenfolge behaelt wie das Panel (erst Definitionen, dann Aufrufstellen).
+function cursorAt(block, offset) {
+  let seen = 0
+  for (const b of blocks.value) {
+    if (b.el === block) return seen + Math.max(0, indexAtOrAfter(b.matches, offset))
+    seen += b.matches.length
+  }
+  return 0
+}
+
+async function onPickWord(event) {
+  const block = event.currentTarget
+  const sel = window.getSelection?.()
+  if (!sel || !sel.rangeCount || sel.isCollapsed) return
+  const range = sel.getRangeAt(0)
+  if (!block?.contains(range.startContainer)) return
+  const text = String(sel).trim()
+  if (!text || text.length > MAX_PICK_LEN || text.includes('\n')) return
+  const offset = selectionOffset(block, range)
+  searchOpts.value = { ...searchOpts.value, wholeWord: isIdentifier(text), regex: false }
+  search.value = text
+  // Erst scannen, dann den Cursor setzen: die Trefferliste des Blocks entsteht in `scanBlocks`,
+  // und ohne sie waere „das angeklickte Vorkommen" nur eine Zahl ohne Bezug.
+  await scanBlocks()
+  searchCursor.value = cursorAt(block, offset)
 }
 
 // Ctrl+F, wenn dieses Panel vorn steht. Der Tastendruck selbst wird NICHT hier abgefangen: die
@@ -798,6 +858,7 @@ watch(
                       class="edge-code code-dark"
                       v-html="snippets[c.name].html"
                       @click="onParamClick"
+                      @mouseup="onPickWord"
                     />
                   </div>
                 </article>
@@ -885,7 +946,7 @@ watch(
                           </button>
                         </div>
                       </div>
-                      <div class="edge-usage-code code-dark" v-html="site.html" @click="onParamClick" />
+                      <div class="edge-usage-code code-dark" v-html="site.html" @click="onParamClick" @mouseup="onPickWord" />
                     </div>
                   </div>
                 </div>
