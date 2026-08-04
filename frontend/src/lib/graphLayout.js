@@ -346,10 +346,27 @@ export function layoutClustered({ nodes = [], edges = [], nodesep = 70, ranksep 
 // einer einzigen Reihe – gemessen ein 8000 px breites Band, das `fitView` auf Zoom 0.2 druecken
 // muss. Ein Stern hat aber gar keine Schichtung zu zeigen: jede Kante geht zur Mitte. Also Ringe.
 //
-// Ringgroesse aus dem Umfang: pro Ring passen `2πr / (breite + luecke)` Knoten. Der Radius waechst,
-// bis alle untergebracht sind – so bleibt der Abstand zwischen zwei Nachbarn konstant, egal ob es
-// fuenf oder hundertfuenfzig sind. Die Aggregate (breitere Karten) bekommen einen eigenen Ring
-// AUSSEN: sie stehen fuer „und da ist noch mehr", und das liest sich am Rand richtig.
+// ⚠️ Die Ringe sind RECHTECKE auf einem Raster, keine Kreise – und das ist kein Geschmack, sondern
+// die Bedingung dafuer, dass sich nichts ueberlappt. Ein Kreis kennt nur EINEN Abstand, eine Karte
+// aber zwei: sie ist 250 breit und 74 hoch. Der frueher gerechnete Umfang (`2πr / (breite+luecke)`)
+// sicherte den Abstand nur ENTLANG eines Rings, der Radiuszuwachs (`hoehe + luecke`) nur RADIAL –
+// zwei Karten benachbarter Ringe auf schraeg versetzten Winkeln fielen durch beide Garantien.
+// Gemessen (20 Nachbarn, der Fall aus dem Bild): 6 ueberlappende Paare, dy bis 44 px bei 74 px
+// Kartenhoehe. Auf dem Raster ist die Sache trivial wahr: jede Karte sitzt auf einer eigenen Zelle,
+// eine Zelle ist Karte + Luft, also sind zwei Karten immer mindestens eine Spalte oder eine Zeile
+// auseinander.
+//
+// Der Ring waechst je Runde um eine Spalte; die Zeilenzahl folgt daraus so, dass das Rechteck in
+// PIXELN etwa die Form des Canvas behaelt (`RING_ASPECT`) – sonst waere es so flach wie die Karte
+// (2,4:1) und `fitView` muesste auf die Breite herunterzoomen. Nur der RAND traegt Karten: der
+// leere Kern ist der Weg, den die Kanten der Mitte nach draussen nehmen. Ist ein Ring nicht voll,
+// werden die Karten gleichmaessig ueber seine Plaetze verteilt statt an einer Seite gestapelt.
+// Die Aggregate (breitere Karten) beginnen einen eigenen Ring AUSSEN: sie stehen fuer „und da ist
+// noch mehr", und das liest sich am Rand richtig.
+const RING_GAP_X = 26 // Luft zwischen zwei Karten nebeneinander
+const RING_GAP_Y = 46 // Luft zwischen zwei Karten uebereinander (dort liegen die Kantenlabels)
+const RING_ASPECT = 1.2 // Zielform eines Rings in Pixeln (Breite : Hoehe)
+
 export function layoutRadial({
   centerId = null,
   ring = [], // [{ id, width, height }] – einzelne Nachbarn
@@ -360,40 +377,48 @@ export function layoutRadial({
   if (centerId == null) return { pos, zones: [] }
   pos.set(centerId, { x: 0, y: 0 })
 
-  const GAP = 26 * scale // Luft zwischen zwei Karten auf demselben Ring
-  const RING_GAP = 46 * scale // Luft zwischen zwei Ringen
+  const all = [...ring, ...outer]
+  if (!all.length) return { pos, zones: [] }
 
-  // Knoten auf konzentrische Ringe verteilen; `startRadius` ist der Abstand des ersten Rings.
-  const placeRing = (list, startRadius) => {
+  // EINE Rasterzelle fuer alle: die groesste Karte plus Luft. Aggregate sind hoeher als Klassen –
+  // je Ring zu rechnen waere enger, aber dann haette der Uebergang zwischen zwei Ringen wieder
+  // zwei Massstaebe, und genau daran ist die Kreisfassung gescheitert.
+  const stepX = Math.max(...all.map((n) => n.width), 1) + RING_GAP_X * scale
+  const stepY = Math.max(...all.map((n) => n.height), 1) + RING_GAP_Y * scale
+
+  // Plaetze auf dem Rand eines Zellen-Rechtecks, im Uhrzeigersinn ab oben – dieselbe Leserichtung
+  // wie eine Uhr. Sortiert wird nach dem SICHTBAREN Winkel (Zelle mal Zellmass), nicht nach dem
+  // Rasterindex: sonst laege die Reihenfolge quer zur Anschauung.
+  const slotsOf = (cols, rows) => {
+    const out = []
+    for (let a = -cols; a <= cols; a++) {
+      for (let b = -rows; b <= rows; b++) {
+        if (Math.abs(a) === cols || Math.abs(b) === rows) out.push({ x: a * stepX, y: b * stepY })
+      }
+    }
+    const angle = (p) => (Math.atan2(p.y, p.x) + 2.5 * Math.PI) % (2 * Math.PI)
+    return out.sort((p, q) => angle(p) - angle(q))
+  }
+
+  let cols = 0
+  let rows = 0
+  const place = (list) => {
     let i = 0
-    let radius = startRadius
-    let maxBottom = startRadius
     while (i < list.length) {
-      const w = Math.max(...list.slice(i).map((n) => n.width), 1)
-      const h = Math.max(...list.slice(i).map((n) => n.height), 1)
-      // Wieviele passen auf diesen Ring? Mindestens einer, sonst waechst der Radius ewig.
-      const capacity = Math.max(1, Math.floor((2 * Math.PI * radius) / (w + GAP)))
-      const count = Math.min(capacity, list.length - i)
-      // Beginnt oben (-90°) und laeuft im Uhrzeigersinn – dieselbe Leserichtung wie eine Uhr.
-      const step = (2 * Math.PI) / count
-      const offset = -Math.PI / 2
+      cols += 1
+      // Zeilen aus der Zielform – aber immer mindestens eine mehr als der Ring davor, sonst
+      // saessen zwei Ringe in derselben Zeile.
+      rows = Math.max(rows + 1, Math.round((cols * stepX) / (RING_ASPECT * stepY)))
+      const slots = slotsOf(cols, rows)
+      const count = Math.min(slots.length, list.length - i)
       for (let k = 0; k < count; k++) {
-        const a = offset + k * step
-        pos.set(list[i + k].id, { x: Math.cos(a) * radius, y: Math.sin(a) * radius })
+        pos.set(list[i + k].id, slots[Math.round((k * slots.length) / count) % slots.length])
       }
       i += count
-      maxBottom = radius + h / 2
-      radius += h + RING_GAP
     }
-    return { next: radius, bottom: maxBottom }
   }
-
-  const first = ring.length ? Math.max(...ring.map((n) => Math.max(n.width, n.height))) * 1.15 : 240 * scale
-  const after = placeRing(ring, first)
-  if (outer.length) {
-    const gap = ring.length ? RING_GAP * 1.6 : 0
-    placeRing(outer, after.next + gap)
-  }
+  place(ring)
+  if (outer.length) place(outer)
 
   return { pos, zones: [] }
 }
