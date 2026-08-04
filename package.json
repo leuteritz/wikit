@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.1.1",
-  "whatsNew": "This line now reads as a quote, not a box",
+  "version": "4.1.2",
+  "whatsNew": "Sidebar counts and bot dot now share one line",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

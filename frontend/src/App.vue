@@ -213,9 +213,13 @@ function isActive(to) {
             />
           </span>
           <span class="hidden flex-1 lg:inline">{{ link.label }}</span>
+          <!-- Zustand und Zaehler teilen sich EINEN Slot (`w-6`, zentriert, `mr-2` vom Rand): der
+               Punkt ist 8 px breit, das Zahlenfeld 24 – rechtsbuendig gesetzt laegen sie auf zwei
+               Achsen, und drei Nav-Zeilen untereinander machen jeden Versatz sichtbar. Der Abstand
+               zum Rand gehoert dazu, sonst klebt der Punkt an der Trennlinie. -->
           <span
             v-if="link.status"
-            class="ml-auto hidden items-center gap-1.5 lg:flex"
+            class="ml-auto mr-2 hidden w-6 shrink-0 items-center justify-center lg:flex"
           >
             <!-- Bewusst ohne Animation: ein Punkt, der dauerhaft pulsiert, ist nach zwei Minuten
                  Arbeit nur noch Unruhe (dieselbe Zurueckhaltung wie beim „Add code"-Knopf). -->
@@ -223,7 +227,7 @@ function isActive(to) {
           </span>
           <span
             v-else
-            class="hidden min-w-[24px] rounded px-1.5 py-0.5 text-center font-mono text-2xs lg:inline"
+            class="ml-auto mr-2 hidden w-6 shrink-0 text-center font-mono text-2xs lg:inline"
             :class="isActive(link.to) ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'"
           >{{ link.count }}</span>
         </RouterLink>
