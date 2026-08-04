@@ -85,11 +85,14 @@ const pathData = computed(() =>
 )
 const edgePath = computed(() => pathData.value[0])
 
-// --- Das Label weicht den Karten aus ------------------------------------------------------------
+// --- Das Label weicht den Karten UND den anderen Labels aus -------------------------------------
 // Karten liegen ueber den Labels (`.vue-flow__nodes` in style.css) – ein Label auf einer Karte
 // waere also ein halb abgeschnittenes Wort. Statt die Stapelreihenfolge umzudrehen (dann deckte
 // die Beschriftung den Gegenstand zu), rueckt das Label an seiner eigenen Linie so weit hoch oder
-// runter, bis es frei steht; `freeLabelY` kennt dafuer die Rechtecke aller gezeichneten Karten.
+// runter, bis es frei steht; `reserveLabelY` kennt dafuer die Rechtecke aller gezeichneten Karten
+// – und die der bereits platzierten Labels: zwei Beschriftungen verschiedener Kanten koennen
+// denselben Punkt treffen (gemessen: „autoClose()" genau ueber „{} 3 methods"), und zwei
+// uebereinanderliegende Methodennamen sind so unlesbar wie einer unter einer Karte.
 //
 // Gerechnet wird auf dem UNGEFAECHERTEN Mittelpunkt (labelX = Mitte beider Enden, also genau um
 // fanOffset verschoben): so sehen alle parallelen Kanten desselben Paars dieselbe Ausgangslage,
@@ -102,18 +105,37 @@ const PROBE_W = 150 // px angenommene Labelbreite bei 16px-Root
 const PROBE_H = 22 // px Labelhoehe (Text + Innenabstand + Rahmen)
 const PROBE_GAP = 7 // px Luft zwischen Kartenrand und Label
 
+// Traegt diese Kante ueberhaupt eine Beschriftung? Dieselbe Bedingung wie die beiden
+// EdgeLabelRenderer im Template – eine zweite Formulierung waere die Gelegenheit, sie
+// auseinanderlaufen zu lassen.
+const hasLabel = computed(() => {
+  const kind = props.data?.kind
+  return kind === 'aggregate' || (kind !== 'import' && kind !== 'uses')
+})
+
 const baseX = computed(() => pathData.value[1] - fanOffset.value)
 const baseY = computed(() => pathData.value[2])
 const labelDodge = computed(() => {
   // Neu rechnen, sobald der Graph ein neues Layout gemeldet hat (die Boxen selbst sind nicht
   // reaktiv – s. useJavaGraph).
   void labelObstacleVersion.value
+  // Kante ohne Beschriftung (import/uses) belegt auch keinen Platz – sonst verdraengte ein Label,
+  // das gar nicht gezeichnet wird, ein echtes.
+  if (!hasLabel.value) return 0
   const s = rootScale.value
   const count = props.data?.parallelCount || 1
   // Der ganze Stapel paralleler Labels weicht als EIN Block aus -> Sonde umfasst alle.
   const halfW = ((PROBE_W + SPREAD * (count - 1)) * s) / 2
   const halfH = ((PROBE_H + LABEL_STEP * (count - 1)) * s) / 2
-  return freeLabelY(baseX.value, baseY.value, halfW, halfH, PROBE_GAP * s) - baseY.value
+  // Schluessel = das ungeordnete Knotenpaar, also GENAU die Gruppierung, nach der auch der Faecher
+  // `parallelIndex` vergibt (s. JavaDependencyGraph). ⚠️ Nicht die POSITION als Schluessel nehmen:
+  // zwei verschiedene Paare koennen exakt denselben Mittelpunkt haben (gemessen: 22 Labelpaare mit
+  // dx = dy = 0) – sie teilten sich dann einen Platz und laegen weiter uebereinander, statt
+  // einander auszuweichen.
+  const sid = props.data?.sourceId
+  const tid = props.data?.targetId
+  const key = sid != null && tid != null ? [sid, tid].sort().join('|') : `edge:${props.id}`
+  return reserveLabelY(key, baseX.value, baseY.value, halfW, halfH, PROBE_GAP * s) - baseY.value
 })
 const labelX = computed(() => pathData.value[1])
 const labelY = computed(() => baseY.value + labelDodge.value + labelStagger.value)
@@ -155,7 +177,7 @@ const {
   graphQuery,
   graphHitNodes,
   labelObstacleVersion,
-  freeLabelY,
+  reserveLabelY,
 } = useJavaGraph()
 
 // Verbindet diese Kante den gehoverten Knoten mit dem Anker (der rechts offenen Klasse)?
