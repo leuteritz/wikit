@@ -690,7 +690,7 @@ const pulsing = computed(() => !!d.value.isHighlighted && !isHovered.value && !i
   opacity: 0.8;
 }
 .me-label--review {
-  border-color: color-mix(in srgb, #d4a017 60%, var(--color-border));
+  border-color: color-mix(in srgb, var(--color-review) 60%, var(--color-border));
 }
 .me-label--selected {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 45%, transparent);
@@ -754,7 +754,7 @@ const pulsing = computed(() => !!d.value.isHighlighted && !isHovered.value && !i
   font-size: 0.625rem;
   font-weight: 700;
   color: #fff;
-  background: #d4a017;
+  background: var(--color-review);
 }
 
 /* Hover-Loeschen: × erscheint nur beim Hover ueber dem Label – haelt den Graphen ruhig. */

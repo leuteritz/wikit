@@ -48,6 +48,10 @@
   --color-danger: #b06b76;          /* gedaempftes Rosen-Rot */
 
   /* Zusatz-Hues (Kategorien + Package-Faerbung im Graph). */
+  /* „Please review" am Kanten-Label: kraeftiger als --color-warning, weil das Badge deckend
+     gefuellt ist und in BEIDEN Themes dieselbe Warnfarbe traegt. Eine Zahl, drei Leser
+     (Badge, Labelrahmen, Legende). */
+  --color-review: #d4a017;
   --color-thistle: #b3819c;
   --color-thistle-soft: #f0e4ea;
   --color-lavender: #7d7bad;

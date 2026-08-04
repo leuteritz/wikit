@@ -3229,7 +3229,7 @@ watch(
           </div>
           <div class="legend-row">
             <span class="legend-line" style="background: var(--color-warning)" />
-            <span><b>Uncertain</b> match — “Please review”</span>
+            <span><b>Uncertain</b> match — the target was guessed</span>
           </div>
           <div class="legend-row">
             <span class="legend-line" style="background: var(--color-lavender)" />
@@ -3251,23 +3251,59 @@ watch(
             <span class="legend-line legend-line--lit" style="background: var(--color-edge-highlight)" />
             <span><b>Highlighted</b> from a click in the source code</span>
           </div>
+          <!-- Vierter Abschnitt: die LINIE sagt die Art der Beziehung, das LABEL das Mitglied.
+               Ohne ihn erklaerte die Legende jede Farbe und keinen einzigen Text – und genau der
+               Text ist das, was man liest. Die Muster spiegeln `.me-label` in ManagedEdge. -->
+          <div class="legend-head mt-1.5">Edge labels · what the text says</div>
+          <div class="legend-row">
+            <span class="legend-label">getDisp()</span>
+            <span>One <b>call</b> — click for the code</span>
+          </div>
+          <div class="legend-row">
+            <span class="legend-label"><Icon icon="lucide:braces" class="legend-label-ic" />3 methods</span>
+            <span>Several calls <b>bundled</b> — click to list them</span>
+          </div>
+          <div class="legend-row">
+            <span class="legend-label legend-label--field"
+              ><Icon icon="lucide:variable" class="legend-label-ic" />CANCL</span
+            >
+            <span>A <b>field</b>, not a call — no parentheses</span>
+          </div>
+          <div v-if="packageMode || relatedNodes.length" class="legend-row">
+            <span class="legend-label legend-label--agg"
+              ><Icon icon="lucide:git-fork" class="legend-label-ic" />4 class relations</span
+            >
+            <span>A whole <b>package</b> pair — click to list them</span>
+          </div>
           <!-- Die kursive Schreibweise am Kanten-Label ist eine Aussage, keine Typografie – ohne
                diesen Eintrag waere sie eine huebsche Luege. -->
           <div class="legend-row">
-            <Icon icon="lucide:component" class="h-3.5 w-3.5 shrink-0 text-[var(--color-type-interface)]" />
-            <span><b><i>italic</i></b> method — defined by an interface or abstract class</span>
+            <span class="legend-label"
+              ><Icon icon="lucide:component" class="legend-label-ic" /><i>getDisp()</i></span
+            >
+            <span><b>Interface or abstract</b> — impl. not fixed</span>
+          </div>
+          <div class="legend-row">
+            <span class="legend-badge"><Icon icon="lucide:alert-triangle" class="legend-label-ic" />Please review</span>
+            <span><b>Guessed</b> by method name alone</span>
+          </div>
+          <div class="legend-row">
+            <span class="legend-label legend-label--find">getDisp()</span>
+            <span>Its edge is a <b>search match</b></span>
           </div>
           <!-- Ohne diesen Eintrag stimmten die Kantenfarben oben nur noch fuer einen Teil des
-               Bildes: die Linien zur offenen Klasse tragen eine ZUORDNUNGS-, keine Art-Farbe. -->
+               Bildes: was zur offenen Klasse fuehrt, traegt eine ZUORDNUNGS-, keine Art-Farbe. -->
           <div class="legend-row">
             <span class="legend-line legend-line--kin" />
-            <span><b>Leads to the open class</b> — colour pairs each line with its neighbour card</span>
+            <span><b>Leads to the open class</b> — one shared colour</span>
           </div>
+          <p class="legend-sub">
+            A label carries the colour of its line. It steps aside to stay readable — never on a
+            card, never on another label.
+          </p>
+
           <p class="legend-hint">
             Arrows point from the definition to the class using it.<br />
-            An italic label means the running implementation is not fixed here.<br />
-            With a class open, every neighbour and the line to it share a colour;<br />
-            the line style still tells the kind (solid = call, dashed = uses).<br />
             Hover a class to isolate its connections —<br />
             With a class open on the right, hovering a neighbour keeps<br />
             just that one connection — and reads it out beside the graph.<br />
@@ -4047,7 +4083,7 @@ watch(
   width: 22rem;
   /* Hoch genug, dass die fuenf Kategorie-Abschnitte auf ueblichen Fenstern ohne Scrollen
      nebeneinanderstehen – eine Legende, in der man blaettern muss, wird nicht gelesen. */
-  max-height: min(640px, 76vh);
+  max-height: min(760px, 76vh);
   overflow-y: auto;
   padding: 10px 12px;
   border-radius: 12px;
@@ -4125,6 +4161,59 @@ watch(
   font-size: 0.625rem;
   line-height: 1.5;
   color: var(--color-text-muted);
+}
+/* Label-Muster: spiegelt `.me-label` in ManagedEdge (Rahmen, Radius, Gewicht, Akzentfarbe) – eine
+   Legende, die das Kaestchen anders zeichnet als der Graph, erklaert ein anderes Bild. Nur die
+   Schrift ist eine Stufe kleiner, damit die Zeile so hoch bleibt wie die uebrigen. */
+.legend-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--color-accent);
+}
+.legend-label-ic {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+}
+/* Feld statt Methode: dieselbe Lavendel-Familie wie die Feld-Kante. */
+.legend-label--field {
+  border-color: color-mix(in srgb, var(--color-lavender) 60%, var(--color-border));
+  color: var(--color-lavender);
+}
+/* Aggregat-Label: Distel wie die gebuendelte Package-Kante, Ziffern tabellarisch wie im Canvas. */
+.legend-label--agg {
+  border-color: color-mix(in srgb, var(--color-thistle) 45%, var(--color-border));
+  color: var(--color-thistle);
+  font-variant-numeric: tabular-nums;
+}
+/* Suchtreffer: Goldrahmen samt Ring – identisch zu `.me-label--find`. */
+.legend-label--find {
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-warning) 30%, transparent);
+}
+/* „Please review"-Badge: deckend gefuellt wie am Kanten-Label (`.me-badge`). */
+.legend-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  padding: 0 4px;
+  border-radius: 999px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  color: #fff;
+  background: var(--color-review);
 }
 .legend-row code {
   border-radius: 3px;
