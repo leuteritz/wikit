@@ -143,14 +143,26 @@ function isActive(to) {
       <!-- Was diese Fassung gebracht hat. Steht UNTER der Nummer, weil es dieselbe Auskunft
            weiterfuehrt – und ausserhalb des Links: wer den Satz liest, will nicht zur Startseite.
            Der Text kommt aus `whatsNew` in der Root-package.json (s. config.js) und wird bei jedem
-           Versions-Bump mitgepflegt. Der Rahmen macht aus der Zeile eine Notiz statt eines
-           angehaengten Halbsatzes; zwei Zeilen sind das Maximum, der Rest steht im Tooltip. -->
+           Versions-Bump mitgepflegt.
+           Kein Rahmen mehr: eine Box neben dem Versions-Chip sah aus wie ein zweites Bedienelement.
+           Stattdessen ein ZITAT – Anfuehrungszeichen im Akzent, Satz kursiv: das liest sich als
+           Stimme der Fassung („das ist neu"), nicht als angehaengter Halbsatz, und kostet keine
+           Flaeche. Beim Hovern geht der Satz auf volle Textfarbe, weil er dann gelesen wird.
+           Zwei Zeilen sind das Maximum, der Rest steht im Tooltip (gemessen bei 240–300 px
+           Spaltenbreite: 61 Zeichen bleiben zweizeilig).
+           ⚠️ Kein haengendes Anfuehrungszeichen (negatives `text-indent`): `line-clamp` bringt
+           `overflow: hidden` mit, das Zeichen wurde dadurch angeschnitten statt in den Rand
+           zu ragen. -->
       <p
         v-if="WIKI_WHATS_NEW"
-        class="mb-1 mt-1.5 hidden rounded-lg border border-[var(--color-border)] px-2 py-1.5 text-3xs leading-snug text-[var(--color-text-muted)] lg:block"
+        class="group mb-1 mt-2 hidden px-2 lg:block"
         :title="WIKI_WHATS_NEW"
       >
-        <span class="line-clamp-2">{{ WIKI_WHATS_NEW }}</span>
+        <span
+          class="line-clamp-2 text-2xs italic leading-snug text-[var(--color-text-muted)] transition-colors duration-200 group-hover:text-[var(--color-text)]"
+        >
+          <span class="not-italic text-[var(--color-accent)]">“</span>{{ WIKI_WHATS_NEW }}<span class="not-italic text-[var(--color-accent)]">”</span>
+        </span>
       </p>
 
       <!-- Suche (oeffnet die Palette) -->

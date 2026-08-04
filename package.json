@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.1.0",
-  "whatsNew": "Hover a neighbour to read that one relation",
+  "version": "4.1.1",
+  "whatsNew": "This line now reads as a quote, not a box",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",
