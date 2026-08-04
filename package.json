@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.3.0",
-  "whatsNew": "Hover the View card to spotlight those edges",
+  "version": "4.4.0",
+  "whatsNew": "Pick a class to see just it and its relations",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

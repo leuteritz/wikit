@@ -81,6 +81,8 @@ and `WIKI_DB` in `.env.example` are for bare-metal runs only.
    at one and the detail column already shows the definition and every call site, down to the line.
    The **View** card top right says what is drawn — level, package zones, neighbours and each kind of
    edge with its count; pointing at an entry lights up exactly what it means and fades the rest.
+   Picking a class — in the tree or on a card — draws **that class and everything it links to**,
+   without touching the filter you typed.
    With a class open, hovering a neighbour keeps **just that one connection** in the picture and
    reads it out beside the graph; clicking keeps it and steps over to that class. Where you left
    off — filter, open package, context step and selected class — comes back on the next visit.

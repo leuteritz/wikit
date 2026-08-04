@@ -586,6 +586,34 @@ function focusSearchOnFile(file) {
   graphQuery.value = name
 }
 
+// Dasselbe Ego, aber OHNE das Suchfeld anzufassen: der Klick im Baum (und der auf eine Karte, s.
+// selectFileFromGraph) meint genau diese eine Klasse – die Trefferliste links, aus der man sie
+// gerade ausgewaehlt hat, ist damit aber nicht erledigt. Wer „Order" getippt hat, will nach
+// OrderService die naechste Zeile derselben Liste anklicken koennen; ein Feld, das sich beim
+// Klicken selbst umschreibt, nimmt ihm genau das.
+// Gemerkt wird als `query` der ANGEWENDETE Filter (nicht der Klassenname): daran erkennt der
+// Watcher unten, dass sich seither nichts getippt hat – tippt man weiter, gilt wieder die Liste.
+function focusClassInGraph(file) {
+  if (!file) return
+  clearTimeout(graphSearchTimer)
+  egoOverride = { query: appliedSearch.value, id: file.id }
+  graphMatchIds.value = [file.id]
+  // Der Graph braucht eine nicht-leere Anfrage, um in den Trefferbetrieb zu gehen (searchActive).
+  // Der Klassenname ist dabei die ehrliche Ortsangabe fuer die Leiste links im Bild: dort steht
+  // dann genau das, was gezeigt wird – nicht der Filter, der auch fuenf andere Klassen trifft.
+  graphQuery.value = String(file.class_name || '')
+  centerGraphOnFile(file.id)
+}
+
+// Das „×" in der Leiste des Graphen: es raeumt den AUSSCHNITT, und der kann zwei Ursachen haben –
+// den Filter links oder eine einzelne Klasse (Ego). Nur `search = ''` liesse ein Ego ohne Filter
+// stehen: das Kreuz haette dann sichtbar keine Wirkung.
+function clearGraphScope() {
+  search.value = ''
+  appliedSearch.value = ''
+  releaseEgoOverride()
+}
+
 // Zurueck zur Regel „Graph zeigt die Trefferliste" – ohne Verzoegerung, es wird nur weggenommen.
 function releaseEgoOverride() {
   if (!egoOverride) return
@@ -697,12 +725,17 @@ let treeDrivenPath = null
 let handoffNavigating = false
 
 function focusGraphOnPackage(path) {
+  // Ein Package ist eine EBENE, eine Klasse ein Ausschnitt daraus: wer die Ebene waehlt, hat die
+  // eine Klasse losgelassen. Ohne diese Zeile bliebe das Ego stehen und der gewaehlte Ordner haette
+  // im Bild keine Wirkung.
+  releaseEgoOverride()
   graphFocusFileId.value = null
   graphFocusPath.value = path
   treeDrivenPath = path
   graphFocusToken.value = ++focusSeq
 }
 function focusGraphOnFile(file) {
+  releaseEgoOverride() // Ebene + Kamera, also kein Ego mehr (gleiche Regel wie oben)
   graphFocusPath.value = file?.package || ''
   graphFocusFileId.value = file?.id ?? null
   treeDrivenPath = graphFocusPath.value
@@ -829,9 +862,15 @@ function onGraphNavigate(path) {
 // Klick auf eine Karte im Graphen: die Klasse ist ausgewaehlt (Spalte 3) – dann soll sie auch
 // links stehen, sonst zeigt der Baum weiter irgendeinen anderen Ort.
 function selectFileFromGraph(id) {
+  // Steht das Bild gerade auf EINER Klasse (Ego – aus dem Baum, aus der globalen Suche), dann
+  // WANDERT es beim Klick auf eine Nachbarkarte mit, statt zu verschwinden: man laeuft die Kante
+  // entlang. Ohne das fiele der Graph bei genau dieser Geste auf die Package-Ebene zurueck – ein
+  // Sprung, den niemand ausgeloest hat (`selectFile` gibt das Ego frei, s. dort).
+  const wasEgo = !!egoOverride
   selectFile(id)
   const file = files.value.find((f) => f.id === id)
   if (!file) return
+  if (wasEgo) focusClassInGraph(file)
   openPathInTree(file.package || '(default)')
   scrollTreeTo(`[data-fid="${id}"]`)
 }
@@ -1052,10 +1091,18 @@ function selectFile(id) {
   detailTab.value = 'class'
 }
 
-// Klick im Baum: Klasse auswaehlen UND den Graph dorthin fuehren (Package oeffnen + zentrieren).
+// Klick im Baum: Klasse rechts aufschlagen UND im Graphen genau sie zeigen – mit allen Klassen,
+// mit denen sie verbunden ist, und den Kanten dazwischen (`focusClassInGraph`).
+// Vorher fuehrte der Klick nur in ihr PACKAGE und zentrierte die Karte: in einem Package mit
+// hundert Klassen war die gewaehlte damit eine Karte unter hundert, und ihre Nachbarn ausserhalb
+// des Packages standen bestenfalls als Aggregat daneben. Gefragt ist aber „was haengt an DIESER
+// Klasse?" – dieselbe Frage, die der Sprung aus der globalen Suche schon so beantwortet.
+// Die Ebene bleibt dabei unangetastet (kein `focusGraphOnFile`): sie ist der Stand, auf den das
+// Bild zurueckfaellt, sobald man das Ego loslaesst – ein Ebenenwechsel obendrauf waere eine zweite
+// Bewegung und liesse den Ausschnitt danach woanders stehen.
 function selectFileFromTree(file) {
   selectFile(file.id)
-  focusGraphOnFile(file)
+  focusClassInGraph(file)
 }
 
 // --- Klasse loeschen (Hover-Button -> Bestaetigung) ---
@@ -1735,7 +1782,7 @@ function onResetPanels() {
           @select="selectFileFromGraph"
           @navigate="onGraphNavigate"
           @pane-click="releaseFocus"
-          @clear-search="search = ''"
+          @clear-search="clearGraphScope"
           @find-result="onFindResult"
           @relation="onRelation"
         />
