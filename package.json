@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.7.0",
-  "whatsNew": "Search now finds classes by meaning, not words",
+  "version": "4.7.1",
+  "whatsNew": "The sidebar now flags dependency cycles",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

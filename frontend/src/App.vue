@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import SearchPalette from './components/SearchPalette.vue'
 import ShortcutsOverlay from './components/ShortcutsOverlay.vue'
@@ -10,6 +10,7 @@ import ActivityModal from './components/ActivityModal.vue'
 import { useArticles } from './composables/useArticles.js'
 import { useJavaAnalyzer } from './composables/useJavaAnalyzer.js'
 import { useJavaQueue } from './composables/useJavaQueue.js'
+import { useInsights } from './composables/useInsights.js'
 import { useActivity } from './composables/useActivity.js'
 import { useBot } from './composables/useBot.js'
 import { useTheme } from './composables/useTheme.js'
@@ -19,6 +20,10 @@ import { Icon } from './lib/icons.js'
 const { load, articles } = useArticles()
 const { files, fetchFiles } = useJavaAnalyzer()
 const { probe: probeQueue } = useJavaQueue()
+// Der Zaehler des Insights-Bereichs. Geteilter Store: was hier fuer die Sidebar geholt wird, liegt
+// danach auch dem Klassen-Panel und dem Farbmodus des Graphen vor – der Request ist vorgezogen,
+// nicht zusaetzlich.
+const { totals: insightTotals, ensure: ensureInsights } = useInsights()
 // „Laeuft gerade etwas Langes?" – die Frage betrifft jede Ansicht, denn Import, Reset,
 // Kanten-Neuberechnung und KI-Queue laufen im Server weiter, wenn man die Code-Ansicht verlaesst.
 const { busy: activityBusy, closeDetail: closeActivity } = useActivity()
@@ -95,13 +100,47 @@ onMounted(() => {
 })
 onUnmounted(() => window.removeEventListener('keydown', onKey))
 
+// Die Kennzahlen erst holen, wenn es ueberhaupt Klassen gibt – und dann einmalig (`ensure`).
+// Als watch statt im `onMounted`, weil die Klassenliste asynchron eintrifft und weil der erste
+// Import den Zaehler sonst bis zum naechsten Reload leer liesse.
+watch(
+  () => files.value.length,
+  (n) => {
+    if (n) ensureInsights().catch(() => {})
+  },
+  { immediate: true },
+)
+
+// `null` statt `0`, solange nichts gerechnet ist: eine 0 waere die Behauptung „keine Zyklen", und
+// die ist ohne die Rechnung nicht gedeckt. Ohne Klassen gibt es ohnehin nichts zu melden.
+const cycleCount = computed(() => {
+  const t = insightTotals.value
+  if (!t || !t.classes) return null
+  return t.classCycles + t.packageCycles
+})
+const cycleTitle = computed(() => {
+  const n = cycleCount.value
+  if (n == null) return 'Insights'
+  if (!n) return 'Insights — no dependency cycles'
+  return `Insights — ${n} dependency ${n === 1 ? 'cycle' : 'cycles'}`
+})
+
 // Navigation: code-first (Analyzer zuerst, dann Wiki). Icons ausschliesslich via Iconify.
 const navLinks = computed(() => [
   { to: '/code', label: 'Code', icon: 'lucide:braces', count: files.value.length },
-  // Insights traegt keine Zahl: sie entstuende erst, wenn die Kennzahlen geladen sind, und ein
-  // Bereich, der beim Blick auf die Sidebar rechnet, kostet auf dem Pi genau dann, wenn niemand
-  // danach gefragt hat.
-  { to: '/insights', label: 'Insights', icon: 'lucide:activity' },
+  // ⚠️ Die Zahl bei Insights ist ein BEFUND, kein Bestand: Klassen und Artikel zaehlen, was da
+  // liegt – hier zaehlt, was auffaellt. Deshalb Zyklen und nicht etwa Brandherde: die gibt es in
+  // jeder Codebasis (die schwerste Klasse existiert immer), eine Zahl die nie 0 wird fordert zu
+  // nichts auf. Eine 0 ist hier die gute Nachricht und steht deshalb auch da – nur die Farbe
+  // wechselt, sobald etwas zu tun ist.
+  {
+    to: '/insights',
+    label: 'Insights',
+    icon: 'lucide:activity',
+    count: cycleCount.value,
+    warn: cycleCount.value > 0,
+    title: cycleTitle.value,
+  },
   { to: '/wiki', label: 'Wiki', icon: 'lucide:book-open', count: articles.value.length },
   // Der Bot traegt keine Zahl, sondern einen Zustand: eine „3" waere hier keine Auskunft, die
   // Frage ist „antwortet er?". Der Punkt sitzt an derselben Stelle wie die Zaehler daneben.
@@ -229,10 +268,14 @@ function isActive(to) {
                  Arbeit nur noch Unruhe (dieselbe Zurueckhaltung wie beim „Add code"-Knopf). -->
             <span class="h-2 w-2 rounded-full" :style="{ background: DOT_COLOR[link.status] }" />
           </span>
+          <!-- Ein Befund faerbt sich, ein Bestand nicht: „3" neben Insights heisst „hier stimmt
+               etwas nicht", „18" neben Code heisst nur „so viele". Gleicher Slot, andere Aussage. -->
           <span
             v-else
             class="ml-auto mr-2 hidden w-6 shrink-0 text-center font-mono text-2xs lg:inline"
-            :class="isActive(link.to) ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'"
+            :class="link.warn
+              ? 'text-[var(--color-danger)]'
+              : isActive(link.to) ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'"
           >{{ link.count }}</span>
         </RouterLink>
       </nav>
