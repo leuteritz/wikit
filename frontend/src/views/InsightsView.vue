@@ -98,25 +98,38 @@ function cutAdvice(weakest, level = 'class') {
 const openPlan = ref(null)
 const togglePlan = (i) => (openPlan.value = openPlan.value === i ? null : i)
 
-// ⚠️ Ob eine Kante gegen die übliche Schichtrichtung läuft, entscheidet der SERVER
-// (`weakest.againstLayers`) – dort wird die Bruchstelle danach ausgewählt. Die Konvention hier ein
-// zweites Mal zu kennen hieße, sie an zwei Stellen pflegen zu müssen, und die Oberfläche könnte zu
-// einer anderen Antwort kommen als die Auswahl, die sie erklärt.
-function layerNote(weakest) {
-  if (!weakest?.againstLayers) return ''
-  const a = String(weakest.fromLabel).split('.').pop()
-  const b = String(weakest.toLabel).split('.').pop()
-  return `It also runs against the usual direction — a “${a}” package normally knows nothing about “${b}”. That makes it the accident rather than the design.`
-}
-
-// Warum GENAU diese Kante. In einem Kreis ist jede gleich schuldig; entschieden wird nach Aufwand.
-function whyThisLink(c) {
+// --- Die Bilanz in drei Zeilen ------------------------------------------------------------------
+// ⚠️ Vor dem Code steht, WAS sich ändert, WAS es bringt und WARUM hier – je EIN Satz, nicht je ein
+// Absatz. Die ausführliche Fassung stand vorher als drei Fließtextblöcke da, und genau das ist die
+// Form, in der niemand eine Entscheidung liest: die Frage „lohnt sich das?" beantwortet man an
+// einer Zeile, nicht an einem Aufsatz. Wer die Begründung ausführlich will, findet sie oben unter
+// „How do I fix these?".
+//
+// Die Richtungszeile darüber ist die eigentliche Zusammenfassung: derselbe Pfeil, einmal so und
+// einmal andersherum – das sagt in einem Bild, was drei Sätze umschreiben.
+function planSummary(c) {
   const w = c.weakest
-  if (!w) return ''
-  const carried = w.links?.length ? w.links.length + (w.more || 0) : w.count
-  const base = `Every arrow in a loop is equally responsible for it — this one is simply the cheapest to undo: ${carried === 1 ? 'a single class relation holds it' : `only ${carried} class relations hold it`}, and it is a ${w.kind === 'uses' ? 'plain type reference, the kind an interface replaces' : w.kind === 'field' ? 'field access, which a parameter replaces' : 'method call'}.`
-  const note = layerNote(w)
-  return note ? `${base} ${note}` : base
+  const link = w?.links?.[0]
+  if (!w) return null
+  const a = simple(w.fromLabel)
+  const b = simple(w.toLabel)
+  const moved = link?.kind === 'uses'
+
+  return {
+    // Vorher/Nachher als Pfeilrichtung. Bei einem Typbezug dreht sich nichts – der Typ zieht um.
+    beforeFrom: a,
+    beforeTo: b,
+    afterFrom: moved ? a : b,
+    afterTo: moved ? 'shared' : a,
+    afterVia: moved ? b : null,
+    difference: moved
+      ? `${link.to} moves to a package both may use.`
+      : `One interface in ${a}; ${link ? link.to : b} implements it.`,
+    gain: `${a} builds and tests without ${b}.`,
+    why: w.againstLayers
+      ? `The only arrow running against the layers.`
+      : `The cheapest cut — ${w.count === 1 ? 'one relation' : `${w.count} relations`}, a ${w.kind}.`,
+  }
 }
 
 // --- Das Beispiel: wie der Umbau AUSSIEHT ------------------------------------------------------
@@ -236,13 +249,6 @@ function codeSteps(c) {
 function rootOf(path) {
   const parts = String(path || '').split('.')
   return parts.length > 1 ? parts.slice(0, -1).join('.') : path
-}
-
-// Was der Umbau einbringt – der Grund, es überhaupt zu tun.
-function planGain(c) {
-  const names = (c.chainLabels || []).slice(0, -1).map((p) => String(p).split('.').pop())
-  const list = names.length > 2 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names.join(' and ')
-  return `${list} can then be built, tested and read one at a time. A change in one stops being a change that can surface in the others — and the packages become separable (own module, own jar, own owner) instead of one block that only moves together.`
 }
 
 // Was eine Klasse schwer macht – und was man dagegen tut. Der Server nennt den Treiber, hier steht,
@@ -724,11 +730,45 @@ const plotted = computed(() => {
                     </button>
 
                     <div v-if="openPlan === i" class="mt-2 space-y-3 rounded-md bg-[var(--color-surface-offset)] p-3">
-                      <!-- 1. Was die Richtung hält – mit Namen, sonst bleibt es eine Aussage über
-                              zwei Ordner. -->
+                      <!-- ⚠️ Die Zusammenfassung ZUERST und in drei Zeilen: „lohnt sich das?"
+                           beantwortet man an einer Zeile, nicht an drei Absätzen. Die Richtungs-
+                           zeile darüber sagt in einem Bild, was Text umschreiben müsste. -->
+                      <template v-if="planSummary(c)">
+                        <!-- ⚠️ Die beiden Richtungen UNTEREINANDER und in einem Raster: nebeneinander liest
+                             man zwei Zeilen, untereinander SIEHT man den Pfeil sich umdrehen – und
+                             das ist die ganze Zusammenfassung. -->
+                        <div class="grid items-center gap-x-2 gap-y-1 font-mono text-2xs" style="grid-template-columns: max-content max-content max-content max-content 1fr">
+                          <span class="text-3xs uppercase text-[var(--color-text-muted)]">now</span>
+                          <span class="justify-self-end text-[var(--color-text)]">{{ planSummary(c).beforeFrom }}</span>
+                          <Icon icon="lucide:arrow-right" class="h-3 w-3 text-[var(--color-danger)]" />
+                          <span class="text-[var(--color-text)]">{{ planSummary(c).beforeTo }}</span>
+                          <span class="text-3xs text-[var(--color-danger)]">closes the loop</span>
+
+                          <span class="text-3xs uppercase text-[var(--color-text-muted)]">after</span>
+                          <span class="justify-self-end text-[var(--color-text)]">{{ planSummary(c).afterFrom }}</span>
+                          <Icon icon="lucide:arrow-right" class="h-3 w-3 text-[var(--color-success)]" />
+                          <span class="text-[var(--color-text)]">
+                            {{ planSummary(c).afterTo }}
+                            <template v-if="planSummary(c).afterVia"> ← {{ planSummary(c).afterVia }}</template>
+                          </span>
+                          <span class="text-3xs text-[var(--color-success)]">no loop</span>
+                        </div>
+
+                        <dl class="grid gap-x-3 gap-y-1 text-2xs" style="grid-template-columns: max-content 1fr">
+                          <dt class="text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">Change</dt>
+                          <dd class="text-[var(--color-text)]">{{ planSummary(c).difference }}</dd>
+                          <dt class="text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">Gain</dt>
+                          <dd class="text-[var(--color-text)]">{{ planSummary(c).gain }}</dd>
+                          <dt class="text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">Why here</dt>
+                          <dd class="text-[var(--color-text-muted)]">{{ planSummary(c).why }}</dd>
+                        </dl>
+                      </template>
+
+                      <!-- Was die Richtung hält – mit Namen, sonst bleibt es eine Aussage über
+                           zwei Ordner. -->
                       <div v-if="c.weakest?.links?.length">
                         <p class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-                          1 · What holds this direction
+                          The relation to remove
                         </p>
                         <ul class="mt-1 space-y-0.5">
                           <li v-for="l in c.weakest.links" :key="`${l.fromId}-${l.toId}`" class="text-2xs">
@@ -743,7 +783,9 @@ const plotted = computed(() => {
                               class="font-mono text-[var(--color-text)] underline-offset-2 hover:text-[var(--color-accent)] hover:underline"
                               @click="openClass(l.toId)"
                             >{{ l.to }}</button>
-                            <span class="text-[var(--color-text-muted)]"> ({{ l.kind }}<template v-if="l.count > 1">, {{ l.count }}×</template>)</span>
+                            <span class="text-[var(--color-text-muted)]">
+                              ({{ l.kind }}<template v-if="l.members?.length">, {{ l.members.join(', ') }}</template>)
+                            </span>
                           </li>
                         </ul>
                         <p v-if="c.weakest.more" class="mt-0.5 text-3xs text-[var(--color-text-muted)]">
@@ -751,29 +793,9 @@ const plotted = computed(() => {
                         </p>
                       </div>
 
-                      <div>
-                        <p class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-                          2 · What to change
-                        </p>
-                        <p class="mt-1 text-2xs leading-relaxed text-[var(--color-text)]">
-                          <template v-if="c.weakest?.links?.length === 1">
-                            Remove exactly that one relation — invert it behind an interface that lives where both
-                            sides may look, or move the member into the package that actually needs it.
-                          </template>
-                          <template v-else>
-                            Remove exactly those relations — invert them behind an interface that lives where both
-                            sides may look, or move the members into the package that actually needs them.
-                          </template>
-                          The dependency stays; only its direction changes, and the loop is gone with it.
-                        </p>
-                      </div>
-
-                      <!-- ⚠️ Das Beispiel steht MITTEN im Plan, nicht am Ende: „was ändere ich"
-                           ist ohne die Zeilen eine Absichtserklärung. Als Diff, weil die Änderung
-                           die Aussage ist – ein vollständiges Listing zeigt sie gerade nicht. -->
                       <div v-if="codeSteps(c).length">
                         <p class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-                          3 · How that looks
+                          Step by step
                         </p>
                         <div class="mt-1 space-y-2">
                           <div v-for="(step, si) in codeSteps(c)" :key="si">
@@ -790,20 +812,6 @@ const plotted = computed(() => {
                             >{{ l.sign }} {{ l.text }}</span></code></pre>
                           </div>
                         </div>
-                      </div>
-
-                      <div>
-                        <p class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-                          4 · What you gain
-                        </p>
-                        <p class="mt-1 text-2xs leading-relaxed text-[var(--color-text)]">{{ planGain(c) }}</p>
-                      </div>
-
-                      <div>
-                        <p class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-                          5 · Why this link and not another
-                        </p>
-                        <p class="mt-1 text-2xs leading-relaxed text-[var(--color-text-muted)]">{{ whyThisLink(c) }}</p>
                       </div>
                     </div>
                   </article>
