@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.4.3",
-  "whatsNew": "Related classes no longer overlap in the graph",
+  "version": "4.5.0",
+  "whatsNew": "Insights: cycles, hotspots and package balance",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

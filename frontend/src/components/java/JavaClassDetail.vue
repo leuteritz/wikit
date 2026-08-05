@@ -9,6 +9,7 @@ import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
 import { useJavaQueue } from '../../composables/useJavaQueue.js'
 import { useJavaGraph } from '../../composables/useJavaGraph.js'
 import { useArticles } from '../../composables/useArticles.js'
+import { useInsights } from '../../composables/useInsights.js'
 import BusyState from '../BusyState.vue'
 import JavaCodeEditor from './JavaCodeEditor.vue'
 import JavaDiffViewer from './JavaDiffViewer.vue'
@@ -20,6 +21,7 @@ import { copyToClipboard } from '../../lib/clipboard.js'
 import { parseTimestamp as parseTs, formatRelative } from '../../lib/format.js'
 import { api } from '../../lib/api.js'
 import { Icon } from '../../lib/icons.js'
+import { vTip } from '../../lib/tooltip.js'
 
 const props = defineProps({
   fileId: { type: Number, required: true },
@@ -167,6 +169,9 @@ async function applyTargetLine() {
 }
 
 watch(() => props.fileId, load, { immediate: true })
+// Einmal je Sitzung: die Kennzahlen liegen als ein Bündel vor, nicht je Klasse – ein Aufruf beim
+// ersten Öffnen genügt für jede weitere. Fehlschläge sind folgenlos (die Zeile entfällt dann).
+onMounted(() => ensureInsights())
 // Erneutes Ziel in derselben (bereits gemounteten) Datei -> direkt ansteuern.
 watch(() => props.targetLine, applyTargetLine)
 
@@ -314,6 +319,14 @@ const STEREOTYPE_LABEL = {
 // rendert der Kopf daraus – statt leer zu bleiben und beim Eintreffen zu springen.
 const listEntry = computed(() => files.value.find((f) => f.id === props.fileId) || null)
 const head = computed(() => file.value || listEntry.value)
+
+// --- Kennzahlen der offenen Klasse --------------------------------------------------------------
+// Eine geoeffnete Klasse IST die Frage nach ihren Eigenschaften – deshalb werden die gerechneten
+// Kennzahlen hier geholt und nicht erst im Insights-Bereich. Geteilter Store: dieselbe Zahl steht
+// im Bericht, im Graphen und hier, und sie kann gar nicht auseinanderlaufen.
+const { byFileId: insightsByFile, ensure: ensureInsights } = useInsights()
+const metrics = computed(() => insightsByFile.value.get(props.fileId) || null)
+
 
 const classKind = computed(() => head.value?.stereotype || head.value?.class_type || '')
 const classKindLabel = computed(() => STEREOTYPE_LABEL[classKind.value] || classKind.value)
@@ -615,6 +628,29 @@ async function removeFile() {
             <span v-if="queueProgress.current">{{ queueProgress.current.name }}()</span>
             <span v-else>Queue running</span>
             <span v-if="queueProgress.total > 1" class="tabular-nums opacity-70">{{ queueProgress.done }}/{{ queueProgress.total }}</span>
+          </span>
+        </div>
+
+        <!-- Die gemessenen Eigenschaften der Klasse: Groesse, Verzweigungsdichte, Kopplung.
+             Sie stehen hier und nicht nur im Insights-Bericht, weil die Frage „ist das viel?"
+             an der offenen Klasse gestellt wird. Ohne geladene Kennzahlen entfaellt die Zeile –
+             ein Platzhalter fuer eine Zahl, die es vielleicht nie gibt, waere Unruhe. -->
+        <div v-if="metrics" class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-3xs text-[var(--color-text-muted)]">
+          <span v-tip="'Code lines — blank lines and comment-only lines do not count'">
+            {{ metrics.loc }} lines
+          </span>
+          <span v-tip="'Branch points across every member (if, loop, case, catch, &&, ||, ?:)'">
+            {{ metrics.complexity }} branches
+          </span>
+          <span v-tip="'Classes that use this one / classes it uses'">
+            {{ metrics.fanIn }} in · {{ metrics.fanOut }} out
+          </span>
+          <span
+            v-if="metrics.cycle != null"
+            v-tip="'This class sits in a dependency cycle — see Insights'"
+            class="inline-flex items-center gap-0.5 rounded bg-[var(--color-danger)]/15 px-1 text-[var(--color-danger)]"
+          >
+            <Icon icon="lucide:repeat" class="h-2.5 w-2.5" /> cycle
           </span>
         </div>
       </div>

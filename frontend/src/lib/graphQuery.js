@@ -23,13 +23,21 @@ const FIELD_BY_PREFIX = {
 }
 
 // Zustands-Filter ohne Suchbegriff: beantworten eine Frage, die kein Name beantwortet.
-const FLAGS = new Set(['review', 'manual'])
+// `cycle:` und `hotspot:` kommen aus dem Insights-Bereich – dieselbe Antwort, nur an der Stelle
+// gestellt, an der man ohnehin sucht. Sie brauchen als einzige eine dritte Quelle (die gerechneten
+// Kennzahlen), und ohne sie finden sie nichts; `queryFiles` sagt das ueber `needsInsights`.
+const FLAGS = new Set(['review', 'manual', 'cycle', 'hotspot'])
+
+// Ab welchem Score `hotspot:` ohne Zahl greift. Die oberen Raenge sind eine Arbeitsliste; ein
+// niedrigerer Schnitt gaebe die halbe Codebasis zurueck und damit keine Auswahl.
+const HOTSPOT_DEFAULT = 60
 
 export const GRAPH_QUERY_HELP =
   'Search classes, packages and relations: type any name and the list, the graph and its highlights ' +
   'follow it. Prefixes narrow it down — m: method, c: class, p: package, t: type (interface, enum, ' +
   'data…), r: role (hub, provider, consumer — within the drawn graph). review: shows every uncertain ' +
-  'edge, manual: every hand-made one.'
+  'edge, manual: every hand-made one. cycle: shows classes caught in a dependency loop, ' +
+  'hotspot: the heaviest ones (hotspot: 80 raises the bar).'
 
 // Die Facetten als Liste: EINE Quelle für die Chips unter dem Suchfeld und die Hilfe darüber.
 export const QUERY_FACETS = [
@@ -40,6 +48,8 @@ export const QUERY_FACETS = [
   { prefix: 'r:', label: 'role' },
   { prefix: 'review:', label: 'uncertain edges' },
   { prefix: 'manual:', label: 'hand-made edges' },
+  { prefix: 'cycle:', label: 'in a cycle' },
+  { prefix: 'hotspot:', label: 'heaviest classes' },
 ]
 
 /**
@@ -136,7 +146,7 @@ const serverEdgeData = (e) => ({
  *   scope === 'picture'   – nur der gezeichnete Ausschnitt kann sie beantworten (`r:`, s. u.).
  *   edges                 – wie viele gespeicherte Kanten die Abfrage trifft (Bilanz im Feld).
  */
-export function queryFiles({ files = [], serverEdges = [] } = {}, q) {
+export function queryFiles({ files = [], serverEdges = [], insights = null } = {}, q) {
   if (!q) return { fileIds: null, edges: 0, scope: 'names' }
 
   // ⚠️ `r:` ist die einzige Facette, die der Bestand NICHT beantworten kann: die Rolle einer Klasse
@@ -144,6 +154,29 @@ export function queryFiles({ files = [], serverEdges = [] } = {}, q) {
   // Sie global zu rechnen waere eine zweite Wahrheit neben der Karte, und den Ausschnitt danach neu
   // zu zeichnen liefe im Kreis: neu gezeichnet -> andere Rollen -> andere Treffer.
   if (q.field === 'role') return { fileIds: null, edges: 0, scope: 'picture' }
+
+  // Kennzahlen-Facetten: die Antwort steht in der gerechneten Uebersicht, nicht im Bild und nicht
+  // in den Kanten. Fehlt sie noch, ist das KEIN leeres Ergebnis, sondern ein Ladezustand –
+  // `needsInsights` sagt dem Aufrufer, dass er sie holen soll (und die Leerzeile sagt es dem Leser).
+  if (q.flag === 'cycle' || q.flag === 'hotspot') {
+    if (!insights) return { fileIds: new Set(), edges: 0, scope: 'files', needsInsights: true }
+    const term = q.term
+    const fileIds = new Set()
+    // `hotspot: 80` hebt die Latte, `hotspot:` allein nimmt die Voreinstellung. Eine Zahl im
+    // Begriff ist die einzige Stelle, an der eine Facette eine Schwelle traegt – sie ist der
+    // Unterschied zwischen „die schwersten" und „die zwanzig schwersten".
+    const bar = q.flag === 'hotspot' ? (/^\d+$/.test(term) ? Number(term) : HOTSPOT_DEFAULT) : 0
+    for (const c of insights.classes || []) {
+      if (q.flag === 'cycle') {
+        if (c.cycle == null) continue
+        // Ein Begriff hinter `cycle:` grenzt weiter ein – wie bei `review:`, nur ueber den Namen
+        // statt ueber die Methode (eine Klasse in einem Zyklus hat keine Methode, die ihn traegt).
+        if (term && !`${c.className} ${c.package}`.toLowerCase().includes(term)) continue
+      } else if (c.score < bar) continue
+      fileIds.add(c.id)
+    }
+    return { fileIds, edges: 0, scope: 'files' }
+  }
 
   // Kantenfacetten: die Antwort steht in den Kanten, gefragt sind die Klassen daran.
   if (q.flag || q.field === 'method') {

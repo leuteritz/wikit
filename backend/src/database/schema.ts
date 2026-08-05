@@ -81,6 +81,11 @@ CREATE TABLE IF NOT EXISTS java_files (
   extends_name     TEXT,           -- einfacher Name der Oberklasse
   field_count      INTEGER,        -- deklarierte Felder (Record: Komponenten)
   ctor_count       INTEGER,        -- deklarierte Konstruktoren
+  -- Groesse und Verzweigungsdichte (s. common/code-metrics.ts). Beim Analysieren gefuellt, fuer
+  -- Altbestand im Hintergrund nachgetragen. NULL heisst "noch nicht gerechnet", NICHT "null Zeilen"
+  -- -- genau daran erkennt der Nachtragslauf seine Arbeit.
+  loc              INTEGER,        -- Codezeilen ohne Leer- und reine Kommentarzeilen
+  complexity       INTEGER,        -- Summe der zyklomatischen Komplexitaet aller Mitglieder
   raw_source       TEXT NOT NULL,
   description      TEXT,           -- KI-Klassenbeschreibung (Markdown, Source of Truth)
   description_html TEXT,           -- gerenderte Beschreibung (Cache, server-seitig)
@@ -222,6 +227,8 @@ export const COLUMN_MIGRATIONS: Array<{ table: string; column: string; ddl: stri
   { table: 'java_files', column: 'extends_name', ddl: 'ALTER TABLE java_files ADD COLUMN extends_name TEXT' },
   { table: 'java_files', column: 'field_count', ddl: 'ALTER TABLE java_files ADD COLUMN field_count INTEGER' },
   { table: 'java_files', column: 'ctor_count', ddl: 'ALTER TABLE java_files ADD COLUMN ctor_count INTEGER' },
+  { table: 'java_files', column: 'loc', ddl: 'ALTER TABLE java_files ADD COLUMN loc INTEGER' },
+  { table: 'java_files', column: 'complexity', ddl: 'ALTER TABLE java_files ADD COLUMN complexity INTEGER' },
   { table: 'java_methods', column: 'modifiers', ddl: 'ALTER TABLE java_methods ADD COLUMN modifiers TEXT' },
   { table: 'java_methods', column: 'body', ddl: 'ALTER TABLE java_methods ADD COLUMN body TEXT' },
   { table: 'java_methods', column: 'start_line', ddl: 'ALTER TABLE java_methods ADD COLUMN start_line INTEGER' },

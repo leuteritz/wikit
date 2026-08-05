@@ -41,7 +41,7 @@ const sidebarKeys = computed(() => sidebarShortcuts(route.path))
 const GOTO_WINDOW_MS = 1200
 // Die Ziele stehen als Tabelle da, damit ein weiterer Bereich eine Zeile ist und keine zweite
 // Bedingung im Handler (die dritte Verzweigung war der Punkt, an dem es eine wurde).
-const GOTO_TARGETS = { c: '/code', w: '/wiki', b: '/bot' }
+const GOTO_TARGETS = { c: '/code', i: '/insights', w: '/wiki', b: '/bot' }
 let gotoArmedAt = 0
 
 function onKey(e) {
@@ -98,6 +98,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
 // Navigation: code-first (Analyzer zuerst, dann Wiki). Icons ausschliesslich via Iconify.
 const navLinks = computed(() => [
   { to: '/code', label: 'Code', icon: 'lucide:braces', count: files.value.length },
+  // Insights traegt keine Zahl: sie entstuende erst, wenn die Kennzahlen geladen sind, und ein
+  // Bereich, der beim Blick auf die Sidebar rechnet, kostet auf dem Pi genau dann, wenn niemand
+  // danach gefragt hat.
+  { to: '/insights', label: 'Insights', icon: 'lucide:activity' },
   { to: '/wiki', label: 'Wiki', icon: 'lucide:book-open', count: articles.value.length },
   // Der Bot traegt keine Zahl, sondern einen Zustand: eine „3" waere hier keine Auskunft, die
   // Frage ist „antwortet er?". Der Punkt sitzt an derselben Stelle wie die Zaehler daneben.

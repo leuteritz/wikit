@@ -8,6 +8,7 @@ const routes = [
   { path: '/code/queues', redirect: '/code' },
   { path: '/java', redirect: '/code' },
   { path: '/java/queues', redirect: '/code' },
+  { path: '/insights', name: 'insights', component: () => import('./views/InsightsView.vue') },
   { path: '/bot', name: 'bot', component: () => import('./views/BotView.vue') },
   { path: '/new', name: 'new', component: () => import('./views/ArticleEdit.vue') },
   { path: '/edit/:slug', name: 'edit', component: () => import('./views/ArticleEdit.vue'), props: true },

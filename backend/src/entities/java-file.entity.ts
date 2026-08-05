@@ -39,6 +39,14 @@ export class JavaFile {
   @Column({ name: 'ctor_count', type: 'integer', nullable: true })
   ctor_count: number | null;
 
+  // Groesse und Verzweigungsdichte (common/code-metrics.ts). NULL = noch nicht gerechnet
+  // (Altbestand) und damit die Arbeitsliste des Nachtragslaufs – nicht "null Zeilen".
+  @Column({ type: 'integer', nullable: true })
+  loc: number | null;
+
+  @Column({ type: 'integer', nullable: true })
+  complexity: number | null;
+
   @Column({ name: 'raw_source', type: 'text' })
   raw_source: string;
 

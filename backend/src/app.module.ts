@@ -12,6 +12,7 @@ import { AnalysisModule } from './analysis/analysis.module';
 import { ArticlesModule } from './articles/articles.module';
 import { BotModule } from './bot/bot.module';
 import { CategoriesModule } from './categories/categories.module';
+import { InsightsModule } from './insights/insights.module';
 import { JavaModule } from './java/java.module';
 import { RelationsModule } from './relations/relations.module';
 import { SearchModule } from './search/search.module';
@@ -58,6 +59,7 @@ const staticImports = fs.existsSync(FRONTEND_DIST)
     SearchModule,
     RelationsModule,
     JavaModule,
+    InsightsModule,
     AnalysisModule,
     BotModule,
   ],

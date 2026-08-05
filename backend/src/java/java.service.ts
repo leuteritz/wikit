@@ -6,6 +6,7 @@ import { createPatch, structuredPatch } from 'diff';
 import { FtsService } from '../database/fts.service';
 import { safeJson } from '../common/json.util';
 import { CodeFormatterService } from '../common/code-formatter.service';
+import { classMetrics } from '../common/code-metrics';
 import { buildSearchRegex, scanSource } from '../common/code-search.util';
 import { MarkdownService } from '../common/markdown.service';
 import { OllamaService } from '../common/ollama.service';
@@ -94,7 +95,16 @@ type EdgeClass = {
 // Die klassenbeschreibenden Spalten aus einem geparsten Typ – an drei Stellen gebraucht
 // (analyze, analyze-batch Insert + Overwrite-Update); getrennte Literale waeren dreimal die
 // Gelegenheit, ein neues Feld zu vergessen. `class_modifiers` ist JSON-als-TEXT (s. json.util).
-function classColumns(cls: any) {
+//
+// `source` ist der Quelltext GENAU DIESER Klasse (bei analyze-batch also der Chunk, nicht der
+// ganze Paste) – daraus entstehen `loc` und `complexity` fuer den Insights-Bereich. Sie hier zu
+// rechnen statt beim Lesen ist der Unterschied zwischen einer Zahl, die in der Zeile schon steht,
+// und einem Scan ueber die groesste Spalte der Datenbank bei jedem Aufruf.
+function classColumns(cls: any, source: string) {
+  const { loc, complexity } = classMetrics(
+    source,
+    (cls.methods || []).map((m: any) => m.body),
+  );
   return {
     class_type: cls.class_type,
     stereotype: cls.stereotype ?? null,
@@ -103,6 +113,8 @@ function classColumns(cls: any) {
     field_count: cls.field_count ?? 0,
     ctor_count: cls.ctor_count ?? 0,
     class_line: cls.class_line ?? null,
+    loc,
+    complexity,
   };
 }
 
@@ -176,7 +188,7 @@ export class JavaService {
         pkg: parsed.package || null,
         class_name: cls.class_name,
         raw_source: source,
-        ...classColumns(cls),
+        ...classColumns(cls, source),
       });
       fileId = res.identifiers[0].id as number;
 
@@ -386,7 +398,7 @@ export class JavaService {
             {
               filename: `${it.cls.class_name}.java`,
               raw_source: it.chunk,
-              ...classColumns(it.cls),
+              ...classColumns(it.cls, it.chunk),
             },
           );
           await manager.getRepository(JavaMethod).delete({ file_id: existing.id });
@@ -407,7 +419,7 @@ export class JavaService {
           pkg: it.pkg,
           class_name: it.cls.class_name,
           raw_source: it.chunk,
-          ...classColumns(it.cls),
+          ...classColumns(it.cls, it.chunk),
         });
         const fileId = res.identifiers[0].id as number;
 

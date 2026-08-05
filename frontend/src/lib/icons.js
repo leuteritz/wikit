@@ -98,6 +98,10 @@ import zap from '@iconify-icons/lucide/zap'
 import hardDrive from '@iconify-icons/lucide/hard-drive'
 import languages from '@iconify-icons/lucide/languages'
 import activity from '@iconify-icons/lucide/activity'
+// Insights (/insights): Brandherd, Bruchstelle eines Zyklus, der Zyklus selbst.
+import flame from '@iconify-icons/lucide/flame'
+import scissors from '@iconify-icons/lucide/scissors'
+import repeatIcon from '@iconify-icons/lucide/repeat'
 
 // --- Phosphor (Duotone, fuer das Brand-Logo) ---
 import phBooksDuotone from '@iconify-icons/ph/books-duotone'
@@ -194,6 +198,9 @@ const ICONS = {
   'lucide:hard-drive': hardDrive,
   'lucide:languages': languages,
   'lucide:activity': activity,
+  'lucide:flame': flame,
+  'lucide:scissors': scissors,
+  'lucide:repeat': repeatIcon,
   'ph:books-duotone': phBooksDuotone,
 }
 

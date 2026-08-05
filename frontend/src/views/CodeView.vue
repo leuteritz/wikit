@@ -13,6 +13,7 @@ import { useJavaGraph } from '../composables/useJavaGraph.js'
 import { useActivity } from '../composables/useActivity.js'
 import { buildPackageTree, countClasses, filterClasses, LANGUAGES } from '../composables/useCodeAnalysis.js'
 import { usePanelResize } from '../composables/usePanelResize.js'
+import { useInsights } from '../composables/useInsights.js'
 import { useNotifications } from '../composables/useNotifications.js'
 import BusyState from '../components/BusyState.vue'
 import ActivityProgress from '../components/ActivityProgress.vue'
@@ -33,7 +34,11 @@ import { isTypingTarget } from '../lib/shortcuts.js'
 import { codeState, patchCodeState, clearCodeState } from '../lib/codeState.js'
 import { parseGraphQuery, queryFiles, QUERY_FACETS, GRAPH_QUERY_HELP } from '../lib/graphQuery.js'
 
-const { files, loading: filesLoading, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFileId, lastTargetLine, lastTargetEndLine, lastSearchQuery, lastSearchOpts, openAddCode, deleteFile, resetAll } =
+// Die gerechneten Kennzahlen (Zyklen, Brandherde) – geteilt mit dem Insights-Bereich, damit Bild
+// und Bericht nie zwei Staende zeigen. Geholt wird erst, wenn jemand danach fragt.
+const { data: insightsData, ensure: ensureInsights, refreshIfLoaded: refreshInsights, clear: clearInsights } = useInsights()
+
+const { files, loading: filesLoading, fetchFiles, analyzeBatch, analyzing, error, userContext, lastFileId, lastPackage, lastTargetLine, lastTargetEndLine, lastSearchQuery, lastSearchOpts, openAddCode, deleteFile, resetAll } =
   useJavaAnalyzer()
 // Startzeitpunkt fuer die Wartemeldung der Klassenliste (die Uhr laeuft in BusyState).
 const filesStartedAt = ref(Date.now())
@@ -301,6 +306,17 @@ function consumeHandoff() {
     openAddCode.value = false
     showNew.value = true
   }
+  // Sprung aus dem Insights-Bereich auf ein PACKAGE: er meint die Ebene, nicht eine Klasse darin.
+  // Deshalb kein stellvertretend gewaehltes Mitglied – der Graph stellt sich auf das Package, der
+  // Baum deckt seinen Pfad auf, und rechts bleibt offen, was offen war.
+  if (lastPackage.value != null) {
+    const path = lastPackage.value
+    lastPackage.value = null
+    handoffNavigating = true
+    focusGraphOnPackage(path)
+    openPathInTree(path)
+    nextTick(() => scrollTreeTo(`[data-path="${path}"]`))
+  }
   if (lastFileId.value == null) return
   selectedFileId.value = lastFileId.value
   // Der Sprung gilt einer KLASSE – auch wenn er aus einem Kanten-Detail kam. Die Beziehung bleibt
@@ -364,6 +380,9 @@ function consumeHandoff() {
 
 // Reagiert auch, wenn /code bereits gemountet ist (z. B. Klick auf einen Edge-Panel-Link).
 watch(lastFileId, (v) => {
+  if (v != null) consumeHandoff()
+})
+watch(lastPackage, (v) => {
   if (v != null) consumeHandoff()
 })
 
@@ -487,9 +506,21 @@ const analyzedCount = computed(() => files.value.filter((f) => f.description).le
 //     Tippfehler sonst kein Ergebnis haette.
 //   * `scope: 'picture'` – `r:`. Nur der Graph kennt Rollen; er meldet seine Treffer (`find-result`),
 //     der Baum filtert darauf, und das Bild bleibt stehen (s. `graphMatchIds`).
+//   * `cycle:`/`hotspot:` – die Antwort steht in den gerechneten Kennzahlen. Sie werden NICHT
+//     beim Betreten der Ansicht geholt (wer nie danach fragt, soll dafuer nicht zahlen), sondern
+//     genau dann, wenn eine dieser Facetten getippt wird – `needsInsights` ist das Signal.
 const parsedQuery = computed(() => parseGraphQuery(appliedSearch.value))
 const queryResult = computed(() =>
-  queryFiles({ files: files.value, serverEdges: serverEdges.value }, parsedQuery.value),
+  queryFiles(
+    { files: files.value, serverEdges: serverEdges.value, insights: insightsData.value },
+    parsedQuery.value,
+  ),
+)
+watch(
+  () => queryResult.value.needsInsights,
+  (needs) => {
+    if (needs) ensureInsights()
+  },
 )
 // Treffer, die nur der gezeichnete Graph bestimmen kann (`r:`).
 const pictureIds = ref([])
@@ -911,6 +942,9 @@ const recomputeTitle = computed(() => {
 async function onRecomputeEdges() {
   try {
     const res = await recomputeEdges()
+    // Zyklen, Kopplung und Instabilitaet stehen und fallen mit den Kanten: was hier neu entsteht,
+    // macht jede vorher gerechnete Kennzahl ungueltig.
+    refreshInsights()
     setNotice(`${res?.count ?? 0} edge(s) recomputed.`)
   } catch (e) {
     setNotice(e.message, 'error')
@@ -1005,6 +1039,9 @@ function finishBatch(res) {
   if (saved.length) {
     selectedFileId.value = saved[0].id
     enqueueMany(saved, { userContext: userContext.value }).catch((e) => setNotice(e.message, 'error'))
+    // Neue Klassen heissen neue Groessen, neue Kanten und damit andere Kennzahlen. Nachgezogen
+    // wird nur, was schon jemand offen hat (s. refreshIfLoaded).
+    refreshInsights()
   }
   // ZWEI Karten, weil es zwei Aussagen sind: was ankam, und was dabei auffiel. Aneinander-
   // gereiht ergaben sie einen Fliesstext, in dem schon bei einer Handvoll Hinweise weder das
@@ -1129,7 +1166,10 @@ async function confirmDelete() {
   }
 }
 async function onDetailClose(payload) {
-  if (payload?.deleted) await fetchFiles()
+  if (payload?.deleted) {
+    await fetchFiles()
+    refreshInsights()
+  }
   // Panel zu -> geliehene Breite zurueck in die Ursprungsposition.
   releaseFocus()
   handoffSearch.value = null
@@ -1167,6 +1207,7 @@ async function confirmReset() {
     // Es gibt keine Klassen mehr, also auch keinen Ort, an dem man stehen koennte: der gemerkte
     // Stand faellt mit ihnen weg (auch der Teil, den der Graph geschrieben hat – ein Schluessel).
     clearCodeState()
+    clearInsights()
     showNew.value = true // Neu-Panel einladend wieder aufklappen
     pendingReset.value = false
   } catch (e) {

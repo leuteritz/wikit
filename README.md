@@ -24,6 +24,8 @@ copying one file.
   SQLite **FTS5** (a trigram index answers substrings and punctuation without reading any file).
 - **Relationship graph** — typed links between articles, drawn with [Vue Flow](https://vueflow.dev).
 - **Java code analysis** — parse `.java` locally (no JDK) and explore a class dependency graph.
+- **Code insights** — dependency cycles, a hotspot ranking and package balance, all derived from
+  what is already stored; the graph can colour its cards by them.
 - **AI summaries** — optional, per method and per class, via [Ollama](https://ollama.com)
   (local, no API key), configurable at runtime under `/bot`.
 - **Dark mode** and **backup = copy one file**.
@@ -81,13 +83,12 @@ and `WIKI_DB` in `.env.example` are for bare-metal runs only.
    at one and the detail column already shows the definition and every call site, down to the line.
    Pick a class — in the tree or on a card — and the graph draws just it and everything it links to;
    the **View** card decides what else is on screen. Hovering a neighbour keeps **that one
-   connection** in the picture; clicking steps over to it. Where you left off — filter, open
-   package, context step and selected class — comes back on the next visit.
+   connection** in the picture; clicking steps over to it. Where you left off comes back on the next visit.
 3. **Search.** `Ctrl/Cmd + K` searches names *and* raw source with match case, whole word and regex.
    Inside the view, one field next to the class list does everything: it filters the tree, drives
    the graph to the best match and opens that class on the right — `↵` walks to the next one.
    Prefixes narrow it down: `m:` finds a called method, `t:` a kind of class, `review:` every
-   uncertain relation.
+   uncertain relation, `cycle:` every class caught in a loop.
 4. **Export.** Turn a class into a normal Markdown article — from then on it is full-text
    searchable like any other note.
 

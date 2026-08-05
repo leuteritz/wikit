@@ -33,6 +33,11 @@ const state = reactive({
   // faende die Klasse etwas anderes als die Palette. Beide werden nach Verbrauch genullt.
   lastSearchQuery: null,
   lastSearchOpts: null,
+  // Hand-off fuer ein PACKAGE (Insights -> CodeView): der Bericht nennt Zyklen und Kennzahlen auf
+  // Package-Ebene, und der Sprung dorthin meint genau diese Ebene – nicht eine Klasse darin.
+  // Eigenes Feld statt einer Klassen-Id, weil `lastFileId` das Ego EINER Klasse aufschlaegt; ein
+  // stellvertretend gewaehltes Mitglied waere die Antwort auf eine andere Frage.
+  lastPackage: null,
   // Hand-off „einlesen": die Landing-Seite hat keine eigene Drop-Zone mehr (sie ist Suche und
   // Bilanz, sonst nichts). Ihr „Add code"-Verweis setzt dieses Flag und springt in die
   // Code-Ansicht, die das Modal beim Ankommen oeffnet – sonst laege der Knopf, den man gerade

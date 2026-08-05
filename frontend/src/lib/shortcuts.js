@@ -38,6 +38,7 @@ export const SHORTCUTS = [
   { id: 'search', keys: ['mod+k'], scope: 'global', label: 'Global search', hint: 'articles, classes, source code' },
   { id: 'help', keys: ['?'], scope: 'global', label: 'Keyboard shortcuts', hint: 'this list' },
   { id: 'goto-code', keys: ['g', 'c'], seq: true, scope: 'global', label: 'Go to Code', hint: 'press g, then c' },
+  { id: 'goto-insights', keys: ['g', 'i'], seq: true, scope: 'global', label: 'Go to Insights', hint: 'press g, then i' },
   { id: 'goto-wiki', keys: ['g', 'w'], seq: true, scope: 'global', label: 'Go to Wiki', hint: 'press g, then w' },
   { id: 'goto-bot', keys: ['g', 'b'], seq: true, scope: 'global', label: 'Go to Bot', hint: 'press g, then b' },
   { id: 'close', keys: ['esc'], scope: 'global', label: 'Close / clear', hint: 'modal, panel or search field' },

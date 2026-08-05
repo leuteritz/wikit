@@ -44,6 +44,8 @@ import {
 import { layoutFlat, layoutClustered, layoutRadial } from '../../lib/graphLayout.js'
 import { parseGraphQuery, matchNode, matchEdge } from '../../lib/graphQuery.js'
 import { codeState, patchCodeState } from '../../lib/codeState.js'
+import { useInsights } from '../../composables/useInsights.js'
+import { COLOR_MODES, SCALE_STOPS, hotspotColor, instabilityColor } from '../../lib/insightsScale.js'
 import BusyState from '../BusyState.vue'
 // Kanten-Detail und Aggregat-Aufloesung rendert CodeView in Spalte 3 – der Graph rechnet sie nur
 // und meldet sie als `relation` nach oben (s. dortiger Kommentar am Emit).
@@ -379,6 +381,49 @@ watch(
 const saved = codeState()
 const zoomPath = ref(saved.path ?? null) // null -> noch nicht gesetzt, faellt auf rootPath zurueck
 const showClasses = ref(!!saved.classes)
+
+// --- Wonach die Karten gefaerbt sind ------------------------------------------------------------
+// Die Rolle ist die Voreinstellung und bleibt es: sie braucht keine zweite Datenquelle und
+// beantwortet die Frage, die man im Bild stellt. Die beiden gemessenen Modi sind ein ANDERER
+// Blick auf dieselben Karten – Groesse/Verzweigung/Kopplung als ein Rang, oder die Instabilitaet
+// ueber den ganzen Bestand.
+//
+// Geholt wird die Rechnung erst beim Umschalten (`ensureInsights`): wer beim Rollenmodus bleibt,
+// zahlt keinen Request. Der gewaehlte Modus gehoert zur Ansicht und ueberlebt deshalb den Reload.
+const { byFileId: insightsByFile, ensure: ensureInsights } = useInsights()
+const colorMode = ref(COLOR_MODES.some((m) => m.id === saved.colorMode) ? saved.colorMode : 'role')
+const activeColorMode = computed(() => COLOR_MODES.find((m) => m.id === colorMode.value) || COLOR_MODES[0])
+function setColorMode(id) {
+  colorMode.value = id
+  if (id !== 'role') ensureInsights()
+}
+
+/**
+ * Die Kartenfarbe im gewaehlten Modus – oder `null` fuer „nimm die Rollenfarbe".
+ *
+ * `null` ist die richtige Antwort auf eine noch nicht geladene Rechnung: die Karte behaelt ihre
+ * Rollenfarbe, statt grau zu werden und dann umzuspringen. Genau dasselbe gilt fuer eine Klasse,
+ * die die Rechnung nicht kennt (gerade importiert, noch nicht nachgetragen).
+ */
+function metricColor(data) {
+  if (colorMode.value === 'role') return null
+  const m = insightsByFile.value.get(data.fileId)
+  if (!m) return null
+  return colorMode.value === 'hotspot' ? hotspotColor(m.score) : instabilityColor(m.instability)
+}
+
+// Was im Badge steht: im Rollenmodus der Umfang (Methoden bzw. Felder), sonst die Zahl, nach der
+// gerade gefaerbt wird. Eine Karte, die nach Gewicht eingefaerbt ist und die Methodenzahl nennt,
+// liesse die Farbe unbelegt – und die Zahl daneben waere die Antwort auf eine andere Frage.
+function badgeMetric(data) {
+  const m = colorMode.value === 'role' ? null : insightsByFile.value.get(data.fileId)
+  if (!m) return nodeMetric(data)
+  if (colorMode.value === 'hotspot') return { value: m.score, label: `weight ${m.score} of 100` }
+  return {
+    value: m.instability == null ? '–' : m.instability.toFixed(1),
+    label: m.instability == null ? 'no relations' : `instability ${m.instability}`,
+  }
+}
 
 // Startpfad = laengster gemeinsamer Package-Praefix. Liegt alles unter com.acme, waere die
 // oberste Ebene sonst ein einziger Knoten "com".
@@ -1557,13 +1602,17 @@ watch([findNodeHits, findQuery], ([ids, q]) => {
 // Kontextstufe samt aufgeklappten Nachbar-Packages. Die Suche und die geoeffnete Klasse kommen aus
 // CodeView in denselben Schluessel (s. lib/codeState.js).
 // Kein `immediate`: beim Mount steht dort bereits genau das, was hier gerade gelesen wurde.
-watch([zoomPath, showClasses, contextOverride, contextExpanded], () =>
+watch([zoomPath, showClasses, contextOverride, contextExpanded, colorMode], () =>
   patchCodeState({
     path: zoomPath.value,
     classes: showClasses.value,
+    colorMode: colorMode.value,
     context: { budget: contextOverride.value, expanded: [...contextExpanded.value] },
   }),
 )
+// Ein gemerkter Metrik-Modus braucht seine Zahlen, bevor die erste Karte gezeichnet ist – sonst
+// startet das Bild in Rollenfarben und springt einen Wimpernschlag spaeter um.
+if (colorMode.value !== 'role') ensureInsights()
 watch(findQuery, () => {
   findCursor.value = 0
 })
@@ -2813,7 +2862,11 @@ watch(
               'vf-card--find': findNodeHitSet.has(`c:${data.fileId}`),
             },
           ]"
-          :style="{ '--pkg': data.color, '--edge': focusColor(`c:${data.fileId}`) || kinColor(`c:${data.fileId}`) }"
+          :style="{
+            '--pkg': data.color,
+            '--edge': focusColor(`c:${data.fileId}`) || kinColor(`c:${data.fileId}`),
+            ...(metricColor(data) ? { '--role': metricColor(data) } : {}),
+          }"
         >
           <Handle type="target" :position="Position.Top" class="vf-handle" />
           <span class="vf-strip" />
@@ -2845,9 +2898,9 @@ watch(
           <!-- Slot 2: WIE haengt es drin? Rolle + Umfang als eine Einheit (Glyph + Methodenzahl). -->
           <span
             class="vf-badge"
-            :title="`${ROLE_META[data.role].label} — ${ROLE_META[data.role].hint} · ${nodeMetric(data).label}`"
+            :title="`${ROLE_META[data.role].label} — ${ROLE_META[data.role].hint} · ${badgeMetric(data).label}`"
           >
-            <Icon :icon="ROLE_META[data.role].icon" class="vf-badge-ic" />{{ nodeMetric(data).value }}
+            <Icon :icon="ROLE_META[data.role].icon" class="vf-badge-ic" />{{ badgeMetric(data).value }}
           </span>
           <Handle type="source" :position="Position.Bottom" class="vf-handle" />
         </div>
@@ -3161,6 +3214,24 @@ watch(
           </button>
         </div>
 
+        <!-- Wonach die Karten gefaerbt sind. Steht direkt unter der Ebene, weil es dieselbe Art
+             Frage ist: nicht „was ist im Bild?", sondern „wie lese ich es?". Nur auf der
+             Klassenebene – ein Package hat keinen Brandherd-Rang, es hat viele. -->
+        <div v-if="showClasses" class="vf-seg vf-seg--wide vf-seg--colors">
+          <button
+            v-for="m in COLOR_MODES"
+            :key="m.id"
+            type="button"
+            class="vf-seg-btn"
+            :class="{ 'is-on': colorMode === m.id }"
+            v-tip="{ title: `Colour by ${m.label.toLowerCase()}`, hint: m.hint }"
+            @click="setColorMode(m.id)"
+          >
+            <Icon :icon="m.icon" class="h-3.5 w-3.5" />
+            {{ m.label }}
+          </button>
+        </div>
+
         <!-- Zonen an/aus. Auf der Package-Ebene gibt es nichts zu gruppieren – dort ist jeder
              Knoten bereits ein Package. Die Vorschau daempft hier nichts, sie laesst die Zonen
              hervortreten: eine Ordnung waehlt keine Karten aus. -->
@@ -3296,12 +3367,34 @@ watch(
             </div>
           </div>
 
-          <!-- Achse 2: WIE haengt er im Netz? (Streifen, Ring, Methoden-Badge) -->
+          <!-- Achse 2: WIE haengt er im Netz? (Streifen, Ring, Methoden-Badge)
+               ⚠️ Faerbt der Graph gerade nach einer Kennzahl, steht hier deren Skala – eine
+               Legende, die Rollenfarben erklaert, waehrend die Karten nach Gewicht eingefaerbt
+               sind, ist eine Falschauskunft. Der Rollen-Glyph bleibt in beiden Faellen: er sitzt
+               im Badge und wird von der Farbe nicht beruehrt. -->
+          <template v-if="colorMode !== 'role'">
+            <div class="legend-head mt-1.5">Nodes · {{ activeColorMode.label.toLowerCase() }}</div>
+            <div class="legend-grid">
+              <div v-for="stop in SCALE_STOPS[colorMode]" :key="stop.label" class="legend-row">
+                <span class="legend-node-swatch" :style="{ background: stop.color }" />
+                <span>{{ stop.label }}</span>
+              </div>
+            </div>
+          </template>
+
           <div class="legend-head mt-1.5">Nodes · how it connects</div>
           <div class="legend-grid">
             <div v-for="role in ROLE_ORDER" :key="role" class="legend-row" :title="ROLE_META[role].hint">
-              <span class="legend-node-swatch" :style="{ background: `var(--color-role-${role})` }" />
-              <Icon :icon="ROLE_META[role].icon" class="h-3.5 w-3.5 shrink-0" :style="{ color: `var(--color-role-${role})` }" />
+              <span
+                v-if="colorMode === 'role'"
+                class="legend-node-swatch"
+                :style="{ background: `var(--color-role-${role})` }"
+              />
+              <Icon
+                :icon="ROLE_META[role].icon"
+                class="h-3.5 w-3.5 shrink-0"
+                :style="{ color: colorMode === 'role' ? `var(--color-role-${role})` : 'var(--color-text-muted)' }"
+              />
               <span>{{ ROLE_META[role].label }}</span>
             </div>
           </div>

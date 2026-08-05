@@ -214,6 +214,11 @@ export const api = {
   cancelJavaAnalysis: (articleId) => http('POST', `/analysis/${articleId}/cancel`),
   analysisStreamUrl: (articleId) => `${BASE}/analysis/stream/${articleId}`,
 
+  // --- Insights (/insights) -------------------------------------------------
+  // EINE Antwort fuer Klassenkennzahlen, Package-Kennzahlen und Zyklen: sie entstehen aus
+  // demselben aufgeloesten Graphen, und zwei Requests koennten zwei Staende zeigen.
+  getInsights: () => http('GET', '/insights'),
+
   // --- Bot (Ollama-Konfiguration, /bot) -------------------------------------
   // Eine Antwort traegt Stand, Defaults, Overrides UND die Feldbeschreibung (Grenzen/Hinweise) –
   // deshalb baut das Formular seine Eingabefelder daraus, statt dieselben Grenzen zu wiederholen.
