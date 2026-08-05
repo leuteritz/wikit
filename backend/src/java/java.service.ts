@@ -4,6 +4,7 @@ import { DataSource, EntityManager, In, IsNull } from 'typeorm';
 import { createHash } from 'crypto';
 import { createPatch, structuredPatch } from 'diff';
 import { FtsService } from '../database/fts.service';
+import { TRIGRAM_MIN_CHARS } from '../database/schema';
 import { safeJson } from '../common/json.util';
 import { CodeFormatterService } from '../common/code-formatter.service';
 import { classMetrics } from '../common/code-metrics';
@@ -677,10 +678,22 @@ export class JavaService {
   // `package`-Anweisung verwirft der Splitter (er setzt `segStart` zurueck). Sie sind also fuer
   // Menschen da und stoeren den Rueckweg nicht. Sortiert wird nach Package und Klassenname, damit
   // zwei Exporte derselben Datenlage denselben Text ergeben (diffbar).
-  async exportAll(): Promise<any> {
+  //
+  // ⚠️ `ids` macht daraus den Themen-Export (`/topic`), ohne ein zweites Format zu erfinden: der
+  // Ausschnitt ist derselbe Text, nur kuerzer – also bleibt er ueber „Add code" einlesbar, und die
+  // Regeln fuer Dubletten, Sortierung und Kopf gelten unveraendert an EINER Stelle. `topic` steht
+  // nur im Kopf: wer das Buendel in einen Chat wirft, soll dort lesen koennen, wonach gefragt war.
+  async exportAll(ids?: number[] | null, topic?: string): Promise<any> {
+    const picked = (ids || []).filter((n) => Number.isInteger(n) && n > 0);
+    // Eine LEERE Auswahl ist eine Auswahl, kein „alles": wer nichts angehakt hat, bekommt nichts.
+    // Der Unterschied haengt am Argument, nicht an der Laenge – `null` heisst „ganzer Bestand".
+    if (ids && !picked.length) {
+      return { text: '', classes: 0, duplicates: 0, packages: 0, bytes: 0, lines: 0, generatedAt: '' };
+    }
     const rows = await this.ds.query(
       `SELECT class_name, package, filename, raw_source
        FROM java_files
+       ${picked.length ? `WHERE id IN (${picked.join(',')})` : ''}
        ORDER BY package COLLATE NOCASE, class_name COLLATE NOCASE`,
     );
 
@@ -711,13 +724,20 @@ export class JavaService {
     }
 
     const generatedAt = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    const subject = (topic || '').trim().slice(0, 80);
     const head = [
       '// ═══════════════════════════════════════════════════════════════════',
-      `// Wikit code export · ${unique.length} classes · ${packages.size} packages`,
+      picked.length
+        ? `// Wikit topic bundle${subject ? ` · "${subject}"` : ''} · ${unique.length} classes · ${packages.size} packages`
+        : `// Wikit code export · ${unique.length} classes · ${packages.size} packages`,
       `// ${generatedAt} UTC`,
       duplicates ? `// ${duplicates} duplicate class name(s) skipped – only one per package is kept.` : '',
       '//',
-      '// Paste this whole text back into "Add code" to restore every class.',
+      // Der Rueckweg gilt fuer beide Faelle, verspricht aber Verschiedenes: der Vollexport stellt
+      // den Bestand wieder her, ein Buendel traegt genau die ausgewaehlten Klassen weiter.
+      picked.length
+        ? '// Paste this whole text into "Add code" to load these classes somewhere else.'
+        : '// Paste this whole text back into "Add code" to restore every class.',
       '// Everything above a package statement is a comment and is dropped on import.',
       '// ═══════════════════════════════════════════════════════════════════',
       '',
@@ -899,7 +919,13 @@ export class JavaService {
     // Weg 1: Trigram-Index. Er kennt jeden Teilstring ab TRIGRAM_MIN_CHARS – also ist seine
     // Antwort VOLLSTAENDIG, und „keine Kandidaten" heisst hier wirklich „kommt nirgends vor".
     // Genau das spart den Vollscan, der bisher jede solche Anfrage kostete.
-    if (!params.regex && this.fts.sourceIndexUsable()) {
+    //
+    // ⚠️ Die Laengenpruefung gehoert HIERHER, nicht nur in den Kandidaten-Lookup. Ein Trigramm
+    // braucht drei Zeichen; darunter liefert der Index leer, und das ist dann eben KEINE Aussage
+    // ueber die Codebasis. Ohne diese Bedingung wurde das leere Ergebnis trotzdem als
+    // vollstaendige Antwort ausgegeben – „jt" fand nirgends etwas, obwohl es in jeder zweiten
+    // Klasse steht. Kurze Eingaben nehmen deshalb weiter den alten Weg (Praefix-Index, sonst Scan).
+    if (!params.regex && this.fts.sourceIndexUsable() && query.trim().length >= TRIGRAM_MIN_CHARS) {
       const ids = await this.fts.candidateJavaFileIdsBySource(query, CODE_SEARCH_CANDIDATES);
       const result = await this.scanFiles(repo, ids, re, { context, maxFiles });
       return {

@@ -22,6 +22,12 @@ const MAX_TEXT = 2000;
 // jeder Vektor hat einen Abstand, also ist JEDE Klasse ein Treffer. Ohne Deckel und Schwelle waere
 // die Antwort die sortierte Codebasis.
 const SEARCH_LIMIT = 8;
+// ⚠️ Default und Maximum sind ZWEI Zahlen, seit es zwei Fragen gibt. Die Palette will die Handvoll
+// bester Treffer neben ihren anderen Quellen – acht sind dort bereits die Grenze des Lesbaren. Das
+// Themen-Buendel (`/topic`) fragt dagegen „welche Klassen gehoeren dazu?", und dort ist ein Deckel
+// von acht die falsche Antwort auf ein Thema, das dreissig Klassen umspannt. Der relative Schnitt
+// bleibt in beiden Faellen derselbe – er, nicht der Deckel, entscheidet ueber „passt noch".
+const SEARCH_MAX = 40;
 // ⚠️ Der Schnitt ist RELATIV zum besten Treffer, nicht absolut. Eine feste Schwelle wäre eine Zahl
 // über ein Modell, das der Betreiber jederzeit wechseln kann: derselbe Abstand bedeutet bei
 // nomic-embed-text etwas anderes als bei mxbai oder bge, und eine zu hohe Schwelle liefert dann
@@ -280,7 +286,7 @@ export class JavaEmbeddingsService {
     const best = scored[0]?.score ?? 0;
     const top = scored
       .filter((s) => s.score >= best * RELATIVE_CUTOFF)
-      .slice(0, Math.max(1, Math.min(limit, SEARCH_LIMIT)));
+      .slice(0, Math.max(1, Math.min(limit, SEARCH_MAX)));
     if (!top.length) return { results: [], ready: true, reason: 'no-match' };
 
     // Namen erst jetzt nachschlagen – und ueber den JOIN fallen geloeschte Klassen heraus, ohne

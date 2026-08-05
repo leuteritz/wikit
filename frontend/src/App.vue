@@ -141,6 +141,15 @@ const navLinks = computed(() => [
     warn: cycleCount.value > 0,
     title: cycleTitle.value,
   },
+  // ⚠️ Topic traegt bewusst KEINE Zahl. Code und Wiki zaehlen einen Bestand, Insights einen
+  // Befund – ein Buendel ist beides nicht, es entsteht erst mit der Frage. Eine „0" daneben waere
+  // die Behauptung, hier fehle etwas.
+  {
+    to: '/topic',
+    label: 'Topic',
+    icon: 'lucide:boxes',
+    title: 'Collect every class around a topic and copy their code',
+  },
   { to: '/wiki', label: 'Wiki', icon: 'lucide:book-open', count: articles.value.length },
   // Der Bot traegt keine Zahl, sondern einen Zustand: eine „3" waere hier keine Auskunft, die
   // Frage ist „antwortet er?". Der Punkt sitzt an derselben Stelle wie die Zaehler daneben.

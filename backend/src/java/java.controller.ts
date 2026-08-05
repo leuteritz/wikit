@@ -79,9 +79,20 @@ export class JavaController {
 
   // Alle Quelltexte als EIN Text (Export zum Kopieren + Wieder-Einlesen). Statische Route ->
   // vor files/:id.
+  //
+  // `ids` schneidet denselben Text auf eine Auswahl zu (Themen-Buendel, `/topic`) – ein eigener
+  // Endpunkt dafuer waere dasselbe Format ein zweites Mal. Ein leeres `ids=` ist eine leere
+  // AUSWAHL und liefert nichts; fehlt der Parameter ganz, gilt der ganze Bestand.
   @Get('export')
-  exportAll() {
-    return this.svc.exportAll();
+  exportAll(@Query('ids') ids?: string, @Query('topic') topic?: string) {
+    const picked =
+      ids === undefined
+        ? null
+        : String(ids)
+            .split(',')
+            .map((s) => Number(s.trim()))
+            .filter((n) => Number.isInteger(n) && n > 0);
+    return this.svc.exportAll(picked, topic);
   }
 
   // Zeilengenaue Suche im Quelltext ALLER Klassen (globale Suchpalette). Dieselben Schalter wie

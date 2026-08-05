@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.11.0",
-  "whatsNew": "Cycle fixes show the code before and after",
+  "version": "4.12.0",
+  "whatsNew": "Copy every class about a topic as one text",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

@@ -9,6 +9,9 @@ const routes = [
   { path: '/java', redirect: '/code' },
   { path: '/java/queues', redirect: '/code' },
   { path: '/insights', name: 'insights', component: () => import('./views/InsightsView.vue') },
+  // Der Begriff steht in der URL, nicht nur im Feld: aus der Suchpalette kommt man mit einem
+  // Thema hierher, und ein Link auf ein Buendel ohne sein Thema waere ein leeres Blatt.
+  { path: '/topic', name: 'topic', component: () => import('./views/TopicView.vue') },
   { path: '/bot', name: 'bot', component: () => import('./views/BotView.vue') },
   { path: '/new', name: 'new', component: () => import('./views/ArticleEdit.vue') },
   { path: '/edit/:slug', name: 'edit', component: () => import('./views/ArticleEdit.vue'), props: true },

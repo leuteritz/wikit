@@ -11,7 +11,8 @@
 // zweiten Request).
 import { ref, computed, watch } from 'vue'
 import { api } from '../../lib/api.js'
-import { copyToClipboard } from '../../lib/clipboard.js'
+import { BIG_CLIPBOARD_BYTES, copyToClipboard } from '../../lib/clipboard.js'
+import { formatBytes } from '../../lib/format.js'
 import { Icon } from '../../lib/icons.js'
 import BusyState from '../BusyState.vue'
 
@@ -25,17 +26,10 @@ const error = ref('')
 const copied = ref(false)
 const copyFailed = ref(false)
 
-// Ab hier ist die Zwischenablage kein sicherer Weg mehr (der execCommand-Fallback kopiert ueber ein
-// <textarea> – bei einigen Megabyte blockiert das den Tab spuerbar). Dann fuehrt der Download.
-const BIG_BYTES = 4 * 1024 * 1024
-
-const sizeLabel = computed(() => {
-  const b = data.value?.bytes || 0
-  if (b < 1024) return `${b} B`
-  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`
-  return `${(b / 1024 / 1024).toFixed(1)} MB`
-})
-const isBig = computed(() => (data.value?.bytes || 0) > BIG_BYTES)
+// Wo die Zwischenablage kippt, steht bei ihr (`lib/clipboard.js`) – hier faellt nur die Folge an:
+// dann fuehrt der Download.
+const sizeLabel = computed(() => formatBytes(data.value?.bytes))
+const isBig = computed(() => (data.value?.bytes || 0) > BIG_CLIPBOARD_BYTES)
 const preview = computed(() => (data.value?.text || '').split('\n').slice(0, 14).join('\n'))
 const filename = computed(() => {
   const stamp = (data.value?.generatedAt || '').replace(/[^0-9]/g, '').slice(0, 14)

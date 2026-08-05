@@ -412,11 +412,28 @@ const results = computed(() => {
           .slice(0, 12)
           .map((r) => add({ kind: 'method', item: r }))
 
-  return { flat, classes, serverClasses, meaningItems, articleItems, codeFiles, methods }
+  // ⚠️ Die letzte Zeile ist kein Treffer, sondern der Weg zur anderen FRAGE. Diese Palette
+  // beantwortet „welches eine Ding meine ich?"; wer stattdessen „was gehoert alles dazu?" meint,
+  // braucht eine Menge samt Auswahl und Groesse – und die lebt in `/topic`. Der Uebergang steht
+  // hier, weil die Frage hier entsteht: man tippt einen Begriff, sieht acht Klassen und merkt
+  // dabei, dass man alle acht wollte. Ganz unten, damit sie keinen Treffer verdraengt, aber IM
+  // Index – sonst waere sie mit der Tastatur nicht erreichbar.
+  // Bei `a:` entfaellt sie: ein Buendel sammelt Quelltext, und danach ist dort nicht gefragt.
+  const topic =
+    term.value && files.value.length && scope !== 'article'
+      ? [add({ kind: 'topic', term: term.value })]
+      : []
+
+  return { flat, classes, serverClasses, meaningItems, articleItems, codeFiles, methods, topic }
 })
 
 const flatItems = computed(() => results.value.flat)
 const activeItem = computed(() => flatItems.value[active.value] || null)
+// ⚠️ Der Uebergang nach `/topic` zaehlt NICHT als Treffer. Er steht bei jeder Eingabe da – ohne
+// diese Unterscheidung waere „No results for …" nie wieder zu sehen, und ein Begriff, den es
+// nirgends gibt, saehe aus wie ein Fund. Im Index bleibt er trotzdem: ↵ erreicht ihn auch dann,
+// wenn die Liste gar nicht gerendert wird.
+const hasHits = computed(() => flatItems.value.length > results.value.topic.length)
 
 const counter = computed(() => {
   if (patternError.value) return 'Invalid regex'
@@ -711,6 +728,12 @@ function go(entry) {
     router.push(`/article/${entry.article.slug}`)
     return
   }
+  // Der Begriff faehrt in der URL mit – `/topic` beginnt damit seine eigene Suche, statt den
+  // Nutzer sie ein zweites Mal tippen zu lassen.
+  if (entry.kind === 'topic') {
+    router.push({ path: '/topic', query: { q: entry.term } })
+    return
+  }
   // Handoff wie Queue/Edge-Panel -> Code: CodeView waehlt die Klasse und springt in die Zeile.
   // Die Suche faehrt mit und steht danach in der Suchleiste der Klasse, also laeuft „weiter" dort
   // ab dem Treffer, den man angeklickt hat – statt bei null anzufangen.
@@ -968,7 +991,7 @@ const shortPackage = (pkg) => pkg || 'default package'
           </button>
         </div>
 
-        <div v-if="flatItems.length" class="flex min-h-0 flex-1">
+        <div v-if="hasHits" class="flex min-h-0 flex-1">
           <!-- Ergebnisliste -->
           <div
             class="sp-list min-h-0 w-full shrink-0 overflow-y-auto py-2"
@@ -1165,6 +1188,30 @@ const shortPackage = (pkg) => pkg || 'default package'
                 </div>
               </button>
             </template>
+
+            <!-- Der Uebergang zur anderen Frage. Optisch abgesetzt (Trennlinie, kein Gruppenkopf):
+                 er steht neben den Treffern, nicht unter ihnen als weiterer. -->
+            <button
+              v-for="entry in results.topic"
+              :key="`t-${entry.idx}`"
+              type="button"
+              :data-sp-active="entry.idx === active ? '1' : null"
+              class="mt-2 flex w-full items-center gap-3 border-t border-[var(--color-border)] px-4 py-2.5 text-left transition"
+              :class="entry.idx === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-surface-offset)]'"
+              @mouseenter="hoverItem(entry.idx)"
+              @click="go(entry)"
+            >
+              <Icon icon="lucide:boxes" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+              <div class="min-w-0 flex-1">
+                <div class="truncate text-sm text-[var(--color-text)]">
+                  Collect everything about “{{ entry.term }}”
+                </div>
+                <div class="truncate text-xs text-[var(--color-text-muted)]">
+                  Every class around it, picked and copied as one text
+                </div>
+              </div>
+              <Icon icon="lucide:arrow-up-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
+            </button>
           </div>
 
           <!-- Vorschau: was der markierte Treffer wirklich ist -->
@@ -1195,6 +1242,23 @@ const shortPackage = (pkg) => pkg || 'default package'
                 />
                 <div v-if="activeItem.article.tags?.length" class="mt-3 flex flex-wrap gap-1">
                   <span v-for="t in activeItem.article.tags" :key="t" class="rounded-full bg-[var(--color-surface-offset)] px-2 py-0.5 text-3xs text-[var(--color-text-muted)]">#{{ t }}</span>
+                </div>
+              </div>
+            </template>
+
+            <!-- Der Uebergang hat keine Fundstelle, also auch keine Code-Vorschau. Statt eines
+                 leeren Kopfes steht hier, was auf der anderen Seite passiert – sonst sieht die
+                 letzte Zeile der Liste aus, als sei sie kaputt. -->
+            <template v-else-if="activeItem?.kind === 'topic'">
+              <div class="grid h-full place-items-center px-8 text-center">
+                <div>
+                  <Icon icon="lucide:boxes" class="mx-auto h-7 w-7 text-[var(--color-accent)]" />
+                  <h3 class="mt-2 text-sm font-semibold text-[var(--color-text)]">Topic bundle</h3>
+                  <p class="mt-1.5 text-xs leading-relaxed text-[var(--color-text-muted)]">
+                    Four sources answer at once — the name, the source lines, the meaning, and
+                    everything one relation away. Pick what belongs and take the code with you as
+                    one text.
+                  </p>
                 </div>
               </div>
             </template>
@@ -1375,6 +1439,21 @@ const shortPackage = (pkg) => pkg || 'default package'
               <template v-else>Searched all {{ codeResult.totalFiles }} classes (indexed),</template>
               {{ articles.length }} articles.
             </p>
+            <!-- Gerade hier ist der Uebergang mehr als eine Abkuerzung: kein Name und keine
+                 Fundstelle passt – die Bedeutungssuche des Buendels beantwortet aber genau die
+                 Frage, die uebrig bleibt. Der Knopf ist derselbe Eintrag wie in der Liste, also
+                 traegt ihn ↵ ohnehin; sichtbar sein muss er trotzdem. -->
+            <button
+              v-for="entry in results.topic"
+              :key="`te-${entry.idx}`"
+              type="button"
+              class="mt-3 inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text-muted)] transition hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
+              @click="go(entry)"
+            >
+              <Icon icon="lucide:boxes" class="h-3.5 w-3.5 text-[var(--color-accent)]" />
+              Collect everything about “{{ entry.term }}”
+              <kbd class="rounded border border-[var(--color-border)] px-1 font-mono text-3xs">↵</kbd>
+            </button>
           </template>
           <template v-else>Type to search articles, classes and source code…</template>
         </div>

@@ -46,6 +46,15 @@ export function formatDuration(ms) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
 
+// Textgroesse ("312 KB", "1.4 MB"). Ueberall dort, wo etwas in die Zwischenablage oder in eine
+// Datei geht – die Zahl entscheidet mit, ob der Weg ueberhaupt tragfaehig ist (s. Export-Modal).
+export function formatBytes(bytes) {
+  const b = Math.max(0, Number(bytes) || 0)
+  if (b < 1024) return `${b} B`
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`
+  return `${(b / 1024 / 1024).toFixed(1)} MB`
+}
+
 // Grobe Restzeit ("~2h 15m", "~8 min", "< 1 min") fuer Fortschrittsanzeigen. Bewusst gerundet:
 // eine Schaetzung auf die Sekunde genau anzugeben taeuscht eine Praezision vor, die eine aus
 // dem bisherigen Durchsatz hochgerechnete ETA nicht hat.

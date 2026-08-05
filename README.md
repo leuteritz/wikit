@@ -26,8 +26,10 @@ copying one file.
   they use your words for it.
 - **Relationship graph** — typed links between articles, drawn with [Vue Flow](https://vueflow.dev).
 - **Java code analysis** — parse `.java` locally (no JDK) and explore a class dependency graph.
-- **Code insights** — dependency cycles, a hotspot ranking and package balance, all derived from
-  what is already stored; the graph can colour its cards by them.
+- **Code insights** — dependency cycles, a hotspot ranking and package balance, derived from what
+  is already stored.
+- **Topic bundles** — collect every class around one term (by name, by source, by meaning, by
+  relation) and copy their whole source as one text, ready to paste into a chat.
 - **AI summaries** — optional, per method and per class, via [Ollama](https://ollama.com)
   (local, no API key), configurable at runtime under `/bot`.
 - **Dark mode** and **backup = copy one file**.

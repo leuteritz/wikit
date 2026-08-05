@@ -124,7 +124,18 @@ export const api = {
     ),
   // Alle Quelltexte als EIN Text + Kennzahlen (Export-Modal). Bewusst ein eigener Endpunkt und
   // nicht `listJavaFiles`: die Liste traegt absichtlich KEINE Quelltexte.
-  exportJavaAll: () => http('GET', '/java/export'),
+  // `ids` schneidet denselben Text auf eine Auswahl zu (Themen-Buendel, `/topic`) – ein zweiter
+  // Endpunkt waere dasselbe Format ein zweites Mal, und `topic` steht nur im Kopf des Textes.
+  // `silent`, weil die Buendel-Ansicht bei jeder Auswahl neu holt: ein Toast je Haken waere Laerm.
+  exportJavaAll: (ids = null, topic = '') =>
+    ids
+      ? http(
+          'GET',
+          `/java/export?ids=${ids.join(',')}${topic ? `&topic=${encodeURIComponent(topic)}` : ''}`,
+          null,
+          { silent: true },
+        )
+      : http('GET', '/java/export'),
 
   // Zeilengenaue Suche im Quelltext aller Klassen (globale Suchpalette). Gleiche Schalter wie die
   // Suchleiste im Quellcode-Tab. `silent`: die Palette tippt – ein Toast je Anschlag waere eine
@@ -132,11 +143,20 @@ export const api = {
   // `signal`: die Palette bricht die vorige Suche ab, sobald weitergetippt wird – sonst arbeitet
   // der Server (better-sqlite3 blockiert synchron) noch Anfragen ab, deren Ergebnis niemand mehr
   // sehen will, und die aktuelle steht dahinter in der Schlange.
-  searchJavaCode: (q, { caseSensitive = false, wholeWord = false, regex = false } = {}, signal) =>
+  // `limit`/`context` sind fuer das Themen-Buendel da: dort zaehlt, WELCHE Klassen den Begriff
+  // enthalten (moeglichst viele), nicht wie die Fundstelle aussieht – also mehr Dateien und keine
+  // Kontextzeilen. Ohne die beiden bleibt es beim Zuschnitt der Palette.
+  searchJavaCode: (
+    q,
+    { caseSensitive = false, wholeWord = false, regex = false, limit = 0, context = null } = {},
+    signal,
+  ) =>
     http(
       'GET',
       `/java/code-search?q=${encodeURIComponent(q)}&case=${caseSensitive ? 1 : 0}` +
-        `&word=${wholeWord ? 1 : 0}&regex=${regex ? 1 : 0}`,
+        `&word=${wholeWord ? 1 : 0}&regex=${regex ? 1 : 0}` +
+        (limit ? `&limit=${limit}` : '') +
+        (context != null ? `&context=${context}` : ''),
       null,
       { silent: true, signal },
     ),
@@ -217,8 +237,16 @@ export const api = {
   // --- Bedeutungssuche (Embeddings) -----------------------------------------
   // `silent`, weil ein nicht erreichbarer Ollama hier kein Fehler ist: die Palette zeigt ihre
   // uebrigen Quellen und schreibt an, dass diese fehlt (ein Toast je Tastendruck waere Laerm).
-  semanticSearchJava: (q, signal) =>
-    http('GET', `/java/semantic-search?q=${encodeURIComponent(q)}`, null, { silent: true, signal }),
+  // `limit` nur fuer das Themen-Buendel: die Palette will die Handvoll bester Treffer neben ihren
+  // anderen Quellen, das Buendel die Klassen, die zum Thema gehoeren. Der relative Schnitt gilt
+  // in beiden Faellen – der Deckel verschiebt nur, wo er ueberhaupt greifen kann.
+  semanticSearchJava: (q, signal, limit = 0) =>
+    http(
+      'GET',
+      `/java/semantic-search?q=${encodeURIComponent(q)}${limit ? `&limit=${limit}` : ''}`,
+      null,
+      { silent: true, signal },
+    ),
   getJavaEmbeddingStatus: () => http('GET', '/java/embeddings', null, { silent: true }),
   rebuildJavaEmbeddings: (jobId = null, force = false) =>
     http('POST', '/java/embeddings/rebuild', { jobId, force }),

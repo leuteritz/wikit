@@ -98,6 +98,9 @@ import zap from '@iconify-icons/lucide/zap'
 import hardDrive from '@iconify-icons/lucide/hard-drive'
 import languages from '@iconify-icons/lucide/languages'
 import activity from '@iconify-icons/lucide/activity'
+// Themen-Buendel (/topic): das Buendel selbst und der Haken seiner Auswahlliste.
+import boxes from '@iconify-icons/lucide/boxes'
+import checkSquare from '@iconify-icons/lucide/check-square'
 // Insights (/insights): Brandherd, Bruchstelle eines Zyklus, der Zyklus selbst.
 import flame from '@iconify-icons/lucide/flame'
 import scissors from '@iconify-icons/lucide/scissors'
@@ -198,6 +201,8 @@ const ICONS = {
   'lucide:hard-drive': hardDrive,
   'lucide:languages': languages,
   'lucide:activity': activity,
+  'lucide:boxes': boxes,
+  'lucide:check-square': checkSquare,
   'lucide:flame': flame,
   'lucide:scissors': scissors,
   'lucide:repeat': repeatIcon,
