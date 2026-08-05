@@ -8,7 +8,7 @@ A tiny, self-hosted personal wiki — light enough for a Raspberry Pi.
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Deploy to Raspberry Pi](https://github.com/leuteritz/wikit/actions/workflows/deploy.yml/badge.svg)](https://github.com/leuteritz/wikit/actions/workflows/deploy.yml)
 
-![Wikit — start page: one search box over articles, classes, methods and raw source, with a live preview](docs/landing.png)
+![Wikit — start page: one search box over articles, classes, raw source and meaning, with a live preview](docs/landing.png)
 
 ![Wikit — package tree, Java class dependency graph and class detail side by side](docs/screenshot.png)
 
