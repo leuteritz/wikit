@@ -527,7 +527,7 @@ watch(() => props.edge, () => (confirmingDelete.value = null))
 // wird beim Uebergang vom Platzhalter zu den geladenen Daten ohnehin ausgetauscht, und ein
 // waehrend des Ladens getippter Begriff waere sonst genau dann weg, wenn der Code eintrifft.
 watch(
-  () => (props.edge ? `${props.edge.fromFileId} ${props.edge.toFileId} ${props.edge.kind}` : null),
+  () => (props.edge ? `${props.edge.fromFileId}\u0000${props.edge.toFileId}\u0000${props.edge.kind}` : null),
   () => {
     search.value = ''
     searchCursor.value = 0
