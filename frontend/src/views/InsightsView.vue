@@ -16,6 +16,7 @@ import { useRouter } from 'vue-router'
 import { useInsights } from '../composables/useInsights.js'
 import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import BusyState from '../components/BusyState.vue'
+import CyclePlan from '../components/insights/CyclePlan.vue'
 import { Icon } from '../lib/icons.js'
 import { vTip } from '../lib/tooltip.js'
 
@@ -91,165 +92,13 @@ function cutAdvice(weakest, level = 'class') {
   return `${a} makes ${many} into ${b}. Move that member to ${a}, or let ${b} hand the result over instead of being called back.`
 }
 
-// --- Der Plan zu EINEM Package-Zyklus -----------------------------------------------------------
+// --- Der Plan zu EINEM Zyklus -------------------------------------------------------------------
 // „Zwischen web und service liegt eine Kante" ist ein Befund. Gefragt ist: was ändere ich, was
-// bringt es, und warum ausgerechnet hier. Die drei Antworten stehen deshalb zusammen und mit den
-// echten Namen – sonst muss man sie sich aus vier Zahlen selbst zusammenreimen.
+// bringt es, und warum ausgerechnet hier – das beantwortet `CyclePlan` (vorher/nachher als zwei
+// Fenster je Schritt). ⚠️ Der Schlüssel trägt die Ebene mit: Package- und Klassenzyklus 0 sind
+// zwei verschiedene Karten, ein reiner Index klappte beide zugleich auf.
 const openPlan = ref(null)
-const togglePlan = (i) => (openPlan.value = openPlan.value === i ? null : i)
-
-// --- Die Bilanz in drei Zeilen ------------------------------------------------------------------
-// ⚠️ Vor dem Code steht, WAS sich ändert, WAS es bringt und WARUM hier – je EIN Satz, nicht je ein
-// Absatz. Die ausführliche Fassung stand vorher als drei Fließtextblöcke da, und genau das ist die
-// Form, in der niemand eine Entscheidung liest: die Frage „lohnt sich das?" beantwortet man an
-// einer Zeile, nicht an einem Aufsatz. Wer die Begründung ausführlich will, findet sie oben unter
-// „How do I fix these?".
-//
-// Die Richtungszeile darüber ist die eigentliche Zusammenfassung: derselbe Pfeil, einmal so und
-// einmal andersherum – das sagt in einem Bild, was drei Sätze umschreiben.
-function planSummary(c) {
-  const w = c.weakest
-  const link = w?.links?.[0]
-  if (!w) return null
-  const a = simple(w.fromLabel)
-  const b = simple(w.toLabel)
-  const moved = link?.kind === 'uses'
-
-  return {
-    // Vorher/Nachher als Pfeilrichtung. Bei einem Typbezug dreht sich nichts – der Typ zieht um.
-    beforeFrom: a,
-    beforeTo: b,
-    afterFrom: moved ? a : b,
-    afterTo: moved ? 'shared' : a,
-    afterVia: moved ? b : null,
-    difference: moved
-      ? `${link.to} moves to a package both may use.`
-      : `One interface in ${a}; ${link ? link.to : b} implements it.`,
-    gain: `${a} builds and tests without ${b}.`,
-    why: w.againstLayers
-      ? `The only arrow running against the layers.`
-      : `The cheapest cut — ${w.count === 1 ? 'one relation' : `${w.count} relations`}, a ${w.kind}.`,
-  }
-}
-
-// --- Das Beispiel: wie der Umbau AUSSIEHT ------------------------------------------------------
-// ⚠️ Als DIFF und nicht als fertige Datei. Was hier zählt, ist die Änderung – welche Zeile
-// verschwindet, welche kommt dazu –, und die sieht man in einem vollständigen Listing gerade
-// nicht. Deshalb auch kein Syntax-Highlighting: die Farbe trägt hier `-` und `+`, nicht `public`.
-//
-// Die Namen sind ECHT (die tragende Klasse, das tragende Mitglied, die beiden Packages); geraten
-// ist nur die Signatur des neuen Interfaces – und genau das steht als Kommentar im Beispiel, statt
-// so zu tun, als kenne der Bericht sie.
-const cap = (w) => (w ? w[0].toUpperCase() + w.slice(1) : '')
-const simple = (path) => String(path || '').split('.').pop()
-
-function codeSteps(c) {
-  const w = c.weakest
-  const link = w?.links?.[0]
-  if (!w || !link) return []
-  const fromPkg = w.fromLabel
-  const toPkg = w.toLabel
-  const member = link.members?.[0] || ''
-
-  // Ein reiner TYPBEZUG hat kein Mitglied, das man umkehren könnte – dort ist die Antwort, den Typ
-  // dorthin zu legen, wo beide ihn sehen dürfen.
-  if (link.kind === 'uses') {
-    return [
-      {
-        title: `Move the type out of ${simple(toPkg)}`,
-        file: `${toPkg}.${link.to} → a package both may depend on`,
-        badge: 'move',
-        lines: [
-          { sign: ' ', text: `// ${link.from} only needs ${link.to} as a type, not as part of ${simple(toPkg)}.` },
-          { sign: ' ', text: `// Put it where both sides may look — e.g. a shared package:` },
-          { sign: '-', text: `package ${toPkg};` },
-          { sign: '+', text: `package ${rootOf(fromPkg)}.shared;` },
-          { sign: ' ', text: '' },
-          { sign: ' ', text: `public class ${link.to} { … }` },
-        ],
-      },
-      {
-        title: `Point the import at the new home`,
-        file: `${fromPkg}.${link.from}`,
-        badge: 'edit',
-        lines: [
-          { sign: '-', text: `import ${toPkg}.${link.to};` },
-          { sign: '+', text: `import ${rootOf(fromPkg)}.shared.${link.to};` },
-        ],
-      },
-    ]
-  }
-
-  // Aufruf oder Feldzugriff: die klassische Umkehr. Das Interface gehört in das Package, das die
-  // Leistung BRAUCHT – nur dadurch dreht sich der Pfeil.
-  const iface = member ? `${cap(member)}Port` : `${link.to}Port`
-  const field = member ? `${member}Port` : 'port'
-  const call = member ? `${field}.${member}(…)` : `${field}.…`
-  return [
-    {
-      title: `Let ${simple(fromPkg)} state what it needs`,
-      file: `${fromPkg}.${iface}`,
-      badge: 'new file',
-      lines: [
-        { sign: '+', text: `package ${fromPkg};` },
-        { sign: '+', text: '' },
-        { sign: '+', text: `// Copy the signature from ${link.to}.${member || '…'} — and name this` },
-        { sign: '+', text: `// interface after what it DOES, not after the class it replaces.` },
-        { sign: '+', text: `public interface ${iface} {` },
-        { sign: '+', text: `    String ${member || 'run'}(String value);` },
-        { sign: '+', text: '}' },
-      ],
-    },
-    {
-      title: `Depend on the interface, not on ${simple(toPkg)}`,
-      file: `${fromPkg}.${link.from}`,
-      badge: 'edit',
-      lines: [
-        { sign: '-', text: `import ${toPkg}.${link.to};` },
-        { sign: ' ', text: '' },
-        { sign: ' ', text: `public class ${link.from} {` },
-        { sign: '-', text: `    private ${link.to} ${link.to[0].toLowerCase()}${link.to.slice(1)};` },
-        { sign: '+', text: `    private final ${iface} ${field};` },
-        { sign: '+', text: '' },
-        { sign: '+', text: `    public ${link.from}(${iface} ${field}) { this.${field} = ${field}; }` },
-        { sign: ' ', text: '        …' },
-        { sign: '-', text: `        ${link.to[0].toLowerCase()}${link.to.slice(1)}.${member || '…'}(…);` },
-        { sign: '+', text: `        ${call};` },
-        { sign: ' ', text: '}' },
-      ],
-    },
-    {
-      title: `Have ${link.to} fulfil it — this is where the arrow flips`,
-      file: `${toPkg}.${link.to}`,
-      badge: 'edit',
-      lines: [
-        { sign: '+', text: `import ${fromPkg}.${iface};` },
-        { sign: ' ', text: '' },
-        { sign: '-', text: `public class ${link.to} {` },
-        { sign: '+', text: `public class ${link.to} implements ${iface} {` },
-        { sign: ' ', text: `    // unchanged` },
-        { sign: ' ', text: '}' },
-      ],
-    },
-    {
-      title: 'Wire it once, where both are already known',
-      file: 'your composition root (main, config, factory)',
-      badge: 'edit',
-      lines: [
-        { sign: '+', text: `new ${link.from}(new ${link.to}());` },
-        { sign: ' ', text: `// ${simple(fromPkg)} never mentions ${simple(toPkg)} again —` },
-        { sign: ' ', text: `// only this one place knows both, and it sits above them.` },
-      ],
-    },
-  ]
-}
-
-// Das Wurzel-Package (com.acme.shop aus com.acme.shop.repo) – der Ort, an dem ein geteilter Typ
-// liegen kann, ohne dass eine Seite die andere sieht.
-function rootOf(path) {
-  const parts = String(path || '').split('.')
-  return parts.length > 1 ? parts.slice(0, -1).join('.') : path
-}
+const togglePlan = (key) => (openPlan.value = openPlan.value === key ? null : key)
 
 // Was eine Klasse schwer macht – und was man dagegen tut. Der Server nennt den Treiber, hier steht,
 // was er bedeutet.
@@ -717,103 +566,13 @@ const plotted = computed(() => {
                       Part of a group of {{ c.size }} packages that all reach each other.
                     </p>
 
-                    <!-- ⚠️ Der Plan ist AUFGEKLAPPT eine eigene Ebene: „was ändere ich, was bringt
-                         es, warum hier" beantwortet man einmal je Zyklus – dauerhaft sichtbar wären
-                         es bei sechs Zyklen sechs Aufsätze übereinander. -->
-                    <button
-                      type="button"
-                      class="mt-2 inline-flex items-center gap-1 text-2xs font-medium text-[var(--color-accent)] transition hover:underline"
-                      @click="togglePlan(i)"
-                    >
-                      <Icon :icon="openPlan === i ? 'lucide:chevron-down' : 'lucide:chevron-right'" class="h-3 w-3" />
-                      {{ openPlan === i ? 'Hide the plan' : 'What should I change here?' }}
-                    </button>
-
-                    <div v-if="openPlan === i" class="mt-2 space-y-3 rounded-md bg-[var(--color-surface-offset)] p-3">
-                      <!-- ⚠️ Die Zusammenfassung ZUERST und in drei Zeilen: „lohnt sich das?"
-                           beantwortet man an einer Zeile, nicht an drei Absätzen. Die Richtungs-
-                           zeile darüber sagt in einem Bild, was Text umschreiben müsste. -->
-                      <template v-if="planSummary(c)">
-                        <!-- ⚠️ Die beiden Richtungen UNTEREINANDER und in einem Raster: nebeneinander liest
-                             man zwei Zeilen, untereinander SIEHT man den Pfeil sich umdrehen – und
-                             das ist die ganze Zusammenfassung. -->
-                        <div class="grid items-center gap-x-2 gap-y-1 font-mono text-2xs" style="grid-template-columns: max-content max-content max-content max-content 1fr">
-                          <span class="text-3xs uppercase text-[var(--color-text-muted)]">now</span>
-                          <span class="justify-self-end text-[var(--color-text)]">{{ planSummary(c).beforeFrom }}</span>
-                          <Icon icon="lucide:arrow-right" class="h-3 w-3 text-[var(--color-danger)]" />
-                          <span class="text-[var(--color-text)]">{{ planSummary(c).beforeTo }}</span>
-                          <span class="text-3xs text-[var(--color-danger)]">closes the loop</span>
-
-                          <span class="text-3xs uppercase text-[var(--color-text-muted)]">after</span>
-                          <span class="justify-self-end text-[var(--color-text)]">{{ planSummary(c).afterFrom }}</span>
-                          <Icon icon="lucide:arrow-right" class="h-3 w-3 text-[var(--color-success)]" />
-                          <span class="text-[var(--color-text)]">
-                            {{ planSummary(c).afterTo }}
-                            <template v-if="planSummary(c).afterVia"> ← {{ planSummary(c).afterVia }}</template>
-                          </span>
-                          <span class="text-3xs text-[var(--color-success)]">no loop</span>
-                        </div>
-
-                        <dl class="grid gap-x-3 gap-y-1 text-2xs" style="grid-template-columns: max-content 1fr">
-                          <dt class="text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">Change</dt>
-                          <dd class="text-[var(--color-text)]">{{ planSummary(c).difference }}</dd>
-                          <dt class="text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">Gain</dt>
-                          <dd class="text-[var(--color-text)]">{{ planSummary(c).gain }}</dd>
-                          <dt class="text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">Why here</dt>
-                          <dd class="text-[var(--color-text-muted)]">{{ planSummary(c).why }}</dd>
-                        </dl>
-                      </template>
-
-                      <!-- Was die Richtung hält – mit Namen, sonst bleibt es eine Aussage über
-                           zwei Ordner. -->
-                      <div v-if="c.weakest?.links?.length">
-                        <p class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-                          The relation to remove
-                        </p>
-                        <ul class="mt-1 space-y-0.5">
-                          <li v-for="l in c.weakest.links" :key="`${l.fromId}-${l.toId}`" class="text-2xs">
-                            <button
-                              type="button"
-                              class="font-mono text-[var(--color-text)] underline-offset-2 hover:text-[var(--color-accent)] hover:underline"
-                              @click="openClass(l.fromId)"
-                            >{{ l.from }}</button>
-                            <span class="text-[var(--color-text-muted)]"> → </span>
-                            <button
-                              type="button"
-                              class="font-mono text-[var(--color-text)] underline-offset-2 hover:text-[var(--color-accent)] hover:underline"
-                              @click="openClass(l.toId)"
-                            >{{ l.to }}</button>
-                            <span class="text-[var(--color-text-muted)]">
-                              ({{ l.kind }}<template v-if="l.members?.length">, {{ l.members.join(', ') }}</template>)
-                            </span>
-                          </li>
-                        </ul>
-                        <p v-if="c.weakest.more" class="mt-0.5 text-3xs text-[var(--color-text-muted)]">
-                          … and {{ c.weakest.more }} more.
-                        </p>
-                      </div>
-
-                      <div v-if="codeSteps(c).length">
-                        <p class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-                          Step by step
-                        </p>
-                        <div class="mt-1 space-y-2">
-                          <div v-for="(step, si) in codeSteps(c)" :key="si">
-                            <p class="flex flex-wrap items-baseline gap-x-1.5 text-2xs">
-                              <span class="text-[var(--color-text)]">{{ si + 1 }}. {{ step.title }}</span>
-                              <span class="rounded bg-[var(--color-surface-2)] px-1 text-3xs text-[var(--color-text-muted)]">{{ step.badge }}</span>
-                            </p>
-                            <p class="mt-0.5 truncate font-mono text-3xs text-[var(--color-text-muted)]">{{ step.file }}</p>
-                            <pre class="mt-1 overflow-x-auto rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-2 font-mono text-3xs leading-relaxed"><code><span
-                              v-for="(l, li) in step.lines"
-                              :key="li"
-                              class="block"
-                              :class="l.sign === '+' ? 'text-[var(--color-success)]' : l.sign === '-' ? 'text-[var(--color-danger)]' : 'text-[var(--color-text-muted)]'"
-                            >{{ l.sign }} {{ l.text }}</span></code></pre>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                    <CyclePlan
+                      :cycle="c"
+                      level="package"
+                      :open="openPlan === `p${i}`"
+                      @toggle="togglePlan(`p${i}`)"
+                      @open-class="openClass"
+                    />
                   </article>
                 </div>
               </div>
@@ -856,6 +615,14 @@ const plotted = computed(() => {
                     <p v-if="c.size > c.chainLabels.length - 1" class="mt-1 text-2xs text-[var(--color-text-muted)]">
                       Part of a group of {{ c.size }} classes that all reach each other.
                     </p>
+
+                    <CyclePlan
+                      :cycle="c"
+                      level="class"
+                      :open="openPlan === `c${i}`"
+                      @toggle="togglePlan(`c${i}`)"
+                      @open-class="openClass"
+                    />
                   </article>
                 </div>
               </div>

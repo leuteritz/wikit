@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.10.1",
-  "whatsNew": "Cycle plans lead with the change and the gain",
+  "version": "4.11.0",
+  "whatsNew": "Cycle fixes show the code before and after",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",
