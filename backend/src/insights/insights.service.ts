@@ -186,13 +186,20 @@ export class InsightsService implements OnModuleInit {
     classCycles.forEach((c, i) => c.members.forEach((id) => cycleOfClass.set(id as number, i)));
 
     // --- Hotspot-Score --------------------------------------------------------------------------
-    // Perzentilraenge statt Rohwerten: eine einzelne 4000-Zeilen-Klasse wuerde jede lineare
-    // Normierung an sich ziehen und alle anderen auf nahe null druecken. Der Rang beantwortet die
-    // Frage, um die es geht – "wie viele Klassen sind kleiner als diese?".
-    const locRank = percentiler(classes.map((c) => c.loc ?? 0));
-    const cxRank = percentiler(classes.map((c) => c.complexity ?? 0));
+    // ⚠️ Rang UND Groessenordnung, je zur Haelfte (`weigher`). Beides allein ist falsch:
+    //
+    //   * Nur der RANG kennt kein "um wieviel". Gemessen an der Demo-Codebasis stand eine Klasse
+    //     mit 100 Verzweigungen damit UNTER einer mit 8 – beide sind "unter den obersten", und den
+    //     Rest entschieden dann Nebenkriterien. Eine Rangliste, die das tut, glaubt niemand mehr.
+    //   * Nur die GROESSE laesst einen einzelnen Ausreisser alles andere platt druecken: eine
+    //     4000-Zeilen-Klasse macht jede 400-Zeilen-Klasse zu einer 0,1.
+    //
+    // Die Groessenordnung geht deshalb logarithmisch und gegen das 95. Perzentil statt gegen das
+    // Maximum ein – der Ausreisser setzt nicht mehr allein den Massstab.
+    const locRank = weigher(classes.map((c) => c.loc ?? 0));
+    const cxRank = weigher(classes.map((c) => c.complexity ?? 0));
     const coupling = classes.map((c) => (fanIn.get(c.id) || 0) + (fanOut.get(c.id) || 0));
-    const coRank = percentiler(coupling);
+    const coRank = weigher(coupling);
     // Churn zaehlt erst ab dem zweiten Stand: Version 1 entsteht beim ersten Import und ist keine
     // Aenderung. Hat NICHTS mehr als einen Stand, bleibt der Faktor ueberall 1 – der Score ist dann
     // eine reine Strukturaussage, und die Oberflaeche sagt das.
@@ -203,9 +210,20 @@ export class InsightsService implements OnModuleInit {
     const classOut = classes.map((c, i) => {
       const out = fanOut.get(c.id) || 0;
       const inn = fanIn.get(c.id) || 0;
-      const structure =
-        W_COMPLEXITY * cxRank(c.complexity ?? 0) + W_LOC * locRank(c.loc ?? 0) + W_COUPLING * coRank(coupling[i]);
+      const parts = {
+        branching: W_COMPLEXITY * cxRank(c.complexity ?? 0),
+        size: W_LOC * locRank(c.loc ?? 0),
+        coupling: W_COUPLING * coRank(coupling[i]),
+      };
+      const structure = parts.branching + parts.size + parts.coupling;
       const factor = hasChurn ? 1 + CHURN_WEIGHT * churnRank(churn[i]) : 1;
+      // WARUM eine Klasse oben steht, ist die eigentliche Auskunft: „viele Entscheidungen" führt zu
+      // einer anderen Handlung als „hängt an zwanzig anderen". Der Score sortiert nur; der Treiber
+      // sagt, wo man ansetzt. Bestimmt wird er über den groessten GEWICHTETEN Beitrag – nicht über
+      // den groessten Rang, sonst gewaenne die Kopplung staendig gegen ihr eigenes kleines Gewicht.
+      const driver = (Object.keys(parts) as Array<keyof typeof parts>).reduce((a, b) =>
+        parts[b] > parts[a] ? b : a,
+      );
       return {
         id: c.id,
         className: c.class_name,
@@ -222,6 +240,9 @@ export class InsightsService implements OnModuleInit {
         instability: inn + out === 0 ? null : round2(out / (inn + out)),
         churn: churn[i],
         score: Math.round(100 * Math.min(1, structure * factor)),
+        // 'branching' | 'size' | 'coupling', oder 'churn', wenn die Änderungshäufigkeit den
+        // Ausschlag gibt (sie hebt den Score um mehr als ein Fünftel).
+        driver: hasChurn && factor > 1.2 ? 'churn' : driver,
         cycle: cycleOfClass.has(c.id) ? cycleOfClass.get(c.id) : null,
       };
     });
@@ -518,6 +539,31 @@ function isAbstractType(c: ClassRow): boolean {
  * duerfen, die so nicht in der Liste stehen. Alle gleich (typisch: jede Klasse hat 0 Aenderungen)
  * -> ueberall 0, und der Aufrufer entscheidet, ob er die Dimension dann ueberhaupt zeigt.
  */
+/**
+ * Gewicht eines Wertes: halb Rang, halb Größenordnung – beides in 0…1.
+ *
+ * Der Rang sagt „wie viele sind kleiner", die Größenordnung „um wieviel". Erst zusammen ergeben sie
+ * eine Rangliste, die sowohl robust gegen einen Ausreißer ist als auch den Unterschied zwischen
+ * 8 und 100 Verzweigungen kennt.
+ *
+ * Die Größenordnung läuft LOGARITHMISCH gegen das Maximum. Der Logarithmus erledigt die
+ * Ausreißer-Dämpfung bereits: 400 Zeilen gegen eine 4000-Zeilen-Klasse ergeben 0,72 und nicht 0,1,
+ * wie es eine lineare Skala täte.
+ *
+ * ⚠️ Bewusst gegen das Maximum und NICHT gegen ein hohes Perzentil: bei zwanzig Klassen ist das
+ * 95. Perzentil der zweitgrößte Wert, also erreichen die beiden größten beide den Deckel und sind
+ * wieder ununterscheidbar – gemessen an der Demo-Codebasis lagen 100 und 8 Verzweigungen damit
+ * gleichauf. Genau der Fall, den diese Funktion beheben soll.
+ */
+function weigher(values: number[]): (v: number) => number {
+  const rank = percentiler(values);
+  const denom = Math.log1p(Math.max(1, ...values.map((v) => Math.max(0, v))));
+  return (v: number) => {
+    const magnitude = Math.min(1, Math.log1p(Math.max(0, v)) / denom);
+    return (rank(v) + magnitude) / 2;
+  };
+}
+
 function percentiler(values: number[]): (v: number) => number {
   const sorted = [...values].sort((a, b) => a - b);
   const n = sorted.length;

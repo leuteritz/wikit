@@ -29,6 +29,76 @@ const TABS = [
   { id: 'hotspots', label: 'Hotspots', icon: 'lucide:flame', hint: 'Where size, branching and coupling meet' },
   { id: 'packages', label: 'Packages', icon: 'lucide:package', hint: 'Abstractness against instability' },
 ]
+
+// --- Was jeder Reiter beantwortet ---------------------------------------------------------------
+// ⚠️ Ohne diese Sätze ist die Ansicht ein Zahlenfeld für Leute, die Martins Metriken schon kennen.
+// Sie stehen deshalb IMMER sichtbar über dem Inhalt und nicht in einem Tooltip: wer nicht weiß,
+// wofür ein Reiter da ist, sucht auch keine Erklärung dazu.
+//
+// Zwei Ebenen: `what` beantwortet „was sehe ich hier?", `fixes` beantwortet „und was mache ich
+// damit?". Die zweite ist zugeklappt – sie ist beim ersten Mal die Rettung und danach im Weg.
+const EXPLAIN = {
+  overview: {
+    what: 'Everything here is computed from the classes you already imported — their relations, their size and how often you re-imported them. Nothing leaves this machine.',
+    fixes: null,
+  },
+  cycles: {
+    what: 'A cycle means the arrows come back: A needs B, and B needs A again. Neither side can be built, tested or read on its own, and a change in one can surface in the other.',
+    fixes: [
+      ['Turn one arrow around', 'Let the class being used define an interface, and have the caller depend on that instead. The dependency stays; its direction flips.'],
+      ['Move the member that closes the loop', 'Usually a single method or field is the whole reason. Move it into the class that actually needs it.'],
+      ['Pull the shared part out', 'If both genuinely need the same thing, it belongs in neither — give it a third class, or its own package.'],
+    ],
+  },
+  hotspots: {
+    what: 'The score is a rank, not a measurement: 78 means this class carries more weight than 78 % of the others. Weight is branching, size and how many classes hang on it.',
+    fixes: [
+      ['Start at the top, not at the worst file', 'The top of this list is where a change is most likely to be slow, risky, or both. A big class nobody touches is not urgent.'],
+      ['Fix the driver, not the score', 'The tag on each row says what makes it heavy. Splitting a long method helps a branching problem and does nothing for a coupling one.'],
+      ['Check the cycle tag', 'A heavy class inside a dependency loop is the worst combination — you cannot even test it alone.'],
+    ],
+  },
+  packages: {
+    what: 'Two things decide whether a package is cut well: how much depends on it, and how much of it is abstract. Healthy is either “used everywhere and mostly interfaces” or “depends on everything and fully concrete”. The trouble sits in between.',
+    fixes: [
+      ['Concrete and depended upon', 'Everything hangs on it and nothing can be extended. Extract interfaces for the parts other packages use.'],
+      ['Abstract and unused', 'Interfaces nobody implements or calls. Delete what is dead, or merge it back into the package that was supposed to use it.'],
+      ['Cycles first', 'A package in a loop cannot be judged on these numbers at all — break the loop, then look again.'],
+    ],
+  },
+}
+const openFixes = ref(false)
+
+// Konkreter Vorschlag für GENAU diesen Zyklus – aus der Art der schwächsten Kante. Die drei
+// allgemeinen Wege stehen oben; das hier sagt, welcher davon hier gemeint ist und mit welchen
+// Namen. Ohne das bleibt „easiest cut: A → B" eine Feststellung ohne Handlung.
+function cutAdvice(weakest, level = 'class') {
+  if (!weakest) return ''
+  const { fromLabel: a, toLabel: b, kind, count } = weakest
+  // ⚠️ Auf Package-Ebene gibt es kein „Mitglied", das man verschiebt – dort ist die Kante eine
+  // Bündelung vieler Klassenbeziehungen, und der Rat lautet entsprechend „such die paar Stellen".
+  if (level === 'package') {
+    const n = count === 1 ? 'a single relation' : `only ${count} relations`
+    return `${n} hold this direction. Search “p: ${b}” in the code view to find them — moving or inverting those breaks the whole loop.`
+  }
+  if (kind === 'uses') {
+    return `${a} only needs ${b} as a type. An interface on the ${b} side — or moving that type somewhere both can see — turns this arrow around.`
+  }
+  if (kind === 'field') {
+    return `${a} reads a field of ${b}. Hand the value in instead of reaching for it, and the dependency disappears.`
+  }
+  const many = count > 1 ? `${count} calls` : 'a single call'
+  return `${a} makes ${many} into ${b}. Move that member to ${a}, or let ${b} hand the result over instead of being called back.`
+}
+
+// Was eine Klasse schwer macht – und was man dagegen tut. Der Server nennt den Treiber, hier steht,
+// was er bedeutet.
+const DRIVER = {
+  branching: { label: 'branching', hint: 'Many decisions in one place — split the longest method out first.' },
+  size: { label: 'size', hint: 'Too much in one file — separate the responsibilities into their own classes.' },
+  coupling: { label: 'coupling', hint: 'Many classes hang on it — narrow what it exposes, or split it in two.' },
+  churn: { label: 'churn', hint: 'Heavy AND touched often — the most expensive combination, and the one that pays back first.' },
+}
 const tab = ref('overview')
 const startedAt = ref(Date.now())
 
@@ -109,6 +179,15 @@ function instabilityLabel(i) {
 // „abstract and barely used" gemeldet, obwohl es das Gegenteil ist).
 function offBalanceLabel(p) {
   return p.abstractness + p.instability < 1 ? 'concrete and hard to change' : 'abstract and barely used'
+}
+
+// Was an DIESEM Package zu tun ist. Dieselbe Unterscheidung wie bei `offBalanceLabel` – nur als
+// Handlung statt als Diagnose, und nur dort gezeigt, wo die Abweichung wirklich groß ist.
+function packageAdvice(p) {
+  if (p.cycle != null) return 'In a cycle — break that first, these numbers cannot be judged until then.'
+  return p.abstractness + p.instability < 1
+    ? 'Everything hangs on it and it is all concrete — extract interfaces for what other packages use.'
+    : 'Abstract, but barely used — delete what is dead, or merge it back where it was meant to be used.'
 }
 
 const pct = (v) => `${Math.round((v ?? 0) * 100)}%`
@@ -274,6 +353,32 @@ const plotted = computed(() => {
             </span>
           </div>
 
+          <!-- ⚠️ Wofür der Reiter da ist – IMMER sichtbar, nicht im Tooltip: wer nicht weiß, was er
+               sieht, sucht auch keine Erklärung dazu. Die Handlungsanleitung darunter ist
+               zugeklappt: beim ersten Mal die Rettung, danach im Weg. -->
+          <div class="mb-5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3">
+            <p class="flex items-start gap-2 text-xs leading-relaxed text-[var(--color-text-muted)]">
+              <Icon icon="lucide:info" class="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{{ EXPLAIN[tab].what }}</span>
+            </p>
+            <template v-if="EXPLAIN[tab].fixes">
+              <button
+                type="button"
+                class="mt-2 inline-flex items-center gap-1 text-2xs font-medium text-[var(--color-accent)] transition hover:underline"
+                @click="openFixes = !openFixes"
+              >
+                <Icon :icon="openFixes ? 'lucide:chevron-down' : 'lucide:chevron-right'" class="h-3 w-3" />
+                How do I fix these?
+              </button>
+              <ul v-if="openFixes" class="mt-2 space-y-1.5 border-l-2 border-[var(--color-border)] pl-3">
+                <li v-for="([title, body]) in EXPLAIN[tab].fixes" :key="title" class="text-2xs leading-relaxed">
+                  <span class="font-medium text-[var(--color-text)]">{{ title }}</span>
+                  <span class="text-[var(--color-text-muted)]"> — {{ body }}</span>
+                </li>
+              </ul>
+            </template>
+          </div>
+
           <!-- ==================== Overview ==================== -->
           <section v-if="tab === 'overview'" class="space-y-5">
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -316,7 +421,10 @@ const plotted = computed(() => {
                   No dependency loops — every relation points one way.
                 </p>
                 <p class="mt-1 text-2xs text-[var(--color-text-muted)]">
-                  A package cycle means neither side can be built, tested or understood alone.
+                  <template v-if="totals.packageCycles || totals.classCycles">
+                    Each one names the easiest place to cut it. →
+                  </template>
+                  <template v-else>Nothing to untangle here.</template>
                 </p>
               </button>
 
@@ -336,6 +444,9 @@ const plotted = computed(() => {
                   {{ num(ranked[0].loc) }} code lines · {{ num(ranked[0].complexity) }} branches ·
                   {{ ranked[0].fanIn + ranked[0].fanOut }} neighbours
                 </p>
+                <p v-if="ranked[0] && DRIVER[ranked[0].driver]" class="mt-1 text-2xs text-[var(--color-text-muted)]">
+                  {{ DRIVER[ranked[0].driver].hint }}
+                </p>
               </button>
 
               <!-- Hauptsequenz -->
@@ -352,8 +463,9 @@ const plotted = computed(() => {
                     {{ worstPackage.path }}
                   </p>
                   <p class="mt-1 text-2xs text-[var(--color-text-muted)]">
-                    {{ pct(worstPackage.distance) }} off the main sequence — {{ offBalanceLabel(worstPackage) }}
+                    {{ offBalanceLabel(worstPackage) }} ({{ pct(worstPackage.distance) }} off balance).
                   </p>
+                  <p class="mt-1 text-2xs text-[var(--color-text-muted)]">{{ packageAdvice(worstPackage) }}</p>
                 </template>
                 <p v-else class="mt-2 text-2xs text-[var(--color-text-muted)]">
                   Needs relations between packages.
@@ -430,12 +542,17 @@ const plotted = computed(() => {
                         <Icon v-if="k < c.chainLabels.length - 1" icon="lucide:arrow-right" class="h-3 w-3 text-[var(--color-text-muted)]" />
                       </template>
                     </div>
-                    <p v-if="c.weakest" class="mt-2 flex items-center gap-1.5 text-2xs text-[var(--color-text-muted)]">
-                      <Icon icon="lucide:scissors" class="h-3.5 w-3.5 text-[var(--color-warning)]" />
-                      Easiest cut:
-                      <span class="font-mono text-[var(--color-text)]">{{ c.weakest.fromLabel }} → {{ c.weakest.toLabel }}</span>
-                      <span>({{ c.weakest.kind }}, {{ c.weakest.count }} {{ c.weakest.count === 1 ? 'relation' : 'relations' }})</span>
-                    </p>
+                    <!-- Nicht nur WO man schneidet, sondern WIE: „easiest cut: A → B" allein ist
+                         eine Feststellung, keine Handlung. -->
+                    <div v-if="c.weakest" class="mt-2 flex items-start gap-1.5 text-2xs text-[var(--color-text-muted)]">
+                      <Icon icon="lucide:scissors" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-warning)]" />
+                      <span class="min-w-0">
+                        <span class="font-medium text-[var(--color-text)]">Easiest cut</span> —
+                        <span class="font-mono">{{ c.weakest.fromLabel }} → {{ c.weakest.toLabel }}</span>
+                        <span class="opacity-70"> ({{ c.weakest.kind }}, {{ c.weakest.count }} {{ c.weakest.count === 1 ? 'relation' : 'relations' }})</span>
+                        <br />{{ cutAdvice(c.weakest, 'package') }}
+                      </span>
+                    </div>
                     <p v-if="c.size > c.chainLabels.length - 1" class="mt-1 text-2xs text-[var(--color-text-muted)]">
                       Part of a group of {{ c.size }} packages that all reach each other.
                     </p>
@@ -467,12 +584,17 @@ const plotted = computed(() => {
                         <Icon v-if="k < c.chainLabels.length - 1" icon="lucide:arrow-right" class="h-3 w-3 text-[var(--color-text-muted)]" />
                       </template>
                     </div>
-                    <p v-if="c.weakest" class="mt-2 flex items-center gap-1.5 text-2xs text-[var(--color-text-muted)]">
-                      <Icon icon="lucide:scissors" class="h-3.5 w-3.5 text-[var(--color-warning)]" />
-                      Easiest cut:
-                      <span class="font-mono text-[var(--color-text)]">{{ c.weakest.fromLabel }} → {{ c.weakest.toLabel }}</span>
-                      <span>({{ c.weakest.kind }}, {{ c.weakest.count }} {{ c.weakest.count === 1 ? 'relation' : 'relations' }})</span>
-                    </p>
+                    <!-- Nicht nur WO man schneidet, sondern WIE: „easiest cut: A → B" allein ist
+                         eine Feststellung, keine Handlung. -->
+                    <div v-if="c.weakest" class="mt-2 flex items-start gap-1.5 text-2xs text-[var(--color-text-muted)]">
+                      <Icon icon="lucide:scissors" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-warning)]" />
+                      <span class="min-w-0">
+                        <span class="font-medium text-[var(--color-text)]">Easiest cut</span> —
+                        <span class="font-mono">{{ c.weakest.fromLabel }} → {{ c.weakest.toLabel }}</span>
+                        <span class="opacity-70"> ({{ c.weakest.kind }}, {{ c.weakest.count }} {{ c.weakest.count === 1 ? 'relation' : 'relations' }})</span>
+                        <br />{{ cutAdvice(c.weakest) }}
+                      </span>
+                    </div>
                     <p v-if="c.size > c.chainLabels.length - 1" class="mt-1 text-2xs text-[var(--color-text-muted)]">
                       Part of a group of {{ c.size }} classes that all reach each other.
                     </p>
@@ -484,15 +606,8 @@ const plotted = computed(() => {
 
           <!-- ==================== Hotspots ==================== -->
           <section v-else-if="tab === 'hotspots'" class="space-y-3">
-            <p class="text-2xs text-[var(--color-text-muted)]">
-              Size, branching and coupling, each as a rank against every other class.
-              <template v-if="totals.hasChurn">
-                How often a class was re-imported lifts the score on top of that.
-              </template>
-              <template v-else>
-                Change frequency would lift the score further — it starts counting once a class is
-                imported a second time.
-              </template>
+            <p v-if="!totals.hasChurn" class="text-2xs text-[var(--color-text-muted)]">
+              Change frequency is not counted yet — it starts once a class is imported a second time.
             </p>
 
             <div class="overflow-x-auto rounded-lg border border-[var(--color-border)]">
@@ -501,6 +616,7 @@ const plotted = computed(() => {
                   <tr class="border-b border-[var(--color-border)] bg-[var(--color-surface-offset)] text-left text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">
                     <th class="px-3 py-2 font-medium">Score</th>
                     <th class="px-3 py-2 font-medium">Class</th>
+                    <th class="px-3 py-2 font-medium">Why</th>
                     <th class="px-3 py-2 text-right font-medium">Code lines</th>
                     <th class="px-3 py-2 text-right font-medium">Branches</th>
                     <th class="px-3 py-2 text-right font-medium">In / Out</th>
@@ -534,6 +650,16 @@ const plotted = computed(() => {
                       >
                         <Icon icon="lucide:repeat" class="h-2.5 w-2.5" /> cycle
                       </span>
+                    </td>
+                    <!-- ⚠️ Der Treiber ist die eigentliche Auskunft: „78" sortiert nur, „branching"
+                         sagt, wo man ansetzt. Eine Rangliste ohne ihn schickt jeden auf die
+                         gleiche Suche. -->
+                    <td class="px-3 py-1.5">
+                      <span
+                        v-if="DRIVER[c.driver]"
+                        v-tip="DRIVER[c.driver].hint"
+                        class="rounded bg-[var(--color-surface-offset)] px-1.5 py-0.5 text-3xs text-[var(--color-text-muted)]"
+                      >{{ DRIVER[c.driver].label }}</span>
                     </td>
                     <td class="px-3 py-1.5 text-right font-mono text-[var(--color-text-muted)]">{{ num(c.loc) }}</td>
                     <td class="px-3 py-1.5 text-right font-mono text-[var(--color-text-muted)]">{{ num(c.complexity) }}</td>
@@ -604,13 +730,24 @@ const plotted = computed(() => {
               <div class="overflow-x-auto rounded-lg border border-[var(--color-border)]">
                 <table class="w-full min-w-[30rem] border-collapse text-xs">
                   <thead>
+                    <!-- ⚠️ Klartext statt „I / A / D". Die Kürzel stehen klein daneben, damit sie
+                         für alle, die sie kennen, noch auffindbar sind – aber niemand muss sie
+                         kennen, um die Tabelle zu lesen. -->
                     <tr class="border-b border-[var(--color-border)] bg-[var(--color-surface-offset)] text-left text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">
                       <th class="px-3 py-2 font-medium">Package</th>
                       <th class="px-3 py-2 text-right font-medium">Classes</th>
-                      <th class="px-3 py-2 text-right font-medium">In / Out</th>
-                      <th class="px-3 py-2 text-right font-medium">I</th>
-                      <th class="px-3 py-2 text-right font-medium">A</th>
-                      <th class="px-3 py-2 text-right font-medium">D</th>
+                      <th v-tip="'Classes outside that depend on this package / classes inside that depend outward'" class="px-3 py-2 text-right font-medium">
+                        Used by / uses
+                      </th>
+                      <th v-tip="'0 = everything depends on it. 1 = it depends on everything else.'" class="px-3 py-2 text-right font-medium">
+                        Depends outward <span class="normal-case opacity-60">(I)</span>
+                      </th>
+                      <th v-tip="'Share of interfaces, annotations and abstract classes in this package.'" class="px-3 py-2 text-right font-medium">
+                        Abstract <span class="normal-case opacity-60">(A)</span>
+                      </th>
+                      <th v-tip="'How far the package sits from a healthy combination of the two. 0 is fine, 1 is trouble.'" class="px-3 py-2 text-right font-medium">
+                        Off balance <span class="normal-case opacity-60">(D)</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -630,6 +767,11 @@ const plotted = computed(() => {
                           <Icon icon="lucide:repeat" class="h-2.5 w-2.5" /> cycle
                         </span>
                         <span class="ml-1.5 text-3xs text-[var(--color-text-muted)]">{{ instabilityLabel(p.instability) }}</span>
+                        <!-- Erst ab einer echten Abweichung: eine Empfehlung an jeder Zeile wäre
+                             Rauschen, und die meisten Packages sind in Ordnung. -->
+                        <p v-if="p.distance != null && p.distance > 0.5" class="mt-0.5 text-3xs text-[var(--color-text-muted)]">
+                          {{ packageAdvice(p) }}
+                        </p>
                       </td>
                       <td class="px-3 py-1.5 text-right font-mono text-[var(--color-text-muted)]">{{ num(p.classes) }}</td>
                       <td class="px-3 py-1.5 text-right font-mono text-[var(--color-text-muted)]">{{ p.ca }} / {{ p.ce }}</td>
