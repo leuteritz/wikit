@@ -18,6 +18,10 @@ const CYCLE_PROBE_NODES = 12;
 // Restzahl daneben sagt, dass es mehr sind.
 const LINK_SAMPLE = 6;
 
+// Wie viele Mitglieder (Methoden/Felder) ein Paar namentlich mitfuehrt. Das Beispiel im Plan nennt
+// eines beim Namen; drei reichen, um zu sehen, ob es eines oder viele sind.
+const MEMBER_SAMPLE = 3;
+
 // Gewichte des Hotspot-Scores. Verzweigungsdichte vor Groesse vor Kopplung: eine lange, aber
 // geradlinige Klasse liest sich, eine kurze mit zwanzig Verzweigungen nicht.
 const W_COMPLEXITY = 0.4;
@@ -72,10 +76,13 @@ type EdgeRow = {
   target_pkg: string | null;
   kind: string | null;
   confidence: number | null;
+  method_name: string | null;
 };
 
 // Ein aufgeloestes Klassenpaar mit allem, was die Bruchstellen-Empfehlung braucht.
-type Pair = { from: number; to: number; count: number; kind: string; confidence: number };
+// `members` sind die Methoden-/Feldnamen, ueber die das Paar zusammenhaengt – ohne sie liesse sich
+// kein Beispiel schreiben, das die Stelle beim Namen nennt („escape()" statt „the member").
+type Pair = { from: number; to: number; count: number; kind: string; confidence: number; members: string[] };
 
 /**
  * Was man einer Codebasis nicht ansieht: Zyklen, Kopplungsmetriken, Brandherde.
@@ -165,7 +172,7 @@ export class InsightsService implements OnModuleInit {
          FROM java_files ORDER BY class_name COLLATE NOCASE`,
     );
     const edgeRows: EdgeRow[] = await this.ds.query(
-      `SELECT source_class, source_pkg, target_class, target_pkg, kind, confidence
+      `SELECT source_class, source_pkg, target_class, target_pkg, kind, confidence, method_name
          FROM java_edges WHERE dismissed = 0`,
     );
 
@@ -300,6 +307,7 @@ export class InsightsService implements OnModuleInit {
           to: nameOf.get(p.to) || String(p.to),
           kind: p.kind,
           count: p.count,
+          members: p.members,
         })),
         more: Math.max(0, hits.length - LINK_SAMPLE),
       };
@@ -387,13 +395,17 @@ export class InsightsService implements OnModuleInit {
       const key = `${from}\u0000${to}`;
       const kind = e.kind || 'call';
       const conf = Number(e.confidence ?? 1);
+      const member = (e.method_name || '').trim();
       const prev = merged.get(key);
       if (prev) {
         prev.count++;
         if ((BREAK_ORDER[kind] ?? 9) < (BREAK_ORDER[prev.kind] ?? 9)) prev.kind = kind;
         if (conf < prev.confidence) prev.confidence = conf;
+        if (member && !prev.members.includes(member) && prev.members.length < MEMBER_SAMPLE) {
+          prev.members.push(member);
+        }
       } else {
-        merged.set(key, { from, to, count: 1, kind, confidence: conf });
+        merged.set(key, { from, to, count: 1, kind, confidence: conf, members: member ? [member] : [] });
       }
     }
     return { pairs: [...merged.values()], unresolved };
@@ -478,8 +490,18 @@ export class InsightsService implements OnModuleInit {
       if (prev) {
         prev.count += p.count;
         if ((BREAK_ORDER[p.kind] ?? 9) < (BREAK_ORDER[prev.kind] ?? 9)) prev.kind = p.kind;
+        for (const m of p.members) {
+          if (!prev.members.includes(m) && prev.members.length < MEMBER_SAMPLE) prev.members.push(m);
+        }
       } else {
-        merged.set(key, { from: idOf(a), to: idOf(b), count: p.count, kind: p.kind, confidence: p.confidence });
+        merged.set(key, {
+          from: idOf(a),
+          to: idOf(b),
+          count: p.count,
+          kind: p.kind,
+          confidence: p.confidence,
+          members: [...p.members],
+        });
       }
     }
     // Erst jetzt die Nummern gegen die Pfade tauschen – der Sucher bekommt sie als `any`.

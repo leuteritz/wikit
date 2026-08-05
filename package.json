@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.9.1",
-  "whatsNew": "Cycle plans, and the edge panel is searchable again",
+  "version": "4.10.0",
+  "whatsNew": "Cycle plans now show the code to write",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

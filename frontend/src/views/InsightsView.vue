@@ -119,6 +119,125 @@ function whyThisLink(c) {
   return note ? `${base} ${note}` : base
 }
 
+// --- Das Beispiel: wie der Umbau AUSSIEHT ------------------------------------------------------
+// ⚠️ Als DIFF und nicht als fertige Datei. Was hier zählt, ist die Änderung – welche Zeile
+// verschwindet, welche kommt dazu –, und die sieht man in einem vollständigen Listing gerade
+// nicht. Deshalb auch kein Syntax-Highlighting: die Farbe trägt hier `-` und `+`, nicht `public`.
+//
+// Die Namen sind ECHT (die tragende Klasse, das tragende Mitglied, die beiden Packages); geraten
+// ist nur die Signatur des neuen Interfaces – und genau das steht als Kommentar im Beispiel, statt
+// so zu tun, als kenne der Bericht sie.
+const cap = (w) => (w ? w[0].toUpperCase() + w.slice(1) : '')
+const simple = (path) => String(path || '').split('.').pop()
+
+function codeSteps(c) {
+  const w = c.weakest
+  const link = w?.links?.[0]
+  if (!w || !link) return []
+  const fromPkg = w.fromLabel
+  const toPkg = w.toLabel
+  const member = link.members?.[0] || ''
+
+  // Ein reiner TYPBEZUG hat kein Mitglied, das man umkehren könnte – dort ist die Antwort, den Typ
+  // dorthin zu legen, wo beide ihn sehen dürfen.
+  if (link.kind === 'uses') {
+    return [
+      {
+        title: `Move the type out of ${simple(toPkg)}`,
+        file: `${toPkg}.${link.to} → a package both may depend on`,
+        badge: 'move',
+        lines: [
+          { sign: ' ', text: `// ${link.from} only needs ${link.to} as a type, not as part of ${simple(toPkg)}.` },
+          { sign: ' ', text: `// Put it where both sides may look — e.g. a shared package:` },
+          { sign: '-', text: `package ${toPkg};` },
+          { sign: '+', text: `package ${rootOf(fromPkg)}.shared;` },
+          { sign: ' ', text: '' },
+          { sign: ' ', text: `public class ${link.to} { … }` },
+        ],
+      },
+      {
+        title: `Point the import at the new home`,
+        file: `${fromPkg}.${link.from}`,
+        badge: 'edit',
+        lines: [
+          { sign: '-', text: `import ${toPkg}.${link.to};` },
+          { sign: '+', text: `import ${rootOf(fromPkg)}.shared.${link.to};` },
+        ],
+      },
+    ]
+  }
+
+  // Aufruf oder Feldzugriff: die klassische Umkehr. Das Interface gehört in das Package, das die
+  // Leistung BRAUCHT – nur dadurch dreht sich der Pfeil.
+  const iface = member ? `${cap(member)}Port` : `${link.to}Port`
+  const field = member ? `${member}Port` : 'port'
+  const call = member ? `${field}.${member}(…)` : `${field}.…`
+  return [
+    {
+      title: `Let ${simple(fromPkg)} state what it needs`,
+      file: `${fromPkg}.${iface}`,
+      badge: 'new file',
+      lines: [
+        { sign: '+', text: `package ${fromPkg};` },
+        { sign: '+', text: '' },
+        { sign: '+', text: `// Copy the signature from ${link.to}.${member || '…'} — and name this` },
+        { sign: '+', text: `// interface after what it DOES, not after the class it replaces.` },
+        { sign: '+', text: `public interface ${iface} {` },
+        { sign: '+', text: `    String ${member || 'run'}(String value);` },
+        { sign: '+', text: '}' },
+      ],
+    },
+    {
+      title: `Depend on the interface, not on ${simple(toPkg)}`,
+      file: `${fromPkg}.${link.from}`,
+      badge: 'edit',
+      lines: [
+        { sign: '-', text: `import ${toPkg}.${link.to};` },
+        { sign: ' ', text: '' },
+        { sign: ' ', text: `public class ${link.from} {` },
+        { sign: '-', text: `    private ${link.to} ${link.to[0].toLowerCase()}${link.to.slice(1)};` },
+        { sign: '+', text: `    private final ${iface} ${field};` },
+        { sign: '+', text: '' },
+        { sign: '+', text: `    public ${link.from}(${iface} ${field}) { this.${field} = ${field}; }` },
+        { sign: ' ', text: '        …' },
+        { sign: '-', text: `        ${link.to[0].toLowerCase()}${link.to.slice(1)}.${member || '…'}(…);` },
+        { sign: '+', text: `        ${call};` },
+        { sign: ' ', text: '}' },
+      ],
+    },
+    {
+      title: `Have ${link.to} fulfil it — this is where the arrow flips`,
+      file: `${toPkg}.${link.to}`,
+      badge: 'edit',
+      lines: [
+        { sign: '+', text: `import ${fromPkg}.${iface};` },
+        { sign: ' ', text: '' },
+        { sign: '-', text: `public class ${link.to} {` },
+        { sign: '+', text: `public class ${link.to} implements ${iface} {` },
+        { sign: ' ', text: `    // unchanged` },
+        { sign: ' ', text: '}' },
+      ],
+    },
+    {
+      title: 'Wire it once, where both are already known',
+      file: 'your composition root (main, config, factory)',
+      badge: 'edit',
+      lines: [
+        { sign: '+', text: `new ${link.from}(new ${link.to}());` },
+        { sign: ' ', text: `// ${simple(fromPkg)} never mentions ${simple(toPkg)} again —` },
+        { sign: ' ', text: `// only this one place knows both, and it sits above them.` },
+      ],
+    },
+  ]
+}
+
+// Das Wurzel-Package (com.acme.shop aus com.acme.shop.repo) – der Ort, an dem ein geteilter Typ
+// liegen kann, ohne dass eine Seite die andere sieht.
+function rootOf(path) {
+  const parts = String(path || '').split('.')
+  return parts.length > 1 ? parts.slice(0, -1).join('.') : path
+}
+
 // Was der Umbau einbringt – der Grund, es überhaupt zu tun.
 function planGain(c) {
   const names = (c.chainLabels || []).slice(0, -1).map((p) => String(p).split('.').pop())
@@ -649,16 +768,40 @@ const plotted = computed(() => {
                         </p>
                       </div>
 
+                      <!-- ⚠️ Das Beispiel steht MITTEN im Plan, nicht am Ende: „was ändere ich"
+                           ist ohne die Zeilen eine Absichtserklärung. Als Diff, weil die Änderung
+                           die Aussage ist – ein vollständiges Listing zeigt sie gerade nicht. -->
+                      <div v-if="codeSteps(c).length">
+                        <p class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                          3 · How that looks
+                        </p>
+                        <div class="mt-1 space-y-2">
+                          <div v-for="(step, si) in codeSteps(c)" :key="si">
+                            <p class="flex flex-wrap items-baseline gap-x-1.5 text-2xs">
+                              <span class="text-[var(--color-text)]">{{ si + 1 }}. {{ step.title }}</span>
+                              <span class="rounded bg-[var(--color-surface-2)] px-1 text-3xs text-[var(--color-text-muted)]">{{ step.badge }}</span>
+                            </p>
+                            <p class="mt-0.5 truncate font-mono text-3xs text-[var(--color-text-muted)]">{{ step.file }}</p>
+                            <pre class="mt-1 overflow-x-auto rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-2 font-mono text-3xs leading-relaxed"><code><span
+                              v-for="(l, li) in step.lines"
+                              :key="li"
+                              class="block"
+                              :class="l.sign === '+' ? 'text-[var(--color-success)]' : l.sign === '-' ? 'text-[var(--color-danger)]' : 'text-[var(--color-text-muted)]'"
+                            >{{ l.sign }} {{ l.text }}</span></code></pre>
+                          </div>
+                        </div>
+                      </div>
+
                       <div>
                         <p class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-                          3 · What you gain
+                          4 · What you gain
                         </p>
                         <p class="mt-1 text-2xs leading-relaxed text-[var(--color-text)]">{{ planGain(c) }}</p>
                       </div>
 
                       <div>
                         <p class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-                          4 · Why this link and not another
+                          5 · Why this link and not another
                         </p>
                         <p class="mt-1 text-2xs leading-relaxed text-[var(--color-text-muted)]">{{ whyThisLink(c) }}</p>
                       </div>
