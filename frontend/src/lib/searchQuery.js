@@ -16,6 +16,10 @@ const SCOPE_BY_PREFIX = {
   m: 'method',
   p: 'package',
   s: 'source',
+  // ⚠️ Der einzige Praefix, der kein Buchstabe ist. Die Tilde steht in Suchsyntaxen seit jeher fuer
+  // „ungefaehr" (Lucene, Elasticsearch), und genau das ist diese Quelle: sie findet die Klasse, in
+  // der das gesuchte Wort NICHT steht. Ein Buchstabe dafuer waere entweder belegt oder beliebig.
+  '~': 'meaning',
 }
 
 // Reihenfolge = Reihenfolge der Chips (leeres Feld im Modal, dauerhafte Leiste auf der Landing).
@@ -32,6 +36,7 @@ export const SEARCH_FACETS = [
   { prefix: 's:', scope: 'source', short: 'Source', label: 'source code', hint: 'lines inside .java files', icon: 'lucide:code-2' },
   { prefix: 'p:', scope: 'package', short: 'Packages', label: 'package', hint: 'package paths', icon: 'lucide:package' },
   { prefix: 'a:', scope: 'article', short: 'Articles', label: 'article', hint: 'wiki articles', icon: 'lucide:file-text' },
+  { prefix: '~:', scope: 'meaning', short: 'Meaning', label: 'meaning', hint: 'classes about a topic, by what they do', icon: 'lucide:sparkles' },
 ]
 
 // „Alles" ist keine Facette (es gibt keinen Praefix dafuer), aber in einer dauerhaften Leiste ist es
@@ -54,7 +59,7 @@ export const SEARCH_SCOPE_ALL = {
 export function parseSearchQuery(input) {
   const raw = (input || '').trim()
   if (!raw) return { scope: 'all', term: '' }
-  const prefixed = /^([a-zA-Z]):\s*(.*)$/.exec(raw)
+  const prefixed = /^([a-zA-Z~]):\s*(.*)$/.exec(raw)
   if (prefixed) {
     const scope = SCOPE_BY_PREFIX[prefixed[1].toLowerCase()]
     if (scope) return { scope, term: prefixed[2].trim() }
@@ -65,5 +70,8 @@ export function parseSearchQuery(input) {
 // Welche Quelle beantwortet diesen Scope? Damit entscheidet die Palette, welche Requests ueberhaupt
 // rausgehen – und ob die (teure) Zeilensuche im Quelltext dran ist.
 export const wantsArticles = (scope) => scope === 'all' || scope === 'article'
-export const wantsSymbols = (scope) => scope !== 'article' && scope !== 'source'
+export const wantsSymbols = (scope) => scope !== 'article' && scope !== 'source' && scope !== 'meaning'
 export const wantsCode = (scope) => scope === 'all' || scope === 'source'
+// Die Bedeutungssuche kostet einen Ollama-Aufruf JE ANFRAGE – sie laeuft deshalb nur mit, wo nichts
+// anderes ausdruecklich gemeint ist, und antwortet auf `~:` allein.
+export const wantsMeaning = (scope) => scope === 'all' || scope === 'meaning'

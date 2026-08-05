@@ -18,6 +18,7 @@ import { JavaFile } from '../entities/java-file.entity';
 import { JavaFileVersion } from '../entities/java-file-version.entity';
 import { JavaMethod } from '../entities/java-method.entity';
 import { JavaBatchProgressService } from './java-batch-progress.service';
+import { JavaEmbeddingsService } from './java-embeddings.service';
 
 // parseJava() ist synchron (chevrotain). Eine Schleife ueber tausende Chunks blockiert den
 // Event-Loop komplett – der Fortschritts-Stream kaeme erst NACH getaner Arbeit beim Client an
@@ -163,6 +164,7 @@ export class JavaService {
     private readonly fts: FtsService,
     private readonly progress: JavaBatchProgressService,
     private readonly formatter: CodeFormatterService,
+    private readonly embeddings: JavaEmbeddingsService,
   ) {}
 
   // Datei analysieren: parsen + speichern (ohne KI -> Graph erscheint sofort).
@@ -1099,6 +1101,11 @@ export class JavaService {
       this.progress.emit(jobId, { phase: 'delete', done, total });
       await breathe();
     }
+
+    // Die Vektoren haengen per CASCADE an den Dateien und sind damit schon weg – der Cache im
+    // Speicher weiss davon nichts, und ein Treffer aus ihm zeigte auf eine Klasse, die es nicht
+    // mehr gibt.
+    await this.embeddings.clear();
 
     this.progress.emit(jobId, { phase: 'edges', done: total, total });
     await this.ds.transaction(async (manager) => {

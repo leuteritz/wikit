@@ -33,6 +33,12 @@ export interface BotConfig {
   /** Basis-URL des Ollama-Servers OHNE Pfad, z. B. http://localhost:11434 */
   host: string;
   model: string;
+  /**
+   * Modell fuer die BEDEUTUNGS-Suche (Embeddings). Getrennt vom Textmodell, weil es ein anderes
+   * Werkzeug ist: ein Generierungsmodell erzeugt keine brauchbaren Vektoren, und ein
+   * Embedding-Modell erzeugt keinen Text. Leerer String = Bedeutungssuche aus.
+   */
+  embedModel: string;
   timeoutMs: number;
   temperature: number | null;
   topP: number | null;
@@ -127,6 +133,13 @@ export const BOT_FIELDS: BotFieldSpec[] = [
     group: 'connection',
     label: 'Model',
     hint: 'Must be pulled on the server (ollama pull). The catalog below lists what is installed.',
+  },
+  {
+    path: 'embedModel',
+    type: 'string',
+    group: 'connection',
+    label: 'Embedding model',
+    hint: 'Used only for meaning-based search (ollama pull nomic-embed-text). Leave empty to switch that search off.',
   },
   {
     path: 'timeoutMs',
@@ -255,6 +268,9 @@ export function envDefaults(): BotConfig {
   return {
     host: normalizeHost(process.env.OLLAMA_URL || 'http://localhost:11434'),
     model: process.env.OLLAMA_MODEL || 'qwen2.5-coder:3b',
+    // 137 M Parameter, 768 Dimensionen -- klein genug fuer einen Pi und ohne Konkurrenz zum
+    // Textmodell, das daneben im Speicher liegt.
+    embedModel: process.env.OLLAMA_EMBED_MODEL || 'nomic-embed-text',
     timeoutMs: Number(process.env.OLLAMA_TIMEOUT_MS || 20000),
     temperature: null,
     topP: null,

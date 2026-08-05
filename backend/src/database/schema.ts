@@ -171,6 +171,31 @@ CREATE TABLE IF NOT EXISTS java_edges (
 );
 CREATE INDEX IF NOT EXISTS idx_java_edges_source ON java_edges(source_class);
 
+-- Bedeutungssuche: EIN Vektor je Klasse, erzeugt von einem Embedding-Modell ueber Ollama.
+--
+-- Warum eine Zeile je Klasse und kein Chunking je Methode: die Frage, die diese Suche beantwortet,
+-- lautet „welche Klasse kuemmert sich um X?" -- und die Klasse ist auch sonst ueberall die Einheit
+-- (Karte, Artikel, Kante). Methodenweise waeren es zehnmal so viele Vektoren fuer eine Frage, die
+-- so niemand stellt.
+--
+-- source_hash ist der sha1 des EINGEBETTETEN Textes, nicht des Quelltexts: der Text enthaelt auch
+-- die KI-Beschreibung, und die entsteht spaeter als die Klasse. Damit ist "veraltet" ableitbar
+-- statt gemerkt -- es gibt keinen Schreibpfad, der an eine Invalidierung denken muesste.
+-- model steht dabei, weil Vektoren verschiedener Modelle NICHT vergleichbar sind: ein Wechsel
+-- macht den ganzen Index ungueltig, und genau das erkennt die Suche daran.
+-- vector ist Float32 als BLOB (768 Dim = 3072 Bytes) -- als JSON-TEXT waere es das Dreifache und
+-- muesste bei jeder Anfrage geparst werden.
+-- Hinweis: KEIN Semikolon und KEIN Backtick in diesem Kommentar -- SCHEMA wird am Semikolon
+-- gesplittet, und ein Backtick beendet das Template-Literal mitten im DDL.
+CREATE TABLE IF NOT EXISTS java_embeddings (
+  file_id     INTEGER PRIMARY KEY REFERENCES java_files(id) ON DELETE CASCADE,
+  model       TEXT NOT NULL,
+  dim         INTEGER NOT NULL,
+  source_hash TEXT NOT NULL,
+  vector      BLOB NOT NULL,
+  created_at  TEXT DEFAULT (datetime('now'))
+);
+
 -- Eigener FTS5-Index fuer analysierte Java-Klassen/Methoden: macht gespeicherte
 -- KI-Beschreibungen als Prompt-Kontext (Wissensquelle) UND den Rohquelltext (globale
 -- Code-Suche: Klassen-/Methoden-/Variablennamen) durchsuchbar. rowid = java_files.id.

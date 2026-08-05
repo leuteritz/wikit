@@ -275,6 +275,67 @@ export class OllamaService {
       : this.run(cfg, prompt, params.signal, params.overrides);
   }
 
+  /**
+   * Vektoren fuer eine Liste von Texten (Bedeutungssuche).
+   *
+   * Ollama kennt zwei Endpunkte: das aeltere `/api/embeddings` (ein Text, Feld `embedding`) und
+   * das neuere `/api/embed` (eine Liste, Feld `embeddings`). Gefragt wird das neuere zuerst –
+   * eine Anfrage fuer einen ganzen Stapel statt einer je Klasse ist bei tausend Klassen der
+   * Unterschied zwischen Minuten und Sekunden –, und nur bei 404 faellt es auf das alte zurueck.
+   *
+   * Wie ueberall in diesem Service ist „Ollama antwortet nicht" KEIN Fehler, sondern ein leeres
+   * Ergebnis: der Aufrufer laesst den Index dann eben unvollstaendig und schreibt es an.
+   *
+   * @returns Vektoren in der Reihenfolge der Eingabe, oder `[]`.
+   */
+  async embed(texts: string[], overrides?: GenerateOverrides): Promise<number[][]> {
+    const cfg = await this.settings.bot();
+    const model = overrides?.model || cfg.embedModel;
+    if (!model || !texts.length) return [];
+    const base = (overrides?.host || cfg.host || '').replace(/\/+$/, '');
+    const timeoutMs = overrides?.timeoutMs || cfg.timeoutMs;
+
+    const post = async (path: string, body: any): Promise<Response | null> => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(`${base}${path}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+      } catch {
+        return null;
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
+    const res = await post('/api/embed', { model, input: texts });
+    if (res?.ok) {
+      const data: any = await res.json().catch(() => null);
+      const rows = data?.embeddings;
+      if (Array.isArray(rows) && rows.length === texts.length) return rows;
+    }
+    // Nur bei „Endpunkt gibt es nicht" den alten Weg gehen. Ein 500 bedeutet ein echtes Problem
+    // (Modell nicht gepullt) – dieselbe Anfrage einzeln zu wiederholen kostet nur Zeit.
+    if (res && res.status !== 404) {
+      this.logger.warn(`Ollama embed failed: HTTP ${res.status}`);
+      return [];
+    }
+
+    const out: number[][] = [];
+    for (const text of texts) {
+      const old = await post('/api/embeddings', { model, prompt: text });
+      if (!old?.ok) return [];
+      const data: any = await old.json().catch(() => null);
+      if (!Array.isArray(data?.embedding)) return [];
+      out.push(data.embedding);
+    }
+    return out;
+  }
+
   // Erzeugt eine kurze Wiki-Zusammenfassung (max. 3 Saetze) fuer eine Methode (nur Signatur+Javadoc).
   // Liefert '' wenn Ollama nicht erreichbar ist oder ein Fehler/Timeout auftritt.
   async generateSummary({

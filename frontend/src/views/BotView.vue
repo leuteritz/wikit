@@ -21,6 +21,7 @@ import BotHealthCard from '../components/bot/BotHealthCard.vue'
 import BotModelPicker from '../components/bot/BotModelPicker.vue'
 import BotPlayground from '../components/bot/BotPlayground.vue'
 import BotPromptEditor from '../components/bot/BotPromptEditor.vue'
+import BotEmbedIndex from '../components/bot/BotEmbedIndex.vue'
 import BusyState from '../components/BusyState.vue'
 import { Icon } from '../lib/icons.js'
 
@@ -252,6 +253,11 @@ watch(
                 @refresh="loadModels(draft.host)"
               />
             </section>
+
+            <!-- Der Bedeutungsindex gehoert unter das Modell, das ihn erzeugt: ein Modellwechsel
+                 macht jeden gespeicherten Vektor ungueltig, und diese Folge muss dort stehen, wo
+                 man wechselt. -->
+            <BotEmbedIndex />
           </div>
 
           <!-- ---------------- Generation ---------------- -->

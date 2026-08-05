@@ -214,6 +214,16 @@ export const api = {
   cancelJavaAnalysis: (articleId) => http('POST', `/analysis/${articleId}/cancel`),
   analysisStreamUrl: (articleId) => `${BASE}/analysis/stream/${articleId}`,
 
+  // --- Bedeutungssuche (Embeddings) -----------------------------------------
+  // `silent`, weil ein nicht erreichbarer Ollama hier kein Fehler ist: die Palette zeigt ihre
+  // uebrigen Quellen und schreibt an, dass diese fehlt (ein Toast je Tastendruck waere Laerm).
+  semanticSearchJava: (q, signal) =>
+    http('GET', `/java/semantic-search?q=${encodeURIComponent(q)}`, null, { silent: true, signal }),
+  getJavaEmbeddingStatus: () => http('GET', '/java/embeddings', null, { silent: true }),
+  rebuildJavaEmbeddings: (jobId = null, force = false) =>
+    http('POST', '/java/embeddings/rebuild', { jobId, force }),
+  clearJavaEmbeddings: () => http('DELETE', '/java/embeddings'),
+
   // --- Insights (/insights) -------------------------------------------------
   // EINE Antwort fuer Klassenkennzahlen, Package-Kennzahlen und Zyklen: sie entstehen aus
   // demselben aufgeloesten Graphen, und zwei Requests koennten zwei Staende zeigen.

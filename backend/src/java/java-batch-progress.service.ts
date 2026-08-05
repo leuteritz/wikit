@@ -15,7 +15,7 @@ import { EMPTY, Observable, Subject, interval, map, merge, of } from 'rxjs';
 export interface BatchProgressEvent {
   // Analyse: split -> parse -> check -> save -> edges -> done
   // Reset:   delete -> edges -> done
-  phase: 'split' | 'parse' | 'check' | 'save' | 'edges' | 'delete' | 'done' | 'error' | 'heartbeat';
+  phase: 'split' | 'parse' | 'check' | 'save' | 'edges' | 'delete' | 'embed' | 'done' | 'error' | 'heartbeat';
   done?: number;
   total?: number;
   message?: string;

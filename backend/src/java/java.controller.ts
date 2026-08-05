@@ -3,6 +3,7 @@ import { Observable } from 'rxjs';
 import { JavaService } from './java.service';
 import { JavaQueueService } from './java-queue.service';
 import { JavaBatchProgressService } from './java-batch-progress.service';
+import { JavaEmbeddingsService } from './java-embeddings.service';
 
 @Controller('java')
 export class JavaController {
@@ -10,6 +11,7 @@ export class JavaController {
     private readonly svc: JavaService,
     private readonly queue: JavaQueueService,
     private readonly batchProgress: JavaBatchProgressService,
+    private readonly embeddings: JavaEmbeddingsService,
   ) {}
 
   @Post('analyze')
@@ -101,6 +103,34 @@ export class JavaController {
       context: context != null ? Number(context) : undefined,
       limit: limit != null ? Number(limit) : undefined,
     });
+  }
+
+  // --- Bedeutungssuche (Embeddings) ----------------------------------------
+  // Eigener Namensraum, eigene Antwort: die Treffer haben KEIN gemeinsames Wort mit der Anfrage,
+  // und in der Volltextliste saehe genau das wie ein Fehler aus. Statische Routen -> vor files/:id.
+
+  @Get('semantic-search')
+  semanticSearch(@Query('q') q?: string, @Query('limit') limit?: string) {
+    return this.embeddings.search(q || '', limit != null ? Number(limit) : undefined);
+  }
+
+  @Get('embeddings')
+  embeddingStatus() {
+    return this.embeddings.status();
+  }
+
+  // Fehlende und veraltete Vektoren nachziehen. Optionale jobId -> Fortschritt ueber denselben
+  // SSE-Strom wie analyze-batch (`analyze-progress/:jobId`); `force` erzwingt jeden neu.
+  @Post('embeddings/rebuild')
+  @HttpCode(200)
+  rebuildEmbeddings(@Body() body: any) {
+    return this.embeddings.rebuild(body?.jobId || null, body?.force === true);
+  }
+
+  @Delete('embeddings')
+  @HttpCode(204)
+  clearEmbeddings() {
+    return this.embeddings.clear();
   }
 
   // Shiki-gehighlightetes Fenster um eine Quellzeile (Vorschau der globalen Code-Suche).

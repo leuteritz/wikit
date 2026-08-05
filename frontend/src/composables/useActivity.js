@@ -48,6 +48,13 @@ export const EDGE_PHASES = [
   { key: 'edges', label: 'Computing call edges', weight: 1, unit: 'classes scanned' },
 ]
 
+// Der Aufbau des Bedeutungsindex meldet nur seine eine Phase – wie die Kantenberechnung. Die
+// Einheit ist die KLASSE und nicht der Vektor: gerechnet wird einer je Klasse, und „1250 vectors"
+// waere dieselbe Zahl unter einem Wort, das niemand nachzaehlen kann.
+export const EMBED_PHASES = [
+  { key: 'embed', label: 'Embedding classes', weight: 1, unit: 'classes' },
+]
+
 // Was der Nutzer sieht, je Art des Laufs. `first` ist die Phase, mit der die Anzeige startet:
 // bis das erste Server-Ereignis eintrifft, vergehen bei einem grossen Paste Sekunden, und eine
 // leere Karte in dieser Zeit sieht aus wie „nichts passiert".
@@ -55,6 +62,7 @@ const KINDS = {
   import: { phases: IMPORT_PHASES, title: 'Importing code', icon: 'lucide:database', first: 'split' },
   reset: { phases: RESET_PHASES, title: 'Deleting all data', icon: 'lucide:trash-2', first: 'delete' },
   edges: { phases: EDGE_PHASES, title: 'Recomputing edges', icon: 'lucide:git-branch', first: 'edges' },
+  embed: { phases: EMBED_PHASES, title: 'Building meaning index', icon: 'lucide:sparkles', first: 'embed' },
 }
 
 // --- Zustand -----------------------------------------------------------------------------------

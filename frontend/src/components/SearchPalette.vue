@@ -22,7 +22,7 @@ import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { api } from '../lib/api.js'
 import { buildSearchRegex, findMatches, MATCH_LIMIT } from '../lib/codeSearch.js'
 import { addLineNumbers, buildCallWindow, paintMatches, clearMatches, shikiText } from '../lib/javaCode.js'
-import { parseSearchQuery, wantsArticles, wantsCode, wantsSymbols, SEARCH_FACETS, SEARCH_SCOPE_ALL } from '../lib/searchQuery.js'
+import { parseSearchQuery, wantsArticles, wantsCode, wantsSymbols, wantsMeaning, SEARCH_FACETS, SEARCH_SCOPE_ALL } from '../lib/searchQuery.js'
 import BusyState from './BusyState.vue'
 import CategoryBadge from './CategoryBadge.vue'
 import { Icon } from '../lib/icons.js'
@@ -94,6 +94,19 @@ const symbolHits = ref([])
 const codeResult = ref(null)
 const codeLoading = ref(false)
 const codeError = ref('')
+
+// --- Dritte Quelle: die Bedeutung ------------------------------------------------------------
+// `GET /api/search` beantwortet „wie heisst es?", `code-search` „wo steht dieses Wort?" – und diese
+// hier „welche Klasse kuemmert sich darum?". Ihre Treffer enthalten den Suchbegriff bewusst NICHT,
+// und deshalb stehen sie in einer eigenen Gruppe mit eigener Ueberschrift: unter die Namenstreffer
+// gemischt saehe jeder davon wie ein Fehler der Suche aus.
+//
+// Sie kostet einen Ollama-Aufruf JE Anfrage – also laengere Wartezeit vor dem Absenden als die
+// beiden anderen und ein Mindestmass an Eingabe. Fuer ein bis zwei Zeichen gibt es keine Bedeutung.
+const meaningResult = ref(null)
+const meaningLoading = ref(false)
+const MEANING_DEBOUNCE_MS = 420
+const MEANING_MIN_CHARS = 3
 
 const articleHits = computed(() => {
   if (!wantsArticles(parsed.value.scope)) return []
@@ -183,11 +196,17 @@ function abortCodeRequest() {
 }
 let nameToken = 0
 let codeToken = 0
+let meaningToken = 0
+let meaningTimer = null
+let meaningAbort = null
 
 watch([term, () => parsed.value.scope, opts], ([q, scope]) => {
   clearTimeout(nameTimer)
   clearTimeout(codeTimer)
+  clearTimeout(meaningTimer)
   abortCodeRequest()
+  meaningAbort?.abort()
+  meaningAbort = null
 
   if (!q) {
     symbolHits.value = []
@@ -195,9 +214,12 @@ watch([term, () => parsed.value.scope, opts], ([q, scope]) => {
     codeError.value = ''
     codeLoading.value = false
     nameLoading.value = false
+    meaningResult.value = null
+    meaningLoading.value = false
     stopClock()
     nameToken++
     codeToken++
+    meaningToken++
     return
   }
 
@@ -226,6 +248,31 @@ watch([term, () => parsed.value.scope, opts], ([q, scope]) => {
   } else {
     symbolHits.value = []
     nameLoading.value = false
+  }
+
+  // Die Bedeutungssuche laeuft NEBEN den anderen und blockiert nichts: sie hat ihre eigene Gruppe,
+  // und wenn sie ausbleibt (kein Modell, kein Index, Ollama weg), fehlt genau die – der Rest der
+  // Palette ist davon unberuehrt. Deshalb auch kein Anteil an `busy`.
+  if (wantsMeaning(scope) && q.length >= MEANING_MIN_CHARS) {
+    meaningLoading.value = true
+    meaningTimer = setTimeout(async () => {
+      const token = ++meaningToken
+      const ctrl = new AbortController()
+      meaningAbort = ctrl
+      try {
+        const res = await api.semanticSearchJava(q, ctrl.signal)
+        if (token !== meaningToken) return
+        meaningResult.value = res
+      } catch {
+        if (token === meaningToken) meaningResult.value = null
+      } finally {
+        if (meaningAbort === ctrl) meaningAbort = null
+        if (token === meaningToken) meaningLoading.value = false
+      }
+    }, MEANING_DEBOUNCE_MS)
+  } else {
+    meaningResult.value = null
+    meaningLoading.value = false
   }
 
   if (needsCode) {
@@ -319,6 +366,24 @@ const results = computed(() => {
             }),
           )
 
+  // 3. Bedeutungstreffer: Klassen, die zum Thema passen, ohne den Begriff zu enthalten. Was schon
+  //    ueber den Namen gefunden wurde, faellt raus – zweimal dieselbe Klasse in zwei Gruppen waere
+  //    kein zweiter Fund, sondern eine doppelte Zeile.
+  const namedIds = new Set([...localIds, ...serverClasses.map((c) => c.fileId)])
+  const meaningItems = (meaningResult.value?.results || [])
+    .filter((r) => !namedIds.has(r.fileId))
+    .map((r) =>
+      add({
+        kind: 'meaning',
+        fileId: r.fileId,
+        line: 1,
+        name: r.className,
+        package: r.package,
+        classType: r.type,
+        score: r.score,
+      }),
+    )
+
   const arts = articleHits.value
   const codeFilesRaw = codeResult.value?.files || []
   const articleItems = (codeFilesRaw.length ? arts.slice(0, ARTICLES_WITH_CODE) : arts).map((a) =>
@@ -347,7 +412,7 @@ const results = computed(() => {
           .slice(0, 12)
           .map((r) => add({ kind: 'method', item: r }))
 
-  return { flat, classes, serverClasses, articleItems, codeFiles, methods }
+  return { flat, classes, serverClasses, meaningItems, articleItems, codeFiles, methods }
 })
 
 const flatItems = computed(() => results.value.flat)
@@ -363,6 +428,7 @@ const counter = computed(() => {
   const code = codeResult.value
   if (code?.totalMatches) parts.push(`${code.totalMatches} in code`)
   if (results.value.articleItems.length) parts.push(`${results.value.articleItems.length} articles`)
+  if (results.value.meaningItems.length) parts.push(`${results.value.meaningItems.length} by meaning`)
   return parts.join(' · ')
 })
 
@@ -425,7 +491,22 @@ const previewTarget = (item) => {
 // Quelltext- oder Methodentreffer IST die Fundstelle die Auskunft, und in 400 Zeilen ginge sie
 // unter. Deshalb auch die Server-Klassen (`viaSource`) nicht – die passen im Quelltext, nicht im
 // Namen, und sagen das in der Liste auch.
-const wantsFullClass = (item) => item?.kind === 'class' && !item.viaSource
+// Ein Bedeutungstreffer meint die KLASSE, nicht eine Zeile darin – wie ein Namenstreffer.
+const wantsFullClass = (item) => (item?.kind === 'class' && !item.viaSource) || item?.kind === 'meaning'
+
+// Warum diese Quelle gerade nichts liefert. Ohne den Satz sieht ein leerer Abschnitt aus wie
+// „es gibt nichts", obwohl in Wahrheit das Modell fehlt oder der Index nie gebaut wurde – und
+// niemand kaeme darauf, im Bot-Bereich nachzusehen.
+const MEANING_REASONS = {
+  disabled: 'No embedding model set — configure one under Bot.',
+  'not-indexed': 'The meaning index is empty — build it under Bot.',
+  unavailable: 'Ollama did not answer — the other results are unaffected.',
+}
+const meaningNote = computed(() => {
+  const r = meaningResult.value
+  if (!r || r.results?.length) return ''
+  return MEANING_REASONS[r.reason] || ''
+})
 const previewKey = (item) => {
   const t = previewTarget(item)
   return t ? `${t.fileId}:${t.line}:${wantsFullClass(item) ? 'full' : 'win'}` : ''
@@ -614,7 +695,10 @@ watch(flatItems, (list) => {
 onUnmounted(() => {
   clearTimeout(nameTimer)
   clearTimeout(codeTimer)
+  clearTimeout(meaningTimer)
   abortCodeRequest()
+  meaningAbort?.abort()
+  meaningAbort = null
   clearTimeout(previewTimer)
   clearTimeout(hoverTimer)
 })
@@ -636,6 +720,13 @@ function go(entry) {
   // Wer in der Vorschau schon IN dieser Klasse gesucht hat, meint beim Öffnen diesen Begriff –
   // nicht den, mit dem er die Klasse gefunden hat. Die Suchleiste im Source-Tab bekommt deshalb
   // die Klassensuche, sonst wie bisher die Palettensuche.
+  // ⚠️ Ein Bedeutungstreffer gibt seinen Begriff NICHT weiter: er steht im Quelltext dieser Klasse
+  // gerade nicht (das ist der ganze Sinn dieser Quelle), und die Suchleiste im Source-Tab meldete
+  // beim Ankommen „0 Treffer" fuer ein Wort, nach dem man nie im Code gesucht hat.
+  if (entry.kind === 'meaning') {
+    router.push('/code')
+    return
+  }
   if (classQuery.value && classSearchable.value) {
     lastSearchQuery.value = classQuery.value
     lastSearchOpts.value = { ...classOpts.value }
@@ -944,6 +1035,37 @@ const shortPackage = (pkg) => pkg || 'default package'
                   <div class="truncate font-mono text-3xs text-[var(--color-text-muted)]">{{ shortPackage(entry.package) }}</div>
                 </div>
                 <span class="shrink-0 font-mono text-3xs text-[var(--color-text-muted)] opacity-70">in source</span>
+              </button>
+            </template>
+
+            <!-- Bedeutung: Klassen, die zum Thema passen, OHNE den Begriff zu enthalten. Eigene
+                 Gruppe mit eigener Ueberschrift und sichtbarem Abstandswert – unter den
+                 Namenstreffern gemischt saehe jeder Eintrag hier wie ein Fehler der Suche aus,
+                 weil das gesuchte Wort in ihm nicht vorkommt. -->
+            <template v-if="results.meaningItems.length || meaningNote">
+              <div class="flex items-center gap-1.5 px-4 pb-1 pt-2 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
+                <Icon icon="lucide:sparkles" class="h-3 w-3" /> By meaning
+                <span v-if="meaningLoading" class="normal-case tracking-normal opacity-70">· looking…</span>
+              </div>
+              <p v-if="meaningNote" class="px-4 pb-1 text-3xs text-[var(--color-text-muted)]">{{ meaningNote }}</p>
+              <button
+                v-for="entry in results.meaningItems"
+                :key="`me-${entry.idx}`"
+                type="button"
+                :data-sp-active="entry.idx === active ? '1' : null"
+                class="flex w-full items-center gap-3 px-4 py-1.5 text-left transition"
+                :class="entry.idx === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-surface-offset)]'"
+                @mouseenter="hoverItem(entry.idx)"
+                @click="go(entry)"
+              >
+                <Icon icon="lucide:sparkles" class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
+                <div class="min-w-0 flex-1">
+                  <span class="truncate text-sm text-[var(--color-text)]">{{ entry.name }}</span>
+                  <div class="truncate font-mono text-3xs text-[var(--color-text-muted)]">{{ shortPackage(entry.package) }}</div>
+                </div>
+                <!-- Der Abstandswert steht dran: eine Bedeutungssuche hat kein „passt nicht", nur
+                     ein „passt weniger" – und das darf man dem Treffer ansehen. -->
+                <span class="shrink-0 font-mono text-3xs text-[var(--color-text-muted)]">{{ entry.score.toFixed(2) }}</span>
               </button>
             </template>
 

@@ -22,6 +22,8 @@ copying one file.
   Shiki syntax highlighting.
 - **Instant search** — `Ctrl/Cmd + K` over articles, classes, methods and raw source, backed by
   SQLite **FTS5** (a trigram index answers substrings and punctuation without reading any file).
+  With Ollama it also finds classes **by meaning** — the ones that do the thing, whether or not
+  they use your words for it.
 - **Relationship graph** — typed links between articles, drawn with [Vue Flow](https://vueflow.dev).
 - **Java code analysis** — parse `.java` locally (no JDK) and explore a class dependency graph.
 - **Code insights** — dependency cycles, a hotspot ranking and package balance, all derived from
@@ -66,6 +68,7 @@ On first start the DB is created under `DATA_DIR` and seeded with a few demo art
 | `DATA_DIR` | `./data` | Host directory holding the SQLite DB (mounted to `/data`). On a Pi use an **absolute** path owned by UID `1000`. |
 | `OLLAMA_URL` | `http://localhost:11434/api/generate` | Ollama endpoint. In Docker: `http://host.docker.internal:11434/api/generate`. |
 | `OLLAMA_MODEL` | `qwen2.5-coder:3b` | Model for AI summaries. |
+| `OLLAMA_EMBED_MODEL` | `nomic-embed-text` | Model for meaning-based search. Empty switches it off. |
 | `OLLAMA_TIMEOUT_MS` | `20000` | Abort and fall back to Javadoc if the model is too slow. |
 | `WIKI_BODY_LIMIT` | `64mb` | Largest accepted body. Raising it means raising `client_max_body_size` in `deploy/nginx.conf` too — nginx rejects first otherwise. |
 
