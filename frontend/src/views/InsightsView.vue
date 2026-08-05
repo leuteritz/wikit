@@ -78,8 +78,8 @@ function cutAdvice(weakest, level = 'class') {
   // ⚠️ Auf Package-Ebene gibt es kein „Mitglied", das man verschiebt – dort ist die Kante eine
   // Bündelung vieler Klassenbeziehungen, und der Rat lautet entsprechend „such die paar Stellen".
   if (level === 'package') {
-    const n = count === 1 ? 'a single relation' : `only ${count} relations`
-    return `${n} hold this direction. Search “p: ${b}” in the code view to find them — moving or inverting those breaks the whole loop.`
+    const n = count === 1 ? 'A single relation holds' : `Only ${count} relations hold`
+    return `${n} this direction. Search “p: ${b}” in the code view to find ${count === 1 ? 'it' : 'them'} — moving or inverting ${count === 1 ? 'it' : 'those'} breaks the whole loop.`
   }
   if (kind === 'uses') {
     return `${a} only needs ${b} as a type. An interface on the ${b} side — or moving that type somewhere both can see — turns this arrow around.`
@@ -89,6 +89,41 @@ function cutAdvice(weakest, level = 'class') {
   }
   const many = count > 1 ? `${count} calls` : 'a single call'
   return `${a} makes ${many} into ${b}. Move that member to ${a}, or let ${b} hand the result over instead of being called back.`
+}
+
+// --- Der Plan zu EINEM Package-Zyklus -----------------------------------------------------------
+// „Zwischen web und service liegt eine Kante" ist ein Befund. Gefragt ist: was ändere ich, was
+// bringt es, und warum ausgerechnet hier. Die drei Antworten stehen deshalb zusammen und mit den
+// echten Namen – sonst muss man sie sich aus vier Zahlen selbst zusammenreimen.
+const openPlan = ref(null)
+const togglePlan = (i) => (openPlan.value = openPlan.value === i ? null : i)
+
+// ⚠️ Ob eine Kante gegen die übliche Schichtrichtung läuft, entscheidet der SERVER
+// (`weakest.againstLayers`) – dort wird die Bruchstelle danach ausgewählt. Die Konvention hier ein
+// zweites Mal zu kennen hieße, sie an zwei Stellen pflegen zu müssen, und die Oberfläche könnte zu
+// einer anderen Antwort kommen als die Auswahl, die sie erklärt.
+function layerNote(weakest) {
+  if (!weakest?.againstLayers) return ''
+  const a = String(weakest.fromLabel).split('.').pop()
+  const b = String(weakest.toLabel).split('.').pop()
+  return `It also runs against the usual direction — a “${a}” package normally knows nothing about “${b}”. That makes it the accident rather than the design.`
+}
+
+// Warum GENAU diese Kante. In einem Kreis ist jede gleich schuldig; entschieden wird nach Aufwand.
+function whyThisLink(c) {
+  const w = c.weakest
+  if (!w) return ''
+  const carried = w.links?.length ? w.links.length + (w.more || 0) : w.count
+  const base = `Every arrow in a loop is equally responsible for it — this one is simply the cheapest to undo: ${carried === 1 ? 'a single class relation holds it' : `only ${carried} class relations hold it`}, and it is a ${w.kind === 'uses' ? 'plain type reference, the kind an interface replaces' : w.kind === 'field' ? 'field access, which a parameter replaces' : 'method call'}.`
+  const note = layerNote(w)
+  return note ? `${base} ${note}` : base
+}
+
+// Was der Umbau einbringt – der Grund, es überhaupt zu tun.
+function planGain(c) {
+  const names = (c.chainLabels || []).slice(0, -1).map((p) => String(p).split('.').pop())
+  const list = names.length > 2 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names.join(' and ')
+  return `${list} can then be built, tested and read one at a time. A change in one stops being a change that can surface in the others — and the packages become separable (own module, own jar, own owner) instead of one block that only moves together.`
 }
 
 // Was eine Klasse schwer macht – und was man dagegen tut. Der Server nennt den Treiber, hier steht,
@@ -556,6 +591,78 @@ const plotted = computed(() => {
                     <p v-if="c.size > c.chainLabels.length - 1" class="mt-1 text-2xs text-[var(--color-text-muted)]">
                       Part of a group of {{ c.size }} packages that all reach each other.
                     </p>
+
+                    <!-- ⚠️ Der Plan ist AUFGEKLAPPT eine eigene Ebene: „was ändere ich, was bringt
+                         es, warum hier" beantwortet man einmal je Zyklus – dauerhaft sichtbar wären
+                         es bei sechs Zyklen sechs Aufsätze übereinander. -->
+                    <button
+                      type="button"
+                      class="mt-2 inline-flex items-center gap-1 text-2xs font-medium text-[var(--color-accent)] transition hover:underline"
+                      @click="togglePlan(i)"
+                    >
+                      <Icon :icon="openPlan === i ? 'lucide:chevron-down' : 'lucide:chevron-right'" class="h-3 w-3" />
+                      {{ openPlan === i ? 'Hide the plan' : 'What should I change here?' }}
+                    </button>
+
+                    <div v-if="openPlan === i" class="mt-2 space-y-3 rounded-md bg-[var(--color-surface-offset)] p-3">
+                      <!-- 1. Was die Richtung hält – mit Namen, sonst bleibt es eine Aussage über
+                              zwei Ordner. -->
+                      <div v-if="c.weakest?.links?.length">
+                        <p class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                          1 · What holds this direction
+                        </p>
+                        <ul class="mt-1 space-y-0.5">
+                          <li v-for="l in c.weakest.links" :key="`${l.fromId}-${l.toId}`" class="text-2xs">
+                            <button
+                              type="button"
+                              class="font-mono text-[var(--color-text)] underline-offset-2 hover:text-[var(--color-accent)] hover:underline"
+                              @click="openClass(l.fromId)"
+                            >{{ l.from }}</button>
+                            <span class="text-[var(--color-text-muted)]"> → </span>
+                            <button
+                              type="button"
+                              class="font-mono text-[var(--color-text)] underline-offset-2 hover:text-[var(--color-accent)] hover:underline"
+                              @click="openClass(l.toId)"
+                            >{{ l.to }}</button>
+                            <span class="text-[var(--color-text-muted)]"> ({{ l.kind }}<template v-if="l.count > 1">, {{ l.count }}×</template>)</span>
+                          </li>
+                        </ul>
+                        <p v-if="c.weakest.more" class="mt-0.5 text-3xs text-[var(--color-text-muted)]">
+                          … and {{ c.weakest.more }} more.
+                        </p>
+                      </div>
+
+                      <div>
+                        <p class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                          2 · What to change
+                        </p>
+                        <p class="mt-1 text-2xs leading-relaxed text-[var(--color-text)]">
+                          <template v-if="c.weakest?.links?.length === 1">
+                            Remove exactly that one relation — invert it behind an interface that lives where both
+                            sides may look, or move the member into the package that actually needs it.
+                          </template>
+                          <template v-else>
+                            Remove exactly those relations — invert them behind an interface that lives where both
+                            sides may look, or move the members into the package that actually needs them.
+                          </template>
+                          The dependency stays; only its direction changes, and the loop is gone with it.
+                        </p>
+                      </div>
+
+                      <div>
+                        <p class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                          3 · What you gain
+                        </p>
+                        <p class="mt-1 text-2xs leading-relaxed text-[var(--color-text)]">{{ planGain(c) }}</p>
+                      </div>
+
+                      <div>
+                        <p class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                          4 · Why this link and not another
+                        </p>
+                        <p class="mt-1 text-2xs leading-relaxed text-[var(--color-text-muted)]">{{ whyThisLink(c) }}</p>
+                      </div>
+                    </div>
                   </article>
                 </div>
               </div>

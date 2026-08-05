@@ -14,6 +14,10 @@ const BACKFILL_CHUNK = 40;
 // 300 BFS-Laeufe, und der 300. findet keinen kuerzeren Kreis als die ersten zwoelf.
 const CYCLE_PROBE_NODES = 12;
 
+// Wie viele tragende Klassenpaare eine Package-Kante namentlich nennt. Mehr liest niemand, und die
+// Restzahl daneben sagt, dass es mehr sind.
+const LINK_SAMPLE = 6;
+
 // Gewichte des Hotspot-Scores. Verzweigungsdichte vor Groesse vor Kopplung: eine lange, aber
 // geradlinige Klasse liest sich, eine kurze mit zwanzig Verzweigungen nicht.
 const W_COMPLEXITY = 0.4;
@@ -29,6 +33,26 @@ const CHURN_WEIGHT = 0.5;
 // aufgebrochen werden sollte. Ein Typbezug (`uses`) laesst sich oft durch ein Interface ersetzen,
 // ein echter Methodenaufruf selten.
 const BREAK_ORDER: Record<string, number> = { uses: 0, field: 1, call: 2 };
+
+// ⚠️ Uebliche Schichtnamen, von aussen nach innen. Eine KONVENTION, keine Wahrheit – aber eine, die
+// traegt: laeuft eine Kante von einer tieferen Schicht zurueck nach oben (repo -> web), ist sie
+// fast immer das Versehen und nicht die Absicht. Nur auf PACKAGE-Ebene angewandt; ein Klassenname
+// traegt keine Schicht, und dort waere es ein Ratespiel.
+const LAYER_RANK: Record<string, number> = {
+  ui: 0, web: 0, controller: 0, controllers: 0, rest: 0, view: 0, views: 0,
+  service: 1, services: 1, application: 1, usecase: 1, business: 1,
+  domain: 2, model: 2, entity: 2, entities: 2,
+  repo: 3, repository: 3, repositories: 3, dao: 3, persistence: 3, store: 3, db: 3,
+};
+const layerOf = (path: any): number | undefined =>
+  LAYER_RANK[String(path ?? '').split('.').pop()!.toLowerCase()];
+// Gegen die uebliche Richtung? Nur entscheidbar, wenn BEIDE Enden erkannt werden – sonst ist die
+// Antwort "weiss nicht" und nicht "nein".
+const againstLayers = (from: any, to: any): boolean => {
+  const a = layerOf(from);
+  const b = layerOf(to);
+  return a != null && b != null && a > b;
+};
 
 type ClassRow = {
   id: number;
@@ -248,15 +272,38 @@ export class InsightsService implements OnModuleInit {
     });
 
     const packages = this.packageMetrics(classes, pairs);
+    // `true` = Schichtnamen beruecksichtigen (s. LAYER_RANK).
     const pkgCycles = this.findCycles(
       packages.map((p) => p.path),
       this.packagePairs(classes, pairs),
+      true,
     );
     const cycleOfPkg = new Map<string, number>();
     pkgCycles.forEach((c, i) => c.members.forEach((p) => cycleOfPkg.set(p as string, i)));
     for (const p of packages) p.cycle = cycleOfPkg.has(p.path) ? cycleOfPkg.get(p.path)! : null;
 
     const nameOf = new Map<number, string>(classes.map((c) => [c.id, c.class_name]));
+
+    // --- Was eine Package-Kante TRÄGT -------------------------------------------------------------
+    // „Zwischen web und service liegt eine Beziehung" ist keine Arbeitsanweisung. Die Frage lautet
+    // „welche Klassen genau?", und erst damit wird aus dem Befund ein Plan: diese Zeilen sind die,
+    // die man anfasst. Gedeckelt, weil eine Package-Kante bei einer großen Codebasis hunderte
+    // Klassenpaare bündeln kann – was wegfällt, wird gezählt (`more`).
+    const pkgOfId = new Map<number, string>(classes.map((c) => [c.id, c.package || '(default)']));
+    const linksBetween = (fromPkg: string, toPkg: string) => {
+      const hits = pairs.filter((p) => pkgOfId.get(p.from) === fromPkg && pkgOfId.get(p.to) === toPkg);
+      return {
+        links: hits.slice(0, LINK_SAMPLE).map((p) => ({
+          fromId: p.from,
+          from: nameOf.get(p.from) || String(p.from),
+          toId: p.to,
+          to: nameOf.get(p.to) || String(p.to),
+          kind: p.kind,
+          count: p.count,
+        })),
+        more: Math.max(0, hits.length - LINK_SAMPLE),
+      };
+    };
 
     return {
       totals: {
@@ -286,13 +333,18 @@ export class InsightsService implements OnModuleInit {
           chainLabels: (c.chain as number[]).map((id) => nameOf.get(id) || String(id)),
           weakest: labelWeakest(c.weakest, (id) => nameOf.get(id as number) || String(id)),
         })),
-        packages: pkgCycles.map((c) => ({
-          size: c.members.length,
-          members: c.members,
-          chain: c.chain,
-          chainLabels: c.chain as string[],
-          weakest: labelWeakest(c.weakest, (p) => String(p)),
-        })),
+        packages: pkgCycles.map((c) => {
+          const weakest = labelWeakest(c.weakest, (p) => String(p));
+          return {
+            size: c.members.length,
+            members: c.members,
+            chain: c.chain,
+            chainLabels: c.chain as string[],
+            // Die Bruchstelle nennt ihre tragenden Klassen – ohne sie bliebe der Vorschlag eine
+            // Aussage über zwei Ordner.
+            weakest: weakest ? { ...weakest, ...linksBetween(weakest.from, weakest.to) } : null,
+          };
+        }),
       },
     };
   }
@@ -332,7 +384,7 @@ export class InsightsService implements OnModuleInit {
         continue;
       }
       if (from === to) continue; // Selbstbezug ist kein Zyklus und keine Kopplung.
-      const key = `${from} ${to}`;
+      const key = `${from}\u0000${to}`;
       const kind = e.kind || 'call';
       const conf = Number(e.confidence ?? 1);
       const prev = merged.get(key);
@@ -421,7 +473,7 @@ export class InsightsService implements OnModuleInit {
       const a = pkgOf.get(p.from)!;
       const b = pkgOf.get(p.to)!;
       if (a === b) continue;
-      const key = `${a} ${b}`;
+      const key = `${a}\u0000${b}`;
       const prev = merged.get(key);
       if (prev) {
         prev.count += p.count;
@@ -442,6 +494,7 @@ export class InsightsService implements OnModuleInit {
   private findCycles(
     nodes: Array<number | string>,
     pairs: Pair[],
+    useLayers = false,
   ): Array<{ members: Array<number | string>; chain: Array<number | string>; weakest: any }> {
     const adj = new Map<any, any[]>();
     const edgeOf = new Map<string, Pair>();
@@ -449,7 +502,7 @@ export class InsightsService implements OnModuleInit {
     for (const p of pairs) {
       if (!adj.has(p.from)) adj.set(p.from, []);
       adj.get(p.from)!.push(p.to);
-      edgeOf.set(`${p.from} ${p.to}`, p);
+      edgeOf.set(`${p.from}\u0000${p.to}`, p);
     }
 
     const index = new Map<any, number>();
@@ -510,7 +563,7 @@ export class InsightsService implements OnModuleInit {
       .sort((a, b) => b.length - a.length)
       .map((group) => {
         const chain = shortestCycle(group, adj);
-        return { members: group, chain, weakest: weakestOn(chain, edgeOf) };
+        return { members: group, chain, weakest: weakestOn(chain, edgeOf, useLayers) };
       });
   }
 }
@@ -628,18 +681,44 @@ function shortestCycle(group: any[], adj: Map<any, any[]>): any[] {
  * selten), dann die Zahl der Fundstellen (eine einzelne Benutzung ist schneller entfernt als
  * zwanzig), dann die Sicherheit (eine geratene Kante ist womoeglich gar keine).
  */
-function weakestOn(chain: any[], edgeOf: Map<string, Pair>): any {
+function weakestOn(chain: any[], edgeOf: Map<string, Pair>, useLayers = false): any {
+  // Rangfolge als Tupel, in dieser Reihenfolge verglichen (kleiner ist besser):
+  //   1. Schichtverstoss – schlaegt alles. Eine Kante, die von innen zurueck nach aussen laeuft,
+  //      IST der Fehler; die billigste Kante daneben ist regelmaessig `service -> repo`, also
+  //      ausgerechnet die Richtung, die bleiben soll. Gemessen an der Demo-Codebasis schlug der
+  //      Vorschlag genau diese vor, bevor die Stufe davor kam.
+  //   2. Art der Kante  – ein Typbezug loest sich leichter als ein Aufruf.
+  //   3. Fundstellen    – eine einzelne Benutzung ist schneller entfernt als zwanzig.
+  const rank = (e: Pair): number[] => [
+    useLayers && againstLayers(e.from, e.to) ? 0 : 1,
+    BREAK_ORDER[e.kind] ?? 9,
+    e.count,
+  ];
+  const better = (a: number[], b: number[]): boolean => {
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) return a[i] < b[i];
+    }
+    return false;
+  };
+
   let best: Pair | null = null;
+  let bestRank: number[] = [];
   for (let i = 0; i + 1 < chain.length; i++) {
-    const e = edgeOf.get(`${chain[i]} ${chain[i + 1]}`);
+    const e = edgeOf.get(`${chain[i]}\u0000${chain[i + 1]}`);
     if (!e) continue;
-    if (
-      !best ||
-      (BREAK_ORDER[e.kind] ?? 9) < (BREAK_ORDER[best.kind] ?? 9) ||
-      ((BREAK_ORDER[e.kind] ?? 9) === (BREAK_ORDER[best.kind] ?? 9) && e.count < best.count)
-    ) {
+    const r = rank(e);
+    if (!best || better(r, bestRank)) {
       best = e;
+      bestRank = r;
     }
   }
-  return best ? { from: best.from, to: best.to, kind: best.kind, count: best.count } : null;
+  if (!best) return null;
+  return {
+    from: best.from,
+    to: best.to,
+    kind: best.kind,
+    count: best.count,
+    // Der Oberflaeche sagen, WARUM diese – sie soll die Konvention nicht ein zweites Mal raten.
+    againstLayers: useLayers && againstLayers(best.from, best.to),
+  };
 }
