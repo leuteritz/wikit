@@ -1,10 +1,16 @@
-// Identitaetsfarbe je Methode einer Call-Kante (Edge-Detail-Panel).
+// Identitaetsfarbe fuer eine Menge von Dingen, die an mehreren Stellen zugleich auftauchen.
 //
-// Problem: Eine Kante traegt oft MEHRERE aufgerufene Methoden. Oben stehen deren Definitionen
-// (Quelle), unten die Aufrufstellen (Anwender) – wer zu wem gehoert, musste man bisher ueber den
-// Namen zusammensuchen. Loesung: jede Methode bekommt EINE Farbe und traegt sie an jeder Stelle,
-// an der sie auftaucht – Definitionskarte, Legenden-Chip, Aufrufstellen-Karte, markierte
-// Aufrufzeile und der Methoden-Token im Code selbst.
+// Problem (Ursprung, Edge-Detail-Panel): Eine Kante traegt oft MEHRERE aufgerufene Methoden. Oben
+// stehen deren Definitionen (Quelle), unten die Aufrufstellen (Anwender) – wer zu wem gehoert,
+// musste man bisher ueber den Namen zusammensuchen. Loesung: jede Methode bekommt EINE Farbe und
+// traegt sie an jeder Stelle, an der sie auftaucht – Definitionskarte, Legenden-Chip,
+// Aufrufstellen-Karte, markierte Aufrufzeile und der Methoden-Token im Code selbst.
+//
+// ⚠️ Dieselbe Frage stellt das Themen-Buendel (`/topic`), nur ueber KLASSEN: links eine Liste,
+// rechts ein Text aus zwanzig aneinandergehaengten Quelltexten – „welcher Block ist welche Klasse?"
+// ist dort die Orientierungsfrage, und der Hover beantwortet sie nur fuer eine. `buildMethodColorMap`
+// und `methodColorVars` sind deshalb bewusst generisch: sie kennen nur „eine stabile Reihenfolge
+// von Schluesseln" (Methodenname dort, Datei-Id hier). Nur `markMethodCalls` ist methodenspezifisch.
 //
 // Reines DOM/String-Post-Processing – wie `lib/javaCode.js` und `lib/javaParams.js`. KEIN zweiter
 // Highlighter: die Shiki-Farben bleiben an ihren Spans, wir markieren zusaetzlich.
@@ -18,8 +24,9 @@
 // Anzahl distinkter Methodenfarben (siehe `--mc-*` in style.css).
 export const METHOD_PALETTE = 6
 
-// Stabiler Farbindex je Methodenname. Reihenfolge = Aufrufreihenfolge der Namen, damit die
-// Zuordnung beim erneuten Oeffnen derselben Kante identisch bleibt.
+// Stabiler Farbindex je Schluessel. Die REIHENFOLGE der Eingabe entscheidet – so bleibt die
+// Zuordnung beim erneuten Oeffnen derselben Kante (bzw. beim selben Buendel) identisch, und
+// benachbarte Eintraege bekommen verschiedene Farben.
 export function buildMethodColorMap(names) {
   const map = new Map()
   let i = 0

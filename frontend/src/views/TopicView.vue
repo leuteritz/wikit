@@ -34,6 +34,7 @@ import { api } from '../lib/api.js'
 import { BIG_CLIPBOARD_BYTES, copyToClipboard } from '../lib/clipboard.js'
 import { findMatches, MATCH_LIMIT } from '../lib/codeSearch.js'
 import { addLineNumbers, clearMatches, paintMatches } from '../lib/javaCode.js'
+import { buildMethodColorMap, methodColorVars } from '../lib/javaMethodColors.js'
 import { formatBytes } from '../lib/format.js'
 import {
   MAX_CANDIDATES,
@@ -384,6 +385,33 @@ const lineOfOffset = (off) => {
 const escapeHtml = (s) =>
   String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
+// --- Eine Farbe je Klasse, links wie rechts --------------------------------------------------
+// ⚠️ Der Hover beantwortet „wo steckt DIESE Klasse?" – aber nur für eine, und nur solange man
+// zeigt. Die Frage davor lautet „welcher Block ist überhaupt welche Klasse?", und ein Text aus
+// zwanzig aneinandergehängten Quelltexten beantwortet sie von sich aus gar nicht: zwischen zwei
+// Klassen steht eine Leerzeile, sonst nichts. Also bekommt jede Klasse eine Identitätsfarbe und
+// trägt sie an BEIDEN Stellen – dieselbe Mechanik und dieselben Tokens wie die Methodenfarben im
+// Kanten-Panel (`--mc-*`), also keine neue Farbsprache.
+//
+// Die Reihenfolge kommt aus `bundle.files`, nicht aus der Trefferliste: das ist die Reihenfolge
+// im TEXT, und nur so unterscheiden sich zwei untereinander stehende Blöcke sicher.
+const colorByFile = computed(() =>
+  buildMethodColorMap((bundle.value?.files || []).map((f) => f.fileId)),
+)
+
+// Farbindex je ABSOLUTER Zeile. Kopf, Package-Trenner und die Leerzeilen dazwischen gehören zu
+// keiner Klasse und bleiben neutral – ein durchgehend gefärbter Text hätte keine Gliederung mehr,
+// sondern nur noch Farbe.
+const colorByLine = computed(() => {
+  const arr = new Int8Array(allLines.value.length).fill(-1)
+  for (const f of bundle.value?.files || []) {
+    const idx = colorByFile.value.get(f.fileId)
+    if (idx == null) continue
+    for (let l = f.startLine; l < f.startLine + f.lines && l <= arr.length; l++) arr[l - 1] = idx
+  }
+  return arr
+})
+
 // Das Fenster als EIN HTML-String, Zeile für Zeile als `.line` – dieselbe Struktur, die Shiki
 // liefert. Damit gelten `shikiText`/`paintMatches` unveraendert (ein zweiter Markierungsweg fuer
 // denselben Zweck waere genau die Doppelung, gegen die die Helfer einmal gebaut wurden).
@@ -393,8 +421,15 @@ const windowHtml = computed(() => {
   const from = windowStart.value
   const lines = allLines.value.slice(from, from + WINDOW_LINES)
   if (!lines.length) return ''
+  const colors = colorByLine.value
   return lines
-    .map((l, i) => `<span class="line" data-line="${from + i + 1}">${escapeHtml(l)}</span>`)
+    .map((l, i) => {
+      const c = colors[from + i]
+      // Die Farbe steht als KLASSE am Element, nicht als Inline-Style: sechs CSS-Regeln gegen
+      // sechshundert Style-Attribute, und der Ton bleibt damit an einer Stelle definiert.
+      const tint = c >= 0 ? ` tp-cc tp-c${c}` : ''
+      return `<span class="line${tint}" data-line="${from + i + 1}">${escapeHtml(l)}</span>`
+    })
     .join('')
 })
 const windowOffset = computed(() => lineOffsets.value[windowStart.value] ?? 0)
@@ -865,12 +900,12 @@ onUnmounted(() => {
                     <li
                       v-for="hit in g.items"
                       :key="hit.fileId"
-                      class="tp-row flex items-start gap-2 border-t border-[var(--color-border)]/50 px-3 py-2 transition"
+                      class="tp-row flex items-start gap-2 border-t border-[var(--color-border)]/50 py-2 pl-2.5 pr-3 transition"
+                      :style="methodColorVars(colorByFile.get(hit.fileId))"
                       :class="[
                         selected.has(hit.fileId) ? '' : 'opacity-55',
-                        hoverId === hit.fileId
-                          ? 'bg-[var(--color-accent-soft)]/40 shadow-[inset_2px_0_0_var(--color-accent)]'
-                          : 'hover:bg-[var(--color-surface-offset)]/40',
+                        colorByFile.has(hit.fileId) ? 'tp-row--c' : '',
+                        hoverId === hit.fileId ? 'tp-row--lit' : 'hover:bg-[var(--color-surface-offset)]/40',
                       ]"
                       @mouseenter="hoverHit(hit)"
                       @mouseleave="leaveHits()"
@@ -1198,12 +1233,50 @@ onUnmounted(() => {
   border-left: 2px solid transparent;
   padding-left: 0.4rem;
 }
-/* Der Abschnitt der gerade gehoverten Klasse. Ein Balken plus zarter Grund, nicht die
-   Akzentfarbe des Suchtreffers: „hier steht sie" ist eine andere Aussage als „hier steht dein
-   Suchbegriff", und beide koennen gleichzeitig gelten. */
+/* --- Identitaetsfarbe je Klasse -------------------------------------------------------------
+   Dieselben Tokens wie die Methodenfarben im Kanten-Panel (`--mc-0..5`), also keine zweite
+   Farbsprache. Die sechs Regeln setzen nur die Variable; Balken und Grund erben sie – so steht
+   jeder Ton genau einmal im Projekt. */
+.topic-preview :deep(.tp-c0) { --mc: var(--mc-0); }
+.topic-preview :deep(.tp-c1) { --mc: var(--mc-1); }
+.topic-preview :deep(.tp-c2) { --mc: var(--mc-2); }
+.topic-preview :deep(.tp-c3) { --mc: var(--mc-3); }
+.topic-preview :deep(.tp-c4) { --mc: var(--mc-4); }
+.topic-preview :deep(.tp-c5) { --mc: var(--mc-5); }
+/* Ruhezustand: der Text ist gegliedert, ohne laut zu werden. Kopf, Package-Trenner und die
+   Leerzeilen zwischen zwei Klassen tragen KEINE Farbe – sonst waere alles gefaerbt und damit
+   nichts unterschieden.
+   ⚠️ Der Balken traegt die Aussage, nicht der Grund. Gemessen: bei 5 % Grund und einem Balken auf
+   40 % waren die vier Bloecke im dunklen Theme nicht auseinanderzuhalten – eine Farbe, die man
+   nicht als verschieden erkennt, ist keine Zuordnung, sondern nur Rauschen. Der Grund bleibt
+   trotzdem zart: er faerbt die ganze Blockflaeche, und was dort laut wird, konkurriert mit dem
+   Text darauf. */
+.topic-preview :deep(.tp-cc) {
+  border-left-color: color-mix(in srgb, var(--mc) 85%, transparent);
+  background: color-mix(in srgb, var(--mc) 7%, transparent);
+}
+/* Der Abschnitt der gerade gehoverten Klasse: DERSELBE Ton, nur in voller Staerke. Eine zweite
+   Farbe dafuer waere eine zweite Bedeutung – gemeint ist ja dieselbe Klasse, nur eben die, auf
+   die man gerade zeigt. Der Fallback greift fuer Zeilen ohne Klassenfarbe. */
 .topic-preview :deep(.tp-lit) {
-  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
-  border-left-color: var(--color-accent);
+  background: color-mix(in srgb, var(--mc, var(--color-accent)) 16%, transparent);
+  border-left-color: var(--mc, var(--color-accent));
+  border-left-width: 3px;
+  padding-left: calc(0.4rem - 1px);
+}
+
+/* --- Dieselbe Farbe an der Zeile links ------------------------------------------------------
+   Der Balken ist die ganze Verbindung: er steht links am Eintrag und links am Abschnitt, und die
+   beiden Enden derselben Aussage sehen damit gleich aus. */
+.tp-row {
+  border-left: 3px solid transparent;
+}
+.tp-row--c {
+  border-left-color: color-mix(in srgb, var(--mc) 85%, transparent);
+}
+.tp-row--lit {
+  background: color-mix(in srgb, var(--mc, var(--color-accent)) 14%, transparent);
+  border-left-color: var(--mc, var(--color-accent));
 }
 /* Suchtreffer im Buendel – dieselbe Gold-Familie und dieselbe Trennung aktiv/passiv wie in der
    Palette und im Source-Tab. `color: inherit`, sonst gewinnt der Browser-Default fuer `mark`. */
