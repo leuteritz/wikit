@@ -88,7 +88,8 @@ and `WIKI_DB` in `.env.example` are for bare-metal runs only.
    Inside the view, one field next to the class list does everything: it filters the tree, drives
    the graph to the best match and opens that class on the right — `↵` walks to the next one.
    Prefixes narrow it down: `m:` finds a called method, `t:` a kind of class, `review:` every
-   uncertain relation, `cycle:` every class caught in a loop.
+   uncertain relation, `cycle:` every class caught in a loop. `path: A > B` draws the routes from
+   one class to another, `impact: A` everything that breaks if `A` changes.
 4. **Export.** Turn a class into a normal Markdown article — from then on it is full-text
    searchable like any other note.
 

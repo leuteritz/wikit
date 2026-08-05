@@ -33,6 +33,7 @@ import { formatEta, formatDuration } from '../lib/format.js'
 import { isTypingTarget } from '../lib/shortcuts.js'
 import { codeState, patchCodeState, clearCodeState } from '../lib/codeState.js'
 import { parseGraphQuery, queryFiles, QUERY_FACETS, GRAPH_QUERY_HELP } from '../lib/graphQuery.js'
+import { buildGraph, MAX_PATHS, MAX_IMPACT } from '../lib/graphPaths.js'
 
 // Die gerechneten Kennzahlen (Zyklen, Brandherde) – geteilt mit dem Insights-Bereich, damit Bild
 // und Bericht nie zwei Staende zeigen. Geholt wird erst, wenn jemand danach fragt.
@@ -509,13 +510,24 @@ const analyzedCount = computed(() => files.value.filter((f) => f.description).le
 //   * `cycle:`/`hotspot:` – die Antwort steht in den gerechneten Kennzahlen. Sie werden NICHT
 //     beim Betreten der Ansicht geholt (wer nie danach fragt, soll dafuer nicht zahlen), sondern
 //     genau dann, wenn eine dieser Facetten getippt wird – `needsInsights` ist das Signal.
+//   * `path:`/`impact:` – die Antwort ist eine STRECKE im Graphen. Der gerichtete Klassengraph
+//     wird deshalb EINMAL je Kantenbestand gebaut und nicht je Tastendruck: das Aufloesen aller
+//     Kanten auf Datei-Ids ist der teure Teil, die Suche darin ist es nicht.
+const classGraph = computed(() => buildGraph(files.value, serverEdges.value))
 const parsedQuery = computed(() => parseGraphQuery(appliedSearch.value))
 const queryResult = computed(() =>
   queryFiles(
-    { files: files.value, serverEdges: serverEdges.value, insights: insightsData.value },
+    {
+      files: files.value,
+      serverEdges: serverEdges.value,
+      insights: insightsData.value,
+      graph: classGraph.value,
+    },
     parsedQuery.value,
   ),
 )
+// Was die Abfrage ueber die Trefferzahl hinaus zu sagen hat („3 routes, shortest 4 steps").
+const queryDetail = computed(() => queryResult.value.detail || null)
 watch(
   () => queryResult.value.needsInsights,
   (needs) => {
@@ -549,6 +561,14 @@ const queryEdges = computed(() => queryResult.value.edges)
 // Die Facetten stehen nicht in einem Tooltip, den niemand oeffnet: sie erscheinen im leeren,
 // fokussierten Feld und tragen sich per Klick selbst ein (dieselbe Bauart wie in SearchPalette).
 const searchFocused = ref(false)
+// Eine Abfrage, die aus dem Klassen-Panel kommt (die Fan-in-Zahl). Sie landet im EINEN Suchfeld –
+// dann filtert der Baum, der Graph stellt sich darauf ein, und die Bilanz steht an derselben
+// Stelle wie bei jeder anderen Suche. Das Feld bekommt den Fokus mit: die Abfrage ist eine
+// Ausgangslage („wer benutzt das?"), von der aus man weitertippt.
+function applyQueryFromPanel(query) {
+  search.value = query
+  nextTick(() => filterInput.value?.focus())
+}
 function applyFacet(prefix) {
   search.value = prefix
   filterInput.value?.focus()
@@ -1669,6 +1689,86 @@ function onResetPanels() {
               </button>
             </span>
           </p>
+
+          <!-- ⚠️ Bei `path:`/`impact:` ist die Trefferzahl die SCHWAECHERE Haelfte der Antwort:
+               gefragt war eine Strecke („wie kommt A an B?"), und „7 classes" beantwortet das
+               nicht. Diese Zeile sagt, WAS gefunden wurde – und wenn nichts, warum nicht. -->
+          <div
+            v-if="queryDetail"
+            class="mt-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 text-3xs text-[var(--color-text-muted)]"
+          >
+            <template v-if="queryDetail.state === 'incomplete'">
+              <span v-if="queryDetail.kind === 'path'">
+                Type <code class="font-mono text-[var(--color-accent)]">path: Source &gt; Target</code> — two class names.
+              </span>
+              <span v-else>Type a class name — everything that would break if it changes.</span>
+            </template>
+
+            <template v-else-if="queryDetail.state === 'unknown'">
+              No class by that name{{ queryDetail.side ? ` (${queryDetail.side})` : '' }}.
+            </template>
+
+            <template v-else-if="queryDetail.state === 'ambiguous'">
+              <p class="text-[var(--color-text)]">
+                Several classes share that name{{ queryDetail.side ? ` (${queryDetail.side})` : '' }} — add the package:
+              </p>
+              <div class="mt-1 flex flex-wrap gap-1">
+                <span v-for="c in queryDetail.candidates" :key="c.id" class="font-mono">
+                  {{ c.package }}.{{ c.class_name }}
+                </span>
+              </div>
+            </template>
+
+            <template v-else-if="queryDetail.kind === 'path'">
+              <template v-if="queryDetail.state === 'none'">
+                <span class="text-[var(--color-warning)]">No route</span> from
+                <span class="font-mono">{{ queryDetail.from.class_name }}</span> to
+                <span class="font-mono">{{ queryDetail.to.class_name }}</span> — nothing it uses ever
+                reaches it. Both are in the picture.
+              </template>
+              <template v-else>
+                <p>
+                  {{ queryDetail.paths.length }}{{ queryDetail.paths.length === MAX_PATHS ? '+' : '' }}
+                  route{{ queryDetail.paths.length === 1 ? '' : 's' }} · shortest
+                  {{ queryDetail.paths[0].length - 1 }} step{{ queryDetail.paths[0].length === 2 ? '' : 's' }}
+                </p>
+                <!-- Die kürzeste Kette ausgeschrieben: sie IST die Antwort, alles Weitere ist
+                     Variation. Die Namen sind Knöpfe – ein Weg, den man nicht begehen kann, ist
+                     eine Behauptung. -->
+                <div class="mt-1 flex flex-wrap items-center gap-x-1 gap-y-0.5">
+                  <template v-for="(id, i) in queryDetail.paths[0]" :key="i">
+                    <button
+                      type="button"
+                      class="font-mono text-[var(--color-text)] underline-offset-2 hover:text-[var(--color-accent)] hover:underline"
+                      @click="selectFile(id)"
+                    >{{ queryDetail.names[0][i] }}</button>
+                    <Icon
+                      v-if="i < queryDetail.paths[0].length - 1"
+                      icon="lucide:arrow-right"
+                      class="h-2.5 w-2.5 shrink-0"
+                    />
+                  </template>
+                </div>
+              </template>
+            </template>
+
+            <template v-else>
+              <p>
+                <span class="font-mono text-[var(--color-text)]">{{ queryDetail.target.class_name }}</span>
+                affects <span class="text-[var(--color-text)]">{{ queryDetail.total }}</span>
+                class{{ queryDetail.total === 1 ? '' : 'es' }}
+                <template v-if="queryDetail.total">
+                  · {{ queryDetail.direct }} directly · up to {{ queryDetail.maxDepth }} hop{{ queryDetail.maxDepth === 1 ? '' : 's' }} away
+                </template>
+              </p>
+              <p v-if="!queryDetail.total" class="mt-0.5">
+                Nothing uses it — changing it breaks nobody else.
+              </p>
+              <p v-if="queryDetail.truncated" class="mt-0.5 text-[var(--color-warning)]">
+                Stopped at {{ MAX_IMPACT }} — the real reach is larger.
+              </p>
+            </template>
+          </div>
         </div>
 
         <ul ref="treeListEl" class="min-h-0 flex-1 overflow-y-auto p-1.5">
@@ -1894,6 +1994,7 @@ function onResetPanels() {
             :target-end-line="activeTargetEndLine"
             :handoff-search="handoffSearch"
             @close="onDetailClose"
+            @query="applyQueryFromPanel"
           />
           <div
             v-else

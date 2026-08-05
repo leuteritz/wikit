@@ -37,7 +37,10 @@ const props = defineProps({
   // wurde (s. applyHandoffSearch), nicht der erste der Datei.
   handoffSearch: { type: Object, default: null },
 })
-const emit = defineEmits(['close', 'changed'])
+// `query` traegt eine fertige Abfrage nach oben in das EINE Suchfeld der Ansicht – die Antwort
+// gehoert dorthin, wo alle Antworten dieser Ansicht stehen (Baum + Graph), nicht in ein zweites
+// Panel neben dieser Klasse.
+const emit = defineEmits(['close', 'changed', 'query'])
 
 const router = useRouter()
 const { files, getFile, deleteFile, linkArticle, userContext, getFileVersions, getVersionSource } = useJavaAnalyzer()
@@ -642,9 +645,18 @@ async function removeFile() {
           <span v-tip="'Branch points across every member (if, loop, case, catch, &&, ||, ?:)'">
             {{ metrics.complexity }} branches
           </span>
-          <span v-tip="'Classes that use this one / classes it uses'">
-            {{ metrics.fanIn }} in · {{ metrics.fanOut }} out
-          </span>
+          <!-- ⚠️ Die EINGEHENDE Zahl ist der Knopf, nicht ein zusaetzliches Bedienelement: „2 in"
+               ist bereits die Frage „wer benutzt mich?", und ihre vollstaendige Antwort ist die
+               transitive Huelle. Ein eigener „Impact"-Knopf daneben waere dieselbe Frage zweimal. -->
+          <button
+            v-if="metrics.fanIn"
+            v-tip="{ title: `${metrics.fanIn} classes use this one`, hint: 'Click for everything that breaks if it changes — direct and further out.' }"
+            type="button"
+            class="underline-offset-2 transition hover:text-[var(--color-accent)] hover:underline"
+            @click="emit('query', `impact: ${head?.package ? head.package + '.' : ''}${head?.class_name}`)"
+          >{{ metrics.fanIn }} in</button>
+          <span v-else v-tip="'Nothing uses this class'">0 in</span>
+          <span v-tip="'Classes this one uses'">{{ metrics.fanOut }} out</span>
           <span
             v-if="metrics.cycle != null"
             v-tip="'This class sits in a dependency cycle — see Insights'"

@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.5.0",
-  "whatsNew": "Insights: cycles, hotspots and package balance",
+  "version": "4.6.0",
+  "whatsNew": "Routes between two classes, and what a change hits",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

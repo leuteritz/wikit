@@ -12,6 +12,7 @@
 // Geschmacksfrage: eine Rolle (`r:`) entsteht erst im gezeichneten Ausschnitt – siehe `queryFiles`.
 
 import { indexFilesByName, resolveClassByName, endsOf } from './packageGraph.js'
+import { findClassByTerm, findPaths, impactSet } from './graphPaths.js'
 
 // Praefixe: ein Buchstabe + Doppelpunkt. Kurz genug, um sie zu tippen, statt sie zu suchen.
 const FIELD_BY_PREFIX = {
@@ -26,7 +27,12 @@ const FIELD_BY_PREFIX = {
 // `cycle:` und `hotspot:` kommen aus dem Insights-Bereich – dieselbe Antwort, nur an der Stelle
 // gestellt, an der man ohnehin sucht. Sie brauchen als einzige eine dritte Quelle (die gerechneten
 // Kennzahlen), und ohne sie finden sie nichts; `queryFiles` sagt das ueber `needsInsights`.
-const FLAGS = new Set(['review', 'manual', 'cycle', 'hotspot'])
+const FLAGS = new Set(['review', 'manual', 'cycle', 'hotspot', 'path', 'impact'])
+
+// `path:` trennt Start und Ziel mit `>` – ein Pfeil, den man tippen kann. Alles andere waere
+// entweder ein Sonderzeichen, das auf keiner Tastatur bequem liegt, oder ein Wort („to"), das
+// selbst ein Klassenname sein kann.
+const PATH_SEP = '>'
 
 // Ab welchem Score `hotspot:` ohne Zahl greift. Die oberen Raenge sind eine Arbeitsliste; ein
 // niedrigerer Schnitt gaebe die halbe Codebasis zurueck und damit keine Auswahl.
@@ -37,7 +43,8 @@ export const GRAPH_QUERY_HELP =
   'follow it. Prefixes narrow it down — m: method, c: class, p: package, t: type (interface, enum, ' +
   'data…), r: role (hub, provider, consumer — within the drawn graph). review: shows every uncertain ' +
   'edge, manual: every hand-made one. cycle: shows classes caught in a dependency loop, ' +
-  'hotspot: the heaviest ones (hotspot: 80 raises the bar).'
+  'hotspot: the heaviest ones (hotspot: 80 raises the bar). path: A > B draws the routes from one ' +
+  'class to another, impact: A everything that breaks if A changes.'
 
 // Die Facetten als Liste: EINE Quelle für die Chips unter dem Suchfeld und die Hilfe darüber.
 export const QUERY_FACETS = [
@@ -50,6 +57,8 @@ export const QUERY_FACETS = [
   { prefix: 'manual:', label: 'hand-made edges' },
   { prefix: 'cycle:', label: 'in a cycle' },
   { prefix: 'hotspot:', label: 'heaviest classes' },
+  { prefix: 'path:', label: 'route A > B' },
+  { prefix: 'impact:', label: 'who breaks if I change it' },
 ]
 
 /**
@@ -146,7 +155,7 @@ const serverEdgeData = (e) => ({
  *   scope === 'picture'   – nur der gezeichnete Ausschnitt kann sie beantworten (`r:`, s. u.).
  *   edges                 – wie viele gespeicherte Kanten die Abfrage trifft (Bilanz im Feld).
  */
-export function queryFiles({ files = [], serverEdges = [], insights = null } = {}, q) {
+export function queryFiles({ files = [], serverEdges = [], insights = null, graph = null } = {}, q) {
   if (!q) return { fileIds: null, edges: 0, scope: 'names' }
 
   // ⚠️ `r:` ist die einzige Facette, die der Bestand NICHT beantworten kann: die Rolle einer Klasse
@@ -176,6 +185,14 @@ export function queryFiles({ files = [], serverEdges = [], insights = null } = {
       fileIds.add(c.id)
     }
     return { fileIds, edges: 0, scope: 'files' }
+  }
+
+  // Wege und Wirkung: die Antwort ist keine Menge von Namen, sondern eine STRECKE im Graphen.
+  // Beide brauchen den gerichteten Klassengraphen, den der Aufrufer gemerkt hat (ihn hier je
+  // Tastendruck neu zu bauen hiesse, den ganzen Kantenbestand pro Zeichen einmal aufzuloesen).
+  if (q.flag === 'path' || q.flag === 'impact') {
+    if (!graph) return { fileIds: new Set(), edges: 0, scope: 'files' }
+    return q.flag === 'path' ? routeQuery(files, graph, q.term) : impactQuery(files, graph, q.term)
   }
 
   // Kantenfacetten: die Antwort steht in den Kanten, gefragt sind die Klassen daran.
@@ -216,4 +233,85 @@ export function matchEdge(data, q) {
   if (!term) return false
   if (q.field === 'method' || q.field === 'any') return edgeMethods(data).includes(term)
   return false
+}
+
+// --- `path:` und `impact:` ---------------------------------------------------------------------
+//
+// Beide geben zusaetzlich zu den Treffern ein `detail`: die Leiste unter dem Suchfeld erzaehlt
+// damit, WAS gefunden wurde („3 routes, shortest 4 steps"). Eine Trefferzahl allein waere hier die
+// schwaechere Haelfte der Antwort – gefragt war eine Strecke, nicht eine Menge.
+
+/** `path: A > B` – die Wege von A nach B. */
+function routeQuery(files, graph, term) {
+  const [rawFrom, rawTo] = String(term || '').split(PATH_SEP)
+  const from = findClassByTerm(files, rawFrom || '')
+  const to = findClassByTerm(files, rawTo || '')
+  // Solange das Ziel fehlt, ist die Eingabe angefangen und keine Anfrage – wie `m:` ohne Begriff.
+  if (!rawTo || !rawTo.trim()) {
+    return { fileIds: new Set(), edges: 0, scope: 'files', detail: { kind: 'path', state: 'incomplete' } }
+  }
+  // ⚠️ Mehrdeutig heisst mehrdeutig: zwei Klassen namens `Header` ergeben zwei verschiedene
+  // Antworten, und eine davon zu waehlen waere geraten. Der Nutzer bekommt die Kandidaten.
+  for (const [side, hit] of [['from', from], ['to', to]]) {
+    if (!hit.file) {
+      return {
+        fileIds: new Set(),
+        edges: 0,
+        scope: 'files',
+        detail: { kind: 'path', state: hit.candidates.length ? 'ambiguous' : 'unknown', side, candidates: hit.candidates },
+      }
+    }
+  }
+
+  const paths = findPaths(graph.out, from.file.id, to.file.id)
+  const fileIds = new Set()
+  for (const path of paths) for (const id of path) fileIds.add(id)
+  // Auch ohne Weg gehoeren beide Enden ins Bild: „von hier kommt man nicht dorthin" ist eine
+  // Aussage ueber ZWEI Klassen, und ein leerer Ausschnitt zeigt keine davon.
+  if (!paths.length) {
+    fileIds.add(from.file.id)
+    fileIds.add(to.file.id)
+  }
+  return {
+    fileIds,
+    edges: 0,
+    scope: 'files',
+    detail: {
+      kind: 'path',
+      state: paths.length ? 'ok' : 'none',
+      from: from.file,
+      to: to.file,
+      paths,
+      names: paths.map((p) => p.map((id) => files.find((f) => f.id === id)?.class_name || id)),
+    },
+  }
+}
+
+/** `impact: A` – alles, was A benutzt und damit von einer Aenderung getroffen wird. */
+function impactQuery(files, graph, term) {
+  const hit = findClassByTerm(files, term)
+  if (!hit.file) {
+    return {
+      fileIds: new Set(),
+      edges: 0,
+      scope: 'files',
+      detail: { kind: 'impact', state: term ? (hit.candidates.length ? 'ambiguous' : 'unknown') : 'incomplete', candidates: hit.candidates },
+    }
+  }
+  const { depths, truncated } = impactSet(graph.in, hit.file.id)
+  const fileIds = new Set(depths.keys())
+  // Die geaenderte Klasse gehoert dazu – sie ist der Grund, aus dem die anderen im Bild stehen.
+  fileIds.add(hit.file.id)
+  let direct = 0
+  let maxDepth = 0
+  for (const d of depths.values()) {
+    if (d === 1) direct++
+    if (d > maxDepth) maxDepth = d
+  }
+  return {
+    fileIds,
+    edges: 0,
+    scope: 'files',
+    detail: { kind: 'impact', state: 'ok', target: hit.file, total: depths.size, direct, maxDepth, truncated, depths },
+  }
 }
