@@ -26,12 +26,14 @@
 // ⚠️ **Nachbarn sind zuschaltbar und NIE vorausgewaehlt** (s. `TOPIC_SOURCES`). Sie sind der
 // Unterschied zwischen „alles was JT heisst" und „alles was mit JT zu tun hat" – aber auch der
 // schnellste Weg, versehentlich die halbe Codebasis zu kopieren.
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { useJavaGraph } from '../composables/useJavaGraph.js'
 import { api } from '../lib/api.js'
 import { BIG_CLIPBOARD_BYTES, copyToClipboard } from '../lib/clipboard.js'
+import { findMatches, MATCH_LIMIT } from '../lib/codeSearch.js'
+import { addLineNumbers, clearMatches, paintMatches } from '../lib/javaCode.js'
 import { formatBytes } from '../lib/format.js'
 import {
   MAX_CANDIDATES,
@@ -56,9 +58,6 @@ const TERM_DEBOUNCE_MS = 280
 // Gruppe mehrmals je Sekunde. Etwas laenger als das Feld, weil hier ein Klick und kein Anschlag
 // den Anstoss gibt: wer zwei Haken setzt, meint beide.
 const EXPORT_DEBOUNCE_MS = 320
-// Wie viele Zeilen des Buendels die Vorschau zeigt. Darueber liest sie niemand mehr, und ein
-// <pre> mit 20.000 Zeilen macht das Scrollen zaeh. Was fehlt, steht darunter.
-const PREVIEW_LINES = 400
 // Fuer die Bedeutungssuche gilt derselbe Mindestumfang wie in der Palette – bei zwei Zeichen hat
 // ein Embedding-Modell nichts zu deuten. Name und Quelltext antworten trotzdem, und genau das ist
 // der Grund, warum ein Thema hier vier Quellen hat.
@@ -67,6 +66,14 @@ const MEANING_MIN_CHARS = 3
 // Palette nimmt dort ihre 25 – dort ist die Fundstelle die Auskunft, hier die Klasse.
 const CODE_FILE_LIMIT = 60
 const MEANING_LIMIT = 40
+
+// Dieselben drei Schalter, dieselben Icons und dieselbe Bedeutung wie in der Suchleiste des
+// Source-Tabs und in der Palette – wer hier sucht, sucht nach denselben Regeln wie dort.
+const SEARCH_TOGGLES = [
+  { key: 'caseSensitive', icon: 'lucide:case-sensitive', title: 'Match case' },
+  { key: 'wholeWord', icon: 'lucide:whole-word', title: 'Match whole word' },
+  { key: 'regex', icon: 'lucide:regex', title: 'Use regular expression' },
+]
 
 const term = ref(String(route.query.q || ''))
 const applied = ref(term.value)
@@ -222,6 +229,12 @@ const selectionTouched = ref(false)
 watch(applied, () => {
   selectionTouched.value = false
   selected.value = new Set()
+  // Eine aufgeschlagene Klasse gehoert zum alten Thema – sie stehenzulassen zeigte neben der neuen
+  // Liste einen Quelltext, der mit ihr nichts zu tun hat.
+  pane.value = 'bundle'
+  openClass.value = null
+  bundleQuery.value = ''
+  bundleCursor.value = 0
 })
 watch(
   () => topic.value.hits,
@@ -309,9 +322,280 @@ const tokenLabel = computed(() => {
 })
 const isBig = computed(() => bundleBytes.value > BIG_CLIPBOARD_BYTES)
 
-const previewLines = computed(() => (bundle.value?.text || '').split('\n'))
-const previewText = computed(() => previewLines.value.slice(0, PREVIEW_LINES).join('\n'))
-const previewCut = computed(() => Math.max(0, previewLines.value.length - PREVIEW_LINES))
+// Wo im Text welche Klasse steht (vom Server, s. `exportAll`). Ohne diese Landkarte koennte der
+// Hover nirgends hinspringen, und die Liste wuesste nicht, wie schwer eine Klasse wiegt.
+const spanById = computed(() => new Map((bundle.value?.files || []).map((f) => [f.fileId, f])))
+
+// ⚠️ Der Umfang je Klasse wird GEMERKT, nicht nur angezeigt. Er kommt aus dem Export, und der
+// kennt nur die ausgewaehlten Klassen – eine abgewaehlte haette ihre Zahl also sofort wieder
+// verloren, ausgerechnet in dem Moment, in dem man sie mit den anderen vergleichen will. Die
+// Zahlen aendern sich ohnehin nicht, solange der Quelltext derselbe ist.
+const sizeById = ref(new Map())
+watch(
+  () => bundle.value?.files,
+  (list) => {
+    if (!list?.length) return
+    const next = new Map(sizeById.value)
+    for (const f of list) next.set(f.fileId, { lines: f.lines, bytes: f.bytes })
+    sizeById.value = next
+  },
+)
+watch(applied, () => {
+  sizeById.value = new Map()
+})
+
+// --- Die Vorschau ist ein FENSTER auf den Text -----------------------------------------------
+// ⚠️ Den ganzen Text zu rendern geht nicht: zwanzig Klassen sind schnell ein paar tausend Zeilen,
+// und die entstehen bei JEDEM Haken neu. Also ein Fenster fester Groesse – aber eines, das dem
+// Interesse folgt statt stur bei Zeile 1 zu stehen: der Hover ueber einer Klasse zieht es zu ihr,
+// der aktive Suchtreffer ebenso. Gezaehlt und gesucht wird trotzdem im GANZEN Text (sonst waere
+// „3 von 47" eine Aussage ueber den Ausschnitt statt ueber das Buendel).
+const WINDOW_LINES = 600
+// So viele Zeilen bleiben ueber der angefahrenen Stelle stehen – ein Sprung, der die Zeile an den
+// oberen Rand setzt, verliert den Zusammenhang davor.
+const WINDOW_LEAD = 12
+const windowStart = ref(0)
+const previewBody = ref(null)
+
+const allLines = computed(() => (bundle.value?.text || '').split('\n'))
+// Zeichen-Offset jeder Zeile im vollen Text – die Bruecke zwischen der Suche (rechnet auf dem
+// ganzen Text) und dem gerenderten Fenster (kennt nur seinen Ausschnitt).
+const lineOffsets = computed(() => {
+  const offs = new Array(allLines.value.length)
+  let o = 0
+  allLines.value.forEach((l, i) => {
+    offs[i] = o
+    o += l.length + 1
+  })
+  return offs
+})
+const lineOfOffset = (off) => {
+  const offs = lineOffsets.value
+  let lo = 0
+  let hi = offs.length - 1
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1
+    if (offs[mid] <= off) lo = mid
+    else hi = mid - 1
+  }
+  return lo
+}
+
+const escapeHtml = (s) =>
+  String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+// Das Fenster als EIN HTML-String, Zeile für Zeile als `.line` – dieselbe Struktur, die Shiki
+// liefert. Damit gelten `shikiText`/`paintMatches` unveraendert (ein zweiter Markierungsweg fuer
+// denselben Zweck waere genau die Doppelung, gegen die die Helfer einmal gebaut wurden).
+// `v-html` statt `v-for`: `paintMatches` zerschneidet Textknoten, und Vue darf sie danach nicht
+// mehr als seine eigenen betrachten.
+const windowHtml = computed(() => {
+  const from = windowStart.value
+  const lines = allLines.value.slice(from, from + WINDOW_LINES)
+  if (!lines.length) return ''
+  return lines
+    .map((l, i) => `<span class="line" data-line="${from + i + 1}">${escapeHtml(l)}</span>`)
+    .join('')
+})
+const windowOffset = computed(() => lineOffsets.value[windowStart.value] ?? 0)
+const windowEndLine = computed(() => Math.min(allLines.value.length, windowStart.value + WINDOW_LINES))
+const hiddenBefore = computed(() => windowStart.value)
+const hiddenAfter = computed(() => Math.max(0, allLines.value.length - windowEndLine.value))
+
+// Eine Zeile ins Bild holen. Das Fenster wandert nur, wenn sie ausserhalb liegt – sonst spraenge
+// es bei jedem Hover, obwohl schon alles zu sehen ist.
+async function revealLine(line1) {
+  const idx = Math.max(0, line1 - 1)
+  if (idx < windowStart.value || idx >= windowStart.value + WINDOW_LINES - 2) {
+    windowStart.value = Math.max(0, idx - WINDOW_LEAD)
+  }
+  await nextTick()
+  scrollToLine(idx + 1)
+}
+function scrollToLine(line1) {
+  const box = previewBody.value
+  const el = box?.querySelector(`.line[data-line="${line1}"]`)
+  if (!box || !el) return
+  const delta = el.getBoundingClientRect().top - box.getBoundingClientRect().top
+  box.scrollTop = Math.max(0, box.scrollTop + delta - box.clientHeight / 4)
+}
+
+// Neuer Text -> zurueck an den Anfang. Ein Fenster, das nach einem Haken irgendwo mitten im alten
+// Stand stehen bleibt, zeigt eine Stelle, nach der niemand gefragt hat.
+watch(
+  () => bundle.value?.text,
+  () => {
+    windowStart.value = 0
+    if (previewBody.value) previewBody.value.scrollTop = 0
+  },
+)
+
+// --- Hover: die Klasse im Buendel zeigen ------------------------------------------------------
+// ⚠️ Der Hover WECHSELT NICHTS – er fuehrt hin. Die rechte Spalte beantwortet „was landet in der
+// Ablage?", und eine Klasse einzeln daraufzulegen hiesse, diese Antwort bei jeder Mausbewegung
+// gegen eine andere zu tauschen. Stattdessen faehrt das Fenster zu ihrem Abschnitt und markiert
+// ihn: dieselbe Frage, nur an der richtigen Stelle. Wer die Klasse fuer sich sehen will, klickt.
+// Verweildauer wie im Graphen und in der Palette: Hover ist eine Absicht, keine Beruehrung.
+const HOVER_INTENT_MS = 180
+const hoverId = ref(null)
+let hoverTimer = null
+
+function hoverHit(hit) {
+  clearTimeout(hoverTimer)
+  // Eine Klasse, die nicht ausgewaehlt ist, steht nicht im Text – dorthin zu springen gaebe es
+  // nichts. Ihr Weg ist der Knopf in der Zeile.
+  if (!spanById.value.has(hit.fileId)) return
+  hoverTimer = setTimeout(() => {
+    const span = spanById.value.get(hit.fileId)
+    if (!span || pane.value !== 'bundle') return
+    hoverId.value = hit.fileId
+    revealLine(span.startLine)
+  }, HOVER_INTENT_MS)
+}
+function leaveHits() {
+  clearTimeout(hoverTimer)
+  hoverId.value = null
+}
+
+// Markiert wird direkt am DOM (wie `paintMatches`), nicht ueber ein `v-for` mit Klassenbindung:
+// das Fenster ist ein `v-html`-Block, und ein zweiter Renderweg fuer dieselben Zeilen waere die
+// Stelle, an der Markierung und Suche sich gegenseitig ueberschreiben.
+const LIT_CLASS = 'tp-lit'
+watch([hoverId, windowHtml], async () => {
+  await nextTick()
+  const box = previewBody.value
+  if (!box) return
+  for (const el of box.querySelectorAll(`.${LIT_CLASS}`)) el.classList.remove(LIT_CLASS)
+  const span = spanById.value.get(hoverId.value)
+  if (!span) return
+  for (let l = span.startLine; l < span.startLine + span.lines; l++) {
+    box.querySelector(`.line[data-line="${l}"]`)?.classList.add(LIT_CLASS)
+  }
+})
+
+// --- Suche ueber das ganze Buendel ------------------------------------------------------------
+// Dieselbe Leiste und dieselbe Musterlogik wie im Source-Tab und in der Suchpalette
+// (`findMatches`): wer ein Buendel vor sich hat, sucht darin dasselbe, was er in einer Klasse
+// suchen wuerde – nur eben ueber alle ausgewaehlten auf einmal. Genau das kann die Einzelansicht
+// nicht, und deshalb sitzt die Suche hier und nicht dort.
+const bundleQuery = ref('')
+const bundleOpts = ref({ caseSensitive: false, wholeWord: false, regex: false })
+const bundleCursor = ref(0)
+
+const bundleResult = computed(() =>
+  bundle.value?.text
+    ? findMatches(bundle.value.text, { query: bundleQuery.value, ...bundleOpts.value })
+    : { matches: [], capped: false, error: '' },
+)
+const bundleMatches = computed(() => bundleResult.value.matches)
+const bundleActive = computed(() => {
+  const n = bundleMatches.value.length
+  if (!n) return -1
+  return ((bundleCursor.value % n) + n) % n
+})
+const bundleCounter = computed(() => {
+  if (!bundleQuery.value) return ''
+  if (bundleResult.value.error) return 'Invalid regex'
+  if (!bundleMatches.value.length) return 'No results'
+  return `${bundleActive.value + 1}/${bundleMatches.value.length}${bundleResult.value.capped ? '+' : ''}`
+})
+const bundleCounterTitle = computed(() => {
+  if (bundleResult.value.error) return bundleResult.value.error
+  if (bundleResult.value.capped) return `Showing the first ${MATCH_LIMIT} matches`
+  return ''
+})
+const bundleFailed = computed(
+  () => !!bundleQuery.value && (!!bundleResult.value.error || !bundleMatches.value.length),
+)
+
+function setBundleQuery(v) {
+  bundleQuery.value = v
+  bundleCursor.value = 0
+}
+function toggleBundleOpt(key) {
+  bundleOpts.value = { ...bundleOpts.value, [key]: !bundleOpts.value[key] }
+  bundleCursor.value = 0
+}
+function stepBundleMatch(delta) {
+  if (bundleMatches.value.length) bundleCursor.value += delta
+}
+
+// Der aktive Treffer zieht das Fenster mit – ein Zaehler, der auf eine Stelle zeigt, die man nicht
+// sehen kann, ist keine Auskunft.
+watch(bundleActive, async (i) => {
+  const m = bundleMatches.value[i]
+  if (!m || pane.value !== 'bundle') return
+  await revealLine(lineOfOffset(m.from) + 1)
+})
+
+// Markieren: die Offsets gelten im GANZEN Text, das gerenderte Fenster kennt nur seinen Ausschnitt
+// – also werden sie um den Fensteranfang verschoben und alles ausserhalb faellt weg. Der aktive
+// Treffer behaelt dabei seine Kennzeichnung, sofern er im Bild ist.
+watch([bundleMatches, bundleActive, windowHtml], async () => {
+  await nextTick()
+  const box = previewBody.value
+  if (!box) return
+  if (!bundleMatches.value.length) {
+    clearMatches(box)
+    return
+  }
+  const from = windowOffset.value
+  const to = from + (allLines.value.slice(windowStart.value, windowEndLine.value).join('\n').length || 0)
+  const local = []
+  let activeLocal = -1
+  bundleMatches.value.forEach((m, i) => {
+    if (m.to <= from || m.from >= to) return
+    if (i === bundleActive.value) activeLocal = local.length
+    local.push({ from: m.from - from, to: m.to - from })
+  })
+  paintMatches(box, local, activeLocal)
+  if (activeLocal >= 0) {
+    const hit = box.querySelector('.cs-hit--active')
+    if (hit) {
+      const delta = hit.getBoundingClientRect().top - box.getBoundingClientRect().top
+      box.scrollTop = Math.max(0, box.scrollTop + delta - box.clientHeight / 3)
+    }
+  }
+})
+
+// --- Eine Klasse fuer sich --------------------------------------------------------------------
+// Der zweite Modus derselben Spalte (Umschalter „Bundle · Class", `v-show` – dieselbe Bauart wie
+// „Class · Relation" in der Code-Ansicht). Er beantwortet die andere Frage: nicht „was nehme ich
+// mit?", sondern „was ist das ueberhaupt?". Fuer eine Klasse, die gerade NICHT ausgewaehlt ist,
+// ist er der einzige Weg – sie steht im Buendeltext ja nicht drin.
+const pane = ref('bundle')
+const openClass = ref(null)
+const classLoading = ref(false)
+const classSince = ref(0)
+let classToken = 0
+
+async function showClass(hit) {
+  clearTimeout(hoverTimer)
+  hoverId.value = null
+  pane.value = 'class'
+  const token = ++classToken
+  openClass.value = { ...hit, html: '', totalLines: null }
+  classLoading.value = true
+  classSince.value = Date.now()
+  try {
+    // `line: 1` + `full` = die ganze Klasse; markiert wird nichts, es ist keine Fundstelle gemeint.
+    const win = await api.getJavaSourceWindow(hit.fileId, hit.classLine || 1, { full: true })
+    if (token !== classToken) return
+    openClass.value = {
+      ...hit,
+      html: addLineNumbers(win.html, win.startLine, { keepBlank: true, highlight: win.hitLine }),
+      totalLines: win.totalLines,
+      truncated: win.truncated,
+    }
+  } catch {
+    if (token === classToken) openClass.value = { ...hit, html: '', failed: true }
+  } finally {
+    if (token === classToken) classLoading.value = false
+  }
+}
+function backToBundle() {
+  pane.value = 'bundle'
+}
 
 // --- Mitnehmen ------------------------------------------------------------------------------
 const copied = ref(false)
@@ -346,7 +630,7 @@ function downloadBundle() {
 // die Klasse?". Derselbe Handoff wie aus der Palette und aus den Insights.
 function openInCode(hit) {
   lastFileId.value = hit.fileId
-  lastTargetLine.value = null
+  lastTargetLine.value = hit.classLine || null
   router.push('/code')
 }
 
@@ -383,6 +667,7 @@ onMounted(() => {
 onUnmounted(() => {
   clearTimeout(termTimer)
   clearTimeout(bundleTimer)
+  clearTimeout(hoverTimer)
   abortSearch()
 })
 </script>
@@ -573,11 +858,22 @@ onUnmounted(() => {
                   </button>
 
                   <ul>
+                    <!-- ⚠️ Der Hover fuehrt rechts HIN, er tauscht nichts aus: das Fenster faehrt
+                         zum Abschnitt dieser Klasse und markiert ihn. Die gehoverte Zeile traegt
+                         denselben Balken wie ihre Zeilen im Text – sonst ist nicht zu sehen, wer
+                         von beiden gemeint ist. -->
                     <li
                       v-for="hit in g.items"
                       :key="hit.fileId"
-                      class="flex items-start gap-2 border-t border-[var(--color-border)]/50 px-3 py-2 transition hover:bg-[var(--color-surface-offset)]/40"
-                      :class="selected.has(hit.fileId) ? '' : 'opacity-55'"
+                      class="tp-row flex items-start gap-2 border-t border-[var(--color-border)]/50 px-3 py-2 transition"
+                      :class="[
+                        selected.has(hit.fileId) ? '' : 'opacity-55',
+                        hoverId === hit.fileId
+                          ? 'bg-[var(--color-accent-soft)]/40 shadow-[inset_2px_0_0_var(--color-accent)]'
+                          : 'hover:bg-[var(--color-surface-offset)]/40',
+                      ]"
+                      @mouseenter="hoverHit(hit)"
+                      @mouseleave="leaveHits()"
                     >
                       <button
                         type="button"
@@ -614,17 +910,43 @@ onUnmounted(() => {
                             {{ r.detail }}<template v-if="r.count > 1"> +{{ r.count - 1 }}</template>
                           </span>
                         </span>
+                        <!-- Der Umfang der Klasse: die Zahl, an der man entscheidet, wen man
+                             wieder abwählt, wenn das Bündel zu schwer wird. Echte Zeilen und Bytes
+                             aus dem Export – eine Schätzung wäre hier wertlos. -->
+                        <span
+                          v-if="sizeById.get(hit.fileId)"
+                          class="mt-1 block font-mono text-3xs tabular-nums text-[var(--color-text-muted)] opacity-80"
+                        >
+                          {{ sizeById.get(hit.fileId).lines }} lines ·
+                          {{ formatBytes(sizeById.get(hit.fileId).bytes) }}
+                        </span>
                       </button>
 
-                      <button
-                        type="button"
-                        class="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-accent)]"
-                        title="Open this class in the code view"
-                        aria-label="Open this class in the code view"
-                        @click="openInCode(hit)"
-                      >
-                        <Icon icon="lucide:arrow-up-right" class="h-3.5 w-3.5" />
-                      </button>
+                      <span class="mt-0.5 flex shrink-0 flex-col gap-0.5">
+                        <!-- Die Klasse für sich ansehen: der einzige Weg für eine, die gerade nicht
+                             ausgewählt ist – sie steht im Bündeltext nicht drin. -->
+                        <button
+                          type="button"
+                          class="grid h-5 w-5 place-items-center rounded transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-accent)]"
+                          :class="openClass?.fileId === hit.fileId && pane === 'class'
+                            ? 'text-[var(--color-accent)]'
+                            : 'text-[var(--color-text-muted)]'"
+                          title="Show this class on its own"
+                          aria-label="Show this class on its own"
+                          @click="showClass(hit)"
+                        >
+                          <Icon icon="lucide:file-code" class="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          class="grid h-5 w-5 place-items-center rounded text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-accent)]"
+                          title="Open this class in the code view"
+                          aria-label="Open this class in the code view"
+                          @click="openInCode(hit)"
+                        >
+                          <Icon icon="lucide:arrow-up-right" class="h-3.5 w-3.5" />
+                        </button>
+                      </span>
                     </li>
                   </ul>
                 </section>
@@ -648,20 +970,122 @@ onUnmounted(() => {
         </section>
 
         <!-- ---------- Rechts: was in der Ablage landet ---------- -->
+        <!-- ZWEI Modi, EINE Spalte (`v-show`, damit Scrollstand und Suchposition des Bündels einen
+             Abstecher in eine Klasse überleben – dieselbe Bauart wie „Class · Relation" in der
+             Code-Ansicht). Der Umschalter erscheint erst, wenn es etwas zu schalten gibt. -->
         <section class="flex min-h-0 flex-1 flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]">
           <header class="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--color-border)] px-4 py-2.5">
-            <Icon icon="lucide:clipboard-copy" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
-            <h2 class="text-[0.8125rem] font-semibold text-[var(--color-text)]">What lands in your clipboard</h2>
+            <template v-if="openClass">
+              <div class="flex shrink-0 items-center gap-0.5 rounded-lg border border-[var(--color-border)] p-0.5">
+                <button
+                  v-for="p in [
+                    { id: 'bundle', label: 'Bundle', icon: 'lucide:clipboard-copy' },
+                    { id: 'class', label: 'Class', icon: 'lucide:file-code' },
+                  ]"
+                  :key="p.id"
+                  type="button"
+                  class="inline-flex h-6 items-center gap-1 rounded px-2 text-2xs font-semibold transition"
+                  :class="pane === p.id
+                    ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)]'
+                    : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]'"
+                  :aria-pressed="pane === p.id"
+                  @click="pane = p.id"
+                >
+                  <Icon :icon="p.icon" class="h-3 w-3" />
+                  {{ p.label }}
+                </button>
+              </div>
+            </template>
+            <Icon v-else icon="lucide:clipboard-copy" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+
+            <h2 v-if="pane === 'bundle'" class="min-w-0 truncate text-[0.8125rem] font-semibold text-[var(--color-text)]">
+              What lands in your clipboard
+            </h2>
+            <h2 v-else class="flex min-w-0 items-baseline gap-2">
+              <span class="truncate text-[0.8125rem] font-semibold text-[var(--color-text)]">{{ openClass?.className }}</span>
+              <span class="truncate font-mono text-3xs text-[var(--color-text-muted)]">
+                {{ openClass?.package || 'default package' }}
+              </span>
+            </h2>
+
             <span
-              v-if="bundle?.classes"
+              v-if="pane === 'bundle' && bundle?.classes"
               v-tip="'The token count is an estimate — roughly 3.5 characters per token.'"
-              class="ml-auto font-mono text-2xs tabular-nums text-[var(--color-text-muted)]"
+              class="ml-auto shrink-0 font-mono text-2xs tabular-nums text-[var(--color-text-muted)]"
             >
               {{ bundle.classes }} classes · {{ bundle.packages }} packages · {{ sizeLabel }} · {{ tokenLabel }}
             </span>
+            <span
+              v-else-if="pane === 'class' && openClass?.totalLines"
+              class="ml-auto shrink-0 font-mono text-2xs tabular-nums text-[var(--color-text-muted)]"
+            >
+              {{ openClass.totalLines }} lines
+            </span>
           </header>
 
-          <div class="min-h-0 flex-1 overflow-auto p-4">
+          <!-- Suchleiste des Bündels: gleiche Bauart wie im Source-Tab, aber sie durchsucht ALLE
+               ausgewählten Klassen auf einmal. Genau das kann die Einzelansicht nicht, und deshalb
+               sitzt sie hier und nicht dort. -->
+          <div
+            v-show="pane === 'bundle' && bundle?.text"
+            class="flex w-full min-w-0 flex-wrap items-center gap-0.5 border-b border-[var(--color-border)] px-4 py-1.5"
+          >
+            <div
+              class="flex w-full min-w-0 flex-wrap items-center gap-0.5 rounded-lg border bg-[var(--color-surface)] px-1.5 py-0.5 transition"
+              :class="bundleFailed ? 'border-[var(--color-danger)]' : 'border-[var(--color-border)] focus-within:border-[var(--color-accent)]'"
+            >
+              <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
+              <input
+                :value="bundleQuery"
+                type="text"
+                placeholder="Search across every selected class…"
+                aria-label="Search the bundle"
+                spellcheck="false"
+                class="min-w-[8rem] flex-1 bg-transparent py-0.5 text-xs text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
+                @input="setBundleQuery($event.target.value)"
+                @keydown.enter.prevent="stepBundleMatch($event.shiftKey ? -1 : 1)"
+                @keydown.esc.prevent="setBundleQuery('')"
+              />
+              <span
+                v-if="bundleCounter"
+                :title="bundleCounterTitle"
+                class="shrink-0 whitespace-nowrap px-0.5 font-mono text-3xs tabular-nums"
+                :class="bundleFailed ? 'text-[var(--color-danger)]' : 'text-[var(--color-text-muted)]'"
+              >{{ bundleCounter }}</span>
+              <button
+                v-for="o in SEARCH_TOGGLES"
+                :key="o.key"
+                type="button"
+                class="grid h-5 w-5 shrink-0 place-items-center rounded transition"
+                :class="bundleOpts[o.key]
+                  ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)]'
+                  : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]'"
+                :title="o.title"
+                :aria-pressed="bundleOpts[o.key]"
+                @click="toggleBundleOpt(o.key)"
+              >
+                <Icon :icon="o.icon" class="h-3 w-3" />
+              </button>
+              <span class="mx-0.5 h-3.5 w-px shrink-0 bg-[var(--color-border)]" />
+              <button
+                v-for="n in [
+                  { icon: 'lucide:chevron-up', delta: -1, title: 'Previous match (Shift+Enter)' },
+                  { icon: 'lucide:chevron-down', delta: 1, title: 'Next match (Enter)' },
+                ]"
+                :key="n.delta"
+                type="button"
+                class="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-30"
+                :disabled="!bundleMatches.length"
+                :title="n.title"
+                @click="stepBundleMatch(n.delta)"
+              >
+                <Icon :icon="n.icon" class="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+
+          <!-- ===== Modus 1: das Bündel ===== -->
+          <div v-show="pane === 'bundle'" ref="previewBody" class="min-h-0 flex-1 overflow-auto p-4">
             <BusyState
               v-if="bundling && !bundle"
               variant="panel"
@@ -677,7 +1101,7 @@ onUnmounted(() => {
                 <p class="mt-2 text-sm text-[var(--color-text)]">Nothing picked.</p>
                 <p class="mt-1 text-2xs text-[var(--color-text-muted)]">
                   Tick the classes on the left — their full source shows up here, exactly as it will
-                  be copied.
+                  be copied. Hovering a class jumps to its part.
                 </p>
               </div>
             </div>
@@ -687,11 +1111,37 @@ onUnmounted(() => {
                 <Icon icon="lucide:alert-triangle" class="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span>{{ sizeLabel }} is a lot for a clipboard — the download is the safer way here.</span>
               </p>
+              <!-- Was oberhalb des Fensters liegt, wird angeschrieben – sonst liest sich der obere
+                   Rand wie der Anfang des Textes. -->
+              <p v-if="hiddenBefore" class="mb-1 font-mono text-3xs text-[var(--color-text-muted)] opacity-70">
+                ↑ {{ hiddenBefore.toLocaleString('en-US') }} lines above — all of them are copied.
+              </p>
               <!-- Bewusst ohne Syntax-Highlighting: die Frage ist „was landet in der Ablage?",
                    und die Antwort ist genau dieser Text. -->
-              <pre class="topic-preview text-2xs leading-relaxed text-[var(--color-text-muted)]">{{ previewText }}</pre>
-              <p v-if="previewCut" class="mt-2 font-mono text-3xs text-[var(--color-text-muted)]">
-                … {{ previewCut.toLocaleString('en-US') }} more lines — all of them are copied.
+              <pre class="topic-preview text-2xs leading-relaxed text-[var(--color-text-muted)]" v-html="windowHtml" />
+              <p v-if="hiddenAfter" class="mt-1 font-mono text-3xs text-[var(--color-text-muted)] opacity-70">
+                ↓ {{ hiddenAfter.toLocaleString('en-US') }} lines below — all of them are copied.
+              </p>
+            </template>
+          </div>
+
+          <!-- ===== Modus 2: eine Klasse für sich ===== -->
+          <div v-show="pane === 'class'" class="min-h-0 flex-1 overflow-auto p-4">
+            <BusyState
+              v-if="classLoading"
+              variant="panel"
+              title="Opening the class…"
+              :detail="openClass?.className || ''"
+              :since="classSince"
+              :rows="6"
+            />
+            <p v-else-if="openClass?.failed" class="notice-warning rounded-lg px-3 py-2 text-xs">
+              This class could not be read.
+            </p>
+            <template v-else-if="openClass?.html">
+              <div class="topic-class edge-code" v-html="openClass.html" />
+              <p v-if="openClass.truncated" class="mt-2 font-mono text-3xs text-[var(--color-text-muted)]">
+                Shown up to the cap — open it in the code view for the rest.
               </p>
             </template>
           </div>
@@ -737,5 +1187,34 @@ onUnmounted(() => {
 .topic-preview {
   white-space: pre;
   font-family: var(--font-mono, ui-monospace, monospace);
+}
+/* Jede Zeile ist ein eigenes Element – die Bezugsgroesse fuer `paintMatches` und die einzige
+   Moeglichkeit, den Abschnitt EINER Klasse zu markieren. `min-height` ist Pflicht: ein leeres
+   `<span>` mit `display:block` waere 0 px hoch, und der Text haette an jeder Leerzeile einen
+   Sprung, den der Original-Text nicht hat. */
+.topic-preview :deep(.line) {
+  display: block;
+  min-height: 1.5em;
+  border-left: 2px solid transparent;
+  padding-left: 0.4rem;
+}
+/* Der Abschnitt der gerade gehoverten Klasse. Ein Balken plus zarter Grund, nicht die
+   Akzentfarbe des Suchtreffers: „hier steht sie" ist eine andere Aussage als „hier steht dein
+   Suchbegriff", und beide koennen gleichzeitig gelten. */
+.topic-preview :deep(.tp-lit) {
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  border-left-color: var(--color-accent);
+}
+/* Suchtreffer im Buendel – dieselbe Gold-Familie und dieselbe Trennung aktiv/passiv wie in der
+   Palette und im Source-Tab. `color: inherit`, sonst gewinnt der Browser-Default fuer `mark`. */
+.topic-preview :deep(mark.cs-hit) {
+  background: color-mix(in srgb, var(--color-warning) 32%, transparent);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.topic-preview :deep(mark.cs-hit--active) {
+  background: color-mix(in srgb, var(--color-warning) 62%, transparent);
+  box-shadow: 0 0 0 1px var(--color-warning);
 }
 </style>

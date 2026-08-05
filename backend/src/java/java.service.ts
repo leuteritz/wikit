@@ -688,10 +688,10 @@ export class JavaService {
     // Eine LEERE Auswahl ist eine Auswahl, kein „alles": wer nichts angehakt hat, bekommt nichts.
     // Der Unterschied haengt am Argument, nicht an der Laenge – `null` heisst „ganzer Bestand".
     if (ids && !picked.length) {
-      return { text: '', classes: 0, duplicates: 0, packages: 0, bytes: 0, lines: 0, generatedAt: '' };
+      return { text: '', classes: 0, duplicates: 0, packages: 0, bytes: 0, lines: 0, generatedAt: '', files: [] };
     }
     const rows = await this.ds.query(
-      `SELECT class_name, package, filename, raw_source
+      `SELECT id, class_name, package, filename, raw_source
        FROM java_files
        ${picked.length ? `WHERE id IN (${picked.join(',')})` : ''}
        ORDER BY package COLLATE NOCASE, class_name COLLATE NOCASE`,
@@ -710,17 +710,40 @@ export class JavaService {
     });
     const duplicates = rows.length - unique.length;
 
+    // ⚠️ Neben dem Text entsteht hier die LANDKARTE dazu: wo im Ergebnis jede Klasse anfaengt und
+    // wie lang sie ist. Der Client braucht beides – die Vorschau soll auf Zuruf zu einer Klasse
+    // springen und ihren Abschnitt hervorheben, und die Trefferliste soll sagen, welche Klasse das
+    // Budget frisst. Gerechnet wird es GENAU HIER, weil hier der Text entsteht: die Zeilen im
+    // Client nachzuzaehlen hiesse, die Trenner-Regel ein zweites Mal zu kennen, und die erste
+    // Aenderung am Kopf haette beide Seiten still auseinandergebracht.
     const packages = new Set<string>();
     const parts: string[] = [];
+    const spans: any[] = [];
     let lastPkg: string | null = null;
+    // 1-basiert, gezaehlt ab dem ersten `parts`-Eintrag – der Kopf kommt erst danach dazu (seine
+    // Zeilenzahl haengt an `packages.size`, also steht sie vor dieser Schleife noch nicht fest).
+    let line = 1;
     for (const r of unique) {
       const pkg = r.package || '(default package)';
       packages.add(pkg);
       if (pkg !== lastPkg) {
         parts.push(`// ${'─'.repeat(4)} ${pkg} ${'─'.repeat(Math.max(4, 60 - pkg.length))}`);
         lastPkg = pkg;
+        line += 1;
       }
-      parts.push(String(r.raw_source || '').replace(/\r\n?/g, '\n').trimEnd(), '');
+      const src = String(r.raw_source || '').replace(/\r\n?/g, '\n').trimEnd();
+      const srcLines = src.split('\n').length;
+      spans.push({
+        fileId: r.id,
+        className: r.class_name,
+        package: r.package || '',
+        startLine: line,
+        lines: srcLines,
+        bytes: Buffer.byteLength(src, 'utf8'),
+      });
+      parts.push(src, '');
+      // `parts.join('\n')`: ein Eintrag mit n Zeilen traegt n Zeilen bei, der leere Eintrag eine.
+      line += srcLines + 1;
     }
 
     const generatedAt = new Date().toISOString().replace('T', ' ').slice(0, 19);
@@ -747,6 +770,9 @@ export class JavaService {
       .concat('\n');
 
     const text = unique.length ? head + parts.join('\n') : '';
+    // Der Kopf endet mit einem `\n`, `parts` schliesst also direkt an: `"a\nb\n".split('\n')` ist
+    // `['a','b','']` – die Zeilenzahl des Kopfes ist deshalb `length - 1`.
+    const headLines = head.split('\n').length - 1;
     return {
       text,
       classes: unique.length,
@@ -755,6 +781,7 @@ export class JavaService {
       bytes: Buffer.byteLength(text, 'utf8'),
       lines: text ? text.split('\n').length : 0,
       generatedAt,
+      files: spans.map((s) => ({ ...s, startLine: s.startLine + headLines })),
     };
   }
 

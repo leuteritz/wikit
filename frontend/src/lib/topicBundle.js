@@ -141,6 +141,9 @@ export function collectTopic({
       className: file.class_name,
       package: file.package || '',
       classType: file.stereotype || file.class_type || 'class',
+      // Zeile der Klassendeklaration – damit die Einzelansicht sie markieren und der Sprung in
+      // `/code` dort landen kann, statt am Dateianfang zwischen den Imports.
+      classLine: file.class_line || 1,
       reasons: [],
     }
     // Dieselbe Quelle zweimal (z. B. zwei Nachbarschaften) verstaerkt den Grund, statt ihn zu
