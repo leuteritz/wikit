@@ -172,11 +172,14 @@ export const api = {
       null,
       { silent: true },
     ),
-  getJavaSourceWindow: (fileId, line, { full = false } = {}) =>
+  // `raw`: ohne Einruecken – fuer Aufrufer, die das Shiki-HTML zeilenweise in einen Text aus
+  // `raw_source` einsetzen (Themen-Buendel) statt es fuer sich anzuzeigen.
+  getJavaSourceWindow: (fileId, line, { full = false, raw = false } = {}) =>
     http(
       'GET',
       `/java/source-window?fileId=${encodeURIComponent(fileId)}&line=${encodeURIComponent(line)}` +
-        (full ? '&full=1' : ''),
+        (full ? '&full=1' : '') +
+        (raw ? '&raw=1' : ''),
       null,
       { silent: true },
     ),

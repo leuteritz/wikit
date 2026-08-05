@@ -412,23 +412,73 @@ const colorByLine = computed(() => {
   return arr
 })
 
+// --- Syntaxfarben, aber nur dort, wo man hinsieht -------------------------------------------
+// ⚠️ **Der Fokus zeigt sich am CODE selbst, nicht nur an seinem Grund.** Ein Bündel ist erst
+// einmal eine Wand aus Text; ihn durchgehend einzufärben macht sie bunt, nicht lesbar (und wäre
+// ein Shiki-Lauf über hunderte Kilobyte bei jedem Haken). Also bekommt genau der Abschnitt, auf
+// den man zeigt, seine Syntaxfarben – Keywords, Typen, Strings –, und alles andere bleibt ruhig.
+// Das ist derselbe Gedanke wie beim Dämpfen im Graphen, nur andersherum: statt das Umfeld
+// wegzunehmen, wird das Gemeinte reicher.
+//
+// ⚠️ **Gehighlightet wird auf dem SERVER** (`source-window?raw=1`) – kein zweiter Highlighter im
+// Client, dieselbe Regel wie überall. `raw=1` ist dabei Pflicht: der Bündeltext kommt aus
+// `raw_source`, die übliche Antwort ist eingerückt (`reindentJava`), und eingesetzt in einen
+// nicht eingerückten Text spränge die Einrückung beim Hover um und die Suchoffsets lägen daneben.
+// Gemerkt wird je Klasse – ein zweiter Hover auf dieselbe kostet nichts.
+const shikiByFile = ref(new Map())
+let shikiToken = 0
+
+async function ensureShiki(fileId) {
+  if (!fileId || shikiByFile.value.has(fileId)) return
+  const token = ++shikiToken
+  try {
+    const win = await api.getJavaSourceWindow(fileId, 1, { full: true, raw: true })
+    // Nur der INHALT jeder Zeile wird übernommen: die Token-Spans tragen die Shiki-Variablen,
+    // die Zeilenhülle stellen wir selbst (mit `data-line` und der Klassenfarbe).
+    const doc = new DOMParser().parseFromString(win.html || '', 'text/html')
+    const lines = [...doc.querySelectorAll('.shiki .line')].map((el) => el.innerHTML)
+    if (!lines.length || token !== shikiToken) return
+    const next = new Map(shikiByFile.value)
+    next.set(fileId, lines)
+    shikiByFile.value = next
+  } catch {
+    /* Ohne Syntaxfarben bleibt der Abschnitt einfarbig – das ist kein Fehler, nur weniger. */
+  }
+}
+watch(applied, () => {
+  shikiByFile.value = new Map()
+})
+
 // Das Fenster als EIN HTML-String, Zeile für Zeile als `.line` – dieselbe Struktur, die Shiki
 // liefert. Damit gelten `shikiText`/`paintMatches` unveraendert (ein zweiter Markierungsweg fuer
 // denselben Zweck waere genau die Doppelung, gegen die die Helfer einmal gebaut wurden).
 // `v-html` statt `v-for`: `paintMatches` zerschneidet Textknoten, und Vue darf sie danach nicht
 // mehr als seine eigenen betrachten.
+//
+// Die Hervorhebung des gehoverten Abschnitts entsteht HIER mit, nicht in einem zweiten Durchgang
+// am DOM: seit die Syntaxfarben am selben Zustand hängen, wäre ein getrennter Weg dieselbe
+// Rechnung zweimal – und die beiden könnten auseinanderlaufen.
 const windowHtml = computed(() => {
   const from = windowStart.value
   const lines = allLines.value.slice(from, from + WINDOW_LINES)
   if (!lines.length) return ''
   const colors = colorByLine.value
+  const lit = spanById.value.get(hoverId.value) || null
+  const litCode = lit ? shikiByFile.value.get(lit.fileId) : null
   return lines
     .map((l, i) => {
+      const abs = from + i + 1
       const c = colors[from + i]
       // Die Farbe steht als KLASSE am Element, nicht als Inline-Style: sechs CSS-Regeln gegen
       // sechshundert Style-Attribute, und der Ton bleibt damit an einer Stelle definiert.
       const tint = c >= 0 ? ` tp-cc tp-c${c}` : ''
-      return `<span class="line${tint}" data-line="${from + i + 1}">${escapeHtml(l)}</span>`
+      const inLit = lit && abs >= lit.startLine && abs < lit.startLine + lit.lines
+      // Die Shiki-Zeile wird über den Abstand zum Klassenanfang zugeordnet – beide Seiten zählen
+      // denselben `raw_source`, also ist der Index verlässlich. Fehlt sie (noch nicht geladen,
+      // Zeile jenseits des Deckels), bleibt es beim einfachen Text.
+      const code = inLit && litCode ? litCode[abs - lit.startLine] : null
+      const body = code != null ? code : escapeHtml(l)
+      return `<span class="line${tint}${inLit ? ' tp-lit' : ''}" data-line="${abs}">${body}</span>`
     })
     .join('')
 })
@@ -484,29 +534,17 @@ function hoverHit(hit) {
     const span = spanById.value.get(hit.fileId)
     if (!span || pane.value !== 'bundle') return
     hoverId.value = hit.fileId
+    // Erst hinfahren, dann einfärben: der Sprung ist sofort da, die Syntaxfarben tropfen nach,
+    // sobald der Server geantwortet hat. Umgekehrt stünde man vor einem Ladezustand für etwas,
+    // das man ohnehin schon lesen kann.
     revealLine(span.startLine)
+    ensureShiki(hit.fileId)
   }, HOVER_INTENT_MS)
 }
 function leaveHits() {
   clearTimeout(hoverTimer)
   hoverId.value = null
 }
-
-// Markiert wird direkt am DOM (wie `paintMatches`), nicht ueber ein `v-for` mit Klassenbindung:
-// das Fenster ist ein `v-html`-Block, und ein zweiter Renderweg fuer dieselben Zeilen waere die
-// Stelle, an der Markierung und Suche sich gegenseitig ueberschreiben.
-const LIT_CLASS = 'tp-lit'
-watch([hoverId, windowHtml], async () => {
-  await nextTick()
-  const box = previewBody.value
-  if (!box) return
-  for (const el of box.querySelectorAll(`.${LIT_CLASS}`)) el.classList.remove(LIT_CLASS)
-  const span = spanById.value.get(hoverId.value)
-  if (!span) return
-  for (let l = span.startLine; l < span.startLine + span.lines; l++) {
-    box.querySelector(`.line[data-line="${l}"]`)?.classList.add(LIT_CLASS)
-  }
-})
 
 // --- Suche ueber das ganze Buendel ------------------------------------------------------------
 // Dieselbe Leiste und dieselbe Musterlogik wie im Source-Tab und in der Suchpalette
@@ -1257,12 +1295,29 @@ onUnmounted(() => {
 }
 /* Der Abschnitt der gerade gehoverten Klasse: DERSELBE Ton, nur in voller Staerke. Eine zweite
    Farbe dafuer waere eine zweite Bedeutung – gemeint ist ja dieselbe Klasse, nur eben die, auf
-   die man gerade zeigt. Der Fallback greift fuer Zeilen ohne Klassenfarbe. */
+   die man gerade zeigt. Der Fallback greift fuer Zeilen ohne Klassenfarbe.
+   Der Grund ist hier bewusst SCHWAECHER als der Balken vermuten laesst (10 %): auf ihm liegen
+   gleich die Syntaxfarben, und zwei kraeftige Ebenen uebereinander liest niemand. */
 .topic-preview :deep(.tp-lit) {
-  background: color-mix(in srgb, var(--mc, var(--color-accent)) 16%, transparent);
+  background: color-mix(in srgb, var(--mc, var(--color-accent)) 10%, transparent);
   border-left-color: var(--mc, var(--color-accent));
   border-left-width: 3px;
   padding-left: calc(0.4rem - 1px);
+}
+
+/* --- Syntaxfarben NUR im gehoverten Abschnitt ------------------------------------------------
+   Die Token-Spans kommen server-gerendert von Shiki und tragen ihre Farben als Inline-Variablen
+   (`--shiki-light` / `--shiki-dark`, `defaultColor: false`). Die globale Regel dafuer haengt an
+   einem `.shiki`-Vorfahren, den dieser Block bewusst NICHT hat: so bleibt der uebrige Text
+   einfarbig und ruhig, und die Farbe ist selbst die Fokus-Anzeige.
+   ⚠️ Gesetzt wird ausschliesslich `color` – kein `background-color` wie in der globalen
+   Shiki-Regel. Sonst uebermalte der Token-Hintergrund genau den Klassenton, um dessentwillen der
+   Abschnitt hervorgehoben ist. */
+.topic-preview :deep(.tp-lit span) {
+  color: var(--shiki-light);
+}
+html.dark .topic-preview :deep(.tp-lit span) {
+  color: var(--shiki-dark);
 }
 
 /* --- Dieselbe Farbe an der Zeile links ------------------------------------------------------

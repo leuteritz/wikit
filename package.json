@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.13.1",
-  "whatsNew": "Every class has its own colour in the bundle",
+  "version": "4.14.0",
+  "whatsNew": "Hovering a class lights up its syntax",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

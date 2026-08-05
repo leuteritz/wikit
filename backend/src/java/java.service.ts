@@ -796,11 +796,19 @@ export class JavaService {
   // ganze Klasse (Treffer auf den KLASSENNAMEN meint die Klasse, nicht die eine Zeile), ohne
   // `full` das Fenster um `line` (Treffer im Quelltext meint genau die Stelle). Die Antwortform
   // bleibt in beiden Faellen gleich, nur `startLine`/`endLine` unterscheiden sich.
+  //
+  // ⚠️ `raw=1` schaltet das Einruecken AB. Es gibt genau einen Aufrufer dafuer – das Themen-Buendel,
+  // das dieses HTML nicht fuer sich anzeigt, sondern es ZEILENWEISE in einen Text einsetzt, der aus
+  // `raw_source` gebaut ist (`exportAll`). `reindentJava` haelt zwar die Zeilenzahl konstant, nicht
+  // aber den Zeileninhalt: die Einrueckung spraenge beim Hover sichtbar um, und die Suchoffsets des
+  // Buendels (gerechnet auf demselben `raw_source`) laegen daneben. Wer den Quelltext ANSIEHT,
+  // bekommt ihn weiterhin eingerueckt – das ist die Vorgabe und bleibt es.
   async getSourceWindow(
     fileIdParam: string,
     lineParam: string,
     contextParam?: string,
     fullParam?: string,
+    rawParam?: string,
   ): Promise<any> {
     const fileId = Number(fileIdParam);
     const line = Number(lineParam);
@@ -812,7 +820,12 @@ export class JavaService {
 
     const full = fullParam === '1';
     const context = Math.min(Math.max(Number(contextParam) || SOURCE_WINDOW_CONTEXT, 1), 40);
-    const lines = this.formatter.reindentJava(file.raw_source || '').split('\n');
+    // Genau die Normalisierung, die auch `exportAll` anwendet – sonst waeren die Zeilen dort und
+    // hier bei CRLF-Quelltexten verschieden lang.
+    const source = rawParam === '1'
+      ? String(file.raw_source || '').replace(/\r\n?/g, '\n').trimEnd()
+      : this.formatter.reindentJava(file.raw_source || '');
+    const lines = source.split('\n');
     const hitLine = Math.min(line, lines.length || 1);
     const startLine = full ? 1 : Math.max(1, hitLine - context);
     const endLine = full

@@ -153,8 +153,11 @@ export class JavaController {
     @Query('line') line: string,
     @Query('context') context?: string,
     @Query('full') full?: string,
+    // `raw=1`: ohne Einruecken. Nur fuer Aufrufer, die das HTML in einen Text aus `raw_source`
+    // einsetzen statt es fuer sich zu zeigen (Themen-Buendel).
+    @Query('raw') raw?: string,
   ) {
-    return this.svc.getSourceWindow(fileId, line, context, full);
+    return this.svc.getSourceWindow(fileId, line, context, full, raw);
   }
 
   // Belegstellen eines Typs im Quelltext einer Klasse – die Code-Ansicht einer `uses`-/`import`-
