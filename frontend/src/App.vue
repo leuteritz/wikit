@@ -14,6 +14,9 @@ import { useInsights } from './composables/useInsights.js'
 import { useActivity } from './composables/useActivity.js'
 import { useBot } from './composables/useBot.js'
 import { useTheme } from './composables/useTheme.js'
+// Der Arbeitsstand des Themen-Buendels. Die Sidebar liest hier nur die Zahl – geschrieben wird sie
+// in `TopicView`, und sie ueberlebt den Reload (s. `useTopic`).
+import { useTopic } from './composables/useTopic.js'
 import { WIKI_TITLE, WIKI_ICON, WIKI_VERSION, WIKI_WHATS_NEW } from './config.js'
 import { Icon } from './lib/icons.js'
 
@@ -32,6 +35,7 @@ const { theme, toggle: toggleTheme } = useTheme()
 // jede Ansicht betrifft – ein Massenlauf gegen einen abgeschalteten Ollama-Server faellt sonst
 // erst auf, wenn die Beschreibungen leer bleiben.
 const { status: botStatus, statusLabel: botStatusLabel, startHealthWatch } = useBot()
+const { pickedCount, topicTerm } = useTopic()
 const route = useRoute()
 const router = useRouter()
 const searchOpen = ref(false)
@@ -141,14 +145,22 @@ const navLinks = computed(() => [
     warn: cycleCount.value > 0,
     title: cycleTitle.value,
   },
-  // ⚠️ Topic traegt bewusst KEINE Zahl. Code und Wiki zaehlen einen Bestand, Insights einen
-  // Befund – ein Buendel ist beides nicht, es entsteht erst mit der Frage. Eine „0" daneben waere
-  // die Behauptung, hier fehle etwas.
+  // ⚠️ Die Zahl bei Topic ist ein ARBEITSSTAND – die dritte Art Aussage in dieser Spalte (Bestand
+  // bei Code/Wiki, Befund bei Insights, Zustand beim Bot-Punkt): sie zaehlt, was gerade
+  // eingesammelt ist. Deshalb ist sie die einzige, die FEHLEN darf – ohne Buendel steht dort
+  // nichts, denn eine „0" waere die Behauptung, hier fehle etwas. Kein `warn`: ein Buendel ist
+  // nichts, was man in Ordnung bringen muesste.
   {
     to: '/topic',
     label: 'Topic',
     icon: 'lucide:boxes',
-    title: 'Collect every class around a topic and copy their code',
+    // Ohne Bestand kein Buendel: nach einem Komplett-Reset zeigte der gemerkte Stand sonst eine
+    // Zahl ueber Klassen, die es nicht mehr gibt (dieselbe „Erinnerung, keine Garantie"-Regel wie
+    // beim Arbeitsstand der Code-Ansicht).
+    count: files.value.length ? pickedCount.value : null,
+    title: files.value.length && pickedCount.value
+      ? `Topic — ${pickedCount.value} ${pickedCount.value === 1 ? 'class' : 'classes'} picked for “${topicTerm.value}”`
+      : 'Collect every class around a topic and copy their code',
   },
   { to: '/wiki', label: 'Wiki', icon: 'lucide:book-open', count: articles.value.length },
   // Der Bot traegt keine Zahl, sondern einen Zustand: eine „3" waere hier keine Auskunft, die

@@ -30,6 +30,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { useJavaGraph } from '../composables/useJavaGraph.js'
+import { useTopic } from '../composables/useTopic.js'
 import { api } from '../lib/api.js'
 import { BIG_CLIPBOARD_BYTES, copyToClipboard } from '../lib/clipboard.js'
 import { buildSearchRegex, findMatches, MATCH_LIMIT } from '../lib/codeSearch.js'
@@ -52,6 +53,8 @@ const route = useRoute()
 const router = useRouter()
 const { files, lastFileId, lastTargetLine } = useJavaAnalyzer()
 const { edges, fetchEdges } = useJavaGraph()
+// Der Arbeitsstand, den die Sidebar als Zahl zeigt – hier wird er geschrieben.
+const { rememberTopic, savedTopic, forgetTopic } = useTopic()
 
 // Dieselbe Staffelung wie in `CodeView`: das Feld reagiert sofort, die Requests folgen.
 const TERM_DEBOUNCE_MS = 280
@@ -109,9 +112,19 @@ const flagsOf = (query) => ({
 const sameFlags = (a, b) =>
   a.caseSensitive === b.caseSensitive && a.wholeWord === b.wholeWord && a.regex === b.regex
 
-const term = ref(String(route.query.q || ''))
-const applied = ref(term.value)
-const termOpts = ref(flagsOf(route.query))
+// ⚠️ **Der gemerkte Stand steht schon im `setup()` in den Refs** – dieselbe Regel wie beim
+// Arbeitsstand der Code-Ansicht: ein nachrutschender Wert waere ein zweiter Lauf fuer denselben
+// Zustand (Suche, Auswahl und Buendel-Export haengen alle daran).
+// Vorrang: die **URL sticht** den gemerkten Stand (ein Link ist eine Ansage). Nur wenn sie kein
+// Thema nennt – der Klick auf die Zahl in der Sidebar – wird das Buendel zurueckgeholt; nennt sie
+// dasselbe Thema, kommt wenigstens die Auswahl mit.
+const urlTerm = String(route.query.q || '')
+const savedBundle = savedTopic()
+const useSaved = !!savedBundle && (!urlTerm || urlTerm.trim() === savedBundle.term)
+
+const term = ref(urlTerm || (useSaved ? savedBundle.term : ''))
+const applied = ref(term.value.trim())
+const termOpts = ref(!urlTerm && useSaved ? savedBundle.opts : flagsOf(route.query))
 const withNeighbours = ref(false)
 const inputEl = ref(null)
 
@@ -223,17 +236,20 @@ watch([applied, termOpts], ([q, opts]) => {
   // Link auf ein Buendel ohne sein Thema waere ein leeres Blatt. `replace`, damit das Tippen
   // keinen Verlauf aus zwanzig Zwischenstaenden hinterlaesst. Ein NICHT gesetzter Schalter steht
   // gar nicht erst drin – eine URL voller Nullen liest sich, als haette jemand etwas eingestellt.
-  router.replace({
-    query: q
-      ? {
-          q,
-          ...(opts.caseSensitive ? { case: '1' } : {}),
-          ...(opts.wholeWord ? { word: '1' } : {}),
-          ...(opts.regex ? { re: '1' } : {}),
-        }
-      : {},
-  })
+  router.replace({ query: queryFor(q, opts) })
 })
+
+// Ein NICHT gesetzter Schalter steht gar nicht erst in der URL – eine Adresse voller Nullen liest
+// sich, als haette jemand etwas eingestellt.
+function queryFor(q, opts) {
+  if (!q) return {}
+  return {
+    q,
+    ...(opts.caseSensitive ? { case: '1' } : {}),
+    ...(opts.wholeWord ? { word: '1' } : {}),
+    ...(opts.regex ? { re: '1' } : {}),
+  }
+}
 
 // Der Sprung aus der Palette wechselt nur die Query, nicht die Komponente – ohne diesen Watch
 // bliebe das Feld beim zweiten Mal auf dem alten Thema stehen. Die Schalter kommen mit: ein Link
@@ -293,7 +309,7 @@ const meaningNote = computed(() => {
 // --- Auswahl --------------------------------------------------------------------------------
 // Das Set haelt auch Ids, die gerade nicht in der Liste stehen (abgeschaltete Nachbarn). Gefiltert
 // wird erst beim Lesen – so ist ein Haken nicht weg, nur weil man den Schalter kurz umgelegt hat.
-const selected = ref(new Set())
+const selected = ref(useSaved ? new Set(savedBundle.picked) : new Set())
 const selectedIds = computed(() => topic.value.hits.filter((h) => selected.value.has(h.fileId)).map((h) => h.fileId))
 
 // ⚠️ Die Vorauswahl braucht ein „hat schon jemand angefasst?" und nicht die Frage „ist das Set
@@ -302,7 +318,10 @@ const selectedIds = computed(() => topic.value.hits.filter((h) => selected.value
 // Zwischenstand gesetzt (die Klassennamen liegen im Store, sind also sofort da; Quelltext und
 // Bedeutung kommen Sekunden spaeter und blieben unangehakt). Umgekehrt darf ein bewusstes „None"
 // nicht dadurch verlorengehen, dass danach eine Antwort nachrutscht.
-const selectionTouched = ref(false)
+// ⚠️ Ein wiederhergestelltes Buendel ist ANGEFASST. Ohne das kaeme die Vorauswahl, sobald die
+// erste Quelle antwortet, und ueberschriebe genau die Auswahl, um derentwillen der Stand gemerkt
+// wurde – ein „None" von gestern waere nach dem Reload wieder ein „alles".
+const selectionTouched = ref(useSaved)
 
 // Ein neues THEMA ist eine neue Frage – die Auswahl faellt zurueck auf die Vorgabe. Ein umgelegter
 // Nachbarschafts-Schalter ist dagegen nur eine Erweiterung der laufenden Antwort: was schon
@@ -325,6 +344,20 @@ watch(
     if (!selectionTouched.value) selected.value = defaultSelection(hits)
   },
 )
+
+// Den Stand melden – daraus wird die Zahl neben „Topic" in der Sidebar.
+// ⚠️ Geschrieben wird erst, wenn es TREFFER gibt: die vier Quellen antworten nacheinander, und in
+// der Lücke davor ist `selectedIds` leer – gemeldet hieße das „nichts eingesammelt" und löschte
+// beim Öffnen genau den Stand, der gerade wiederhergestellt wird. Ohne Thema wird vergessen; eine
+// leere Auswahl bei vorhandenen Treffern ist dagegen eine echte Ansage („None") und zählt.
+watch([applied, selectedIds, termOpts], ([q, ids, opts]) => {
+  if (!q) {
+    forgetTopic()
+    return
+  }
+  if (!topic.value.hits.length) return
+  rememberTopic(q, opts, ids)
+})
 
 function toggle(id) {
   selectionTouched.value = true
@@ -892,6 +925,9 @@ onMounted(() => {
   // Nachbarschafts-Schalter nichts und saehe aus, als gaebe es keine Verbindungen.
   if (!edges.value.length) fetchEdges()
   if (applied.value) runSearch(applied.value, termOpts.value)
+  // Ein zurueckgeholtes Buendel gehoert in die Adresse: sonst zeigt die Ansicht ein Thema, das
+  // die URL nicht kennt – und der naechste Reload oder ein geteilter Link faende es nicht wieder.
+  if (useSaved && !urlTerm) router.replace({ query: queryFor(applied.value, termOpts.value) })
   window.addEventListener('keydown', onKeydown)
 })
 onUnmounted(() => {
