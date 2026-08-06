@@ -316,6 +316,8 @@ watch(applied, () => {
   openClass.value = null
   bundleQuery.value = ''
   bundleCursor.value = 0
+  // Ein neues Thema ist eine neue Frage – auch fuer das, was noch aufgeschlagen festgehalten war.
+  releaseHold()
 })
 watch(
   () => topic.value.hits,
@@ -543,7 +545,7 @@ const windowHtml = computed(() => {
   const lines = allLines.value.slice(from, from + WINDOW_LINES)
   if (!lines.length) return ''
   const colors = colorByLine.value
-  const lit = spanById.value.get(hoverId.value) || null
+  const lit = spanById.value.get(litId.value) || null
   const litCode = lit ? shikiByFile.value.get(lit.fileId) : null
   return lines
     .map((l, i) => {
@@ -601,12 +603,36 @@ watch(
 // gegen eine andere zu tauschen. Stattdessen faehrt das Fenster zu ihrem Abschnitt und markiert
 // ihn: dieselbe Frage, nur an der richtigen Stelle. Wer die Klasse fuer sich sehen will, klickt.
 // Verweildauer wie im Graphen und in der Palette: Hover ist eine Absicht, keine Beruehrung.
+//
+// ⚠️ **Der Weg IN den Text ist selbst eine Geste – dort wird aus „zeig mir wo" ein „ich lese das
+// jetzt".** Ein Hover, der genau in dem Moment erlischt, in dem man ihn benutzen will, ist die
+// Sackgasse dieser Ansicht gewesen: hingezeigt, hingefahren, Markierung weg, und der Abschnitt
+// ist in einem Text aus zwanzig Quelltexten nicht wiederzufinden. Also wandert der Hover beim
+// Uebertritt in die Vorschau in einen GEHALTENEN Zustand (`heldId`) – gemalt wird `litId`, also
+// dasselbe eine Ziel, dieselbe Farbe, derselbe Weg. Zwei Festlegungen:
+//   (1) Zwischen Zeile und Text liegen ein paar Pixel Nichts. Deshalb erlischt `hoverId` beim
+//       Verlassen nicht sofort, sondern nach `HANDOVER_MS` – ohne die Schonfrist waere die
+//       Bewegung ein Flackern, und die Uebergabe haette nie stattgefunden.
+//   (2) Losgelassen wird nur auf ANSAGE: eine andere Zeile hovern, Esc, oder das „×" am Chip.
+//       Die Vorschau zu verlassen beendet nichts – der Weg zum Kopierknopf oder in die
+//       Buendelsuche darf nicht kosten, was man sich gerade aufgeschlagen hat.
 const HOVER_INTENT_MS = 180
+const HANDOVER_MS = 300
 const hoverId = ref(null)
+const heldId = ref(null)
 let hoverTimer = null
+let handoverTimer = null
+
+// Was leuchtet: der Zeiger schlaegt das Gehaltene. Eine Quelle fuer beide Faelle – der gehaltene
+// Zustand ist derselbe Fokus, nur ohne Zeiger darauf, und braucht deshalb keine zweite Darstellung.
+const litId = computed(() => hoverId.value ?? heldId.value)
+const heldHit = computed(() =>
+  heldId.value ? topic.value.hits.find((h) => h.fileId === heldId.value) || null : null,
+)
 
 function hoverHit(hit) {
   clearTimeout(hoverTimer)
+  clearTimeout(handoverTimer)
   // Eine Klasse, die nicht ausgewaehlt ist, steht nicht im Text – dorthin zu springen gaebe es
   // nichts. Ihr Weg ist der Knopf in der Zeile.
   if (!spanById.value.has(hit.fileId)) return
@@ -614,6 +640,9 @@ function hoverHit(hit) {
     const span = spanById.value.get(hit.fileId)
     if (!span || pane.value !== 'bundle') return
     hoverId.value = hit.fileId
+    // Eine neue Absicht ersetzt die alte – auch eine gehaltene. Das steht IM Timeout und nicht
+    // davor: ein Wischen ueber die Liste ist keine Absicht und darf nichts loslassen.
+    heldId.value = null
     // Erst hinfahren, dann einfärben: der Sprung ist sofort da, die Syntaxfarben tropfen nach,
     // sobald der Server geantwortet hat. Umgekehrt stünde man vor einem Ladezustand für etwas,
     // das man ohnehin schon lesen kann.
@@ -623,7 +652,54 @@ function hoverHit(hit) {
 }
 function leaveHits() {
   clearTimeout(hoverTimer)
+  if (!hoverId.value) return
+  clearTimeout(handoverTimer)
+  handoverTimer = setTimeout(() => {
+    hoverId.value = null
+  }, HANDOVER_MS)
+}
+
+// Die Vorschau faengt den Hover ein, der gerade unterwegs zu ihr ist. Verschoben statt kopiert:
+// `litId` aendert sich dabei um kein Bit, die Uebergabe ist im Bild also gar nicht zu sehen –
+// genau das ist der Punkt.
+function catchHover() {
+  if (pane.value !== 'bundle' || !hoverId.value) return
+  clearTimeout(handoverTimer)
+  heldId.value = hoverId.value
   hoverId.value = null
+}
+function releaseHold() {
+  clearTimeout(handoverTimer)
+  heldId.value = null
+  hoverId.value = null
+}
+
+// Eine abgewaehlte Klasse steht nicht mehr im Text – ein Chip, der auf einen Abschnitt zeigt, den
+// es nicht gibt, ist eine Falschauskunft.
+watch(spanById, (map) => {
+  if (heldId.value && !map.has(heldId.value)) heldId.value = null
+})
+
+// ⚠️ **Esc hat hier zwei Bedeutungen und genau EINE Reihenfolge** – entschieden an dieser einen
+// Stelle, nicht in zwei Listenern (gleiche Regel wie `Ctrl+F` in der Code-Ansicht: das Kuerzel
+// trifft, was im Blick ist). Gemessen war die falsche Reihenfolge kein Schoenheitsfehler: der
+// Fokus liegt nach dem Laden im Suchfeld, also fing dessen eigener Esc-Handler den Griff nach dem
+// Loslassen ab – und loeschte das ganze THEMA, waehrend man gerade eine Klasse las.
+//   1. etwas gehalten? -> loslassen
+//   2. sonst, im Themenfeld -> Begriff leeren
+// `defaultPrevented` laesst der Buendel-Suchleiste ihr eigenes Esc: sie hat den Tastendruck dann
+// schon beantwortet, und zweimal zu antworten ist keine Staffelung, sondern ein Nebeneffekt.
+function onKeydown(e) {
+  if (e.key !== 'Escape' || e.defaultPrevented) return
+  if (heldId.value) {
+    e.preventDefault()
+    releaseHold()
+    return
+  }
+  if (e.target === inputEl.value && term.value) {
+    e.preventDefault()
+    term.value = ''
+  }
 }
 
 // --- Suche ueber das ganze Buendel ------------------------------------------------------------
@@ -816,11 +892,14 @@ onMounted(() => {
   // Nachbarschafts-Schalter nichts und saehe aus, als gaebe es keine Verbindungen.
   if (!edges.value.length) fetchEdges()
   if (applied.value) runSearch(applied.value, termOpts.value)
+  window.addEventListener('keydown', onKeydown)
 })
 onUnmounted(() => {
   clearTimeout(termTimer)
   clearTimeout(bundleTimer)
   clearTimeout(hoverTimer)
+  clearTimeout(handoverTimer)
+  window.removeEventListener('keydown', onKeydown)
   abortSearch()
 })
 </script>
@@ -866,7 +945,6 @@ onUnmounted(() => {
               :placeholder="termOpts.regex ? 'A pattern — e.g. ^Jt.*(Repo|Dao)$' : 'A topic, a prefix, a name — e.g. jt'"
               class="min-w-0 flex-1 bg-transparent py-2 text-sm text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
               @keydown.enter.prevent="applied = term.trim()"
-              @keydown.esc.prevent="term = ''"
             />
             <!-- Kurz im Feld, ausführlich am Zeiger und im leeren Ergebnis – dieselbe Staffelung
                  wie in der Bündelleiste. -->
@@ -1090,7 +1168,7 @@ onUnmounted(() => {
                       :class="[
                         selected.has(hit.fileId) ? '' : 'opacity-55',
                         colorByFile.has(hit.fileId) ? 'tp-row--c' : '',
-                        hoverId === hit.fileId ? 'tp-row--lit' : 'hover:bg-[var(--color-surface-offset)]/40',
+                        litId === hit.fileId ? 'tp-row--lit' : 'hover:bg-[var(--color-surface-offset)]/40',
                       ]"
                       @mouseenter="hoverHit(hit)"
                       @mouseleave="leaveHits()"
@@ -1193,7 +1271,13 @@ onUnmounted(() => {
         <!-- ZWEI Modi, EINE Spalte (`v-show`, damit Scrollstand und Suchposition des Bündels einen
              Abstecher in eine Klasse überleben – dieselbe Bauart wie „Class · Relation" in der
              Code-Ansicht). Der Umschalter erscheint erst, wenn es etwas zu schalten gibt. -->
-        <section class="flex min-h-0 flex-1 flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]">
+        <!-- ⚠️ `mouseenter` auf der GANZEN Spalte, nicht nur auf dem Text: der Hover, der gerade
+             von links unterwegs ist, wird hier eingefangen (`catchHover`) und damit gehalten.
+             Wer über den Kopf oder die Suchleiste einfährt, meint dieselbe Klasse. -->
+        <section
+          class="flex min-h-0 flex-1 flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]"
+          @mouseenter="catchHover()"
+        >
           <header class="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--color-border)] px-4 py-2.5">
             <template v-if="openClass">
               <div class="flex shrink-0 items-center gap-0.5 rounded-lg border border-[var(--color-border)] p-0.5">
@@ -1227,6 +1311,23 @@ onUnmounted(() => {
                 {{ openClass?.package || 'default package' }}
               </span>
             </h2>
+
+            <!-- Der gehaltene Zustand ist SICHTBAR und hat einen Weg hinaus – ein Modus, den man
+                 nur an der Färbung erkennt und nicht beenden kann, ist eine Falle. Der Punkt
+                 trägt die Identitätsfarbe der Klasse: dieselbe wie ihr Balken links und rechts. -->
+            <button
+              v-if="pane === 'bundle' && heldHit"
+              v-tip="'Kept in view while you read it. Hover another class to move on, Esc to let go.'"
+              type="button"
+              class="tp-held inline-flex h-6 min-w-0 shrink items-center gap-1.5 rounded-full border px-2 text-2xs transition"
+              :style="methodColorVars(colorByFile.get(heldHit.fileId))"
+              aria-label="Stop keeping this class in view"
+              @click="releaseHold()"
+            >
+              <span class="tp-held-dot h-1.5 w-1.5 shrink-0 rounded-full" />
+              <span class="min-w-0 truncate font-semibold text-[var(--color-text)]">{{ heldHit.className }}</span>
+              <Icon icon="lucide:x" class="h-3 w-3 shrink-0 text-[var(--color-text-muted)]" />
+            </button>
 
             <span
               v-if="pane === 'bundle' && bundle?.classes"
@@ -1479,6 +1580,22 @@ html.dark .topic-preview :deep(.tp-lit span) {
 .tp-row--lit {
   background: color-mix(in srgb, var(--mc, var(--color-accent)) 14%, transparent);
   border-left-color: var(--mc, var(--color-accent));
+}
+
+/* --- Der gehaltene Zustand im Kopf der Vorschau ---------------------------------------------
+   Derselbe Ton wie der Balken der Klasse links und rechts – der Chip ist keine dritte Aussage,
+   sondern dieselbe an der Stelle, an der man sie beenden kann. Bewusst NUR getoent und nicht
+   akzentfarben: er benennt, was ohnehin schon leuchtet, und darf dem Text daneben nicht die
+   Aufmerksamkeit nehmen. */
+.tp-held {
+  border-color: color-mix(in srgb, var(--mc, var(--color-accent)) 45%, transparent);
+  background: color-mix(in srgb, var(--mc, var(--color-accent)) 12%, transparent);
+}
+.tp-held:hover {
+  background: color-mix(in srgb, var(--mc, var(--color-accent)) 22%, transparent);
+}
+.tp-held-dot {
+  background: var(--mc, var(--color-accent));
 }
 /* Suchtreffer im Buendel – dieselbe Gold-Familie und dieselbe Trennung aktiv/passiv wie in der
    Palette und im Source-Tab. `color: inherit`, sonst gewinnt der Browser-Default fuer `mark`. */
