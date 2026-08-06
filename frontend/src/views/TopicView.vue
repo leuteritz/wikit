@@ -32,7 +32,7 @@ import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { useJavaGraph } from '../composables/useJavaGraph.js'
 import { api } from '../lib/api.js'
 import { BIG_CLIPBOARD_BYTES, copyToClipboard } from '../lib/clipboard.js'
-import { findMatches, MATCH_LIMIT } from '../lib/codeSearch.js'
+import { buildSearchRegex, findMatches, MATCH_LIMIT } from '../lib/codeSearch.js'
 import { addLineNumbers, clearMatches, paintMatches } from '../lib/javaCode.js'
 import { buildMethodColorMap, methodColorVars } from '../lib/javaMethodColors.js'
 import { formatBytes } from '../lib/format.js'
@@ -70,16 +70,60 @@ const MEANING_LIMIT = 40
 
 // Dieselben drei Schalter, dieselben Icons und dieselbe Bedeutung wie in der Suchleiste des
 // Source-Tabs und in der Palette – wer hier sucht, sucht nach denselben Regeln wie dort.
+//
+// `tip` gilt der Leiste OBEN und sagt zusaetzlich, was der Schalter am Thema bewirkt: dort fragen
+// vier Quellen zugleich, und ohne den Satz waere „Match case" eine Behauptung ueber alle vier.
+// `title` bleibt der kurze Text der Buendelleiste – dort gibt es nur einen Text zu durchsuchen.
 const SEARCH_TOGGLES = [
-  { key: 'caseSensitive', icon: 'lucide:case-sensitive', title: 'Match case' },
-  { key: 'wholeWord', icon: 'lucide:whole-word', title: 'Match whole word' },
-  { key: 'regex', icon: 'lucide:regex', title: 'Use regular expression' },
+  {
+    key: 'caseSensitive',
+    icon: 'lucide:case-sensitive',
+    title: 'Match case',
+    label: 'Match case',
+    tip: 'Match case — applies to names and source. Meaning is unaffected.',
+  },
+  {
+    key: 'wholeWord',
+    icon: 'lucide:whole-word',
+    title: 'Match whole word',
+    label: 'Whole word',
+    tip: 'Whole word — “Order” stops matching OrderService. Applies to names and source.',
+  },
+  {
+    key: 'regex',
+    icon: 'lucide:regex',
+    title: 'Use regular expression',
+    label: 'Regex',
+    tip: 'Regular expression — e.g. ^Jt.*(Repo|Dao)$. Meaning search stays out while it is on.',
+  },
 ]
+
+// Die Schalter stehen in der URL neben dem Begriff: aus der Palette kommt man mit einem Thema
+// hierher, und ein geteilter Link, der `^Jt.*` als gewoehnlichen Text sucht, zeigt etwas anderes
+// als das, was der Absender vor sich hatte.
+const flagsOf = (query) => ({
+  caseSensitive: query?.case === '1',
+  wholeWord: query?.word === '1',
+  regex: query?.re === '1',
+})
+const sameFlags = (a, b) =>
+  a.caseSensitive === b.caseSensitive && a.wholeWord === b.wholeWord && a.regex === b.regex
 
 const term = ref(String(route.query.q || ''))
 const applied = ref(term.value)
+const termOpts = ref(flagsOf(route.query))
 const withNeighbours = ref(false)
 const inputEl = ref(null)
+
+// Ungueltige Regex ist ein Bedienfehler, kein Absturz: derselbe Umgang wie in der Palette und in
+// der Buendelleiste – das Feld faerbt sich, und der Request geht gar nicht erst raus (sonst
+// beantwortete der Server jeden Zwischenstand einer halb getippten Klammer mit einer 400).
+const patternError = computed(() =>
+  applied.value && termOpts.value.regex
+    ? buildSearchRegex({ query: applied.value, ...termOpts.value }).error
+    : '',
+)
+const activeToggles = computed(() => SEARCH_TOGGLES.filter((o) => termOpts.value[o.key]))
 
 const codeFiles = ref([])
 const meaningResult = ref(null)
@@ -103,10 +147,16 @@ function abortSearch() {
 // Die beiden Requests laufen NEBENEINANDER, nicht nacheinander: die Bedeutungssuche kostet einen
 // Ollama-Aufruf und darf die Quelltextsuche nicht aufhalten. Bleibt sie aus (kein Modell, kein
 // Index, Ollama weg), fehlt genau ihre Gruppe – der Rest des Buendels ist davon unberuehrt.
-async function runSearch(q) {
+//
+// ⚠️ Die drei Schalter gehen an die QUELLTEXTSUCHE mit; den Namen beantwortet `collectTopic` im
+// Client nach derselben Regel. Die Bedeutungssuche bekommt sie nicht – und bei aktivem Regex
+// laeuft sie gar nicht: ein Muster ist kein Satz, es einzubetten ergaebe einen Vektor ohne Sinn
+// und damit eine Trefferliste, die schlechter ist als keine.
+async function runSearch(q, opts) {
   const token = ++searchToken
   abortSearch()
-  if (!q) {
+  const broken = !!opts.regex && !!buildSearchRegex({ query: q, ...opts }).error
+  if (!q || broken) {
     codeFiles.value = []
     meaningResult.value = null
     codeNote.value = ''
@@ -119,7 +169,7 @@ async function runSearch(q) {
   const codeCtrl = new AbortController()
   codeAbort = codeCtrl
   const codeJob = api
-    .searchJavaCode(q, { limit: CODE_FILE_LIMIT, context: 0 }, codeCtrl.signal)
+    .searchJavaCode(q, { ...opts, limit: CODE_FILE_LIMIT, context: 0 }, codeCtrl.signal)
     .then((res) => {
       if (token !== searchToken) return
       codeFiles.value = res?.files || []
@@ -134,7 +184,7 @@ async function runSearch(q) {
     })
 
   let meaningJob = Promise.resolve()
-  if (q.length >= MEANING_MIN_CHARS) {
+  if (!opts.regex && q.length >= MEANING_MIN_CHARS) {
     const meaningCtrl = new AbortController()
     meaningAbort = meaningCtrl
     meaningJob = api
@@ -164,23 +214,39 @@ watch(term, (v) => {
   termTimer = setTimeout(() => (applied.value = v.trim()), TERM_DEBOUNCE_MS)
 })
 
-watch(applied, (q) => {
-  runSearch(q)
+// Begriff UND Schalter sind zusammen die Frage – also stossen beide dieselbe Antwort an. Ein
+// umgelegter Schalter wirkt dabei sofort: er ist ein Klick und keine Eingabe, und wer ihn drueckt,
+// hat entschieden (gleiche Regel wie beim Nachbarschafts-Schalter daneben).
+watch([applied, termOpts], ([q, opts]) => {
+  runSearch(q, opts)
   // Der Begriff gehoert in die URL: aus der Palette kommt man mit einem Thema hierher, und ein
   // Link auf ein Buendel ohne sein Thema waere ein leeres Blatt. `replace`, damit das Tippen
-  // keinen Verlauf aus zwanzig Zwischenstaenden hinterlaesst.
-  router.replace({ query: q ? { q } : {} })
+  // keinen Verlauf aus zwanzig Zwischenstaenden hinterlaesst. Ein NICHT gesetzter Schalter steht
+  // gar nicht erst drin – eine URL voller Nullen liest sich, als haette jemand etwas eingestellt.
+  router.replace({
+    query: q
+      ? {
+          q,
+          ...(opts.caseSensitive ? { case: '1' } : {}),
+          ...(opts.wholeWord ? { word: '1' } : {}),
+          ...(opts.regex ? { re: '1' } : {}),
+        }
+      : {},
+  })
 })
 
 // Der Sprung aus der Palette wechselt nur die Query, nicht die Komponente – ohne diesen Watch
-// bliebe das Feld beim zweiten Mal auf dem alten Thema stehen.
+// bliebe das Feld beim zweiten Mal auf dem alten Thema stehen. Die Schalter kommen mit: ein Link
+// traegt sie, und sie danach zu ignorieren waere dasselbe, als staenden sie nicht drin.
 watch(
-  () => route.query.q,
-  (q) => {
-    const next = String(q || '')
-    if (next === applied.value) return
+  () => route.query,
+  (query) => {
+    const next = String(query.q || '')
+    const flags = flagsOf(query)
+    if (next === applied.value && sameFlags(flags, termOpts.value)) return
     term.value = next
     applied.value = next.trim()
+    termOpts.value = flags
   },
 )
 
@@ -193,8 +259,18 @@ const topic = computed(() =>
     codeFiles: codeFiles.value,
     meaningResults: meaningResult.value?.results || [],
     withNeighbours: withNeighbours.value,
+    opts: termOpts.value,
   }),
 )
+
+// Ein Klick ist eine Entscheidung – er wendet zugleich an, was gerade im Feld steht, statt den
+// angefangenen Anschlag noch auszusitzen.
+function toggleTermOpt(key) {
+  clearTimeout(termTimer)
+  termOpts.value = { ...termOpts.value, [key]: !termOpts.value[key] }
+  applied.value = term.value.trim()
+  inputEl.value?.focus()
+}
 const groups = computed(() => groupByReason(topic.value.hits))
 
 // Warum die Bedeutungsgruppe fehlt. Ohne den Satz sieht ein leerer Abschnitt aus wie „gibt es
@@ -205,8 +281,12 @@ const MEANING_REASONS = {
   unavailable: 'Ollama did not answer — the other sources are unaffected.',
 }
 const meaningNote = computed(() => {
+  if (!applied.value) return ''
+  // Der Regex-Fall ist kein Ausfall, sondern eine Festlegung – und er gehoert genauso angeschrieben
+  // wie ein fehlendes Modell: eine fehlende Gruppe ohne Grund sieht aus wie ein leeres Ergebnis.
+  if (termOpts.value.regex) return 'Meaning is out while the pattern switch is on — a regex is not a sentence.'
   const r = meaningResult.value
-  if (!applied.value || !r || r.results?.length) return ''
+  if (!r || r.results?.length) return ''
   return MEANING_REASONS[r.reason] || ''
 })
 
@@ -735,7 +815,7 @@ onMounted(() => {
   // Die Kanten liegen sonst nur vor, wenn vorher `/code` offen war – ohne sie faende der
   // Nachbarschafts-Schalter nichts und saehe aus, als gaebe es keine Verbindungen.
   if (!edges.value.length) fetchEdges()
-  if (applied.value) runSearch(applied.value)
+  if (applied.value) runSearch(applied.value, termOpts.value)
 })
 onUnmounted(() => {
   clearTimeout(termTimer)
@@ -762,18 +842,39 @@ onUnmounted(() => {
           </p>
         </div>
 
-        <div class="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none sm:basis-[30rem]">
-          <div class="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3">
-            <Icon icon="lucide:search" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+        <div class="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none sm:basis-[34rem]">
+          <!-- Die drei Schalter stehen IM Feld, nicht daneben: sie ändern nicht das Ergebnis,
+               sondern wie der Begriff gelesen wird – dieselbe Bauart und dieselben Icons wie in
+               der Suchpalette, im Source-Tab und in der Bündelleiste weiter unten. -->
+          <div
+            class="flex min-w-0 flex-1 items-center gap-1 rounded-lg border bg-[var(--color-surface-2)] pl-3 pr-1 transition"
+            :class="patternError
+              ? 'border-[var(--color-danger)]'
+              : 'border-[var(--color-border)] focus-within:border-[var(--color-accent)]'"
+          >
+            <Icon
+              icon="lucide:search"
+              class="h-4 w-4 shrink-0"
+              :class="patternError ? 'text-[var(--color-danger)]' : 'text-[var(--color-accent)]'"
+            />
             <input
               ref="inputEl"
               v-model="term"
               type="text"
               spellcheck="false"
-              placeholder="A topic, a prefix, a name — e.g. jt"
+              :aria-invalid="!!patternError"
+              :placeholder="termOpts.regex ? 'A pattern — e.g. ^Jt.*(Repo|Dao)$' : 'A topic, a prefix, a name — e.g. jt'"
               class="min-w-0 flex-1 bg-transparent py-2 text-sm text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
               @keydown.enter.prevent="applied = term.trim()"
+              @keydown.esc.prevent="term = ''"
             />
+            <!-- Kurz im Feld, ausführlich am Zeiger und im leeren Ergebnis – dieselbe Staffelung
+                 wie in der Bündelleiste. -->
+            <span
+              v-if="patternError"
+              v-tip="patternError"
+              class="shrink-0 whitespace-nowrap px-0.5 font-mono text-3xs text-[var(--color-danger)]"
+            >Invalid</span>
             <button
               v-if="term"
               type="button"
@@ -783,6 +884,22 @@ onUnmounted(() => {
               @click="term = ''"
             >
               <Icon icon="lucide:x" class="h-3.5 w-3.5" />
+            </button>
+            <span class="mx-0.5 h-4 w-px shrink-0 bg-[var(--color-border)]" />
+            <button
+              v-for="o in SEARCH_TOGGLES"
+              :key="o.key"
+              v-tip="o.tip"
+              type="button"
+              class="grid h-6 w-6 shrink-0 place-items-center rounded transition"
+              :class="termOpts[o.key]
+                ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)]'
+                : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]'"
+              :aria-label="o.label"
+              :aria-pressed="termOpts[o.key]"
+              @click="toggleTermOpt(o.key)"
+            >
+              <Icon :icon="o.icon" class="h-3.5 w-3.5" />
             </button>
           </div>
 
@@ -850,6 +967,16 @@ onUnmounted(() => {
               </li>
             </ul>
 
+            <!-- Die Schalter sind im Ruhezustand die einzige Stelle, an der jemand liest, was sie
+                 tun – und vor allem, worauf sie NICHT wirken. -->
+            <p class="mt-3 flex gap-2 text-2xs leading-relaxed text-[var(--color-text-muted)]">
+              <Icon icon="lucide:regex" class="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                The three switches in the field decide how the term is read — case, whole word, and
+                regular expression. Names and source follow them; meaning cannot.
+              </span>
+            </p>
+
             <template v-if="suggestions.length">
               <p class="mt-4 font-mono text-3xs uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
                 Topics in this codebase
@@ -897,12 +1024,32 @@ onUnmounted(() => {
                 :rows="5"
               />
 
+              <!-- Ein kaputtes Muster ist kein leeres Ergebnis: „nichts gefunden" wäre hier eine
+                   Aussage über die Codebasis, und die ist nicht gedeckt. -->
+              <div v-else-if="patternError" class="px-4 py-10 text-center">
+                <Icon icon="lucide:regex" class="mx-auto h-6 w-6 text-[var(--color-danger)]" />
+                <p class="mt-2 text-sm text-[var(--color-text)]">That pattern does not parse.</p>
+                <p class="mt-1 font-mono text-3xs leading-relaxed text-[var(--color-danger)]">{{ patternError }}</p>
+                <p class="mt-2 text-2xs text-[var(--color-text-muted)]">
+                  Fix it, or switch the regex button off to search for the text itself.
+                </p>
+              </div>
+
               <div v-else-if="!topic.hits.length" class="px-4 py-10 text-center">
                 <Icon icon="lucide:boxes" class="mx-auto h-6 w-6 text-[var(--color-text-muted)]" />
                 <p class="mt-2 text-sm text-[var(--color-text)]">Nothing on “{{ applied }}”.</p>
                 <p class="mt-1 text-2xs text-[var(--color-text-muted)]">
                   No class carries the name, mentions it, or is about it. Try a shorter term, or turn
                   Neighbours on once you have a first hit.
+                </p>
+                <!-- Ein aktiver Schalter ist die häufigste Erklärung für ein leeres Ergebnis –
+                     und der einzige Teil der Frage, den man beim Lesen der Liste nicht sieht. -->
+                <p v-if="activeToggles.length" class="mt-2 text-2xs text-[var(--color-text-muted)]">
+                  <span class="font-semibold text-[var(--color-text)]">
+                    {{ activeToggles.map((o) => o.label).join(' · ') }}
+                  </span>
+                  {{ activeToggles.length === 1 ? 'is' : 'are' }} on — turning
+                  {{ activeToggles.length === 1 ? 'it' : 'them' }} off widens the search.
                 </p>
               </div>
 

@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.14.0",
-  "whatsNew": "Hovering a class lights up its syntax",
+  "version": "4.15.0",
+  "whatsNew": "Case, whole word and regex in the topic search",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

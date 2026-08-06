@@ -17,11 +17,19 @@
 //   meaning   – die Klasse handelt davon, ohne das Wort zu enthalten  (`/java/semantic-search`)
 //   neighbour – haengt an einer der obigen Klassen                    (Client, aus `java_edges`)
 //
+// ⚠️ **Die drei Suchschalter gelten fuer ZWEI der vier Quellen.** Gross-/Kleinschreibung, ganzes
+// Wort und Muster sind Aussagen ueber TEXT – Name und Quelltext beantworten sie beide, und zwar
+// nach derselben Regel (`buildSearchRegex`). Die Bedeutungssuche liest keinen Text, sondern
+// vergleicht Vektoren: sie kann nichts davon beachten, und ein Muster als Satz einzubetten waere
+// keine Frage, sondern Zeichensalat. Der Aufrufer setzt sie deshalb bei aktivem Regex aus und
+// schreibt es an. Nachbarn sind gar keine Suche, sondern eine Kante weiter.
+//
 // ⚠️ **Der GRUND gehoert an den Treffer.** Eine Liste aus 30 Klassennamen ist bei einem Buendel
 // unbrauchbar: man entscheidet ueber jede einzelne, ob sie mitkommt, und genau dafuer braucht man
 // „source ×12" gegen „connected to JTConverter". Ohne den Grund waere die einzige moegliche
 // Bedienung „alles nehmen" – und dann haette man den Vollexport nehmen koennen.
 
+import { buildSearchRegex } from './codeSearch.js'
 import { buildGraph } from './graphPaths.js'
 
 // Deckel der Kandidatenliste. Darueber ist die Antwort auf „was gehoert dazu?" nicht mehr eine
@@ -83,23 +91,44 @@ export const topicSource = (kind) => SOURCE_BY_KIND[kind] || SOURCE_BY_KIND.neig
 export const estimateTokens = (bytes) => Math.round((Number(bytes) || 0) / CHARS_PER_TOKEN)
 
 /**
+ * Erster Treffer eines Musters in einem Text – oder `null`.
+ *
+ * Die Regex aus `buildSearchRegex` traegt `g`, behaelt also ihren `lastIndex` ueber Aufrufe hinweg.
+ * Ueber eine Klassenliste laufend heisst das: jede zweite Klasse wuerde ab der Mitte geprueft.
+ * Deshalb wird er hier VOR jedem Lauf zurueckgesetzt.
+ */
+function firstMatch(re, text) {
+  if (!re || !text) return null
+  re.lastIndex = 0
+  const m = re.exec(text)
+  return m && m[0].length ? { at: m.index, len: m[0].length } : null
+}
+
+/**
  * Namenstreffer aus der geladenen Klassenliste – ohne Request.
  *
  * Dieselbe Staffelung wie `rankClass` in der Palette, nur ohne Facetten: exakter Name vor Praefix
  * vor Teilstring vor Package. Der Rang wird zum `weight` des Grundes und sortiert damit die Gruppe.
+ *
+ * ⚠️ Die Staffelung entsteht aus der POSITION des Treffers, nicht aus `startsWith`/`includes`:
+ * nur so gilt dieselbe eine Codebahn fuer den getippten Begriff und fuer ein Muster. `^Order.*`
+ * trifft am Anfang und heisst damit „name starts with it" – genau wie `order` es tut.
  */
-function nameHits(files, term) {
-  const t = term.toLowerCase()
+function nameHits(files, term, opts) {
+  // Ungueltige Regex des Nutzers: `re` ist null, also findet der Name nichts. Der Aufrufer zeigt
+  // den Fehler am Feld – hier ist die leere Menge die richtige Antwort, kein Absturz.
+  const { re } = buildSearchRegex({ query: term, ...opts })
   const out = []
   for (const f of files) {
-    const name = String(f.class_name || '').toLowerCase()
-    const pkg = String(f.package || '').toLowerCase()
+    const name = String(f.class_name || '')
+    const hit = firstMatch(re, name)
     let weight = -1
     let detail = ''
-    if (name === t) { weight = 3; detail = 'exact name' }
-    else if (name.startsWith(t)) { weight = 2; detail = 'name starts with it' }
-    else if (name.includes(t)) { weight = 1; detail = 'in the name' }
-    else if (pkg.includes(t)) { weight = 0; detail = 'in the package' }
+    if (hit) {
+      if (hit.at === 0 && hit.len === name.length) { weight = 3; detail = 'exact name' }
+      else if (hit.at === 0) { weight = 2; detail = 'name starts with it' }
+      else { weight = 1; detail = 'in the name' }
+    } else if (firstMatch(re, String(f.package || ''))) { weight = 0; detail = 'in the package' }
     if (weight >= 0) out.push({ file: f, weight, detail })
   }
   return out
@@ -118,6 +147,9 @@ function nameHits(files, term) {
  * @param {object[]} codeFiles        `files[]` aus `/java/code-search`
  * @param {object[]} meaningResults   `results[]` aus `/java/semantic-search`
  * @param {boolean}  withNeighbours   Nachbarn eine Kante weit mitnehmen
+ * @param {object}   opts             `{ caseSensitive, wholeWord, regex }` – gilt fuer den NAMEN;
+ *                                    der Quelltext bekommt dieselben Schalter serverseitig, die
+ *                                    Bedeutung kennt keine (sie liest keinen Text, sondern Vektoren)
  * @returns {{ hits: object[], truncated: boolean, coreCount: number }}
  */
 export function collectTopic({
@@ -127,6 +159,7 @@ export function collectTopic({
   codeFiles = [],
   meaningResults = [],
   withNeighbours = false,
+  opts = {},
 } = {}) {
   const q = String(term || '').trim()
   if (!q) return { hits: [], truncated: false, coreCount: 0 }
@@ -159,7 +192,7 @@ export function collectTopic({
     return hit
   }
 
-  for (const { file, weight, detail } of nameHits(files, q)) add(file, 'name', weight, detail)
+  for (const { file, weight, detail } of nameHits(files, q, opts)) add(file, 'name', weight, detail)
 
   for (const f of codeFiles) {
     const file = byId.get(f.fileId)
