@@ -290,7 +290,12 @@ html.dark .shiki span {
    markierte Aufrufzeile. Nur unter .edge-usage-code, damit normale Code-Bloecke
    (Artikel) voellig unberuehrt bleiben. */
 .edge-usage-code .shiki,
-.edge-code .shiki {
+.edge-code .shiki,
+/* Der Aufteilungsvorschlag in /insights erzeugt ganze Java-Dateien und zeigt sie als Code – exakt
+   dieselbe Aufgabe wie hier. Ein eigener Regelblock waere dieselbe Aussage ein zweites Mal; anders
+   als die Edge-Bloecke bleibt er aber THEMENABHAENGIG (kein `.code-dark`), weil er nicht in einem
+   dunklen Panel steht, sondern in der Berichtsflaeche. */
+.split-code .shiki {
   margin: 0;
   /* Waagerecht scrollt der BLOCK, nicht die Spalte. Frueher stand hier `overflow: visible`: das
      Panel war ein Modal, dessen Karte per `w-max` mit dem breitesten Codeblock mitwuchs. Seit es

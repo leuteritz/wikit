@@ -99,6 +99,42 @@ export type SplitConsumer = {
   members: string[]; // die Mitglieder, die dieser Nutzer nennt – leer bei reinem Typbezug
 };
 
+/**
+ * Eine vorgeschlagene Datei – als GANZER Java-Quelltext, nicht als Gerüst.
+ *
+ * ⚠️ Der Vorschlag zeigt die neue Klasse so, wie sie nach dem Umbau **aussieht**: echte Felder,
+ * echter Konstruktor, echte Methodenrümpfe aus `java_methods.body`. Vorher stand dort ein Skelett
+ * mit `{ … }` – das liest sich wie eine Architekturskizze, und wer Java kann, aber keine
+ * Architekturbegriffe (die Zielgruppe des ganzen Berichts), kann daran nicht erkennen, ob der
+ * Vorschlag stimmt. Ein Quelltext, den man kopieren und übersetzen kann, ist überprüfbar.
+ *
+ * `code` ist der Kopiertext, `lines` seine Länge. Das Shiki-HTML entsteht daraus im Service –
+ * aus DEMSELBEN, bereits eingerückten Text, sonst zeigte das Fenster etwas anderes an, als der
+ * Kopierknopf herausgibt.
+ */
+export type SplitFile = {
+  name: string; // PriceService.java
+  path: string; // com.acme.shop.PriceService
+  // ⚠️ `new`/`rewritten` sind GANZE Dateien – man kann sie anlegen bzw. die alte damit ersetzen.
+  // `excerpt` ist es NICHT: nur der Teil, der sich ändert oder um den es geht. Die Unterscheidung
+  // ist keine Kosmetik, sie steht am Kopierknopf: wer einen Ausschnitt für eine ganze Datei hält
+  // und ihn einsetzt, löscht den Rest seiner Klasse.
+  kind: 'new' | 'rewritten' | 'excerpt';
+  caption: string; // warum es diese Datei gibt
+  code: string;
+  lines: number;
+  /**
+   * ⚠️ `true` = dieser Text ist ORIGINALCODE und wird nicht neu eingerückt.
+   *
+   * Alles andere hier ist zusammengesetzt und braucht `reindentJava`, um wie eine Datei auszusehen.
+   * Ein Ausschnitt, der zeigen soll „so steht die Methode heute da", darf dagegen genau nicht durch
+   * den Formatter: gemessen an einer switch-Methode zog er die `case`-Zweige eine Ebene nach links,
+   * und der Ausschnitt sah damit anders aus als dieselbe Methode im Source-Tab daneben – bei einer
+   * Ansicht, deren ganzer Zweck „das ist dein Code" ist, ist das die eine unzulässige Abweichung.
+   */
+  verbatim?: boolean;
+};
+
 export type SplitClass = {
   id: number;
   className: string;
@@ -140,6 +176,7 @@ function callsName(code: string, name: string): boolean {
 const isStatic = (m: SplitMember) => m.modifiers.includes('static');
 const isPublic = (m: SplitMember) => m.modifiers.includes('public') || m.modifiers.includes('protected');
 const cap = (w: string) => (w ? w[0].toUpperCase() + w.slice(1) : '');
+const low = (w: string) => (w ? w[0].toLowerCase() + w.slice(1) : '');
 
 /** camelCase/SCREAMING_CASE in kleingeschriebene Wörter zerlegen: `orderPriceList` -> order, price, list. */
 function words(name: string): string[] {
@@ -268,10 +305,96 @@ type Strategy = {
   headline: string;
   why: string;
   parts: Part[];
+  files: SplitFile[];
   shared: Array<{ name: string; type: string; parts: string[] }>;
   cost: string | null;
   gain: string | null;
 };
+
+// --- Aus Mitgliedern wieder Java machen ---------------------------------------------------------
+//
+// ⚠️ Die Rümpfe kommen UNVERÄNDERT aus `java_methods.body` – nicht neu formatiert und nicht gekürzt.
+// Der ganze Wert dieser Ansicht liegt darin, dass der gezeigte Code derselbe ist wie der im
+// Projekt: an einem umgeschriebenen Rumpf könnte niemand prüfen, ob der Vorschlag stimmt. Die
+// EINRÜCKUNG stellt danach `reindentJava` im Service her – einmal, für Kopiertext und Anzeige
+// zugleich (zwei Läufe wären zwei Fassungen desselben Textes).
+
+const INDENT = '    ';
+
+/**
+ * `private final Map<String, Long> priceList;` – die Modifier bleiben, wie sie im Code stehen.
+ *
+ * ⚠️ Der Initialisierer gehört DAZU (er steht bei einem Feld im `body`). Ohne ihn verliert
+ * `private int count = 0;` seinen Wert – und eine `static final`-Konstante ohne Zuweisung
+ * übersetzt nicht einmal. Genau daran scheiterte die erste Fassung: `private static final Logger
+ * log = …` kam als Zeile ohne `=` in der erzeugten Datei an.
+ */
+function fieldLine(f: SplitMember): string {
+  const mods = f.modifiers.length ? `${f.modifiers.join(' ')} ` : 'private ';
+  const init = (f.body || '').trim();
+  return `${INDENT}${mods}${f.returnType || 'Object'} ${f.name}${init ? ` = ${init}` : ''};`;
+}
+
+const paramList = (m: SplitMember) => m.parameters.map((p) => `${p.type} ${p.name}`).join(', ');
+
+/** Eine Methode mit ihrem ECHTEN Rumpf. Ohne Rumpf (abstrakt/Interface) bleibt es beim Semikolon. */
+function methodText(m: SplitMember): string {
+  const mods = m.modifiers.length ? `${m.modifiers.join(' ')} ` : '';
+  const ret = m.returnType ? `${m.returnType} ` : '';
+  const head = `${INDENT}${mods}${ret}${m.name}(${paramList(m)})`;
+  const body = (m.body || '').trim();
+  // Ohne Rumpf (abstrakt, Interface-Methode) endet die Zeile am Semikolon – dort steht im Original
+  // auch nichts anderes.
+  return body ? `${head} ${body}` : `${head};`;
+}
+
+/** Der Konstruktor, der die Felder hereinreicht – der Preis des Schnitts, als Code. */
+function constructorText(name: string, fields: SplitMember[]): string {
+  if (!fields.length) return '';
+  const params = fields.map((f) => `${f.returnType || 'Object'} ${f.name}`).join(', ');
+  const body = fields.map((f) => `${INDENT}${INDENT}this.${f.name} = ${f.name};`).join('\n');
+  return `${INDENT}public ${name}(${params}) {\n${body}\n${INDENT}}`;
+}
+
+/**
+ * Die Import-Zeilen, die dieser Ausschnitt WIRKLICH braucht.
+ *
+ * ⚠️ Alle Importe der Ursprungsklasse zu übernehmen wäre bequem und falsch: die Hälfte davon
+ * gehört zum anderen Teil, und eine generierte Datei, die mit acht ungenutzten Importen beginnt,
+ * sieht aus wie Ausgabe einer Maschine statt wie Code, den man übernimmt. Entschieden wird über
+ * den einfachen Typnamen im erzeugten Text – dieselbe Wortgrenzen-Regel wie überall
+ * (`$` ist in Java ein Identifier-Zeichen).
+ */
+function importsFor(body: string, imports: string[]): string[] {
+  const hit = imports.filter((fq) => {
+    const simple = fq.replace(/\.\*$/, '').split('.').pop() || '';
+    if (!simple || !/^[A-Z]/.test(simple)) return false;
+    return new RegExp(`(?<![\\w$])${simple.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w$])`).test(body);
+  });
+  return [...new Set(hit)].sort();
+}
+
+/** Package-Zeile, Importe, Typ – der Rahmen jeder erzeugten Datei. */
+function javaFile(pkg: string, imports: string[], bodyText: string): string {
+  const head = pkg ? `package ${pkg};\n\n` : '';
+  const imp = importsFor(bodyText, imports);
+  return `${head}${imp.length ? `${imp.map((i) => `import ${i};`).join('\n')}\n\n` : ''}${bodyText}\n`;
+}
+
+const asFile = (
+  pkg: string,
+  name: string,
+  kind: SplitFile['kind'],
+  caption: string,
+  code: string,
+): SplitFile => ({
+  name: `${name}.java`,
+  path: pkg ? `${pkg}.${name}` : name,
+  kind,
+  caption,
+  code,
+  lines: code.split('\n').length,
+});
 
 const signatureOf = (m: SplitMember): string => {
   if (m.kind === 'field') return `${m.returnType || 'var'} ${m.name}`;
@@ -291,7 +414,12 @@ const signatureOf = (m: SplitMember): string => {
  * `private static final Logger log` steht in jeder Methode. Über ihn hinge sonst die ganze Klasse
  * an einem Strang, und zwar ausgerechnet an dem, der beim Aufteilen einfach mitkopiert wird.
  */
-function cohesionSplit(cls: SplitClass, members: SplitMember[]): Strategy {
+function cohesionSplit(
+  cls: SplitClass,
+  members: SplitMember[],
+  imports: string[],
+  consumers: SplitConsumer[],
+): Strategy {
   const fields = members.filter((m) => m.kind === 'field');
   const state = fields.filter((f) => !(isStatic(f) && f.modifiers.includes('final')));
   const units = members.filter((m) => m.kind === 'method').slice(0, MAX_UNITS);
@@ -304,6 +432,7 @@ function cohesionSplit(cls: SplitClass, members: SplitMember[]): Strategy {
     headline: 'No useful cut along the fields.',
     why,
     parts: [],
+    files: [],
     shared: [],
     cost: null,
     gain: null,
@@ -405,9 +534,14 @@ function cohesionSplit(cls: SplitClass, members: SplitMember[]): Strategy {
     };
   };
 
+  // Die Mitglieder je Teil in DERSELBEN Reihenfolge wie `parts` – daraus entstehen unten die
+  // Dateien. Getrennt geführt, weil `parts[].members` für die Anzeige gedeckelt ist (`MEMBERS_SHOWN`)
+  // und eine Datei mit zwölf von siebzehn Methoden keine Datei wäre.
+  const groupMembers: SplitMember[][] = ordered.map((idxs) => idxs.map((i) => units[i]));
   const parts = ordered.map(partOfIdx);
   if (loners.length) {
     const list = loners.map((i) => units[i]);
+    groupMembers.push(list);
     const suffix = roleSuffix(cls.className);
     parts.push({
       name: `${suffix ? cls.className.slice(0, -suffix.length) : cls.className}Support`,
@@ -445,7 +579,83 @@ function cohesionSplit(cls: SplitClass, members: SplitMember[]): Strategy {
   const balance = 1 - (biggest - units.length / parts.length) / units.length;
   const fit = Math.max(0, Math.min(1, 0.65 * clean + 0.35 * balance));
 
+  // --- Die Dateien ------------------------------------------------------------------------------
+  const fieldByName = new Map(state.map((f) => [f.name, f]));
+  const files: SplitFile[] = parts.map((p, gi) => {
+    const list = groupMembers[gi] || [];
+    // ⚠️ Welche Felder die DATEI braucht, ist eine andere Frage als welche die GRUPPEN gebildet
+    // haben. Gruppiert wurde über `state` – Konstanten verbinden keine Methoden. Benutzt werden sie
+    // trotzdem: gefiltert wird deshalb über ALLE Felder. Die erste Fassung nahm hier `state`, und
+    // die erzeugte Klasse rief ein `log`, das sie nicht besaß – sie übersetzte nicht.
+    const needed = fields.filter((f) =>
+      list.some((m) => usesName(stripNonCode(m.body || ''), f.name, new Set(m.parameters.map((q) => q.name)).has(f.name))),
+    );
+    const statics = needed.filter(isStatic);
+    const instance = needed.filter((f) => !isStatic(f));
+    // In den Konstruktor gehört nur, was keinen eigenen Wert mitbringt. Ein Feld mit
+    // Initialisierer setzt sich selbst – es zusätzlich hereinzureichen wäre eine doppelte Zuweisung.
+    const injected = instance.filter((f) => !(f.body || '').trim());
+    const head = [...statics.map(fieldLine), ...instance.map(fieldLine)];
+    const body = [
+      `public class ${p.name} {`,
+      ...head,
+      ...(injected.length ? ['', constructorText(p.name, injected)] : []),
+      // Die Leerzeile trennt Mitglieder – vor dem ERSTEN gibt es nichts zu trennen, und eine
+      // Leerzeile direkt hinter `{` sieht nach generiertem Text aus statt nach Code.
+      ...list.flatMap((m, mi) => (mi === 0 && !head.length && !injected.length ? [methodText(m)] : ['', methodText(m)])),
+      '}',
+    ].join('\n');
+    return asFile(
+      cls.package,
+      p.name,
+      'new',
+      p.reason,
+      javaFile(cls.package, imports, body),
+    );
+  });
+
+  // ⚠️ Die umgebaute Ursprungsklasse gibt es nur, wenn sie jemand RUFT. Ohne Aufrufer wäre eine
+  // Fassade eine Datei, die niemand braucht – dann verschwindet die Klasse einfach, und das ist die
+  // Antwort. Mit Aufrufern ist sie dagegen der Grund, warum der Umbau überhaupt gefahrlos ist: jede
+  // Zeile, die heute `orderService.priceOf(...)` sagt, funktioniert danach unverändert weiter.
+  const calledNames = new Set(consumers.flatMap((c) => c.members));
+  const delegated = units.filter((m) => calledNames.has(m.name) && !isStatic(m));
+  if (delegated.length) {
+    const ownerOf = new Map<string, string>();
+    groupMembers.forEach((list, gi) => list.forEach((m) => ownerOf.set(m.name, parts[gi]?.name || cls.className)));
+    const held = [...new Set(delegated.map((m) => ownerOf.get(m.name) || ''))].filter(Boolean);
+    const fieldOf = (type: string) => low(type);
+    const body = [
+      `public class ${cls.className} {`,
+      ...held.map((t) => `${INDENT}private final ${t} ${fieldOf(t)};`),
+      '',
+      `${INDENT}public ${cls.className}(${held.map((t) => `${t} ${fieldOf(t)}`).join(', ')}) {`,
+      ...held.map((t) => `${INDENT}${INDENT}this.${fieldOf(t)} = ${fieldOf(t)};`),
+      `${INDENT}}`,
+      '',
+      `${INDENT}// every caller keeps working — each call goes straight through`,
+      ...delegated.map((m) => {
+        const target = fieldOf(ownerOf.get(m.name) || cls.className);
+        const ret = m.returnType && m.returnType !== 'void' ? 'return ' : '';
+        const args = m.parameters.map((p) => p.name).join(', ');
+        const mods = m.modifiers.length ? `${m.modifiers.join(' ')} ` : '';
+        return `${INDENT}${mods}${m.returnType ? `${m.returnType} ` : ''}${m.name}(${paramList(m)}) { ${ret}${target}.${m.name}(${args}); }`;
+      }),
+      '}',
+    ].join('\n');
+    files.push(
+      asFile(
+        cls.package,
+        cls.className,
+        'rewritten',
+        `What is left of ${cls.className}: it holds the parts and passes calls through, so the ${consumers.length === 1 ? 'class that uses it keeps' : `${consumers.length} classes that use it keep`} working unchanged. Delete it once every caller talks to the part it actually needs.`,
+        javaFile(cls.package, imports, body),
+      ),
+    );
+  }
+
   return {
+    files,
     id: 'cohesion',
     title: 'Split by what it holds',
     verdict: fit >= 0.55 ? 'strong' : 'weak',
@@ -475,7 +685,12 @@ function cohesionSplit(cls: SplitClass, members: SplitMember[]): Strategy {
  * Grundlage sind die eingehenden Kanten mit ihrem `method_name`. Ein reiner Typbezug (`uses`) nennt
  * kein Mitglied und zählt deshalb nicht als Rolle – er wird gezählt und danebengeschrieben.
  */
-function roleSplit(cls: SplitClass, members: SplitMember[], consumers: SplitConsumer[]): Strategy {
+function roleSplit(
+  cls: SplitClass,
+  members: SplitMember[],
+  consumers: SplitConsumer[],
+  imports: string[],
+): Strategy {
   const api = members.filter((m) => m.kind === 'method' && isPublic(m));
   const naming = consumers.filter((c) => c.members.length);
 
@@ -487,6 +702,7 @@ function roleSplit(cls: SplitClass, members: SplitMember[], consumers: SplitCons
     headline: 'No useful cut along the callers.',
     why,
     parts: [],
+    files: [],
     shared: [],
     cost: null,
     gain: null,
@@ -539,11 +755,16 @@ function roleSplit(cls: SplitClass, members: SplitMember[], consumers: SplitCons
   const suffix = roleSuffix(cls.className);
   const baseName = suffix ? cls.className.slice(0, -suffix.length) : cls.className;
 
+  // Die vollen Signaturlisten je Rolle – `parts[].members` ist für die Anzeige gedeckelt, ein
+  // Interface mit zwölf von siebzehn Methoden wäre kein Interface (gleiche Trennung wie bei
+  // `groupMembers` im Kohäsions-Schnitt).
+  const roleMembers: SplitMember[][] = [];
   const parts: Part[] = roles
     .sort((a, b) => b.users.length - a.users.length || b.members.size - a.members.size)
     .map((r, gi) => {
       const list = [...r.members].sort();
       const picked = list.map((n) => api.find((m) => m.name === n)).filter(Boolean) as SplitMember[];
+      roleMembers.push(picked);
       const { name, guessed } = nameFor(picked.length ? picked : [], cls, gi);
       const users = r.users.map((u) => u.className).sort();
       return {
@@ -577,7 +798,43 @@ function roleSplit(cls: SplitClass, members: SplitMember[], consumers: SplitCons
   // Eignung: je kleiner der größte Ausschnitt gegen die ganze Klasse, desto mehr bringt der Schnitt.
   const fit = Math.max(0, Math.min(1, 1 - widest / Math.max(1, api.length)));
 
+  // --- Die Dateien ------------------------------------------------------------------------------
+  // ⚠️ Ein Interface trägt SIGNATUREN, keine Rümpfe – anders als beim Zustands-Schnitt, wo die
+  // Methode wirklich umzieht. Hier bleibt jede Zeile der Klasse, wo sie ist; genau das ist die
+  // Aussage dieses Schnitts, und ein Interface mit Rumpf würde sie unterlaufen.
+  const files: SplitFile[] = parts.map((p, gi) => {
+    const list = roleMembers[gi] || [];
+    const body = [
+      `public interface ${p.name} {`,
+      ...list.map((m) => `${INDENT}${m.returnType ? `${m.returnType} ` : ''}${m.name}(${paramList(m)});`),
+      '}',
+    ].join('\n');
+    return asFile(cls.package, p.name, 'new', p.reason, javaFile(cls.package, imports, body));
+  });
+
+  // Die Klasse selbst: EINE Zeile ändert sich. Sie steht trotzdem als Datei da, weil „nur
+  // implements dazuschreiben" ohne den Anblick der Zeile eine Behauptung bleibt – und weil der
+  // Kommentar darunter die eigentliche Nachricht ist: darunter ändert sich nichts.
+  const sample = (roleMembers[0] || [])[0];
+  files.push(
+    asFile(
+      cls.package,
+      cls.className,
+      'excerpt',
+      `Only the first line changes. ${cls.className} keeps every field, every method and every body it has — it just says which of the lists it can serve, and it already can: these methods are its own.`,
+      [
+        `public class ${cls.className} implements ${parts.map((p) => p.name).join(', ')} {`,
+        '',
+        `${INDENT}// everything below stays exactly as it is —`,
+        `${INDENT}// ${members.filter((m) => m.kind === 'method').length} methods, same code, only an @Override on top`,
+        ...(sample ? ['', `${INDENT}@Override`, methodText(sample)] : []),
+        '}',
+      ].join('\n') + '\n',
+    ),
+  );
+
   return {
+    files,
     id: 'roles',
     title: 'Split what the others see',
     verdict: fit >= 0.4 ? 'strong' : 'weak',
@@ -605,7 +862,7 @@ function roleSplit(cls: SplitClass, members: SplitMember[], consumers: SplitCons
  * Methoden und einer, die 40 Verzweigungen hält, ist keine zu große Klasse – sie hat eine zu große
  * Methode, und jede Aufteilung nähme sie mit in ihren neuen Ort.
  */
-function branchingSplit(cls: SplitClass, members: SplitMember[]): Strategy {
+function branchingSplit(cls: SplitClass, members: SplitMember[], imports: string[]): Strategy {
   const withBody = members.filter((m) => m.kind !== 'field' && (m.body || '').trim());
   const scored = withBody
     .map((m) => ({ m, cx: cyclomatic(m.body || ''), lines: countCodeLines(m.body || '') }))
@@ -620,6 +877,7 @@ function branchingSplit(cls: SplitClass, members: SplitMember[]): Strategy {
     headline: 'No single method dominates.',
     why,
     parts: [],
+    files: [],
     shared: [],
     cost: null,
     gain: null,
@@ -707,7 +965,131 @@ function branchingSplit(cls: SplitClass, members: SplitMember[]): Strategy {
     });
   }
 
+  // --- Die Dateien ------------------------------------------------------------------------------
+  // ⚠️ Hier entsteht beim Extract-Fall KEINE neue Datei, und es wird auch keine erfunden: welche
+  // Blöcke des Rumpfs zusammengehören, weiß die Rechnung nicht – das ist genau die Entscheidung,
+  // die der Mensch trifft. Gezeigt wird deshalb die Methode, wie sie HEUTE dasteht: sie ist der
+  // Gegenstand, und ein ausgedachtes „nachher" mit `validate()`/`calculate()` wäre ein Beispiel,
+  // das mit diesem Code nichts zu tun hat.
+  const files: SplitFile[] = [
+    {
+      ...asFile(
+        cls.package,
+        `${cls.className}.${top.m.name}`,
+        'excerpt',
+        `The method as it stands today — ${top.cx} branches in ${top.lines} lines. Every block you would put a comment above is a method waiting for a name.`,
+        `${methodText(top.m).replace(new RegExp(`^${INDENT}`, 'gm'), '')}\n`,
+      ),
+      verbatim: true,
+    },
+  ];
+
+  if (dispatch) {
+    // ⚠️ Die Fallnamen werden aus dem ROHEN Rumpf gelesen, nicht aus `code`. `stripNonCode` blankt
+    // String-Literale – und genau die SIND hier die Namen: aus `case "create":` wurde dort
+    // `case        :`, alle Labels kamen leer an und es entstand keine einzige Fallklasse. Die
+    // ZÄHLUNG oben bleibt auf `code` (`case` ist ein Schlüsselwort und in einem Kommentar nicht
+    // gemeint), die BENENNUNG braucht den Originaltext.
+    const labels = [...(top.m.body || '').matchAll(/(?<![\w$])case\s+([^:>]+?)\s*(?::|->)/g)]
+      .map((m) => m[1].trim())
+      .filter(Boolean);
+    const nameOfLabel = (raw: string) => {
+      const clean = raw.replace(/['"]/g, '').split(',')[0].trim();
+      const w = words(clean);
+      return w.length ? `${w.map(cap).join('')}Case` : 'ACase';
+    };
+    const iface = `${cap(words(top.m.name)[words(top.m.name).length - 1] || 'case')}Handler`;
+    // ⚠️ Worüber entschieden wird, steht im `switch` – nicht am ersten Parameter geraten. Bei
+    // `route(String kind, String payload)` ist `kind` der Unterscheider und `payload` die Nutzlast;
+    // beides zu verwechseln ergäbe eine `handles`-Methode, die die falsche Größe prüft.
+    const switched = /(?<![\w$])switch\s*\(\s*([A-Za-z_$][\w$]*)\s*\)/.exec(code)?.[1];
+    const disc = top.m.parameters.find((p) => p.name === switched) || top.m.parameters[0] || { type: 'String', name: 'kind' };
+    // `handle` bekommt ALLE Parameter der Originalmethode: die Fallklasse braucht genau die Daten,
+    // die der case-Block heute vor sich hat.
+    const handleParams = paramList(top.m) || `${disc.type} ${disc.name}`;
+    const handleArgs = top.m.parameters.map((p) => p.name).join(', ') || disc.name;
+
+    files.push(
+      asFile(
+        cls.package,
+        iface,
+        'new',
+        'One name for "handles a case". Every case in that switch does the same kind of job on different data — written down, each one can become its own small class.',
+        javaFile(
+          cls.package,
+          imports,
+          [
+            `public interface ${iface} {`,
+            `${INDENT}boolean handles(${disc.type} ${disc.name});`,
+            `${INDENT}${top.m.returnType || 'void'} handle(${handleParams});`,
+            '}',
+          ].join('\n'),
+        ),
+      ),
+    );
+
+    for (const raw of labels.slice(0, 2)) {
+      const cn = nameOfLabel(raw);
+      files.push(
+        asFile(
+          cls.package,
+          cn,
+          'new',
+          `One case, one file. Move the body that sits behind "case ${raw}" in ${top.m.name} into handle() — it is the same code, only with a door in front of it.`,
+          javaFile(
+            cls.package,
+            imports,
+            [
+              `public class ${cn} implements ${iface} {`,
+              `${INDENT}@Override`,
+              `${INDENT}public boolean handles(${disc.type} ${disc.name}) {`,
+              // Ein String-Label vergleicht man mit `equals`, eine Enum-/Zahl-Konstante mit `==`.
+              // Die Anführungszeichen im Original sagen, welches von beidem es ist.
+              `${INDENT}${INDENT}return ${/^["']/.test(raw) ? `${raw}.equals(${disc.name})` : `${disc.name} == ${raw}`};`,
+              `${INDENT}}`,
+              '',
+              `${INDENT}@Override`,
+              `${INDENT}public ${top.m.returnType || 'void'} handle(${handleParams}) {`,
+              `${INDENT}${INDENT}// the body of case ${raw}, moved here unchanged`,
+              `${INDENT}}`,
+              '}',
+            ].join('\n'),
+          ),
+        ),
+      );
+    }
+
+    const ret = top.m.returnType && top.m.returnType !== 'void' ? 'return ' : '';
+    files.push(
+      asFile(
+        cls.package,
+        cls.className,
+        'excerpt',
+        `${top.m.name} stops deciding and starts picking. It keeps its name and its callers; what disappears is the chain of cases. Adding a case is a new file from here on — so it cannot break one that already works.`,
+        javaFile(
+          cls.package,
+          imports,
+          [
+            `public class ${cls.className} { // … every other field and method stays as it is`,
+            '',
+            `${INDENT}// one new field — add it to the constructor you already have`,
+            `${INDENT}private final java.util.List<${iface}> handlers;`,
+            '',
+            `${INDENT}${top.m.modifiers.join(' ')}${top.m.modifiers.length ? ' ' : ''}${top.m.returnType ? `${top.m.returnType} ` : ''}${top.m.name}(${paramList(top.m)}) {`,
+            `${INDENT}${INDENT}${ret}handlers.stream()`,
+            `${INDENT}${INDENT}${INDENT}.filter(h -> h.handles(${disc.name}))`,
+            `${INDENT}${INDENT}${INDENT}.findFirst().orElseThrow()`,
+            `${INDENT}${INDENT}${INDENT}.handle(${handleArgs});`,
+            `${INDENT}}`,
+            '}',
+          ].join('\n'),
+        ),
+      ),
+    );
+  }
+
   return {
+    files,
     id: 'branching',
     title: 'Split the method, not the class',
     verdict: share >= 0.45 || top.cx >= 15 ? 'strong' : 'weak',
@@ -739,6 +1121,7 @@ export function buildSplitPlan(
   cls: SplitClass,
   members: SplitMember[],
   consumers: SplitConsumer[],
+  imports: string[] = [],
 ): any {
   const driverStrategy: Record<string, string> = {
     size: 'cohesion',
@@ -749,9 +1132,9 @@ export function buildSplitPlan(
   const preferred = driverStrategy[cls.driver || ''] || 'cohesion';
 
   const strategies = [
-    cohesionSplit(cls, members),
-    roleSplit(cls, members, consumers),
-    branchingSplit(cls, members),
+    cohesionSplit(cls, members, imports, consumers),
+    roleSplit(cls, members, consumers, imports),
+    branchingSplit(cls, members, imports),
   ].sort((a, b) => {
     const d = b.fit - a.fit;
     if (Math.abs(d) > 0.05) return d;

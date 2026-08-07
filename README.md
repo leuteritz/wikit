@@ -31,8 +31,9 @@ copying one file.
 - **Java code analysis** — parse `.java` locally (no JDK) and explore a class dependency graph.
 - **Code insights** — dependency cycles, a hotspot ranking and package balance, derived from what
   is already stored. Click a hotspot and it works out **how it would split that class** — by state,
-  by callers or by method — names the parts and shows the change as before/after code. Plus a
-  **reading path** and **what is missing**: classes your own packages import, but never uploaded.
+  by callers or by method — and writes out the resulting **Java files in full**, with your real
+  method bodies, ready to copy. Plus a **reading path** and **what is missing**: classes your own
+  packages import, but never uploaded.
 - **Topic bundles** — collect every class around one term (by name, by source, by meaning, by
   relation) and copy their whole source as one text, ready to paste into a chat.
 - **AI summaries** — optional, per method and per class, via [Ollama](https://ollama.com)

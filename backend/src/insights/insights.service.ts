@@ -4,6 +4,8 @@ import { DataSource } from 'typeorm';
 import { safeJson } from '../common/json.util';
 import { classMetrics } from '../common/code-metrics';
 import { buildSplitPlan, SplitConsumer, SplitMember } from './split-plan';
+import { CodeFormatterService } from '../common/code-formatter.service';
+import { MarkdownService } from '../common/markdown.service';
 
 // Wie viele Klassen ein Nachtrags-Haeppchen umfasst. Der Lauf liest `raw_source` – die groesste
 // Spalte der Datenbank –, deshalb bewusst klein: zwischen zwei Haeppchen bekommt der Event-Loop
@@ -167,7 +169,13 @@ export class InsightsService implements OnModuleInit {
   private readonly logger = new Logger(InsightsService.name);
   private backfilling = false;
 
-  constructor(@InjectDataSource() private readonly ds: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly ds: DataSource,
+    // Nur fuer den Aufteilungsvorschlag: der erzeugt Java-Quelltext und braucht dafuer dieselbe
+    // Einrueckung und denselben Highlighter wie jede andere Codeanzeige – kein zweiter von beiden.
+    private readonly formatter: CodeFormatterService,
+    private readonly markdown: MarkdownService,
+  ) {}
 
   onModuleInit(): void {
     // Nicht awaiten: der Nachtrag darf den Start nicht aufhalten (gleiche Bauart wie
@@ -524,8 +532,14 @@ export class InsightsService implements OnModuleInit {
       if (member && !c.members.includes(member)) c.members.push(member);
     }
 
+    // Die Import-Zeilen der Ursprungsklasse. Welche davon eine erzeugte Datei WIRKLICH braucht,
+    // entscheidet `importsFor` am fertigen Text – alle zu übernehmen wäre bequem und falsch.
+    const imports: string[] = (
+      await this.ds.query(`SELECT to_class_name FROM java_dependencies WHERE from_file_id = ?`, [fileId])
+    ).map((r: any) => String(r.to_class_name || '')).filter(Boolean);
+
     const allowed = new Set(['branching', 'size', 'coupling', 'churn']);
-    return buildSplitPlan(
+    const plan = buildSplitPlan(
       {
         id: file.id,
         className: file.class_name,
@@ -537,7 +551,27 @@ export class InsightsService implements OnModuleInit {
       },
       members,
       [...byConsumer.values()].sort((a, b) => a.className.localeCompare(b.className)),
+      imports,
     );
+
+    // ⚠️ EINMAL einrücken, daraus BEIDES. Der erzeugte Text setzt sich aus Rümpfen zusammen, die
+    // ihre Einrückung aus verschiedenen Tiefen mitbringen; `reindentJava` stellt sie her. Würde
+    // stattdessen die Markdown-Pipeline einrücken (ihr Default), zeigte das Fenster einen anderen
+    // Text an, als der Kopierknopf herausgibt – deshalb `reindentJava: false` beim Rendern und
+    // `code` bereits eingerückt. Dieselbe Falle wie beim `raw=1` des Themen-Bündels.
+    for (const s of plan.strategies) {
+      for (const f of s.files || []) {
+        // `verbatim` ist Originalcode und bleibt unangetastet (s. SplitFile) – alles andere ist
+        // zusammengesetzt und bekommt erst hier seine Form.
+        if (!f.verbatim) f.code = this.formatter.reindentJava(f.code);
+        f.lines = f.code.split('\n').length;
+        const { html } = await this.markdown.renderMarkdown('```java\n' + f.code + '\n```', {
+          reindentJava: false,
+        });
+        f.html = html;
+      }
+    }
+    return plan;
   }
 
   // --- Was von aussen hereinkommt --------------------------------------------------------------

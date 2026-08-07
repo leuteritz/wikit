@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.24.0",
-  "whatsNew": "Hotspots show how they would split the class",
+  "version": "4.25.0",
+  "whatsNew": "Split suggestions are now real Java files",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

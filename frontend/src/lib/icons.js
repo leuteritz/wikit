@@ -68,6 +68,14 @@ import gitBranch from '@iconify-icons/lucide/git-branch'
 import gitFork from '@iconify-icons/lucide/git-fork'
 import arrowUpFromLine from '@iconify-icons/lucide/arrow-up-from-line'
 import cornerUpLeft from '@iconify-icons/lucide/corner-up-left'
+// Aufteilungsvorschlag (/insights -> Hotspots): die Nutzer-Seite eines Schnitts, die drei Arten
+// von Datei (anlegen / umschreiben / nur ansehen) und der Pfeil der „after"-Bilanz.
+// ⚠️ `file-pen` gibt es in dieser Lucide-Fassung NICHT – der Name ist `file-edit`.
+import users from '@iconify-icons/lucide/users'
+import filePlus from '@iconify-icons/lucide/file-plus'
+import fileEdit from '@iconify-icons/lucide/file-edit'
+import fileSearch from '@iconify-icons/lucide/file-search'
+import cornerDownRight from '@iconify-icons/lucide/corner-down-right'
 import unlink from '@iconify-icons/lucide/unlink'
 import component from '@iconify-icons/lucide/component'
 import atSign from '@iconify-icons/lucide/at-sign'
@@ -184,6 +192,12 @@ const ICONS = {
   'lucide:database': database,
   'lucide:wrench': wrench,
   'lucide:layers': layers,
+  // Aufteilungsvorschlag: Schnittart „nach Nutzern", die drei Dateiarten, der Bilanz-Pfeil.
+  'lucide:users': users,
+  'lucide:file-plus': filePlus,
+  'lucide:file-edit': fileEdit,
+  'lucide:file-search': fileSearch,
+  'lucide:corner-down-right': cornerDownRight,
   // „Hier geht es zur Quelle": Sprung-Affordanz an Herkunfts-/Nutzungsangaben.
   'lucide:arrow-up-right': arrowUpRight,
   'lucide:layout-grid': layoutGrid,
