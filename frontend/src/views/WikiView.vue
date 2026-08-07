@@ -5,11 +5,28 @@ import { ref, computed, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useArticles } from '../composables/useArticles.js'
 import BusyState from '../components/BusyState.vue'
+import WikiRelationGraph from '../components/WikiRelationGraph.vue'
+import { categoryColors, colorFor } from '../lib/wikiGraph.js'
 import { Icon } from '../lib/icons.js'
 
 const { articles, categories, loading, load } = useArticles()
 const filter = ref('')
 const startedAt = ref(Date.now())
+// Zwei Modi derselben Ansicht (gleiche Bauart wie „Class · Relation" in /code): die Liste
+// beantwortet „was gibt es?", der Graph „was haengt woran?".
+//
+// ⚠️ **Gemountet wird beim ERSTEN Umschalten, danach nur noch versteckt** (`v-if` + `v-show`).
+// Beides ist noetig und keins reicht allein: ein von Anfang an gemounteter Graph laege in einem
+// `display:none`-Container, misst dort 0x0 – und `fitView` passt ein Layout in nichts ein, das
+// Bild bliebe beim Umschalten leer. Ihn dagegen bei jedem Wechsel neu zu mounten hiesse, Daten,
+// Layout und gewaehlten Ausschnitt jedes Mal wegzuwerfen.
+const view = ref('list') // 'list' | 'graph'
+const graphMounted = ref(false)
+
+function setView(next) {
+  if (next === 'graph') graphMounted.value = true
+  view.value = next
+}
 
 onMounted(load)
 
@@ -24,8 +41,18 @@ const filtered = computed(() => {
   )
 })
 
-// Kategorie-Farbe: durch die Zusatz-Hues rotieren (deterministisch per Index).
-const CAT_COLORS = ['var(--color-thistle)', 'var(--color-accent)', 'var(--color-lavender)', 'var(--color-cyan)']
+// Die Treffer des Filters, EINMAL gerechnet – der Graph markiert dieselben, die die Liste zeigt.
+// Ohne Filter ist die Menge leer und nicht etwa „alle": sonst leuchtete jede Karte im Bild, und
+// eine Hervorhebung, die fuer alles gilt, hebt nichts hervor.
+const matchIds = computed(() =>
+  filter.value.trim() ? new Set(filtered.value.map((a) => a.id)) : new Set(),
+)
+
+// ⚠️ Die Kategoriefarbe kommt aus `lib/wikiGraph.js` und haengt an der KATEGORIE, nicht an der
+// Position ihrer Gruppe in der gefilterten Liste. Vorher rotierte sie ueber den Gruppen-Index –
+// ein Filter, der die erste Kategorie ausblendete, faerbte alle uebrigen um. Neben dem Graphen
+// waere das sofort sichtbar: dieselbe Kategorie links gruen, rechts violett.
+const catColors = computed(() => categoryColors(categories.value))
 
 // Artikel nach Kategorie gruppieren (inkl. "Uncategorized") – wie in der bisherigen Logik.
 const groups = computed(() => {
@@ -38,9 +65,9 @@ const groups = computed(() => {
   }
   const result = [...byCat.values()].filter((g) => g.items.length)
   if (uncategorized.length) {
-    result.push({ category: { id: 0, name: 'Uncategorized', icon: null }, items: uncategorized })
+    result.push({ category: { id: null, name: 'Uncategorized', icon: null }, items: uncategorized })
   }
-  return result.map((g, i) => ({ ...g, color: CAT_COLORS[i % CAT_COLORS.length] }))
+  return result.map((g) => ({ ...g, color: colorFor(catColors.value, g.category.id) }))
 })
 </script>
 
@@ -56,13 +83,36 @@ const groups = computed(() => {
           <span class="font-mono font-semibold text-[var(--color-text)]">{{ categories.length }}</span> categories
         </p>
       </div>
-      <RouterLink
-        to="/new"
-        class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-4 py-2.5 text-[0.78125rem] font-semibold text-[var(--color-accent-contrast)] transition hover:bg-[var(--color-accent-hover)]"
-      >
-        <Icon icon="lucide:plus" class="h-4 w-4" />
-        New article
-      </RouterLink>
+      <div class="flex items-center gap-2">
+        <!-- Umschalter: zwei Fragen an denselben Bestand. Die Liste sagt „was gibt es?",
+             der Graph „was haengt woran?". -->
+        <div class="flex items-center rounded-lg border border-[var(--color-border)] p-0.5">
+          <button
+            v-for="m in [
+              { key: 'list', icon: 'lucide:list', label: 'List' },
+              { key: 'graph', icon: 'lucide:network', label: 'Graph' },
+            ]"
+            :key="m.key"
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 font-mono text-3xs font-semibold transition"
+            :class="view === m.key
+              ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]'
+              : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
+            :aria-pressed="view === m.key"
+            @click="setView(m.key)"
+          >
+            <Icon :icon="m.icon" class="h-3.5 w-3.5" />
+            {{ m.label }}
+          </button>
+        </div>
+        <RouterLink
+          to="/new"
+          class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-4 py-2.5 text-[0.78125rem] font-semibold text-[var(--color-accent-contrast)] transition hover:bg-[var(--color-accent-hover)]"
+        >
+          <Icon icon="lucide:plus" class="h-4 w-4" />
+          New article
+        </RouterLink>
+      </div>
     </div>
 
     <!-- Filter -->
@@ -80,8 +130,15 @@ const groups = computed(() => {
     <!-- Gleiche Wartemeldung wie im Analyzer (components/BusyState.vue). -->
     <BusyState v-if="loading" variant="panel" title="Loading articles…" detail="titles, categories and tags" :since="startedAt" :rows="4" />
 
+    <!-- Erst beim Umschalten mounten, danach nur verstecken (s. `setView`). Der Filter MARKIERT
+         hier, statt zu isolieren: ein Beziehungsnetz ohne die unpassenden Knoten beantwortet
+         „wer haengt woran?" nicht mehr. -->
+    <div v-if="graphMounted" v-show="view === 'graph'" class="h-[72vh] min-h-[26rem]">
+      <WikiRelationGraph :categories="categories" :match-ids="matchIds" />
+    </div>
+
     <!-- Gruppen -->
-    <div v-else class="flex flex-col gap-8">
+    <div v-show="!loading && view === 'list'" class="flex flex-col gap-8">
       <section v-for="group in groups" :key="group.category.id">
         <h2 class="mb-3.5 flex items-center gap-2.5">
           <span class="h-2 w-2 rounded-[2px]" :style="{ background: group.color }" />

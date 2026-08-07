@@ -26,7 +26,8 @@ copying one file.
   call it.
 - **Ask the codebase** — a question in plain words, answered only from the classes that match.
   Every claim carries the class it came from; one click opens it at the line.
-- **Relationship graph** — typed links between articles, drawn with [Vue Flow](https://vueflow.dev).
+- **Relationship graph** — typed links between articles as a graph ([Vue Flow](https://vueflow.dev)):
+  what hangs together, which article is the hub, and which ones nothing points at.
 - **Java code analysis** — parse `.java` locally (no JDK) and explore a class dependency graph.
 - **Code insights** — dependency cycles, a hotspot ranking and package balance, derived from what
   is already stored.

@@ -9,8 +9,11 @@ export class RelationsService {
 
   // Kompletter Graph fuer die GraphView: Knoten = Artikel, Kanten = relations.
   async getGraph(): Promise<{ nodes: any[]; edges: any[] }> {
+    // `category_id` faehrt mit: die Farbe im Graphen haengt an der Kategorie selbst, nicht an
+    // ihrem Namen – zwei Kategorien duerfen gleich heissen, und ueber den Namen zu schluesseln
+    // waere genau die Art Zuordnung, die beim ersten Duplikat still danebengreift.
     const nodes = await this.ds.query(
-      `SELECT a.id, a.slug, a.title, c.name AS category, c.slug AS category_slug
+      `SELECT a.id, a.slug, a.title, a.category_id, c.name AS category, c.slug AS category_slug
        FROM articles a LEFT JOIN categories c ON c.id = a.category_id`,
     );
     // Relation-Entity hat exakt die Spalten id, source_id, target_id, relation_type, label.

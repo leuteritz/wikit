@@ -102,6 +102,8 @@ export const api = {
 
   search: (q) => http('GET', `/search?q=${encodeURIComponent(q)}`),
 
+  // Das ganze Beziehungsnetz in EINER Antwort ({ nodes, edges }) – Grundlage des Wiki-Graphen.
+  getRelationGraph: () => http('GET', '/relations'),
   createRelation: (data) => http('POST', '/relations', data),
   deleteRelation: (id) => http('DELETE', `/relations/${id}`),
 
