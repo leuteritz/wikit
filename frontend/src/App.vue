@@ -162,6 +162,14 @@ const navLinks = computed(() => [
       ? `Topic — ${pickedCount.value} ${pickedCount.value === 1 ? 'class' : 'classes'} picked for “${topicTerm.value}”`
       : 'Collect every class around a topic and copy their code',
   },
+  // Ask traegt KEINE Zahl: die vierte Art Aussage waere „so viele Fragen hast du gestellt", und
+  // danach hat niemand gefragt. Eine Frage ist ein Vorgang, kein Bestand – die Zeile bietet ihn an.
+  {
+    to: '/ask',
+    label: 'Ask',
+    icon: 'lucide:help-circle',
+    title: 'Ask a question and get an answer backed by the classes it came from',
+  },
   { to: '/wiki', label: 'Wiki', icon: 'lucide:book-open', count: articles.value.length },
   // Der Bot traegt keine Zahl, sondern einen Zustand: eine „3" waere hier keine Auskunft, die
   // Frage ist „antwortet er?". Der Punkt sitzt an derselben Stelle wie die Zaehler daneben.

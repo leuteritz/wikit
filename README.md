@@ -22,8 +22,10 @@ copying one file.
   Shiki syntax highlighting.
 - **Instant search** — `Ctrl/Cmd + K` over articles, classes, methods and raw source, backed by
   SQLite **FTS5** (a trigram index answers substrings and punctuation without reading any file).
-  With Ollama it also finds classes **by meaning** — the ones that do the thing, whether or not
-  they use your words for it.
+  With Ollama it also finds classes **by meaning** — the ones that do the thing, whatever they
+  call it.
+- **Ask the codebase** — a question in plain words, answered only from the classes that match.
+  Every claim carries the class it came from; one click opens it at the line.
 - **Relationship graph** — typed links between articles, drawn with [Vue Flow](https://vueflow.dev).
 - **Java code analysis** — parse `.java` locally (no JDK) and explore a class dependency graph.
 - **Code insights** — dependency cycles, a hotspot ranking and package balance, derived from what

@@ -255,6 +255,14 @@ export const api = {
     http('POST', '/java/embeddings/rebuild', { jobId, force }),
   clearJavaEmbeddings: () => http('DELETE', '/java/embeddings'),
 
+  // --- Ask the codebase (/ask) ----------------------------------------------
+  // Erst den Strom oeffnen, dann starten (dieselbe Bauart wie Playground und analyze-progress):
+  // die Quellen gehen VOR dem ersten Token raus, und ein spaeter geoeffneter Strom haette genau
+  // die Auskunft verpasst, an der die Antwort haengt.
+  startAsk: (data) => http('POST', '/ask', data),
+  cancelAsk: (jobId) => http('POST', `/ask/${encodeURIComponent(jobId)}/cancel`),
+  askStreamUrl: (jobId) => `${BASE}/ask/stream/${encodeURIComponent(jobId)}`,
+
   // --- Insights (/insights) -------------------------------------------------
   // EINE Antwort fuer Klassenkennzahlen, Package-Kennzahlen und Zyklen: sie entstehen aus
   // demselben aufgeloesten Graphen, und zwei Requests koennten zwei Staende zeigen.

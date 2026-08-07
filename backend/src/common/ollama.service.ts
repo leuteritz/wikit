@@ -73,7 +73,11 @@ export class OllamaService {
   // gespeicherte Projekt-Kontext (Bot-Bereich) und der Kontext dieses Laufs (RAG-Wissen +
   // das Feld im Add-Code-Modal). Der gespeicherte steht vorn -- es sei denn, er steckt bereits
   // im uebergebenen Text, sonst stuende er bei einem vorbelegten Feld zweimal im Prompt.
-  private contextBlock(cfg: BotConfig, context?: string): string {
+  //
+  // Public, weil `/ask` seinen Prompt selbst zusammensetzt (die Quellen entstehen dort) und den
+  // {context}-Platzhalter trotzdem GENAUSO fuellen muss wie die vier Doku-Pfade hier -- eine zweite
+  // Fassung waere ein zweiter Projekt-Kontext, der beim ersten Umbau auseinanderlaeuft.
+  contextBlock(cfg: BotConfig, context?: string): string {
     const runtime = (context || '').trim();
     const stored = (cfg.projectContext || '').trim();
     const parts: string[] = [];

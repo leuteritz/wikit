@@ -105,6 +105,14 @@ import checkSquare from '@iconify-icons/lucide/check-square'
 import flame from '@iconify-icons/lucide/flame'
 import scissors from '@iconify-icons/lucide/scissors'
 import repeatIcon from '@iconify-icons/lucide/repeat'
+// Ask (/ask): die Frage selbst und der Beleg, mit dem die Antwort sie stuetzt.
+import helpCircle from '@iconify-icons/lucide/help-circle'
+import quote from '@iconify-icons/lucide/quote'
+// Wiki-Graph (/wiki): das Beziehungsnetz der Artikel.
+import network from '@iconify-icons/lucide/network'
+// Lesepfad (/topic): die Route und ihre Stationen.
+import route from '@iconify-icons/lucide/route'
+import milestone from '@iconify-icons/lucide/milestone'
 
 // --- Phosphor (Duotone, fuer das Brand-Logo) ---
 import phBooksDuotone from '@iconify-icons/ph/books-duotone'
@@ -206,6 +214,11 @@ const ICONS = {
   'lucide:flame': flame,
   'lucide:scissors': scissors,
   'lucide:repeat': repeatIcon,
+  'lucide:help-circle': helpCircle,
+  'lucide:quote': quote,
+  'lucide:network': network,
+  'lucide:route': route,
+  'lucide:milestone': milestone,
   'ph:books-duotone': phBooksDuotone,
 }
 

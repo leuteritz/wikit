@@ -18,6 +18,8 @@ export interface BotPrompts {
   class: string;
   /** Changelog-Eintrag aus einem Unified-Diff. */
   diff: string;
+  /** Antwort auf eine Frage an die Codebasis, belegt aus den mitgelieferten Klassen (`/ask`). */
+  ask: string;
 }
 
 export interface BotQueueConfig {
@@ -97,6 +99,24 @@ Klasse: {fqn} ({classType})
 \`\`\`diff
 {diff}
 \`\`\``,
+
+  // ⚠️ Die Belegpflicht ist keine Hoeflichkeit, sondern die Bedingung, unter der die Antwort
+  // ueberhaupt verwendbar ist: ein Modell, das aus dem Gedaechtnis antwortet, erfindet in einer
+  // fremden Codebasis plausible Klassennamen. Nur was in eckigen Klammern steht UND in den
+  // gelieferten Quellen vorkommt, wird im Client zum Sprungziel -- alles andere bleibt Text.
+  ask: `{context}Du beantwortest Fragen zu einer Java-Codebasis. Unten stehen Auszuege genau der Klassen, die zur Frage passen -- mehr weisst du ueber dieses Projekt nicht.
+
+Regeln:
+- Antworte AUSSCHLIESSLICH aus den Quellen. Steht die Antwort nicht darin, sage genau das und rate nicht.
+- Belege jede Aussage mit der Klasse in eckigen Klammern: [OrderService] oder, wenn es um ein bestimmtes Mitglied geht, [OrderService#place].
+- Erfinde keine Klassen-, Methoden- oder Paketnamen. Nutze nur Namen, die unten vorkommen.
+- Fasse dich kurz: 3-6 Saetze oder eine knappe Markdown-Liste. Kein Code-Block, ausser die Frage verlangt ausdruecklich einen.
+
+Frage:
+{question}
+
+Quellen:
+{sources}`,
 };
 
 // Welche Platzhalter eine Vorlage kennt -- die Oberflaeche zeigt sie als einsetzbare Chips an.
@@ -105,6 +125,7 @@ export const PROMPT_PLACEHOLDERS: Record<keyof BotPrompts, string[]> = {
   methodShort: ['context', 'signature', 'javadoc', 'className', 'methodName', 'returnType'],
   class: ['context', 'fqn', 'className', 'classType', 'package', 'methods'],
   diff: ['context', 'className', 'diff'],
+  ask: ['context', 'question', 'sources'],
 };
 
 // Was ein Platzhalter liefert -- Text fuer die Hilfe in der Oberflaeche (UI-Sprache: Englisch).
@@ -121,6 +142,8 @@ export const PLACEHOLDER_HELP: Record<string, string> = {
   package: 'Package of the class, empty for the default package.',
   methods: 'Comma-separated method names, already prefixed. Empty for a class without methods.',
   diff: 'Unified diff against the previous version.',
+  question: 'The question as typed, unchanged.',
+  sources: 'The retrieved classes with package, description and member signatures. This is everything the model knows about the codebase.',
 };
 
 const HOST_HINT = 'Base URL of the Ollama server, no path. /api/generate, /api/tags and /api/version are derived from it.';
@@ -225,6 +248,13 @@ export const BOT_FIELDS: BotFieldSpec[] = [
   { path: 'prompts.methodShort', type: 'text', group: 'prompts', label: 'Short method summary', hint: 'Used by the single "summarize" call — signature and Javadoc only, no body.' },
   { path: 'prompts.class', type: 'text', group: 'prompts', label: 'Class description', hint: 'Runs after all methods of a class are done.' },
   { path: 'prompts.diff', type: 'text', group: 'prompts', label: 'Change summary', hint: 'Changelog entry generated when a class is re-imported.' },
+  {
+    path: 'prompts.ask',
+    type: 'text',
+    group: 'prompts',
+    label: 'Answer a question',
+    hint: 'Used by Ask (/ask). The citation rule is what makes an answer checkable — drop it and every claim looks equally trustworthy.',
+  },
   {
     path: 'queue.concurrency',
     type: 'int',

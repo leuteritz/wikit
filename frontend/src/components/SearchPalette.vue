@@ -424,7 +424,16 @@ const results = computed(() => {
       ? [add({ kind: 'topic', term: term.value })]
       : []
 
-  return { flat, classes, serverClasses, meaningItems, articleItems, codeFiles, methods, topic }
+  // ⚠️ Der ZWEITE Uebergang, und er meint eine dritte Frage. `/topic` sammelt ein („was gehoert
+  // dazu?"), `/ask` erklaert („wie haengt das zusammen?"). Beide stehen hier, weil beide Fragen
+  // hier entstehen: man tippt einen Begriff, sieht acht Klassen – und will mal das eine, mal das
+  // andere. Er steht NACH dem Buendel, weil eine Antwort ein Modell kostet und das Einsammeln nicht.
+  const ask =
+    term.value && files.value.length && scope !== 'article'
+      ? [add({ kind: 'ask', term: term.value })]
+      : []
+
+  return { flat, classes, serverClasses, meaningItems, articleItems, codeFiles, methods, topic, ask }
 })
 
 const flatItems = computed(() => results.value.flat)
@@ -433,7 +442,9 @@ const activeItem = computed(() => flatItems.value[active.value] || null)
 // diese Unterscheidung waere „No results for …" nie wieder zu sehen, und ein Begriff, den es
 // nirgends gibt, saehe aus wie ein Fund. Im Index bleibt er trotzdem: ↵ erreicht ihn auch dann,
 // wenn die Liste gar nicht gerendert wird.
-const hasHits = computed(() => flatItems.value.length > results.value.topic.length)
+const hasHits = computed(
+  () => flatItems.value.length > results.value.topic.length + results.value.ask.length,
+)
 
 const counter = computed(() => {
   if (patternError.value) return 'Invalid regex'
@@ -732,6 +743,12 @@ function go(entry) {
   // Nutzer sie ein zweites Mal tippen zu lassen.
   if (entry.kind === 'topic') {
     router.push({ path: '/topic', query: { q: entry.term } })
+    return
+  }
+  // Gleiche Bauart: der Begriff faehrt mit und `/ask` stellt die Frage sofort, statt ihn nur ins
+  // Feld zu setzen und auf ein zweites ↵ zu warten.
+  if (entry.kind === 'ask') {
+    router.push({ path: '/ask', query: { q: entry.term } })
     return
   }
   // Handoff wie Queue/Edge-Panel -> Code: CodeView waehlt die Klasse und springt in die Zeile.
@@ -1212,6 +1229,31 @@ const shortPackage = (pkg) => pkg || 'default package'
               </div>
               <Icon icon="lucide:arrow-up-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
             </button>
+
+            <!-- Die andere Richtung: nicht einsammeln, sondern erklaeren lassen. Ohne eigene
+                 Trennlinie – die beiden Uebergaenge gehoeren zusammen und bilden EINEN Block
+                 unter den Treffern. -->
+            <button
+              v-for="entry in results.ask"
+              :key="`a-${entry.idx}`"
+              type="button"
+              :data-sp-active="entry.idx === active ? '1' : null"
+              class="flex w-full items-center gap-3 px-4 py-2.5 text-left transition"
+              :class="entry.idx === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-surface-offset)]'"
+              @mouseenter="hoverItem(entry.idx)"
+              @click="go(entry)"
+            >
+              <Icon icon="lucide:help-circle" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+              <div class="min-w-0 flex-1">
+                <div class="truncate text-sm text-[var(--color-text)]">
+                  Ask about “{{ entry.term }}”
+                </div>
+                <div class="truncate text-xs text-[var(--color-text-muted)]">
+                  An answer built from the matching classes, each claim linked back
+                </div>
+              </div>
+              <Icon icon="lucide:arrow-up-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
+            </button>
           </div>
 
           <!-- Vorschau: was der markierte Treffer wirklich ist -->
@@ -1258,6 +1300,20 @@ const shortPackage = (pkg) => pkg || 'default package'
                     Four sources answer at once — the name, the source lines, the meaning, and
                     everything one relation away. Pick what belongs and take the code with you as
                     one text.
+                  </p>
+                </div>
+              </div>
+            </template>
+
+            <template v-else-if="activeItem?.kind === 'ask'">
+              <div class="grid h-full place-items-center px-8 text-center">
+                <div>
+                  <Icon icon="lucide:help-circle" class="mx-auto h-7 w-7 text-[var(--color-accent)]" />
+                  <h3 class="mt-2 text-sm font-semibold text-[var(--color-text)]">Ask the codebase</h3>
+                  <p class="mt-1.5 text-xs leading-relaxed text-[var(--color-text-muted)]">
+                    The meaning index picks the classes that fit, and the answer is built from those
+                    alone. Every claim carries the class it came from — one click opens it at the
+                    line.
                   </p>
                 </div>
               </div>
@@ -1453,6 +1509,16 @@ const shortPackage = (pkg) => pkg || 'default package'
               <Icon icon="lucide:boxes" class="h-3.5 w-3.5 text-[var(--color-accent)]" />
               Collect everything about “{{ entry.term }}”
               <kbd class="rounded border border-[var(--color-border)] px-1 font-mono text-3xs">↵</kbd>
+            </button>
+            <button
+              v-for="entry in results.ask"
+              :key="`ae-${entry.idx}`"
+              type="button"
+              class="mt-2 inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text-muted)] transition hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
+              @click="go(entry)"
+            >
+              <Icon icon="lucide:help-circle" class="h-3.5 w-3.5 text-[var(--color-accent)]" />
+              Ask about “{{ entry.term }}”
             </button>
           </template>
           <template v-else>Type to search articles, classes and source code…</template>

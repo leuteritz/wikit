@@ -8,5 +8,8 @@ import { JavaEmbeddingsService } from './java-embeddings.service';
 @Module({
   controllers: [JavaController],
   providers: [JavaService, JavaQueueService, JavaBatchProgressService, JavaEmbeddingsService],
+  // `/ask` baut seine Quellen auf derselben Bedeutungssuche auf, mit der die Palette ihre Treffer
+  // findet -- der Vektor-Cache lebt im Service, also wird er geteilt und nicht nachgebaut.
+  exports: [JavaEmbeddingsService],
 })
 export class JavaModule {}
