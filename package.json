@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.23.0",
-  "whatsNew": "Insights finds classes missing from your import",
+  "version": "4.23.1",
+  "whatsNew": "Every insights tab explains itself in one line",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

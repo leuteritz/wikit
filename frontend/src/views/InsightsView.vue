@@ -46,15 +46,24 @@ const TABS = [
 // Sie stehen deshalb IMMER sichtbar über dem Inhalt und nicht in einem Tooltip: wer nicht weiß,
 // wofür ein Reiter da ist, sucht auch keine Erklärung dazu.
 //
-// Zwei Ebenen: `what` beantwortet „was sehe ich hier?", `fixes` beantwortet „und was mache ich
-// damit?". Die zweite ist zugeklappt – sie ist beim ersten Mal die Rettung und danach im Weg.
+// ⚠️ DREI Ebenen, und die erste ist die wichtigste: `title` ist die Kernaussage des Reiters in
+// einem Satz und steht GROSS – wer nur diese eine Zeile liest, hat den Reiter verstanden. `what`
+// erklärt sie in einem weiteren Satz, `fixes` beantwortet „und was mache ich damit?" und bleibt
+// zugeklappt (beim ersten Mal die Rettung, danach im Weg).
+//
+// ⚠️ Geschrieben für jemanden, der Java kann, aber keine Architekturbegriffe – dieselbe Regel wie
+// beim Code-Beispiel in `CyclePlan`. „Afferent coupling" erklärt nichts, „wie viel hängt daran"
+// schon. Vorher stand hier ein Absatz je Reiter in Fußnotengröße: fachlich richtig, aber wer die
+// Begriffe nicht kennt, liest ihn gar nicht erst zu Ende, und wer sie kennt, braucht ihn nicht.
 const EXPLAIN = {
   overview: {
-    what: 'Everything here is computed from the classes you already imported — their relations, their size and how often you re-imported them. Nothing leaves this machine.',
+    title: 'The state of your code, in numbers',
+    what: 'Everything here is computed from the classes you uploaded — nothing else, and nothing leaves this machine.',
     fixes: null,
   },
   cycles: {
-    what: 'A cycle means the arrows come back: A needs B, and B needs A again. Neither side can be built, tested or read on its own, and a change in one can surface in the other.',
+    title: 'Classes that need each other',
+    what: 'The arrows come back: A needs B, and B needs A again. Neither one can be read, tested or changed on its own.',
     fixes: [
       ['Turn one arrow around', 'Let the class being used define an interface, and have the caller depend on that instead. The dependency stays; its direction flips.'],
       ['Move the member that closes the loop', 'Usually a single method or field is the whole reason. Move it into the class that actually needs it.'],
@@ -62,7 +71,8 @@ const EXPLAIN = {
     ],
   },
   hotspots: {
-    what: 'The score is a rank, not a measurement: 78 means this class carries more weight than 78 % of the others. Weight is branching, size and how many classes hang on it.',
+    title: 'The classes that cost you the most time',
+    what: 'Long, full of decisions, and a lot hangs on them. The score is a rank: 78 means this class weighs more than 78 % of the others.',
     fixes: [
       ['Start at the top, not at the worst file', 'The top of this list is where a change is most likely to be slow, risky, or both. A big class nobody touches is not urgent.'],
       ['Fix the driver, not the score', 'The tag on each row says what makes it heavy. Splitting a long method helps a branching problem and does nothing for a coupling one.'],
@@ -70,7 +80,8 @@ const EXPLAIN = {
     ],
   },
   packages: {
-    what: 'Two things decide whether a package is cut well: how much depends on it, and how much of it is abstract. Healthy is either “used everywhere and mostly interfaces” or “depends on everything and fully concrete”. The trouble sits in between.',
+    title: 'Is this package cut well?',
+    what: 'Two things decide it: how much depends on this package, and how much of it is interfaces. Trouble sits where the two do not match.',
     fixes: [
       ['Concrete and depended upon', 'Everything hangs on it and nothing can be extended. Extract interfaces for the parts other packages use.'],
       ['Abstract and unused', 'Interfaces nobody implements or calls. Delete what is dead, or merge it back into the package that was supposed to use it.'],
@@ -78,7 +89,8 @@ const EXPLAIN = {
     ],
   },
   path: {
-    what: 'An order to read this code in, built from what depends on what: the classes that need nothing else come first, then the ones built on top of them. Reading a class before its parts is exactly what makes unfamiliar code hard.',
+    title: 'Where to start reading',
+    what: 'Classes that need nothing else come first, then the ones built on them. Reading a class before its parts is what makes new code hard.',
     fixes: [
       ['Start with one package, not everything', 'A path through 400 classes is the codebase again. Pick the package you actually have to work in.'],
       ['A “needs a look ahead” step is a cycle', 'It means the order had to be broken somewhere. Those classes only make sense read together — the step says which ones.'],
@@ -86,7 +98,8 @@ const EXPLAIN = {
     ],
   },
   outside: {
-    what: 'Every other tab looks at what is here. This one reads the import lines and asks the opposite question: what does this code reach for that this workspace does not contain? Some of it is a library. Some of it is your own code that never got uploaded.',
+    title: 'What this code uses but does not have',
+    what: 'Read from the import lines. Some of it is a library you never need to see. Some of it is your own code that never got uploaded.',
     fixes: [
       ['Missing classes come first', 'They sit in packages you already have. Every one of them is a hole in the graph: relations that were never drawn, because the other end is not here.'],
       ['Add them the same way as the rest', 'Paste the missing sources under “Add code” in the Code view, then recompute edges — the cycles and hotspots on the other tabs change with them.'],
@@ -135,6 +148,9 @@ const DRIVER = {
   churn: { label: 'churn', hint: 'Heavy AND touched often — the most expensive combination, and the one that pays back first.' },
 }
 const tab = ref('overview')
+// Der Erklärblock trägt das Icon des offenen Reiters – EINE Quelle (`TABS`), damit Leiste und Block
+// nicht auseinanderlaufen, wenn dort einmal ein anderes Symbol steht.
+const tabMeta = computed(() => TABS.find((t) => t.id === tab.value) || TABS[0])
 const startedAt = ref(Date.now())
 
 // Wie viele Zeilen eine Rangliste zeigt, bevor sie ausklappt. Zwanzig Brandherde sind eine
@@ -547,9 +563,48 @@ const plotted = computed(() => {
             </div>
           </div>
 
-          <!-- Ein Deckel wird ANGESCHRIEBEN: eine still weggelassene Kante liest sich wie keine. -->
+          <!-- ⚠️ Wofür der Reiter da ist – IMMER sichtbar, nicht im Tooltip: wer nicht weiß, was er
+               sieht, sucht auch keine Erklärung dazu. Die Kernaussage steht GROSS und trägt das
+               Icon des Reiters: dieselbe Marke wie in der Leiste darüber, also ist ohne ein Wort
+               klar, wozu der Satz gehört. Die Handlungsanleitung bleibt zugeklappt – beim ersten
+               Mal die Rettung, danach im Weg. -->
+          <div class="mb-5 flex items-start gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-5 py-4">
+            <span class="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+              <Icon :icon="tabMeta.icon" class="h-5 w-5" />
+            </span>
+            <div class="min-w-0 flex-1">
+              <h2 class="text-xl font-semibold leading-snug tracking-tight text-[var(--color-text)]">
+                {{ EXPLAIN[tab].title }}
+              </h2>
+              <p class="mt-1 max-w-3xl text-sm leading-relaxed text-[var(--color-text-muted)]">
+                {{ EXPLAIN[tab].what }}
+              </p>
+              <template v-if="EXPLAIN[tab].fixes">
+                <button
+                  type="button"
+                  class="mt-2.5 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-accent)] transition hover:underline"
+                  @click="openFixes = !openFixes"
+                >
+                  <Icon :icon="openFixes ? 'lucide:chevron-down' : 'lucide:chevron-right'" class="h-3.5 w-3.5" />
+                  What do I do with this?
+                </button>
+                <ul v-if="openFixes" class="mt-2.5 space-y-2 border-l-2 border-[var(--color-border)] pl-3.5">
+                  <li v-for="([title, body]) in EXPLAIN[tab].fixes" :key="title" class="max-w-3xl text-xs leading-relaxed">
+                    <span class="font-semibold text-[var(--color-text)]">{{ title }}</span>
+                    <span class="text-[var(--color-text-muted)]"> — {{ body }}</span>
+                  </li>
+                </ul>
+              </template>
+            </div>
+          </div>
+
+          <!-- Ein Deckel wird ANGESCHRIEBEN: eine still weggelassene Kante liest sich wie keine.
+               ⚠️ Aber nur EINMAL und UNTER der Erklärung, nicht über jedem Reiter. Der Satz sagt,
+               woher die Zahlen kommen – das ist eine Aussage über den Bericht als Ganzes; über
+               „Cycles" oder „Packages" gestellt las er sich wie ein Befund DIESES Reiters, und er
+               stand vor dem Satz, der überhaupt erst sagt, was man da sieht. -->
           <div
-            v-if="totals.unresolved || totals.pending"
+            v-if="tab === 'overview' && (totals.unresolved || totals.pending)"
             class="mb-5 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-2xs text-[var(--color-text-muted)]"
           >
             <span v-if="totals.unresolved" class="inline-flex items-center gap-1.5">
@@ -561,32 +616,6 @@ const plotted = computed(() => {
               <Icon icon="lucide:loader-2" class="h-3.5 w-3.5 animate-spin" />
               {{ num(totals.pending) }} classes still being measured — refresh in a moment.
             </span>
-          </div>
-
-          <!-- ⚠️ Wofür der Reiter da ist – IMMER sichtbar, nicht im Tooltip: wer nicht weiß, was er
-               sieht, sucht auch keine Erklärung dazu. Die Handlungsanleitung darunter ist
-               zugeklappt: beim ersten Mal die Rettung, danach im Weg. -->
-          <div class="mb-5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3">
-            <p class="flex items-start gap-2 text-xs leading-relaxed text-[var(--color-text-muted)]">
-              <Icon icon="lucide:info" class="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <span>{{ EXPLAIN[tab].what }}</span>
-            </p>
-            <template v-if="EXPLAIN[tab].fixes">
-              <button
-                type="button"
-                class="mt-2 inline-flex items-center gap-1 text-2xs font-medium text-[var(--color-accent)] transition hover:underline"
-                @click="openFixes = !openFixes"
-              >
-                <Icon :icon="openFixes ? 'lucide:chevron-down' : 'lucide:chevron-right'" class="h-3 w-3" />
-                How do I fix these?
-              </button>
-              <ul v-if="openFixes" class="mt-2 space-y-1.5 border-l-2 border-[var(--color-border)] pl-3">
-                <li v-for="([title, body]) in EXPLAIN[tab].fixes" :key="title" class="text-2xs leading-relaxed">
-                  <span class="font-medium text-[var(--color-text)]">{{ title }}</span>
-                  <span class="text-[var(--color-text-muted)]"> — {{ body }}</span>
-                </li>
-              </ul>
-            </template>
           </div>
 
           <!-- ==================== Overview ==================== -->
