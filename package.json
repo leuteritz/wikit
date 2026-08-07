@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.23.1",
-  "whatsNew": "Every insights tab explains itself in one line",
+  "version": "4.24.0",
+  "whatsNew": "Hotspots show how they would split the class",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

@@ -18,6 +18,7 @@ import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { useJavaGraph } from '../composables/useJavaGraph.js'
 import BusyState from '../components/BusyState.vue'
 import CyclePlan from '../components/insights/CyclePlan.vue'
+import SplitPlan from '../components/insights/SplitPlan.vue'
 import { Icon } from '../lib/icons.js'
 import { vTip } from '../lib/tooltip.js'
 import { api } from '../lib/api.js'
@@ -77,6 +78,7 @@ const EXPLAIN = {
       ['Start at the top, not at the worst file', 'The top of this list is where a change is most likely to be slow, risky, or both. A big class nobody touches is not urgent.'],
       ['Fix the driver, not the score', 'The tag on each row says what makes it heavy. Splitting a long method helps a branching problem and does nothing for a coupling one.'],
       ['Check the cycle tag', 'A heavy class inside a dependency loop is the worst combination — you cannot even test it alone.'],
+      ['Click a row to see how it comes apart', 'Wikit groups the methods by the fields they touch, by who calls them, and by where the branches sit — then names the parts and shows the change as before/after code.'],
     ],
   },
   packages: {
@@ -157,6 +159,14 @@ const startedAt = ref(Date.now())
 // Arbeitsliste; tausend sind wieder nur die Codebasis.
 const TOP_N = 20
 const showAllHotspots = ref(false)
+
+// --- Der Aufteilungsvorschlag je Zeile ----------------------------------------------------------
+// ⚠️ Die Zeile klappt auf, der KLASSENNAME springt weiter. Beides an denselben Klick zu hängen war
+// nicht möglich – „zeig mir sie" und „wie teile ich sie?" sind zwei Absichten –, und ein zweiter
+// Knopf in jeder Zeile wäre eine Spalte, die 19 von 20 Zeilen nicht brauchen. Aufgeklappt ist immer
+// nur EINE Zeile: zwei Pläne übereinander sind zwei Aufsätze, gleiche Regel wie bei `openPlan`.
+const openSplit = ref(null)
+const toggleSplit = (id) => (openSplit.value = openSplit.value === id ? null : id)
 
 const totals = computed(() => data.value?.totals || null)
 const classes = computed(() => data.value?.classes || [])
@@ -879,14 +889,21 @@ const plotted = computed(() => {
                   </tr>
                 </thead>
                 <tbody>
+                  <template v-for="c in hotspots" :key="c.id">
                   <tr
-                    v-for="c in hotspots"
-                    :key="c.id"
-                    class="cursor-pointer border-b border-[var(--color-border)] last:border-0 transition hover:bg-[var(--color-surface-offset)]"
-                    @click="openClass(c.id)"
+                    v-tip="'Show how this class could be split'"
+                    class="cursor-pointer border-b border-[var(--color-border)] transition hover:bg-[var(--color-surface-offset)]"
+                    :class="openSplit === c.id ? 'bg-[var(--color-surface-offset)]' : ''"
+                    @click="toggleSplit(c.id)"
                   >
                     <td class="px-3 py-1.5">
                       <div class="flex items-center gap-2">
+                        <!-- Der Chevron ist die einzige Ansage, dass hier etwas aufgeht – ohne ihn
+                             ist die Zeile eine Zeile, und niemand klickt darauf. -->
+                        <Icon
+                          :icon="openSplit === c.id ? 'lucide:chevron-down' : 'lucide:chevron-right'"
+                          class="h-3 w-3 shrink-0 text-[var(--color-text-muted)]"
+                        />
                         <span class="w-6 shrink-0 text-right font-mono text-2xs" :style="{ color: scoreColor(c.score) }">
                           {{ c.score }}
                         </span>
@@ -896,7 +913,14 @@ const plotted = computed(() => {
                       </div>
                     </td>
                     <td class="px-3 py-1.5">
-                      <span class="font-mono text-[var(--color-text)]">{{ c.className }}</span>
+                      <!-- Der NAME bleibt der Weg nach /code: die Zeile beantwortet „wie teile ich
+                           sie?", der Name „zeig mir sie". -->
+                      <button
+                        v-tip="'Open this class in the code view'"
+                        type="button"
+                        class="font-mono text-[var(--color-text)] underline-offset-2 transition hover:text-[var(--color-accent)] hover:underline"
+                        @click.stop="openClass(c.id)"
+                      >{{ c.className }}</button>
                       <span class="ml-1.5 text-2xs text-[var(--color-text-muted)]">{{ c.package }}</span>
                       <span
                         v-if="c.cycle != null"
@@ -921,6 +945,21 @@ const plotted = computed(() => {
                     <td class="px-3 py-1.5 text-right font-mono text-[var(--color-text-muted)]">{{ c.fanIn }} / {{ c.fanOut }}</td>
                     <td v-if="totals.hasChurn" class="px-3 py-1.5 text-right font-mono text-[var(--color-text-muted)]">{{ c.churn }}</td>
                   </tr>
+                  <!-- ⚠️ Der Plan liegt in einer EIGENEN Zeile über die volle Breite, nicht in der
+                       letzten Zelle: er trägt zwei Code-Fenster nebeneinander, und die hätten in
+                       einer Spalte von 8 rem keine Chance. `v-if` statt `v-show` – ein Plan, den
+                       niemand aufgeklappt hat, soll auch nicht geladen werden. -->
+                  <tr v-if="openSplit === c.id">
+                    <td :colspan="totals.hasChurn ? 7 : 6" class="p-0">
+                      <SplitPlan
+                        :file-id="c.id"
+                        :driver="c.driver || ''"
+                        :open="true"
+                        @open-class="openClass"
+                      />
+                    </td>
+                  </tr>
+                  </template>
                 </tbody>
               </table>
             </div>

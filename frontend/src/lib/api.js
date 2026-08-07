@@ -272,6 +272,11 @@ export const api = {
   // EINE Antwort fuer Klassenkennzahlen, Package-Kennzahlen und Zyklen: sie entstehen aus
   // demselben aufgeloesten Graphen, und zwei Requests koennten zwei Staende zeigen.
   getInsights: () => http('GET', '/insights'),
+  // Der Aufteilungsvorschlag zu EINER Klasse – eigener Request, weil er die Methodenruempfe liest
+  // und nur fuer die Zeile gefragt wird, die jemand aufklappt. `driver` ist der Stichentscheid aus
+  // der Rangliste und darf fehlen.
+  getSplitPlan: (fileId, driver = '') =>
+    http('GET', `/insights/split/${fileId}${driver ? `?driver=${encodeURIComponent(driver)}` : ''}`),
 
   // --- Bot (Ollama-Konfiguration, /bot) -------------------------------------
   // Eine Antwort traegt Stand, Defaults, Overrides UND die Feldbeschreibung (Grenzen/Hinweise) –

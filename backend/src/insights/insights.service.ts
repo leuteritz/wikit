@@ -1,8 +1,9 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { safeJson } from '../common/json.util';
 import { classMetrics } from '../common/code-metrics';
+import { buildSplitPlan, SplitConsumer, SplitMember } from './split-plan';
 
 // Wie viele Klassen ein Nachtrags-Haeppchen umfasst. Der Lauf liest `raw_source` – die groesste
 // Spalte der Datenbank –, deshalb bewusst klein: zwischen zwei Haeppchen bekommt der Event-Loop
@@ -420,6 +421,123 @@ export class InsightsService implements OnModuleInit {
         }),
       },
     };
+  }
+
+  // --- Wie man EINE Klasse aufteilen wuerde ----------------------------------------------------
+
+  /**
+   * Der Aufteilungsvorschlag zu einer Klasse – die Frage direkt hinter der Hotspot-Rangliste.
+   *
+   * ⚠️ **Warum das im Backend rechnet und nicht im Client** (anders als Lesepfad, `path:` und
+   * `impact:`, die aus demselben Bericht entstehen): die Rechnung braucht die METHODENRUEMPFE, und
+   * `GET /api/java/files` liefert sie bewusst nicht – sie sind die groesste Spalte der Datenbank.
+   * Sie fuer eine Rechnung in den Client zu holen, die hier in Millisekunden fertig ist, waere
+   * genau der Transport, den dieses Feld einspart.
+   *
+   * ⚠️ **Der `driver` kommt vom AUFRUFER, er wird hier nicht neu gerechnet.** Er entsteht in
+   * `overview()` aus der ganzen Codebasis und liegt der Rangliste, aus der man hierher klickt,
+   * bereits vor. Ihn erneut zu bestimmen hiesse, den kompletten Bericht fuer eine Zeichenkette zu
+   * wiederholen – und er ist nur der Stichentscheid zwischen zwei gleich gut passenden Schnitten,
+   * ein fehlender Wert also folgenlos.
+   */
+  async splitPlan(fileId: number, driver?: string): Promise<any> {
+    const [file] = await this.ds.query(
+      `SELECT id, package, class_name, class_type, stereotype, loc, complexity
+         FROM java_files WHERE id = ?`,
+      [fileId],
+    );
+    if (!file) throw new NotFoundException(`No class with id ${fileId}`);
+
+    const rows: Array<{
+      method_name: string;
+      return_type: string | null;
+      parameters: string | null;
+      modifiers: string | null;
+      body: string | null;
+      start_line: number | null;
+      member_kind: string | null;
+    }> = await this.ds.query(
+      `SELECT method_name, return_type, parameters, modifiers, body, start_line, member_kind
+         FROM java_methods WHERE file_id = ? ORDER BY start_line`,
+      [fileId],
+    );
+    // ⚠️ `safeJson(null, [])` liefert null, nicht [] – auf Array normieren, sonst wirft der erste
+    // `.map` in der Rechnung (dieselbe Falle wie im Serializer).
+    const jsonArray = <T>(raw: string | null): T[] => safeJson<T[]>(raw, []) || [];
+    const members: SplitMember[] = rows.map((r) => ({
+      name: r.method_name,
+      kind: r.member_kind || 'method',
+      returnType: r.return_type || '',
+      parameters: jsonArray<{ type: string; name: string }>(r.parameters),
+      modifiers: jsonArray<string>(r.modifiers),
+      body: r.body || '',
+      line: r.start_line,
+    }));
+
+    // Wer ruft diese Klasse? Dieselbe Aufloesung wie in `resolveEdges`: das Package entscheidet,
+    // fehlt es (Altbestand), gilt der Name. Kanten OHNE Mitglied (`uses`/`import`) fahren mit –
+    // sie sind kein Rollen-Kandidat, aber die Zahl daneben, die sagt, dass es sie gibt.
+    const pkg = file.package || null;
+    const classes: Array<{ id: number; package: string | null; class_name: string }> =
+      await this.ds.query(`SELECT id, package, class_name FROM java_files`);
+    const byFqcn = new Map<string, number>();
+    const byName = new Map<string, number[]>();
+    for (const c of classes) {
+      byFqcn.set(c.package ? `${c.package}.${c.class_name}` : c.class_name, c.id);
+      const list = byName.get(c.class_name) || [];
+      list.push(c.id);
+      byName.set(c.class_name, list);
+    }
+    const resolve = (name: string, p: string | null): number | null => {
+      if (p) return byFqcn.get(`${p}.${name}`) ?? null;
+      const direct = byFqcn.get(name);
+      if (direct != null) return direct;
+      const list = byName.get(name);
+      return list && list.length === 1 ? list[0] : null;
+    };
+
+    const edges: Array<{
+      source_class: string;
+      source_pkg: string | null;
+      target_pkg: string | null;
+      method_name: string | null;
+    }> = await this.ds.query(
+      `SELECT source_class, source_pkg, target_pkg, method_name
+         FROM java_edges WHERE target_class = ? AND dismissed = 0`,
+      [file.class_name],
+    );
+
+    const byConsumer = new Map<string, SplitConsumer>();
+    for (const e of edges) {
+      // Zielseite pruefen: NULL ist Altbestand und zaehlt (dort gab es die Spalte noch nicht),
+      // ein abweichendes Package ist eine gleichnamige Klasse woanders.
+      if (e.target_pkg && pkg && e.target_pkg !== pkg) continue;
+      const fromId = resolve(e.source_class, e.source_pkg);
+      if (fromId === file.id) continue; // Selbstbezug ist kein Nutzer.
+      const key = fromId != null ? `#${fromId}` : `?${e.source_pkg || ''}.${e.source_class}`;
+      let c = byConsumer.get(key);
+      if (!c) {
+        c = { className: e.source_class, fileId: fromId, members: [] };
+        byConsumer.set(key, c);
+      }
+      const member = (e.method_name || '').trim();
+      if (member && !c.members.includes(member)) c.members.push(member);
+    }
+
+    const allowed = new Set(['branching', 'size', 'coupling', 'churn']);
+    return buildSplitPlan(
+      {
+        id: file.id,
+        className: file.class_name,
+        package: file.package || '',
+        type: file.stereotype || file.class_type || 'class',
+        loc: file.loc ?? 0,
+        complexity: file.complexity ?? 0,
+        driver: driver && allowed.has(driver) ? driver : null,
+      },
+      members,
+      [...byConsumer.values()].sort((a, b) => a.className.localeCompare(b.className)),
+    );
   }
 
   // --- Was von aussen hereinkommt --------------------------------------------------------------
