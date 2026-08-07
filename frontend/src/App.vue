@@ -11,6 +11,8 @@ import { useArticles } from './composables/useArticles.js'
 import { useJavaAnalyzer } from './composables/useJavaAnalyzer.js'
 import { useJavaQueue } from './composables/useJavaQueue.js'
 import { useInsights } from './composables/useInsights.js'
+// Der Stand des Bedeutungsindex – dieselbe Quelle, die die Karte in `/bot` zeigt.
+import { useEmbeddings } from './composables/useEmbeddings.js'
 import { useActivity } from './composables/useActivity.js'
 import { useBot } from './composables/useBot.js'
 import { useTheme } from './composables/useTheme.js'
@@ -27,6 +29,7 @@ const { probe: probeQueue } = useJavaQueue()
 // danach auch dem Klassen-Panel und dem Farbmodus des Graphen vor – der Request ist vorgezogen,
 // nicht zusaetzlich.
 const { totals: insightTotals, ensure: ensureInsights } = useInsights()
+const { indexed: embeddedCount, enabled: embedEnabled, ensure: ensureEmbeddings } = useEmbeddings()
 // „Laeuft gerade etwas Langes?" – die Frage betrifft jede Ansicht, denn Import, Reset,
 // Kanten-Neuberechnung und KI-Queue laufen im Server weiter, wenn man die Code-Ansicht verlaesst.
 const { busy: activityBusy, closeDetail: closeActivity } = useActivity()
@@ -111,9 +114,36 @@ watch(
   () => files.value.length,
   (n) => {
     if (n) ensureInsights().catch(() => {})
+    // Derselbe Grund fuer den Bedeutungsindex: die Zahl neben „Ask" haengt daran, und ohne
+    // Klassen gibt es keinen Index, ueber den man etwas sagen koennte.
+    if (n) ensureEmbeddings().catch(() => {})
   },
   { immediate: true },
 )
+
+// ⚠️ **Die Zahl bei Ask ist ein Bestand, aber nicht der der Klassen: sie zaehlt, worauf Ask
+// ANTWORTEN kann.** Eine Frage selbst ist ein Vorgang – „so viele Fragen hast du gestellt" waere
+// eine Zahl, nach der niemand fragt. Die eingebetteten Klassen dagegen sind genau die Menge, aus
+// der eine Antwort entstehen kann: steht dort 0, findet `/ask` nichts, egal was man tippt.
+//
+// Sie darf FEHLEN (wie die Topic-Zahl): ohne Klassen im Bestand gibt es keinen Index, und ein
+// nicht geladener Stand ist keine 0 – das waere die Behauptung „nichts indiziert", bevor jemand
+// nachgesehen hat. Ist der Index dagegen wirklich leer, IST die 0 die Aussage – sie faerbt sich
+// aber nicht (s. `navLinks`), denn sie beschreibt eine nicht eingerichtete Option, keinen Fehler.
+// Warum die 0 hier trotzdem stehen darf, wo sie bei Topic entfaellt: bei Topic hiesse sie „du hast
+// nichts eingesammelt" – eine Aussage ueber den Nutzer, nach der niemand gefragt hat. Hier heisst
+// sie „hier ist nichts zu holen", und genau das erklaert, warum `/ask` gleich nichts finden wird.
+const askCount = computed(() => {
+  if (!files.value.length) return null
+  return embeddedCount.value
+})
+const askTitle = computed(() => {
+  if (!files.value.length) return 'Ask a question and get an answer backed by the classes it came from'
+  if (askCount.value == null) return 'Ask — checking the meaning index…'
+  if (!embedEnabled.value) return 'Ask — no embedding model set, so there is nothing to search'
+  if (!askCount.value) return 'Ask — the meaning index is empty, build it under Bot'
+  return `Ask — answers built from ${askCount.value} indexed ${askCount.value === 1 ? 'class' : 'classes'}`
+})
 
 // `null` statt `0`, solange nichts gerechnet ist: eine 0 waere die Behauptung „keine Zyklen", und
 // die ist ohne die Rechnung nicht gedeckt. Ohne Klassen gibt es ohnehin nichts zu melden.
@@ -162,13 +192,19 @@ const navLinks = computed(() => [
       ? `Topic — ${pickedCount.value} ${pickedCount.value === 1 ? 'class' : 'classes'} picked for “${topicTerm.value}”`
       : 'Collect every class around a topic and copy their code',
   },
-  // Ask traegt KEINE Zahl: die vierte Art Aussage waere „so viele Fragen hast du gestellt", und
-  // danach hat niemand gefragt. Eine Frage ist ein Vorgang, kein Bestand – die Zeile bietet ihn an.
+  // Die Zahl bei Ask zaehlt nicht die Fragen, sondern die Klassen, aus denen eine Antwort
+  // entstehen kann (s. `askCount`). ⚠️ KEIN `warn`, obwohl eine 0 heisst „findet nichts": die
+  // Bedeutungssuche braucht Ollama, und das ist optional. Eine dauerhaft rote Null waere ein
+  // Daueralarm ueber einen Zustand, den der Betreiber bewusst gewaehlt hat – dieselbe Regel wie
+  // beim verwaisten Artikel im Wiki-Graphen (gestrichelt, nicht rot: nicht eingerichtet ist kein
+  // Fehler). Was zu tun waere, sagt der Titel, und ob Ollama ueberhaupt antwortet, sagt der Punkt
+  // beim Bot zwei Zeilen weiter.
   {
     to: '/ask',
     label: 'Ask',
     icon: 'lucide:help-circle',
-    title: 'Ask a question and get an answer backed by the classes it came from',
+    count: askCount.value,
+    title: askTitle.value,
   },
   { to: '/wiki', label: 'Wiki', icon: 'lucide:book-open', count: articles.value.length },
   // Der Bot traegt keine Zahl, sondern einen Zustand: eine „3" waere hier keine Auskunft, die

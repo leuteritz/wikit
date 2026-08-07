@@ -11,26 +11,18 @@ import { computed, onMounted, ref } from 'vue'
 import { api } from '../../lib/api.js'
 import { useActivity } from '../../composables/useActivity.js'
 import { useNotifications } from '../../composables/useNotifications.js'
+import { useEmbeddings } from '../../composables/useEmbeddings.js'
 import { Icon } from '../../lib/icons.js'
 import { vTip } from '../../lib/tooltip.js'
 
 const { trackRun } = useActivity()
 const { push } = useNotifications()
 
-const status = ref(null)
-const loading = ref(false)
+// Geteilter Store: dieselbe Zahl steht in der Sidebar neben „Ask". Ein eigenes ref hier hiesse,
+// dass die Sidebar nach einem Indexlauf noch den alten Stand zeigt.
+const { status, loading, load: refresh } = useEmbeddings()
 const busy = ref(false)
 
-async function refresh() {
-  loading.value = true
-  try {
-    status.value = await api.getJavaEmbeddingStatus()
-  } catch {
-    status.value = null
-  } finally {
-    loading.value = false
-  }
-}
 onMounted(refresh)
 
 // Was zu tun ist – als eine Zahl. „1250 indexed, 30 stale, 5 missing" ist eine Bilanz; „35 to do"
