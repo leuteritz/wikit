@@ -113,6 +113,10 @@ import network from '@iconify-icons/lucide/network'
 // Lesepfad (/topic): die Route und ihre Stationen.
 import route from '@iconify-icons/lucide/route'
 import milestone from '@iconify-icons/lucide/milestone'
+import importIcon from '@iconify-icons/lucide/import'
+import puzzle from '@iconify-icons/lucide/puzzle'
+import coffee from '@iconify-icons/lucide/coffee'
+import asterisk from '@iconify-icons/lucide/asterisk'
 
 // --- Phosphor (Duotone, fuer das Brand-Logo) ---
 import phBooksDuotone from '@iconify-icons/ph/books-duotone'
@@ -219,6 +223,11 @@ const ICONS = {
   'lucide:network': network,
   'lucide:route': route,
   'lucide:milestone': milestone,
+  // Reiter „Outside": was hereinkommt, das fehlende Puzzleteil, und Java selbst.
+  'lucide:import': importIcon,
+  'lucide:puzzle': puzzle,
+  'lucide:coffee': coffee,
+  'lucide:asterisk': asterisk,
   'ph:books-duotone': phBooksDuotone,
 }
 

@@ -33,6 +33,29 @@ const W_COUPLING = 0.25;
 // anheben; die Struktur bleibt die fuehrende Aussage.
 const CHURN_WEIGHT = 0.5;
 
+// --- Was von aussen hereinkommt (Reiter "Outside") ----------------------------------------------
+//
+// Wie viele Typen ein externes Package namentlich nennt. Der Rest wird gezaehlt – ein Package wie
+// `java.util` traegt dreissig Typen, und die letzten zwanzig sagen ueber die Abhaengigkeit nichts
+// mehr, was die ersten zwoelf nicht schon sagen.
+const OUTSIDE_TYPE_SAMPLE = 12;
+// Wie viele benutzende Klassen ein externer Typ namentlich nennt. Sie sind der Absprung nach
+// `/code` – mehr als eine Handvoll klickt niemand durch.
+const OUTSIDE_USER_SAMPLE = 6;
+// Wie viele Packages je Gruppe. Bei einem Ausschnitt aus einer grossen Fremdcodebasis sind es sonst
+// hunderte, und die unteren haengen an einer einzigen Importzeile. Der Deckel gilt JE GRUPPE, nicht
+// insgesamt: sonst verdraengten die vierzig meistbenutzten Fremd-Packages genau die Luecken, um
+// derentwillen es den Reiter gibt.
+const OUTSIDE_PACKAGE_SAMPLE = 40;
+
+// Was zur Plattform gehoert und deshalb nie "fehlt". Praefixe statt einer Namensliste: `java.util`
+// und `java.util.concurrent` sind dieselbe Herkunft. `javax`/`jakarta` stehen bewusst dabei – sie
+// sind formal Bibliotheken, aber niemand wuerde `javax.servlet.HttpServletRequest` in sein Wikit
+// laden wollen, und in der Gruppe "third-party" waeren sie nur Rauschen vor den echten Funden.
+const PLATFORM_PREFIXES = [
+  'java', 'javax', 'jakarta', 'jdk', 'sun', 'com.sun', 'org.w3c', 'org.xml', 'org.ietf',
+];
+
 // Kantenarten nach "wie schwer ist sie aufzuloesen" – die Reihenfolge, in der ein Zyklus
 // aufgebrochen werden sollte. Ein Typbezug (`uses`) laesst sich oft durch ein Interface ersetzen,
 // ein echter Methodenaufruf selten.
@@ -83,6 +106,40 @@ type EdgeRow = {
 // `members` sind die Methoden-/Feldnamen, ueber die das Paar zusammenhaengt – ohne sie liesse sich
 // kein Beispiel schreiben, das die Stelle beim Namen nennt („escape()" statt „the member").
 type Pair = { from: number; to: number; count: number; kind: string; confidence: number; members: string[] };
+
+// --- Eine Importzeile zerlegen ------------------------------------------------------------------
+//
+// ⚠️ Der letzte Punkt trennt NICHT Package und Typ. `com.acme.util.KeyVal.Pair` ist ein genesteter
+// Typ und `com.acme.util.Strings.escape` ein statischer Import – in beiden Faellen liegt der Typ
+// nicht hinter dem letzten Punkt. Die Java-Konvention entscheidet es dagegen zuverlaessig:
+// Package-Segmente beginnen klein, Typen gross. Alles, was hinter dem letzten Typ-Segment noch
+// folgt, ist ein Mitglied und faellt weg – sonst zaehlten `Strings.escape` und `Strings.pad` als
+// zwei fremde Typen, obwohl es eine Abhaengigkeit ist.
+function splitImport(fqcn: string): { pkg: string; type: string } {
+  const segs = fqcn.split('.');
+  let i = 0;
+  while (i < segs.length - 1 && /^[a-z_$]/.test(segs[i])) i++;
+  const rest = segs.slice(i);
+  // Nur die gross beginnenden Segmente ab dem ersten Typ – `KeyVal.Pair` bleibt, `Strings.escape`
+  // wird zu `Strings`. Trifft die Konvention nicht zu (alles klein), bleibt der Rest wie er ist:
+  // etwas zu raten waere schlechter als den Namen so stehenzulassen, wie er im Code steht.
+  //
+  // ⚠️ Der grosse Anfangsbuchstabe allein reicht nicht: eine Konstante ist SCREAMING_CASE und
+  // beginnt damit ebenfalls gross. Gemessen kam `com.acme.Money.ZERO` als Typ „Money.ZERO" an –
+  // also als eigener fremder Typ, und ein zweiter statischer Import derselben Klasse waere ein
+  // dritter gewesen. Ein Segment aus lauter Grossbuchstaben beendet den Typnamen deshalb, sofern
+  // schon eines dasteht: so bleibt `java.net.URL` sein eigener Typ und `Money.ZERO` wird `Money`.
+  const typed: string[] = [];
+  for (const s of rest) {
+    if (!/^[A-Z]/.test(s)) break;
+    if (typed.length && /^[A-Z0-9_$]+$/.test(s)) break;
+    typed.push(s);
+  }
+  return { pkg: segs.slice(0, i).join('.'), type: (typed.length ? typed : rest).join('.') };
+}
+
+const isPlatform = (pkg: string): boolean =>
+  PLATFORM_PREFIXES.some((p) => pkg === p || pkg.startsWith(`${p}.`));
 
 /**
  * Was man einer Codebasis nicht ansieht: Zyklen, Kopplungsmetriken, Brandherde.
@@ -289,6 +346,10 @@ export class InsightsService implements OnModuleInit {
     pkgCycles.forEach((c, i) => c.members.forEach((p) => cycleOfPkg.set(p as string, i)));
     for (const p of packages) p.cycle = cycleOfPkg.has(p.path) ? cycleOfPkg.get(p.path)! : null;
 
+    // Der einzige Teil, der die Importe liest statt der Kanten – und der einzige, der etwas ueber
+    // Klassen sagen kann, die gar nicht da sind (s. `outsideView`).
+    const outside = await this.outsideView(classes);
+
     const nameOf = new Map<number, string>(classes.map((c) => [c.id, c.class_name]));
 
     // --- Was eine Package-Kante TRÄGT -------------------------------------------------------------
@@ -327,9 +388,13 @@ export class InsightsService implements OnModuleInit {
         unresolved,
         pending,
         hasChurn,
+        // Klassen, die dieser Bestand importiert, aber nicht enthaelt, obwohl ihr Package hier
+        // liegt. Die eine Zahl aus `outside`, die eine Aufgabe ist – deshalb steht sie oben.
+        missing: outside.totals.gap.types,
       },
       classes: classOut,
       packages,
+      outside,
       cycles: {
         // `chain` traegt die Datei-Ids (der Absprung nach /code braucht sie), `chainLabels` die
         // Namen. Auf der Package-Ebene ist beides derselbe Pfad – die Oberflaeche liest dadurch
@@ -353,6 +418,193 @@ export class InsightsService implements OnModuleInit {
             weakest: weakest ? { ...weakest, ...linksBetween(weakest.from, weakest.to) } : null,
           };
         }),
+      },
+    };
+  }
+
+  // --- Was von aussen hereinkommt --------------------------------------------------------------
+
+  /**
+   * Woher dieser Bestand Typen bezieht, die er selbst nicht enthaelt – und was davon eigentlich
+   * hineingehoert.
+   *
+   * ⚠️ **Der einzige Teil des Berichts, der auf den IMPORTS rechnet, nicht auf `java_edges`** – und
+   * zwar aus genau dem Grund, aus dem alles andere sie meidet: eine Kante entsteht nur zwischen
+   * zwei Klassen IM Bestand. Was fehlt, hat per Definition keine Kante; die Importzeile ist die
+   * einzige Spur, die eine abwesende Klasse ueberhaupt hinterlaesst. Ein "leftover import" faellt
+   * hier deshalb nicht als Fehlerquelle ins Gewicht, sondern ist selbst Teil der Auskunft: er sagt,
+   * dass diese Datei den Typ nennt.
+   *
+   * Drei Herkuenfte, und nur eine davon ist eine Aufgabe:
+   *
+   * * **gap** – das Package (oder eines darueber/darunter) liegt im Bestand, die Klasse nicht. Das
+   *   ist der eigene Code, der beim Hochladen fehlte: der Graph endet dort, ohne es zu sagen.
+   * * **library** – eine fremde Abhaengigkeit. Keine Aufgabe, aber eine Ansage darueber, was man
+   *   mitlernen muss, um diesen Code zu lesen.
+   * * **platform** – die JDK-nahen Packages. Vollstaendigkeitshalber gezaehlt, nie eine Luecke.
+   *
+   * ⚠️ **Die Grenze dieser Auskunft steht in der Oberflaeche**: eine Klasse im SELBEN Package
+   * braucht keinen Import und kann hier nicht fehlen – sichtbar wird eine Luecke nur, wenn sie
+   * jemand aus einem anderen Package importiert. `java.lang` gilt dasselbe.
+   */
+  private async outsideView(classes: ClassRow[]): Promise<any> {
+    const rows: Array<{ from_file_id: number; to_class_name: string }> = await this.ds.query(
+      `SELECT d.from_file_id, d.to_class_name FROM java_dependencies d`,
+    );
+
+    const knownFqcn = new Set<string>();
+    const knownPkgs = new Set<string>();
+    const nameOf = new Map<number, string>();
+    for (const c of classes) {
+      const pkg = c.package || '';
+      knownFqcn.add(pkg ? `${pkg}.${c.class_name}` : c.class_name);
+      if (pkg) knownPkgs.add(pkg);
+      nameOf.set(c.id, c.class_name);
+    }
+
+    // Liegt der Typ selbst im Bestand? Dieselbe Regel wie `resolveImport` im Client: eine
+    // Importzeile NENNT die Klasse vollstaendig, also entscheidet die volle FQCN – und genestete
+    // Typen fallen auf den umschliessenden zurueck (`a.b.KeyVal.Pair` -> `a.b.KeyVal`).
+    const inStock = (fqcn: string): boolean => {
+      let name = fqcn;
+      for (;;) {
+        if (knownFqcn.has(name)) return true;
+        const cut = name.lastIndexOf('.');
+        if (cut < 0) return false;
+        name = name.slice(0, cut);
+      }
+    };
+
+    // Eigenes Terrain?
+    //
+    // ⚠️ Entschieden wird ueber das ELTERNPACKAGE, nicht ueber das Package selbst: `com.acme.shop.util`
+    // ist eigener Code, sobald `com.acme.shop.core` im Bestand liegt – die beiden sind Geschwister,
+    // und genau so entstehen die haeufigsten Luecken (`web` importiert aus `repo`, und `repo` wurde
+    // nie hochgeladen). Ueber Vorfahre/Nachfahre allein waere dieser Fall durchgefallen und in
+    // "third-party" gelandet, also ausgerechnet der Fall, um dessentwillen es die Gruppe gibt.
+    //
+    // Die Regel bleibt trotzdem ohne Magie-Zahl ("die ersten zwei Segmente" waere geraten): sie
+    // fragt den Bestand. `com.google.protobuf` ist nur dann eigenes Terrain, wenn hier tatsaechlich
+    // `com.google.…` liegt – und dann ist die Aussage auch nicht falsch. Ein Package OHNE Eltern
+    // (ein einzelnes Segment) zaehlt nur, wenn es selbst im Bestand steht: der leere Praefix waere
+    // sonst Praefix von allem, und jede fremde Wurzel eine Luecke.
+    const startsWithPkg = (k: string, p: string) => k === p || k.startsWith(`${p}.`);
+    const ownPkgs = new Map<string, boolean>();
+    const isOwn = (pkg: string): boolean => {
+      if (!pkg) return false;
+      const cached = ownPkgs.get(pkg);
+      if (cached != null) return cached;
+      const cut = pkg.lastIndexOf('.');
+      const parent = cut < 0 ? '' : pkg.slice(0, cut);
+      const hit = parent
+        ? [...knownPkgs].some((k) => startsWithPkg(k, parent))
+        : knownPkgs.has(pkg);
+      ownPkgs.set(pkg, hit);
+      return hit;
+    };
+
+    type Entry = { fqcn: string; type: string; pkg: string; kind: string; users: Set<number> };
+    const entries = new Map<string, Entry>();
+    let wildcards = 0;
+    let internal = 0;
+
+    for (const r of rows) {
+      const raw = String(r.to_class_name || '');
+      if (!raw) continue;
+
+      // ⚠️ Ein Wildcard-Import nennt meistens keine Klasse – `p.q.*` kann also weder fehlen noch
+      // gezaehlt werden. `import static p.q.Money.*` dagegen NENNT eine: der Stern steht dort fuer
+      // die Mitglieder eines Typs, nicht fuer die Typen eines Packages. Ihn zu den namenlosen zu
+      // legen, hiesse eine Abhaengigkeit zu verschweigen, die im Code wortwoertlich dasteht.
+      // Verschwiegen wird der echte Package-Wildcard trotzdem nicht: er ist der Grund, warum diese
+      // Liste unvollstaendig sein KANN, und genau das steht als Zahl daneben.
+      const fqcn = raw.endsWith('.*') ? raw.slice(0, -2) : raw;
+      if (raw !== fqcn && !/^[A-Z]/.test(splitImport(fqcn).type)) {
+        wildcards++;
+        continue;
+      }
+      if (inStock(fqcn)) {
+        internal++;
+        continue;
+      }
+      const { pkg, type } = splitImport(fqcn);
+      const key = pkg ? `${pkg}.${type}` : type;
+      let e = entries.get(key);
+      if (!e) {
+        e = { fqcn: key, type, pkg, kind: isOwn(pkg) ? 'gap' : isPlatform(pkg) ? 'platform' : 'library', users: new Set() };
+        entries.set(key, e);
+      }
+      e.users.add(Number(r.from_file_id));
+    }
+
+    // Je Package buendeln – die Herkunft ist die Frage, nicht die einzelne Zeile.
+    const byPkg = new Map<string, { path: string; kind: string; types: Entry[]; users: Set<number> }>();
+    for (const e of entries.values()) {
+      const path = e.pkg || '(default)';
+      let g = byPkg.get(path);
+      if (!g) {
+        g = { path, kind: e.kind, types: [], users: new Set() };
+        byPkg.set(path, g);
+      }
+      g.types.push(e);
+      for (const u of e.users) g.users.add(u);
+    }
+
+    const groups: Record<string, any[]> = { gap: [], library: [], platform: [] };
+    for (const g of byPkg.values()) {
+      const types = [...g.types].sort((a, b) => b.users.size - a.users.size || a.type.localeCompare(b.type));
+      groups[g.kind].push({
+        path: g.path,
+        kind: g.kind,
+        usedBy: g.users.size,
+        typeCount: types.length,
+        types: types.slice(0, OUTSIDE_TYPE_SAMPLE).map((t) => ({
+          name: t.type,
+          fqcn: t.fqcn,
+          usedBy: t.users.size,
+          // Die benutzenden Klassen sind der Absprung: „wo taucht das auf?" ist die Frage direkt
+          // hinter „was ist das?", und ohne sie endet der Reiter bei der Erkenntnis.
+          users: [...t.users]
+            .slice(0, OUTSIDE_USER_SAMPLE)
+            .map((id) => ({ id, className: nameOf.get(id) || String(id) }))
+            .sort((a, b) => a.className.localeCompare(b.className)),
+          moreUsers: Math.max(0, t.users.size - OUTSIDE_USER_SAMPLE),
+        })),
+        moreTypes: Math.max(0, types.length - OUTSIDE_TYPE_SAMPLE),
+      });
+    }
+
+    const totalsFor = (kind: string) => ({
+      packages: groups[kind].length,
+      types: groups[kind].reduce((s: number, p: any) => s + p.typeCount, 0),
+    });
+    for (const kind of Object.keys(groups)) {
+      groups[kind].sort((a, b) => b.usedBy - a.usedBy || b.typeCount - a.typeCount || a.path.localeCompare(b.path));
+    }
+
+    return {
+      totals: {
+        types: entries.size,
+        packages: byPkg.size,
+        wildcards,
+        // Importe, deren Ziel im Bestand liegt. Sie sind hier kein Befund, sondern der Massstab:
+        // ohne sie liest sich „140 fremde Typen" wie eine Bewertung statt wie ein Verhaeltnis.
+        internal,
+        gap: totalsFor('gap'),
+        library: totalsFor('library'),
+        platform: totalsFor('platform'),
+      },
+      // Der Deckel gilt je Gruppe und wird angeschrieben – ein still gekuerzter Rest liest sich
+      // wie „mehr gibt es nicht".
+      groups: {
+        gap: groups.gap.slice(0, OUTSIDE_PACKAGE_SAMPLE),
+        library: groups.library.slice(0, OUTSIDE_PACKAGE_SAMPLE),
+        platform: groups.platform.slice(0, OUTSIDE_PACKAGE_SAMPLE),
+      },
+      more: {
+        gap: Math.max(0, groups.gap.length - OUTSIDE_PACKAGE_SAMPLE),
+        library: Math.max(0, groups.library.length - OUTSIDE_PACKAGE_SAMPLE),
+        platform: Math.max(0, groups.platform.length - OUTSIDE_PACKAGE_SAMPLE),
       },
     };
   }

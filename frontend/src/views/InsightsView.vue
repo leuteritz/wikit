@@ -37,6 +37,8 @@ const TABS = [
   { id: 'packages', label: 'Packages', icon: 'lucide:package', hint: 'Abstractness against instability' },
   // Die einzige Frage hier, die nicht „was stimmt nicht?" lautet, sondern „wo fange ich an?".
   { id: 'path', label: 'Reading path', icon: 'lucide:route', hint: 'The order that lets you read this code once' },
+  // Der einzige Reiter, der über den Rand des Bestands hinaussieht – „was ist NICHT hier?".
+  { id: 'outside', label: 'Outside', icon: 'lucide:import', hint: 'What this workspace pulls in from elsewhere — and what is missing from it' },
 ]
 
 // --- Was jeder Reiter beantwortet ---------------------------------------------------------------
@@ -81,6 +83,14 @@ const EXPLAIN = {
       ['Start with one package, not everything', 'A path through 400 classes is the codebase again. Pick the package you actually have to work in.'],
       ['A “needs a look ahead” step is a cycle', 'It means the order had to be broken somewhere. Those classes only make sense read together — the step says which ones.'],
       ['Take it with you', 'Copy the whole path as one text and paste it into a chat, in reading order rather than alphabetical.'],
+    ],
+  },
+  outside: {
+    what: 'Every other tab looks at what is here. This one reads the import lines and asks the opposite question: what does this code reach for that this workspace does not contain? Some of it is a library. Some of it is your own code that never got uploaded.',
+    fixes: [
+      ['Missing classes come first', 'They sit in packages you already have. Every one of them is a hole in the graph: relations that were never drawn, because the other end is not here.'],
+      ['Add them the same way as the rest', 'Paste the missing sources under “Add code” in the Code view, then recompute edges — the cycles and hotspots on the other tabs change with them.'],
+      ['Third-party tells you what to learn', 'The packages at the top are the APIs this code is actually written against. That is the reading list before the code itself.'],
     ],
   },
 }
@@ -256,6 +266,75 @@ async function copyPath() {
   }
 }
 
+// --- Outside ------------------------------------------------------------------------------------
+// ⚠️ Der einzige Reiter, der ueber den Rand des Bestands hinaussieht – und deshalb der einzige, der
+// auf den IMPORTS rechnet statt auf den Kanten (Begruendung im Service). Nichts nachzuladen: die
+// Antwort faehrt in derselben `/api/insights`-Antwort mit.
+const outside = computed(() => data.value?.outside || null)
+
+// Die drei Herkuenfte in der Reihenfolge, in der sie interessieren: erst was FEHLT (eine Aufgabe),
+// dann was fremd ist (eine Leseliste), dann die Plattform. Letztere steht nicht aus Vollstaendigkeit
+// da, sondern weil die Zahl oben sonst unerklaerlich waere: „340 types from outside" liest sich
+// erschreckend, solange nicht danebensteht, dass 200 davon `java.util` sind.
+const OUTSIDE_GROUPS = [
+  {
+    id: 'gap',
+    label: 'Missing from this workspace',
+    icon: 'lucide:puzzle',
+    color: 'var(--color-warning)',
+    hint: 'Their package is already here, the class itself never was. Each one is a relation the graph could not draw — the arrow simply ends.',
+  },
+  {
+    id: 'library',
+    label: 'Third-party',
+    icon: 'lucide:boxes',
+    color: 'var(--color-accent)',
+    hint: 'Code from somewhere else entirely. Nothing to fix here — this is what you have to know to read the rest.',
+  },
+  {
+    id: 'platform',
+    label: 'Java platform',
+    icon: 'lucide:coffee',
+    color: 'var(--color-text-muted)',
+    hint: 'The JDK and its neighbours. Counted so the totals add up, never a gap.',
+  },
+]
+
+// Aufgeklappt ist immer nur EIN Package – der aufgeklappte Inhalt sind bis zu zwölf Typen mit ihren
+// Nutzern, und zwei davon nebeneinander sind wieder eine Wand. Gleiche Regel wie bei `openPlan`,
+// und der Schlüssel trägt aus demselben Grund die Gruppe mit.
+const openOutside = ref(null)
+const toggleOutside = (key) => (openOutside.value = openOutside.value === key ? null : key)
+
+// Balkenbreite relativ zum meistbenutzten Package DERSELBEN Gruppe. Über alle Gruppen hinweg zu
+// skalieren wäre die falsche Frage: `java.util` steht in jeder Codebasis ganz oben und drückte
+// damit die Lücken – um die es hier geht – auf Nullbreite.
+function outsideBar(groupId, usedBy) {
+  const list = outside.value?.groups?.[groupId] || []
+  const max = list.length ? list[0].usedBy : 0
+  return max ? Math.max(4, Math.round((usedBy / max) * 100)) : 0
+}
+
+// ⚠️ Ein leerer Reiter hat hier ZWEI Gründe, und sie bedeuten das Gegenteil voneinander: gar keine
+// gespeicherten Importzeilen (Altbestand – die Liste ist dann keine Aussage) gegen „alles, was
+// dieser Code nennt, liegt auch hier" (das beste denkbare Ergebnis).
+const outsideEmpty = computed(() => {
+  const t = outside.value?.totals
+  if (!t) return null
+  if (!t.types && !t.internal && !t.wildcards) return 'no-imports'
+  return t.types ? null : 'self-contained'
+})
+const outsideKpis = computed(() => {
+  const t = outside.value?.totals
+  if (!t) return []
+  return [
+    { label: 'Missing classes', value: num(t.gap.types), icon: 'lucide:puzzle', warn: t.gap.types > 0 },
+    { label: 'Third-party types', value: num(t.library.types), icon: 'lucide:boxes' },
+    { label: 'Platform types', value: num(t.platform.types), icon: 'lucide:coffee' },
+    { label: 'Wildcard imports', value: num(t.wildcards), icon: 'lucide:asterisk' },
+  ]
+})
+
 // Kanten erst holen, wenn der Reiter zum ersten Mal offen ist.
 watch(tab, (t) => {
   if (t === 'path') ensurePathData()
@@ -319,6 +398,10 @@ function packageAdvice(p) {
 
 const pct = (v) => `${Math.round((v ?? 0) * 100)}%`
 const num = (n) => (n ?? 0).toLocaleString('en-US')
+// Zahl mit ihrem Wort. „1 types" ist die Sorte Fehler, die eine sonst sorgfältige Ansicht billig
+// aussehen lässt – und sie tritt genau dort auf, wo eine Gruppe auf einen einzigen Fund
+// zusammengeschrumpft ist, also im interessantesten Fall.
+const plural = (n, word) => `${num(n)} ${word}${n === 1 ? '' : 's'}`
 
 // --- A/I-Diagramm -------------------------------------------------------------------------------
 // Punkt = Package. x = Instabilitaet (0 links: alle haengen an ihm), y = Abstraktheit (1 oben).
@@ -934,7 +1017,7 @@ const plotted = computed(() => {
           </section>
 
           <!-- ==================== Reading path ==================== -->
-          <section v-else class="space-y-4">
+          <section v-else-if="tab === 'path'" class="space-y-4">
             <!-- Zuschnitt + Mitnahme in EINER Zeile: „wodurch?" und „und dann?" gehoeren zusammen. -->
             <div class="flex flex-wrap items-center gap-2">
               <label class="flex items-center gap-2 text-2xs text-[var(--color-text-muted)]">
@@ -1040,6 +1123,134 @@ const plotted = computed(() => {
                 />
               </li>
             </ol>
+          </section>
+
+          <!-- ==================== Outside ==================== -->
+          <section v-else class="space-y-5">
+            <!-- Die Bilanz zuerst: die vier Zahlen erklären einander. Ohne die Plattform- und
+                 Wildcard-Spalte daneben liest sich „missing" wie das ganze Bild. -->
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div
+                v-for="k in outsideKpis"
+                :key="k.label"
+                class="rounded-lg border bg-[var(--color-surface-2)] px-3 py-2"
+                :class="k.warn ? 'border-[var(--color-warning)]/40' : 'border-[var(--color-border)]'"
+              >
+                <p class="flex items-center gap-1.5 text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">
+                  <Icon :icon="k.icon" class="h-3 w-3" />
+                  {{ k.label }}
+                </p>
+                <p
+                  class="mt-0.5 font-mono text-lg font-semibold tabular-nums"
+                  :style="{ color: k.warn ? 'var(--color-warning)' : 'var(--color-text)' }"
+                >{{ k.value }}</p>
+              </div>
+            </div>
+
+            <!-- ⚠️ Zwei Leerzustände, die das Gegenteil voneinander bedeuten. -->
+            <p
+              v-if="outsideEmpty"
+              class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-8 text-center text-2xs leading-relaxed text-[var(--color-text-muted)]"
+            >
+              <template v-if="outsideEmpty === 'no-imports'">
+                No import lines stored for these classes. They were analysed before imports were
+                kept — re-analyse them in the Code view and this fills in.
+              </template>
+              <template v-else>
+                Everything this code imports is also here. Nothing reaches outside the workspace.
+              </template>
+            </p>
+
+            <template v-else>
+              <template v-for="g in OUTSIDE_GROUPS" :key="g.id">
+                <section v-if="outside.groups[g.id].length" class="space-y-2">
+                  <header class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                    <span class="inline-flex items-center gap-1.5 text-xs font-semibold" :style="{ color: g.color }">
+                      <Icon :icon="g.icon" class="h-3.5 w-3.5" />
+                      {{ g.label }}
+                    </span>
+                    <span class="font-mono text-3xs text-[var(--color-text-muted)]">
+                      {{ plural(outside.totals[g.id].types, 'type') }} ·
+                      {{ plural(outside.totals[g.id].packages, 'package') }}
+                    </span>
+                    <p class="w-full text-3xs leading-relaxed text-[var(--color-text-muted)]">{{ g.hint }}</p>
+                  </header>
+
+                  <ul class="overflow-hidden rounded-lg border border-[var(--color-border)]">
+                    <li
+                      v-for="p in outside.groups[g.id]"
+                      :key="p.path"
+                      class="border-b border-[var(--color-border)] last:border-0"
+                    >
+                      <button
+                        type="button"
+                        class="flex w-full items-center gap-3 px-3 py-1.5 text-left transition hover:bg-[var(--color-surface-offset)]"
+                        @click="toggleOutside(`${g.id}:${p.path}`)"
+                      >
+                        <Icon
+                          :icon="openOutside === `${g.id}:${p.path}` ? 'lucide:chevron-down' : 'lucide:chevron-right'"
+                          class="h-3 w-3 shrink-0 text-[var(--color-text-muted)]"
+                        />
+                        <span class="min-w-0 flex-1 truncate font-mono text-xs text-[var(--color-text)]">{{ p.path }}</span>
+                        <span class="shrink-0 font-mono text-3xs text-[var(--color-text-muted)]">
+                          {{ plural(p.typeCount, 'type') }}
+                        </span>
+                        <!-- Der Balken beantwortet „wie tief steckt das drin?" auf einen Blick –
+                             die Zahl daneben sagt es genau. -->
+                        <span class="hidden h-1 w-24 shrink-0 overflow-hidden rounded-full bg-[var(--color-surface-offset)] sm:block">
+                          <span class="block h-full rounded-full" :style="{ width: `${outsideBar(g.id, p.usedBy)}%`, background: g.color }" />
+                        </span>
+                        <span
+                          v-tip="`${p.usedBy} of your classes import something from here`"
+                          class="w-24 shrink-0 text-right font-mono text-3xs text-[var(--color-text-muted)]"
+                        >used by {{ p.usedBy }}</span>
+                      </button>
+
+                      <!-- Aufgeklappt: die Typen mit ihren Nutzern. ⚠️ Die Nutzer sind der Absprung –
+                           ohne sie endet der Reiter bei der Erkenntnis. -->
+                      <div v-if="openOutside === `${g.id}:${p.path}`" class="border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
+                        <ul class="space-y-1.5">
+                          <li v-for="t in p.types" :key="t.fqcn" class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                            <span class="font-mono text-2xs font-medium text-[var(--color-text)]">{{ t.name }}</span>
+                            <span class="text-3xs text-[var(--color-text-muted)]">used by</span>
+                            <button
+                              v-for="u in t.users"
+                              :key="u.id"
+                              type="button"
+                              class="rounded bg-[var(--color-surface-offset)] px-1 py-px font-mono text-3xs text-[var(--color-text-muted)] transition hover:text-[var(--color-accent)]"
+                              @click="openClass(u.id)"
+                            >{{ u.className }}</button>
+                            <span v-if="t.moreUsers" class="text-3xs text-[var(--color-text-muted)]">and {{ t.moreUsers }} more</span>
+                          </li>
+                        </ul>
+                        <p v-if="p.moreTypes" class="mt-1.5 text-3xs text-[var(--color-text-muted)]">
+                          … and {{ plural(p.moreTypes, 'type') }} more from this package.
+                        </p>
+                      </div>
+                    </li>
+                  </ul>
+
+                  <p v-if="outside.more[g.id]" class="text-3xs text-[var(--color-text-muted)]">
+                    … and {{ plural(outside.more[g.id], 'package') }} more, each used less than the ones above.
+                  </p>
+                </section>
+              </template>
+
+              <!-- ⚠️ Die Grenze der Auskunft gehört unter die Liste, nicht in einen Tooltip: ohne
+                   sie liest sich „3 missing" als vollständige Antwort auf „was fehlt mir?". -->
+              <p class="flex items-start gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2.5 text-3xs leading-relaxed text-[var(--color-text-muted)]">
+                <Icon icon="lucide:info" class="mt-0.5 h-3 w-3 shrink-0" />
+                <span>
+                  Only import lines can be counted. A class in the <em>same</em> package needs no
+                  import, and neither does anything in <code class="font-mono">java.lang</code> — a
+                  gap of that kind cannot show up here.
+                  <template v-if="outside.totals.wildcards">
+                    {{ num(outside.totals.wildcards) }} wildcard imports name no class at all and
+                    are counted, not listed.
+                  </template>
+                </span>
+              </p>
+            </template>
           </section>
         </template>
       </div>
