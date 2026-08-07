@@ -33,7 +33,14 @@ import { useJavaGraph } from '../composables/useJavaGraph.js'
 import { useTopic } from '../composables/useTopic.js'
 import { api } from '../lib/api.js'
 import { BIG_CLIPBOARD_BYTES, copyToClipboard } from '../lib/clipboard.js'
-import { buildSearchRegex, findMatches, MATCH_LIMIT } from '../lib/codeSearch.js'
+import {
+  buildSearchRegex,
+  findMatches,
+  indexAtOrAfter,
+  isIdentifier,
+  MATCH_LIMIT,
+  MAX_PICK_LEN,
+} from '../lib/codeSearch.js'
 import { addLineNumbers, clearMatches, paintMatches } from '../lib/javaCode.js'
 import { buildMethodColorMap, methodColorVars } from '../lib/javaMethodColors.js'
 import { formatBytes } from '../lib/format.js'
@@ -479,6 +486,12 @@ const WINDOW_LINES = 600
 // So viele Zeilen bleiben ueber der angefahrenen Stelle stehen – ein Sprung, der die Zeile an den
 // oberen Rand setzt, verliert den Zusammenhang davor.
 const WINDOW_LEAD = 12
+// ⚠️ **Eine Hoehe fuer alles, was „hierhin schauen" heisst.** Auf diese Marke setzt jeder Sprung
+// seine Zeile (Hover-Ziel, Suchtreffer), und an genau dieser Marke liest der Lesezustand ab, in
+// welcher Klasse man ist (s. „Lesen"). Zwei Zahlen waeren zwei Antworten auf dieselbe Frage – und
+// der Unterschied waere sichtbar: ein Treffer, der auf einem Drittel landet, waehrend die Kante
+// bei einem Viertel misst, laesst bei einem Treffer am Klassenanfang die Klasse DAVOR leuchten.
+const READ_EDGE_RATIO = 0.25
 const windowStart = ref(0)
 const previewBody = ref(null)
 
@@ -626,7 +639,7 @@ function scrollToLine(line1) {
   const el = box?.querySelector(`.line[data-line="${line1}"]`)
   if (!box || !el) return
   const delta = el.getBoundingClientRect().top - box.getBoundingClientRect().top
-  box.scrollTop = Math.max(0, box.scrollTop + delta - box.clientHeight / 4)
+  box.scrollTop = Math.max(0, box.scrollTop + delta - box.clientHeight * READ_EDGE_RATIO)
 }
 
 // Neuer Text -> zurueck an den Anfang. Ein Fenster, das nach einem Haken irgendwo mitten im alten
@@ -737,10 +750,9 @@ watch(spanById, (map) => {
 // Fokus wie eine gehoverte (voller Ton, Syntaxfarben), und beim Weiterscrollen uebernimmt die
 // naechste – beim Zurueckscrollen wieder die davor. Vier Festlegungen:
 //
-//   (1) ⚠️ **Die Kante liegt bei einem Viertel der Hoehe – derselben Stelle, auf die `scrollToLine`
-//       eine angefahrene Zeile setzt.** Damit stimmen die beiden Wege ueberein: was der Hover
-//       anfaehrt, ist danach auch das, was das Lesen meint. Zwei verschiedene Zahlen waeren zwei
-//       Antworten auf dieselbe Frage.
+//   (1) ⚠️ **Die Kante ist `READ_EDGE_RATIO` – dieselbe Marke, auf die jeder Sprung seine Zeile
+//       setzt** (Hover-Ziel, Suchtreffer). Damit stimmen die Wege ueberein: was angefahren wurde,
+//       ist danach auch das, was das Lesen meint.
 //   (2) ⚠️ **Gemeint ist die letzte Klasse, deren erste Zeile die Kante PASSIERT hat** – nicht die,
 //       in der die Kante gerade steht. Zwischen zwei Bloecken liegen Kopfzeile, Package-Trenner und
 //       Leerzeilen, die zu keiner Klasse gehoeren: dort erloesche die Markierung sonst bei jedem
@@ -752,7 +764,6 @@ watch(spanById, (map) => {
 //   (4) Die Syntaxfarben kommen erst, wenn das Scrollen zur RUHE kommt (`SCROLL_SETTLE_MS`).
 //       Durch zwanzig Klassen zu rauschen waere sonst zwanzig Requests fuer neunzehn Bilder, die
 //       niemand gesehen hat. Der Balken sitzt derweil sofort – dieselbe Reihenfolge wie beim Hover.
-const READ_EDGE_RATIO = 0.25
 // ⚠️ Die Kante liegt einen Pixel UNTER der Marke, auf die `scrollToLine` eine angefahrene Zeile
 // setzt. Ohne diesen Pixel entscheidet ein Sub-Pixel-Rest darueber, ob die angefahrene Zeile noch
 // dazugehoert – gemessen: nach dem Sprung auf Zeile 501 rechnete die Kante 499,998 und markierte
@@ -920,9 +931,73 @@ const bundleFailed = computed(
   () => !!bundleQuery.value && (!!bundleResult.value.error || !bundleMatches.value.length),
 )
 
+const bundleInput = ref(null)
+const bundlePicked = ref(false)
+let pickTimer = null
+
 function setBundleQuery(v) {
   bundleQuery.value = v
   bundleCursor.value = 0
+}
+
+// --- Ein markiertes Wort IST der Suchbegriff --------------------------------------------------
+// ⚠️ Dieselbe Geste wie im Source-Tab und im Kanten-Panel, nach woertlich denselben Regeln – wer
+// im Code ein Wort markiert, fragt „wo steht das hier noch?", und im Buendel lautet die Antwort
+// „ueber alle ausgewaehlten Klassen". Ein eigener Weg dafuer waere eine zweite Bedienung fuer
+// dieselbe Frage. Mehrzeilige oder sehr lange Selektionen sind kein Suchbegriff; ein Bezeichner
+// setzt „Ganzes Wort" (`id` soll nicht `valid` treffen), Regex geht aus, Gross-/Kleinschreibung
+// bleibt, wie der Nutzer sie gesetzt hat.
+//
+// ⚠️ Den Offset rechnet das Buendel ueber `data-line` + `lineOffsets` statt ueber eine Range vom
+// Blockanfang: das Fenster zeigt nur einen Ausschnitt, und die Trefferliste zaehlt im GANZEN Text
+// – eine Range wuesste weder von den Zeilen davor noch von den fehlenden Umbruechen.
+function offsetOfSelection(range) {
+  const start = range.startContainer
+  const el = start.nodeType === 1 ? start : start.parentElement
+  const line = el?.closest?.('.line')
+  const abs = Number(line?.dataset.line)
+  if (!Number.isFinite(abs)) return null
+  const head = document.createRange()
+  head.selectNodeContents(line)
+  head.setEnd(start, range.startOffset)
+  return (lineOffsets.value[abs - 1] ?? 0) + head.toString().length
+}
+
+function pickWordInBundle(event) {
+  const block = event.currentTarget
+  const sel = window.getSelection?.()
+  if (!sel || !sel.rangeCount || sel.isCollapsed) return
+  const range = sel.getRangeAt(0)
+  if (!block?.contains(range.startContainer)) return
+  const text = String(sel).trim()
+  if (!text || text.length > MAX_PICK_LEN || text.includes('\n')) return
+  const offset = offsetOfSelection(range)
+
+  bundleOpts.value = { ...bundleOpts.value, wholeWord: isIdentifier(text), regex: false }
+  bundleQuery.value = text
+  // Das markierte Vorkommen wird der AKTIVE Treffer – „weiter" setzt dort fort, wo der Blick liegt,
+  // statt am Anfang des Buendels. `bundleMatches` ist ein computed und steht nach dem Setzen des
+  // Begriffs schon bereit; ein `nextTick` waere ein Warten auf nichts.
+  bundleCursor.value = offset == null ? 0 : Math.max(0, indexAtOrAfter(bundleMatches.value, offset))
+  handOverToBundleSearch()
+}
+
+// Nach der Uebernahme gehoert die Tastatur der Leiste: ↵ / ⇧↵ blaettern durch die Treffer, und der
+// Sprung faerbt dabei die Klasse mit, in der der Treffer steht (er landet auf der Lesekante).
+// Der Caret steht am ENDE statt den Begriff zu markieren – markiert uebergeben hiesse „gleich
+// ueberschreiben", und das ist die Bedeutung von Strg+F, nicht die dieser Geste.
+function handOverToBundleSearch() {
+  const input = bundleInput.value
+  if (!input) return
+  input.focus()
+  const end = input.value.length
+  input.setSelectionRange(end, end)
+  bundlePicked.value = false
+  clearTimeout(pickTimer)
+  requestAnimationFrame(() => {
+    bundlePicked.value = true
+    pickTimer = setTimeout(() => (bundlePicked.value = false), 700)
+  })
 }
 function toggleBundleOpt(key) {
   bundleOpts.value = { ...bundleOpts.value, [key]: !bundleOpts.value[key] }
@@ -972,7 +1047,10 @@ watch([bundleMatches, bundleActive, windowHtml], async () => {
     const hit = box.querySelector('.cs-hit--active')
     if (hit) {
       const delta = hit.getBoundingClientRect().top - box.getBoundingClientRect().top
-      box.scrollTop = Math.max(0, box.scrollTop + delta - box.clientHeight / 3)
+      // Auf die LESEKANTE, nicht auf ein Drittel: sonst steht der Treffer unterhalb der Marke, an
+      // der abgelesen wird, welche Klasse gemeint ist – und bei einem Treffer nahe am Klassenanfang
+      // leuchtete die Klasse davor.
+      box.scrollTop = Math.max(0, box.scrollTop + delta - box.clientHeight * READ_EDGE_RATIO)
     }
   }
 })
@@ -1093,6 +1171,7 @@ onUnmounted(() => {
   clearTimeout(hoverTimer)
   clearTimeout(handoverTimer)
   clearTimeout(settleTimer)
+  clearTimeout(pickTimer)
   window.removeEventListener('keydown', onKeydown)
   abortSearch()
 })
@@ -1547,10 +1626,14 @@ onUnmounted(() => {
           >
             <div
               class="flex w-full min-w-0 flex-wrap items-center gap-0.5 rounded-lg border bg-[var(--color-surface)] px-1.5 py-0.5 transition"
-              :class="bundleFailed ? 'border-[var(--color-danger)]' : 'border-[var(--color-border)] focus-within:border-[var(--color-accent)]'"
+              :class="[
+                bundleFailed ? 'border-[var(--color-danger)]' : 'border-[var(--color-border)] focus-within:border-[var(--color-accent)]',
+                { 'search-picked': bundlePicked },
+              ]"
             >
               <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
               <input
+                ref="bundleInput"
                 :value="bundleQuery"
                 type="text"
                 placeholder="Search across every selected class…"
@@ -1638,7 +1721,14 @@ onUnmounted(() => {
               </p>
               <!-- Bewusst ohne Syntax-Highlighting: die Frage ist „was landet in der Ablage?",
                    und die Antwort ist genau dieser Text. -->
-              <pre class="topic-preview text-2xs leading-relaxed text-[var(--color-text-muted)]" v-html="windowHtml" />
+              <!-- Ein markiertes Wort wandert in die Suchleiste darüber – dieselbe Geste wie im
+                   Source-Tab und im Kanten-Panel (`mouseup`, damit auch eine gezogene Auswahl
+                   zählt und nicht nur der Doppelklick). -->
+              <pre
+                class="topic-preview text-2xs leading-relaxed text-[var(--color-text-muted)]"
+                v-html="windowHtml"
+                @mouseup="pickWordInBundle"
+              />
               <p v-if="hiddenAfter" class="mt-1 font-mono text-3xs text-[var(--color-text-muted)] opacity-70">
                 ↓ {{ hiddenAfter.toLocaleString('en-US') }} lines below — all of them are copied.
               </p>

@@ -53,7 +53,16 @@ export class MarkdownService {
 
       // Java-Bloecke serverseitig neu einruecken – core-Ruler laeuft VOR dem Shiki-Renderer,
       // sodass Shiki den bereits eingerueckten Text highlightet (reiner Text-Transform).
+      //
+      // ⚠️ **Abschaltbar ueber `env`, und das ist keine Kuer.** Wer das HTML zeilenweise in einen
+      // Text aus `raw_source` einsetzt (Themen-Buendel), braucht GENAU dessen Zeilen. Der Weg
+      // darueber – `getSourceWindow(raw=1)` – uebersprang zwar seinen eigenen `reindentJava`-Aufruf,
+      // lief danach aber durch diese Pipeline und wurde doch eingerueckt: gemessen kam
+      // `    public int …` (4) zurueck, wo im Buendel `  public int …` (2) steht. Folge waren eine
+      // beim Hover sichtbar umspringende Einrueckung und Suchoffsets, die um genau diese Differenz
+      // danebenlagen. Der Default bleibt „einruecken" – Artikel sind davon unberuehrt.
       md.core.ruler.push('reindent-java', (state: any) => {
+        if (state.env?.reindentJava === false) return;
         for (const t of state.tokens) {
           if (t.type === 'fence' && (t.info || '').trim().split(/\s+/)[0] === 'java') {
             t.content = this.codeFormatter.reindentJava(t.content);
@@ -84,10 +93,15 @@ export class MarkdownService {
   }
 
   // Liefert { html, toc }. toc = [{ level, text, id }] aus H2/H3.
-  async renderMarkdown(content: string): Promise<{ html: string; toc: Array<{ level: number; text: string; id: string }> }> {
+  async renderMarkdown(
+    content: string,
+    opts: { reindentJava?: boolean } = {},
+  ): Promise<{ html: string; toc: Array<{ level: number; text: string; id: string }> }> {
     const md = await this.getMd();
     const src = content || '';
-    const env: any = {};
+    // `env` traegt die Option bis in den core-Ruler – eine zweite `md`-Instanz nur fuer diesen
+    // Schalter waere ein zweites Shiki-Setup fuer einen Aufrufer.
+    const env: any = { reindentJava: opts.reindentJava !== false };
     const tokens = md.parse(src, env);
 
     const toc: Array<{ level: number; text: string; id: string }> = [];

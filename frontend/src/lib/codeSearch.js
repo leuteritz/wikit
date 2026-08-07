@@ -8,6 +8,11 @@
 // Klassenbaum): der Zaehler schreibt an, dass nur die ersten Treffer markiert sind.
 export const MATCH_LIMIT = 2000
 
+// Was ein aufgegriffenes Wort hoechstens lang sein darf („markieren = suchen", im Kanten-Panel wie
+// im Themen-Buendel). Die Grenze gehoert zur Geste, nicht zu einer der Stellen, die sie anbieten –
+// zweimal 80 waeren zwei Zahlen, von denen eine irgendwann eine andere wird.
+export const MAX_PICK_LEN = 80
+
 const RE_SPECIAL = /[.*+?^${}()|[\]\\]/g
 // Java-Identifier: `$` gehoert dazu, `\b` kennt es nicht -> eigene Wortgrenzen per Lookaround.
 const IDENT_RE = /^[A-Za-z_$][\w$]*$/

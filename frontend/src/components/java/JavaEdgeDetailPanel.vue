@@ -25,7 +25,7 @@ import { parseParamNames, markParamOccurrences, toggleParamHighlight as onParamC
 // `shikiText`/`paintMatches`/`clearMatches` tragen die Suche in diesem Panel (s. unten).
 import { addLineNumbers, buildCallWindow, shikiText, paintMatches, clearMatches } from '../../lib/javaCode.js'
 // Dieselbe Musterlogik wie die Suchleiste im Source-Tab und in der globalen Palette.
-import { findMatches, indexAtOrAfter, isIdentifier, MATCH_LIMIT } from '../../lib/codeSearch.js'
+import { findMatches, indexAtOrAfter, isIdentifier, MATCH_LIMIT, MAX_PICK_LEN } from '../../lib/codeSearch.js'
 // Identitaetsfarbe je Methode: Definition oben, Aufrufstelle unten und Token im Code teilen sie.
 import { buildMethodColorMap, methodColorVars, markMethodCalls } from '../../lib/javaMethodColors.js'
 import { copyToClipboard } from '../../lib/clipboard.js'
@@ -390,7 +390,8 @@ function jumpToSide(side) {
 // nicht `valid` treffen), Regex geht aus, und die Gross-/Kleinschreibung bleibt, wie der Nutzer sie
 // gesetzt hat. Markiert wird anschliessend in JEDEM Block der Beziehung – Definition wie
 // Aufrufstellen –, das leistet die vorhandene Suche unveraendert.
-const MAX_PICK_LEN = 80
+// `MAX_PICK_LEN` steht bei der Suche selbst (`lib/codeSearch.js`): die Grenze gehoert zur Geste,
+// und die gibt es auch im Themen-Buendel.
 
 // Offset der Selektion im Text, den `shikiText(block)` liefert – die Bezugsgroesse der Trefferliste.
 // Gerechnet wird ueber die `.line`-Elemente (Zeilenlaenge + je ein `\n`), genau wie dort: eine
@@ -1088,27 +1089,8 @@ watch(
   box-shadow: 0 0 0 1px var(--color-warning);
 }
 
-/* Uebernahme aus dem Code: die Leiste hat gerade Begriff UND Tastatur bekommen. Ein einmaliger,
-   auslaufender Ring in der Akzentfarbe zeigt, wohin der Fokus gewandert ist – ohne ihn fuellt sich
-   das Feld am anderen Ende des Panels scheinbar von selbst. Bewusst `box-shadow` (kein `filter`)
-   und bewusst EINMAL: ein pulsierender Rahmen waere eine Daueraussage fuer ein Ereignis. */
-.search-picked {
-  animation: search-pick 0.7s ease-out;
-}
-@keyframes search-pick {
-  0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 60%, transparent);
-    border-color: var(--color-accent);
-  }
-  100% {
-    box-shadow: 0 0 0 7px transparent;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .search-picked {
-    animation: none;
-  }
-}
+/* Die Uebernahme-Anzeige (`.search-picked`) steht global in `assets/style.css` – dieselbe Geste
+   gibt es im Themen-Buendel, und zwei Kopien derselben Animation waeren zwei Fassungen davon. */
 
 /* Bilanz je Seite der Beziehung. Traegt die Treffer-Farbe, solange es dort etwas zu holen gibt –
    damit gehoert der Chip sichtbar zur Suche und nicht zu den Kanten-Badges darueber. */

@@ -262,6 +262,30 @@ html.dark .shiki span {
   }
 }
 
+/* --- „Markiertes Wort wandert in die Suchleiste" ---------------------------
+   Ein einmaliger, auslaufender Ring sagt, WOHIN der Fokus gesprungen ist – ohne ihn fuellt sich ein
+   Feld am anderen Ende der Ansicht scheinbar von selbst. Die Geste gibt es an zwei Stellen
+   (Kanten-Panel und Themen-Buendel), also steht ihre Anzeige global: zwei Kopien derselben
+   Animation waeren zwei Fassungen einer einzigen Aussage. Bewusst `box-shadow` (kein `filter`) und
+   bewusst EINMAL – ein pulsierender Rahmen waere eine Daueraussage fuer ein Ereignis. */
+.search-picked {
+  animation: search-pick 0.7s ease-out;
+}
+@keyframes search-pick {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 60%, transparent);
+    border-color: var(--color-accent);
+  }
+  100% {
+    box-shadow: 0 0 0 7px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .search-picked {
+    animation: none;
+  }
+}
+
 /* --- Verwendung-Snippet (Java-Edge-Panel): Shiki + Gutter-Zeilennummern + ---
    markierte Aufrufzeile. Nur unter .edge-usage-code, damit normale Code-Bloecke
    (Artikel) voellig unberuehrt bleiben. */

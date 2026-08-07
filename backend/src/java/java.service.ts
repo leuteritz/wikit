@@ -832,7 +832,12 @@ export class JavaService {
       ? Math.min(lines.length, SOURCE_FULL_MAX_LINES)
       : Math.min(lines.length, hitLine + context);
     const code = lines.slice(startLine - 1, endLine).join('\n');
-    const { html } = await this.markdown.renderMarkdown('```java\n' + code + '\n```');
+    // ⚠️ `raw=1` muss BIS IN die Markdown-Pipeline durchschlagen: deren `reindent-java`-Ruler
+    // rueckt sonst jeden Java-Block erneut ein, und der Aufrufer bekaeme trotz `raw` andere Zeilen
+    // als die, in die er sie einsetzt (s. markdown.service).
+    const { html } = await this.markdown.renderMarkdown('```java\n' + code + '\n```', {
+      reindentJava: rawParam !== '1',
+    });
 
     return {
       fileId,
