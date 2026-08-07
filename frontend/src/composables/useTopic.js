@@ -12,6 +12,16 @@
 // auf die Zahl muss das Bündel zurückbringen, sonst ist sie eine Erinnerung an etwas Verlorenes.
 // Derselbe Gedanke wie `lib/codeState.js` in der Code-Ansicht, nur mit einem eigenen Schlüssel:
 // zwei Ansichten, zwei Arbeitsstände.
+//
+// ⚠️ **Der Stand hat ZWEI Stufen: der Begriff steht für sich, die Auswahl hängt an Treffern.**
+// Ein Bündel gibt es erst, wenn etwas gefunden und angehakt ist – die eingetippte FRAGE gibt es
+// schon vorher, und sie ist das, was beim Wechsel nach `/code` und zurück im Feld stehen bleiben
+// muss. Beides in einen Zustand zu legen war der Fehler: gemerkt wurde nur mit nicht-leerem
+// `picked`, also verlor genau zwei Fälle den Begriff (gemessen) – die Auswahl „None" (eine Ansage,
+// die den ganzen Stand löschte) und ein Begriff ohne Treffer (nie gemerkt, weil erst die Treffer
+// schreiben). In beiden stand die Frage noch im Feld und war nach einem Tab-Wechsel weg.
+// Deshalb: `rememberTerm` schreibt die Frage, `rememberTopic` die Antwort. Gelöscht wird nur ohne
+// Begriff – die Zahl der Sidebar hängt weiter allein an `picked` und fehlt bei leerer Auswahl.
 import { computed, ref } from 'vue'
 
 const KEY = 'wikit:topic-state:v1'
@@ -30,6 +40,9 @@ function read() {
       // Ids kommen aus fremdem Speicher – alles, was keine Zahl ist, fliegt raus, sonst steht in
       // der Sidebar eine Zahl über Einträge, die kein Bestand je hergibt.
       picked: Array.isArray(raw.picked) ? raw.picked.filter((n) => Number.isInteger(n)) : [],
+      // „Hat schon jemand angefasst?" – trennt die bewusste Auswahl („None") von der Lücke, in der
+      // noch keine Treffer da waren. Ohne das Feld wären beide eine leere Liste.
+      touched: !!raw.touched,
     }
   } catch {
     return null
@@ -40,11 +53,17 @@ const saved = read()
 const term = ref(saved?.term || '')
 const opts = ref(saved?.opts || { caseSensitive: false, wholeWord: false, regex: false })
 const picked = ref(saved?.picked || [])
+const touched = ref(!!saved?.touched)
 
 function write() {
   try {
-    if (!term.value || !picked.value.length) localStorage.removeItem(KEY)
-    else localStorage.setItem(KEY, JSON.stringify({ term: term.value, opts: opts.value, picked: picked.value }))
+    // Gelöscht wird nur ohne BEGRIFF: eine leere Auswahl ist ein Stand, kein fehlender Stand.
+    if (!term.value) localStorage.removeItem(KEY)
+    else
+      localStorage.setItem(
+        KEY,
+        JSON.stringify({ term: term.value, opts: opts.value, picked: picked.value, touched: touched.value }),
+      )
   } catch {
     /* Quota/Privatmodus: der Stand geht verloren, die Ansicht läuft weiter */
   }
@@ -57,18 +76,43 @@ export function useTopic() {
   return {
     topicTerm: term,
     pickedCount,
-    /** Der laufende Stand aus `TopicView`. Leere Auswahl = kein Bündel, der Eintrag verschwindet. */
+    /**
+     * Die FRAGE – gemerkt, sobald sie angewendet ist, auch ohne einen einzigen Treffer.
+     *
+     * Ein NEUER Begriff lässt die Auswahl fallen: sie gehörte zum alten Thema, und eine Sidebar,
+     * die die Zahl von gestern unter der Frage von heute zeigt, ist eine Falschauskunft. Ein
+     * umgelegter Schalter ist dagegen dieselbe Frage – dort bleibt sie stehen (gleiche Regel wie
+     * in der Ansicht).
+     */
+    rememberTerm(nextTerm, nextOpts) {
+      const next = String(nextTerm || '')
+      if (next !== term.value) {
+        picked.value = []
+        touched.value = false
+      }
+      term.value = next
+      opts.value = { ...nextOpts }
+      write()
+    },
+    /** Die ANTWORT – der laufende Stand aus `TopicView`, sobald es Treffer gibt. */
     rememberTopic(nextTerm, nextOpts, ids) {
       term.value = String(nextTerm || '')
       opts.value = { ...nextOpts }
       picked.value = [...(ids || [])]
+      // Mit Treffern ist auch eine leere Auswahl eine Entscheidung („None") – und die darf eine
+      // nachrutschende Antwort beim nächsten Öffnen nicht wieder mit der Vorauswahl überschreiben.
+      touched.value = true
       write()
     },
-    /** Was beim Öffnen der Ansicht wiederhergestellt wird (oder `null`). */
-    savedTopic: () => (term.value && picked.value.length ? { term: term.value, opts: opts.value, picked: [...picked.value] } : null),
+    /** Was beim Öffnen der Ansicht wiederhergestellt wird (oder `null`, wenn kein Thema offen ist). */
+    savedTopic: () =>
+      term.value
+        ? { term: term.value, opts: opts.value, picked: [...picked.value], touched: touched.value }
+        : null,
     forgetTopic() {
       term.value = ''
       picked.value = []
+      touched.value = false
       write()
     },
   }

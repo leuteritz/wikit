@@ -54,7 +54,7 @@ const router = useRouter()
 const { files, lastFileId, lastTargetLine } = useJavaAnalyzer()
 const { edges, fetchEdges } = useJavaGraph()
 // Der Arbeitsstand, den die Sidebar als Zahl zeigt – hier wird er geschrieben.
-const { rememberTopic, savedTopic, forgetTopic } = useTopic()
+const { rememberTerm, rememberTopic, savedTopic, forgetTopic } = useTopic()
 
 // Dieselbe Staffelung wie in `CodeView`: das Feld reagiert sofort, die Requests folgen.
 const TERM_DEBOUNCE_MS = 280
@@ -320,8 +320,10 @@ const selectedIds = computed(() => topic.value.hits.filter((h) => selected.value
 // nicht dadurch verlorengehen, dass danach eine Antwort nachrutscht.
 // ⚠️ Ein wiederhergestelltes Buendel ist ANGEFASST. Ohne das kaeme die Vorauswahl, sobald die
 // erste Quelle antwortet, und ueberschriebe genau die Auswahl, um derentwillen der Stand gemerkt
-// wurde – ein „None" von gestern waere nach dem Reload wieder ein „alles".
-const selectionTouched = ref(useSaved)
+// wurde – ein „None" von gestern waere nach dem Reload wieder ein „alles". Ein zurueckgeholter
+// BEGRIFF ohne Auswahl ist dagegen nicht angefasst (`touched`): dort stand die Frage im Feld,
+// bevor eine Antwort da war – die Vorauswahl gehoert also noch.
+const selectionTouched = ref(useSaved && savedBundle.touched)
 
 // Ein neues THEMA ist eine neue Frage – die Auswahl faellt zurueck auf die Vorgabe. Ein umgelegter
 // Nachbarschafts-Schalter ist dagegen nur eine Erweiterung der laufenden Antwort: was schon
@@ -345,17 +347,24 @@ watch(
   },
 )
 
-// Den Stand melden – daraus wird die Zahl neben „Topic" in der Sidebar.
-// ⚠️ Geschrieben wird erst, wenn es TREFFER gibt: die vier Quellen antworten nacheinander, und in
-// der Lücke davor ist `selectedIds` leer – gemeldet hieße das „nichts eingesammelt" und löschte
-// beim Öffnen genau den Stand, der gerade wiederhergestellt wird. Ohne Thema wird vergessen; eine
-// leere Auswahl bei vorhandenen Treffern ist dagegen eine echte Ansage („None") und zählt.
+// Den Stand melden – daraus wird die Zahl neben „Topic" in der Sidebar, und daraus steht der
+// Begriff nach einem Ausflug nach `/code` wieder im Feld.
+// ⚠️ Der BEGRIFF wird sofort gemeldet, die AUSWAHL erst mit Treffern: die vier Quellen antworten
+// nacheinander, und in der Lücke davor ist `selectedIds` leer – als Auswahl gemeldet hieße das
+// „nichts eingesammelt" und löschte beim Öffnen genau den Stand, der gerade wiederhergestellt
+// wird. Die Frage selbst steht da aber schon und gehört gemerkt, sonst ist sie nach dem nächsten
+// Ansichtswechsel weg (gemessen: „None" und ein Begriff ohne Treffer verloren beide ihr Feld).
+// Ohne Thema wird vergessen; eine leere Auswahl bei vorhandenen Treffern ist dagegen eine echte
+// Ansage („None") und zählt als Auswahl.
 watch([applied, selectedIds, termOpts], ([q, ids, opts]) => {
   if (!q) {
     forgetTopic()
     return
   }
-  if (!topic.value.hits.length) return
+  if (!topic.value.hits.length) {
+    rememberTerm(q, opts)
+    return
+  }
   rememberTopic(q, opts, ids)
 })
 
