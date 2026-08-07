@@ -631,11 +631,15 @@ function scrollToLine(line1) {
 
 // Neuer Text -> zurueck an den Anfang. Ein Fenster, das nach einem Haken irgendwo mitten im alten
 // Stand stehen bleibt, zeigt eine Stelle, nach der niemand gefragt hat.
+// Danach einmal messen: ohne das bliebe der Textanfang unmarkiert, bis jemand scrollt – und „wo
+// bin ich?" ist beim Aufschlagen dieselbe Frage wie mittendrin.
 watch(
   () => bundle.value?.text,
-  () => {
+  async () => {
     windowStart.value = 0
     if (previewBody.value) previewBody.value.scrollTop = 0
+    await nextTick()
+    measureReading()
   },
 )
 
@@ -662,12 +666,15 @@ const HOVER_INTENT_MS = 180
 const HANDOVER_MS = 300
 const hoverId = ref(null)
 const heldId = ref(null)
+// Die dritte Quelle: die Klasse, die man gerade LIEST (s. „Lesen" weiter unten).
+const scrollId = ref(null)
 let hoverTimer = null
 let handoverTimer = null
 
-// Was leuchtet: der Zeiger schlaegt das Gehaltene. Eine Quelle fuer beide Faelle – der gehaltene
-// Zustand ist derselbe Fokus, nur ohne Zeiger darauf, und braucht deshalb keine zweite Darstellung.
-const litId = computed(() => hoverId.value ?? heldId.value)
+// Was leuchtet – eine Rangfolge, drei Quellen, EIN Wert: der Zeiger schlaegt den Griff, der Griff
+// das Lesen. Alle drei meinen dasselbe („welche Klasse ist gerade gemeint?"), also brauchen sie
+// auch nur eine Darstellung; unterschiedlich ist allein, wie ausdruecklich die Ansage war.
+const litId = computed(() => hoverId.value ?? heldId.value ?? scrollId.value)
 const heldHit = computed(() =>
   heldId.value ? topic.value.hits.find((h) => h.fileId === heldId.value) || null : null,
 )
@@ -721,6 +728,140 @@ function releaseHold() {
 watch(spanById, (map) => {
   if (heldId.value && !map.has(heldId.value)) heldId.value = null
 })
+
+// --- Lesen: welche Klasse steht gerade an der Lesekante? --------------------------------------
+// ⚠️ **Scrollen ist selbst eine Aussage darueber, was gemeint ist.** Ein Buendel ist eine Wand aus
+// zwanzig aneinandergehaengten Quelltexten; wer darin blaettert, ist immer IN einer Klasse – nur
+// stand das bis hierher nirgends, solange man nicht mit der Maus auf ihre Zeile links zeigte. Also
+// beantwortet die Vorschau die Frage jetzt von sich aus: die gelesene Klasse traegt denselben
+// Fokus wie eine gehoverte (voller Ton, Syntaxfarben), und beim Weiterscrollen uebernimmt die
+// naechste – beim Zurueckscrollen wieder die davor. Vier Festlegungen:
+//
+//   (1) ⚠️ **Die Kante liegt bei einem Viertel der Hoehe – derselben Stelle, auf die `scrollToLine`
+//       eine angefahrene Zeile setzt.** Damit stimmen die beiden Wege ueberein: was der Hover
+//       anfaehrt, ist danach auch das, was das Lesen meint. Zwei verschiedene Zahlen waeren zwei
+//       Antworten auf dieselbe Frage.
+//   (2) ⚠️ **Gemeint ist die letzte Klasse, deren erste Zeile die Kante PASSIERT hat** – nicht die,
+//       in der die Kante gerade steht. Zwischen zwei Bloecken liegen Kopfzeile, Package-Trenner und
+//       Leerzeilen, die zu keiner Klasse gehoeren: dort erloesche die Markierung sonst bei jedem
+//       Uebergang. Nebenbei ist das die einzige Regel, die vorwaerts und rueckwaerts denselben
+//       Umschaltpunkt hat – jede andere haette eine Hysterese, die man als Ruckeln sieht.
+//   (3) Gerechnet wird ueber die Hoehe EINER Zeile statt per Treffertest am Punkt: der Block ist
+//       `white-space: pre` mit fester Zeilenhoehe, also ist die Zuordnung eine Division – und der
+//       Container traegt Padding und Hinweiszeilen, die ein Punkttest mitraten muesste.
+//   (4) Die Syntaxfarben kommen erst, wenn das Scrollen zur RUHE kommt (`SCROLL_SETTLE_MS`).
+//       Durch zwanzig Klassen zu rauschen waere sonst zwanzig Requests fuer neunzehn Bilder, die
+//       niemand gesehen hat. Der Balken sitzt derweil sofort – dieselbe Reihenfolge wie beim Hover.
+const READ_EDGE_RATIO = 0.25
+// ⚠️ Die Kante liegt einen Pixel UNTER der Marke, auf die `scrollToLine` eine angefahrene Zeile
+// setzt. Ohne diesen Pixel entscheidet ein Sub-Pixel-Rest darueber, ob die angefahrene Zeile noch
+// dazugehoert – gemessen: nach dem Sprung auf Zeile 501 rechnete die Kante 499,998 und markierte
+// die Klasse DAVOR, also genau die, von der man gerade weggesprungen war.
+const READ_EDGE_EPSILON = 1
+const SCROLL_SETTLE_MS = 140
+let settleTimer = null
+let rafPending = false
+
+// Die Klassen in der Reihenfolge des TEXTES – dieselbe Quelle wie die Farbe, nur sortiert.
+const filesInText = computed(() =>
+  [...(bundle.value?.files || [])].sort((a, b) => a.startLine - b.startLine),
+)
+
+// Absolute Zeilennummer an einem Punkt (Fensterkoordinate `y`), oder `null`.
+function lineAtY(box, y) {
+  const pre = box.querySelector('.topic-preview')
+  const first = pre?.firstElementChild
+  if (!first) return null
+  const h = first.getBoundingClientRect().height
+  if (!h) return null
+  const idx = Math.floor((y - pre.getBoundingClientRect().top) / h)
+  const last = windowEndLine.value - windowStart.value - 1
+  return windowStart.value + Math.max(0, Math.min(last, idx)) + 1
+}
+
+function fileAtLine(line) {
+  const list = filesInText.value
+  let found = null
+  for (const f of list) {
+    if (f.startLine > line) break
+    found = f
+  }
+  return found || list[0] || null
+}
+
+function measureReading() {
+  const box = previewBody.value
+  if (!box || pane.value !== 'bundle' || !bundle.value?.text) return
+  const top = box.getBoundingClientRect().top
+  const line = lineAtY(box, top + box.clientHeight * READ_EDGE_RATIO + READ_EDGE_EPSILON)
+  if (line == null) return
+  scrollId.value = fileAtLine(line)?.fileId ?? null
+
+  // ⚠️ **Ein Griff gilt, solange sein Abschnitt im Bild steht.** „Gehalten" heisst „ich lese das
+  // gerade" – ist es hinausgescrollt, liest man es nicht mehr, und ein Chip, der auf etwas
+  // ausserhalb des Bildes zeigt, waere die Markierung an der falschen Stelle. Esc und das „×"
+  // behalten daneben ihre Bedeutung: sie lassen los, ohne dass man scrollen muss.
+  const held = heldId.value ? spanById.value.get(heldId.value) : null
+  if (held) {
+    const first = lineAtY(box, top + 1)
+    const last = lineAtY(box, top + box.clientHeight - 1)
+    if (first != null && last != null && (held.startLine + held.lines - 1 < first || held.startLine > last)) {
+      heldId.value = null
+    }
+  }
+
+  clearTimeout(settleTimer)
+  settleTimer = setTimeout(() => ensureShiki(litId.value), SCROLL_SETTLE_MS)
+  void slideWindow(box)
+}
+
+// --- Das Fenster rueckt beim Scrollen nach ----------------------------------------------------
+// ⚠️ Ohne das endet „durchscrollen" bei Zeile 600: das Fenster wanderte bisher nur, wenn jemand
+// eine Stelle ANFUHR (Hover, Suchtreffer). Nachgerueckt wird in Haeppchen, und das Bild darf sich
+// dabei um kein Pixel bewegen – also wird eine Ankerzeile gemerkt und nach dem Neuaufbau wieder
+// unter denselben Punkt geschoben. Ueber die Zeilenhoehe zu rechnen waere dieselbe Zahl an zweiter
+// Stelle und ginge an den Hinweiszeilen („N lines above") schief, die dabei kommen und gehen.
+const WINDOW_STEP = 200
+const WINDOW_EDGE_PX = 400
+let adjusting = false
+
+const anchorOffset = (box, line) => {
+  const el = line == null ? null : box.querySelector(`.line[data-line="${line}"]`)
+  return el ? el.getBoundingClientRect().top - box.getBoundingClientRect().top : null
+}
+
+async function slideWindow(box) {
+  if (adjusting) return
+  const total = allLines.value.length
+  const atTop = box.scrollTop < WINDOW_EDGE_PX && windowStart.value > 0
+  const atBottom =
+    box.scrollHeight - box.scrollTop - box.clientHeight < WINDOW_EDGE_PX && windowEndLine.value < total
+  if (!atTop && !atBottom) return
+  const next = atTop
+    ? Math.max(0, windowStart.value - WINDOW_STEP)
+    : Math.min(Math.max(0, total - WINDOW_LINES), windowStart.value + WINDOW_STEP)
+  if (next === windowStart.value) return
+
+  const anchor = lineAtY(box, box.getBoundingClientRect().top + 1)
+  const before = anchorOffset(box, anchor)
+  adjusting = true
+  windowStart.value = next
+  await nextTick()
+  const after = anchorOffset(box, anchor)
+  if (before != null && after != null) box.scrollTop += after - before
+  adjusting = false
+}
+
+// Ein Scroll-Ereignis je Frame – die Messung liest Geometrie, und die zwanzigmal je Wischer zu
+// erzwingen waere genau die Rechnung, gegen die es den Frame gibt.
+function onPreviewScroll() {
+  if (adjusting || rafPending) return
+  rafPending = true
+  requestAnimationFrame(() => {
+    rafPending = false
+    measureReading()
+  })
+}
 
 // ⚠️ **Esc hat hier zwei Bedeutungen und genau EINE Reihenfolge** – entschieden an dieser einen
 // Stelle, nicht in zwei Listenern (gleiche Regel wie `Ctrl+F` in der Code-Ansicht: das Kuerzel
@@ -802,12 +943,17 @@ watch(bundleActive, async (i) => {
 // Markieren: die Offsets gelten im GANZEN Text, das gerenderte Fenster kennt nur seinen Ausschnitt
 // – also werden sie um den Fensteranfang verschoben und alles ausserhalb faellt weg. Der aktive
 // Treffer behaelt dabei seine Kennzeichnung, sofern er im Bild ist.
+// ⚠️ ANGEFAHREN wird er aber nur, wenn er ein anderer geworden ist. Der Lauf haengt auch am
+// Fensterinhalt, und der aendert sich jetzt beim Scrollen (Nachruecken, neue leuchtende Klasse) –
+// ohne diese Bedingung zoege eine offene Suche das Bild bei jedem Wischer zu ihrem Treffer zurueck.
+let scrolledToMatch = -1
 watch([bundleMatches, bundleActive, windowHtml], async () => {
   await nextTick()
   const box = previewBody.value
   if (!box) return
   if (!bundleMatches.value.length) {
     clearMatches(box)
+    scrolledToMatch = -1
     return
   }
   const from = windowOffset.value
@@ -820,7 +966,9 @@ watch([bundleMatches, bundleActive, windowHtml], async () => {
     local.push({ from: m.from - from, to: m.to - from })
   })
   paintMatches(box, local, activeLocal)
-  if (activeLocal >= 0) {
+  const moved = bundleActive.value !== scrolledToMatch
+  scrolledToMatch = bundleActive.value
+  if (activeLocal >= 0 && moved) {
     const hit = box.querySelector('.cs-hit--active')
     if (hit) {
       const delta = hit.getBoundingClientRect().top - box.getBoundingClientRect().top
@@ -944,6 +1092,7 @@ onUnmounted(() => {
   clearTimeout(bundleTimer)
   clearTimeout(hoverTimer)
   clearTimeout(handoverTimer)
+  clearTimeout(settleTimer)
   window.removeEventListener('keydown', onKeydown)
   abortSearch()
 })
@@ -1451,7 +1600,12 @@ onUnmounted(() => {
           </div>
 
           <!-- ===== Modus 1: das Bündel ===== -->
-          <div v-show="pane === 'bundle'" ref="previewBody" class="min-h-0 flex-1 overflow-auto p-4">
+          <div
+            v-show="pane === 'bundle'"
+            ref="previewBody"
+            class="min-h-0 flex-1 overflow-auto p-4"
+            @scroll.passive="onPreviewScroll"
+          >
             <BusyState
               v-if="bundling && !bundle"
               variant="panel"
