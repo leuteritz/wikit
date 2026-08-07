@@ -129,11 +129,14 @@ export const api = {
   // `ids` schneidet denselben Text auf eine Auswahl zu (Themen-Buendel, `/topic`) – ein zweiter
   // Endpunkt waere dasselbe Format ein zweites Mal, und `topic` steht nur im Kopf des Textes.
   // `silent`, weil die Buendel-Ansicht bei jeder Auswahl neu holt: ein Toast je Haken waere Laerm.
-  exportJavaAll: (ids = null, topic = '') =>
+  // `keepOrder`: die Reihenfolge der `ids` bleibt stehen (Lesepfad – dort IST sie die Aussage).
+  // Ohne den Schalter sortiert der Server wie beim Vollexport nach Package und Name.
+  exportJavaAll: (ids = null, topic = '', keepOrder = false) =>
     ids
       ? http(
           'GET',
-          `/java/export?ids=${ids.join(',')}${topic ? `&topic=${encodeURIComponent(topic)}` : ''}`,
+          `/java/export?ids=${ids.join(',')}${topic ? `&topic=${encodeURIComponent(topic)}` : ''}` +
+            (keepOrder ? '&order=given' : ''),
           null,
           { silent: true },
         )

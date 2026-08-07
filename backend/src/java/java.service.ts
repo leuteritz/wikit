@@ -683,7 +683,7 @@ export class JavaService {
   // Ausschnitt ist derselbe Text, nur kuerzer – also bleibt er ueber „Add code" einlesbar, und die
   // Regeln fuer Dubletten, Sortierung und Kopf gelten unveraendert an EINER Stelle. `topic` steht
   // nur im Kopf: wer das Buendel in einen Chat wirft, soll dort lesen koennen, wonach gefragt war.
-  async exportAll(ids?: number[] | null, topic?: string): Promise<any> {
+  async exportAll(ids?: number[] | null, topic?: string, keepOrder = false): Promise<any> {
     const picked = (ids || []).filter((n) => Number.isInteger(n) && n > 0);
     // Eine LEERE Auswahl ist eine Auswahl, kein „alles": wer nichts angehakt hat, bekommt nichts.
     // Der Unterschied haengt am Argument, nicht an der Laenge – `null` heisst „ganzer Bestand".
@@ -696,6 +696,16 @@ export class JavaService {
        ${picked.length ? `WHERE id IN (${picked.join(',')})` : ''}
        ORDER BY package COLLATE NOCASE, class_name COLLATE NOCASE`,
     );
+
+    // ⚠️ `order=given` hat GENAU einen Aufrufer und genau einen Grund: den Lesepfad. Dessen ganze
+    // Aussage IST die Reihenfolge – nach Package sortiert auszugeben hiesse, sie wegzuwerfen und
+    // trotzdem „reading order" darueber zu schreiben. Der Default bleibt sortiert, also aendert
+    // sich fuer Vollexport und Themen-Buendel nichts. Umsortiert wird NACH dem SELECT, weil SQL die
+    // Reihenfolge einer `IN`-Liste nicht kennt.
+    if (keepOrder && picked.length) {
+      const rank = new Map(picked.map((id, i) => [id, i]));
+      rows.sort((a: any, b: any) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
+    }
 
     // Gleiche FQCN doppelt: der Import behaelt beim Wieder-Einlesen ohnehin nur die erste (zwei
     // Klassen mit demselben vollqualifizierten Namen kann es nicht geben). Wer sie hier

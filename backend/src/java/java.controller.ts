@@ -84,7 +84,13 @@ export class JavaController {
   // Endpunkt dafuer waere dasselbe Format ein zweites Mal. Ein leeres `ids=` ist eine leere
   // AUSWAHL und liefert nichts; fehlt der Parameter ganz, gilt der ganze Bestand.
   @Get('export')
-  exportAll(@Query('ids') ids?: string, @Query('topic') topic?: string) {
+  exportAll(
+    @Query('ids') ids?: string,
+    @Query('topic') topic?: string,
+    // `order=given` behaelt die Reihenfolge der `ids` bei, statt nach Package/Name zu sortieren.
+    // Nur fuer den Lesepfad: dort IST die Reihenfolge die Aussage.
+    @Query('order') order?: string,
+  ) {
     const picked =
       ids === undefined
         ? null
@@ -92,7 +98,7 @@ export class JavaController {
             .split(',')
             .map((s) => Number(s.trim()))
             .filter((n) => Number.isInteger(n) && n > 0);
-    return this.svc.exportAll(picked, topic);
+    return this.svc.exportAll(picked, topic, order === 'given');
   }
 
   // Zeilengenaue Suche im Quelltext ALLER Klassen (globale Suchpalette). Dieselben Schalter wie

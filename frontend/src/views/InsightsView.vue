@@ -11,24 +11,32 @@
 //
 // Jede Zeile ist ein Absprung: der Bericht endet nicht bei der Erkenntnis, sondern an der Stelle,
 // an der man etwas tun kann (`/code` mit der Klasse bzw. dem Package im Bild).
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useInsights } from '../composables/useInsights.js'
 import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
+import { useJavaGraph } from '../composables/useJavaGraph.js'
 import BusyState from '../components/BusyState.vue'
 import CyclePlan from '../components/insights/CyclePlan.vue'
 import { Icon } from '../lib/icons.js'
 import { vTip } from '../lib/tooltip.js'
+import { api } from '../lib/api.js'
+import { buildReadingPath, STATION_KIND } from '../lib/readingPath.js'
+import { copyToClipboard, BIG_CLIPBOARD_BYTES } from '../lib/clipboard.js'
+import { formatBytes } from '../lib/format.js'
 
 const router = useRouter()
-const { data, loading, ensure, reload } = useInsights()
-const { lastFileId, lastPackage } = useJavaAnalyzer()
+const { data, loading, ensure, reload, byFileId } = useInsights()
+const { lastFileId, lastPackage, files, fetchFiles } = useJavaAnalyzer()
+const { edges, fetchEdges } = useJavaGraph()
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: 'lucide:layout-grid', hint: 'Totals and the three headline findings' },
   { id: 'cycles', label: 'Cycles', icon: 'lucide:repeat', hint: 'Dependency loops, and where to cut them' },
   { id: 'hotspots', label: 'Hotspots', icon: 'lucide:flame', hint: 'Where size, branching and coupling meet' },
   { id: 'packages', label: 'Packages', icon: 'lucide:package', hint: 'Abstractness against instability' },
+  // Die einzige Frage hier, die nicht „was stimmt nicht?" lautet, sondern „wo fange ich an?".
+  { id: 'path', label: 'Reading path', icon: 'lucide:route', hint: 'The order that lets you read this code once' },
 ]
 
 // --- Was jeder Reiter beantwortet ---------------------------------------------------------------
@@ -65,6 +73,14 @@ const EXPLAIN = {
       ['Concrete and depended upon', 'Everything hangs on it and nothing can be extended. Extract interfaces for the parts other packages use.'],
       ['Abstract and unused', 'Interfaces nobody implements or calls. Delete what is dead, or merge it back into the package that was supposed to use it.'],
       ['Cycles first', 'A package in a loop cannot be judged on these numbers at all — break the loop, then look again.'],
+    ],
+  },
+  path: {
+    what: 'An order to read this code in, built from what depends on what: the classes that need nothing else come first, then the ones built on top of them. Reading a class before its parts is exactly what makes unfamiliar code hard.',
+    fixes: [
+      ['Start with one package, not everything', 'A path through 400 classes is the codebase again. Pick the package you actually have to work in.'],
+      ['A “needs a look ahead” step is a cycle', 'It means the order had to be broken somewhere. Those classes only make sense read together — the step says which ones.'],
+      ['Take it with you', 'Copy the whole path as one text and paste it into a chat, in reading order rather than alphabetical.'],
     ],
   },
 }
@@ -141,6 +157,108 @@ const emptyReason = computed(() => {
   if (!totals.value.classes) return 'no-classes'
   if (!totals.value.relations) return 'no-relations'
   return null
+})
+
+// --- Lesepfad -----------------------------------------------------------------------------------
+// ⚠️ Gerechnet wird im CLIENT, aus Kanten und Kennzahlen, die ohnehin geladen sind – dieselbe
+// Begruendung wie bei `path:`/`impact:` in `/code`: ein Endpunkt waere ein Roundtrip fuer eine
+// Rechnung im Speicher. Die Kanten holt dieser Reiter beim ersten Oeffnen nach; auf der Uebersicht
+// braucht sie niemand.
+const pathScope = ref('') // '' = ganze Codebasis, sonst ein Package-Pfad
+const pathEdgesLoaded = ref(false)
+const pathLoading = ref(false)
+const pathCopying = ref(false)
+const pathCopied = ref(false)
+
+async function ensurePathData() {
+  if (pathEdgesLoaded.value || pathLoading.value) return
+  pathLoading.value = true
+  try {
+    if (!files.value.length) await fetchFiles()
+    if (!edges.value.length) await fetchEdges()
+    pathEdgesLoaded.value = true
+  } finally {
+    pathLoading.value = false
+  }
+}
+
+// Packages nach Klassenzahl – die Auswahl beginnt bei dem, in dem am meisten steht.
+const pathPackages = computed(() =>
+  [...packages.value].sort((a, b) => b.classes - a.classes || a.path.localeCompare(b.path)),
+)
+
+const pathScopeIds = computed(() => {
+  const list = pathScope.value
+    ? classes.value.filter((c) => (c.package || '(default)') === pathScope.value)
+    : classes.value
+  return list.map((c) => c.id)
+})
+
+const readingPath = computed(() => {
+  if (!pathEdgesLoaded.value) return { stations: [], totals: { classes: 0, foundations: 0, cycleBreaks: 0, depth: 0 } }
+  return buildReadingPath(files.value, edges.value, byFileId.value, pathScopeIds.value)
+})
+
+// Der Satz unter einer Station. ⚠️ Er nennt die ECHTEN Namen: „builds on the previous step" waere
+// bei zwoelf Stationen keine Auskunft. Gedeckelt, weil eine Klasse mit dreissig Bausteinen die
+// Zeile sonst zur Wand macht – der Rest wird gezaehlt.
+const NAMES_SHOWN = 3
+function stationWhy(s) {
+  const list = (arr) => {
+    const shown = arr.slice(0, NAMES_SHOWN).join(', ')
+    const rest = arr.length - NAMES_SHOWN
+    return rest > 0 ? `${shown} and ${rest} more` : shown
+  }
+  if (s.kind === STATION_KIND.CYCLE) {
+    return `Read together with ${list(s.ahead)} — they depend on each other, so there is no order that puts either first.`
+  }
+  if (s.kind === STATION_KIND.FOUNDATION) {
+    return s.usedByCount
+      ? `Needs nothing else here, and ${s.usedByCount} ${s.usedByCount === 1 ? 'class builds' : 'classes build'} on it.`
+      : 'Needs nothing else here — it stands on its own.'
+  }
+  return `Builds on ${list(s.buildsOn)}.`
+}
+
+const STATION_STYLE = {
+  [STATION_KIND.FOUNDATION]: { label: 'foundation', icon: 'lucide:milestone', color: 'var(--color-success)' },
+  [STATION_KIND.BUILDS_ON]: { label: 'builds on', icon: 'lucide:arrow-up-from-line', color: 'var(--color-accent)' },
+  [STATION_KIND.CYCLE]: { label: 'needs a look ahead', icon: 'lucide:repeat', color: 'var(--color-warning)' },
+}
+
+// Den ganzen Pfad als EINEN Text – in Lesereihenfolge, nicht alphabetisch (`keepOrder`). Genau
+// dafuer gibt es `order=given`: ohne den Schalter waere die Reihenfolge, die die ganze Aussage
+// dieses Reiters ist, im Kopiertext wieder weg.
+async function copyPath() {
+  const ids = readingPath.value.stations.map((s) => s.fileId)
+  if (!ids.length || pathCopying.value) return
+  pathCopying.value = true
+  pathCopied.value = false
+  try {
+    const res = await api.exportJavaAll(ids, pathScope.value ? `reading path · ${pathScope.value}` : 'reading path', true)
+    const text = res?.text || ''
+    if (!text) return
+    // Oberhalb der Grenze fuehrt der Download – dieselbe Regel wie im Themen-Buendel.
+    if (new Blob([text]).size > BIG_CLIPBOARD_BYTES) {
+      const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `reading-path${pathScope.value ? `-${pathScope.value.replace(/\W+/g, '-')}` : ''}.txt`
+      a.click()
+      URL.revokeObjectURL(url)
+    } else {
+      await copyToClipboard(text)
+    }
+    pathCopied.value = true
+    setTimeout(() => (pathCopied.value = false), 2000)
+  } finally {
+    pathCopying.value = false
+  }
+}
+
+// Kanten erst holen, wenn der Reiter zum ersten Mal offen ist.
+watch(tab, (t) => {
+  if (t === 'path') ensurePathData()
 })
 
 onMounted(() => ensure())
@@ -706,7 +824,7 @@ const plotted = computed(() => {
           </section>
 
           <!-- ==================== Packages ==================== -->
-          <section v-else class="space-y-5">
+          <section v-else-if="tab === 'packages'" class="space-y-5">
             <div v-if="!plotted.length" class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-8 text-center text-2xs text-[var(--color-text-muted)]">
               Abstractness against instability needs relations between packages.
             </div>
@@ -813,6 +931,115 @@ const plotted = computed(() => {
                 </table>
               </div>
             </div>
+          </section>
+
+          <!-- ==================== Reading path ==================== -->
+          <section v-else class="space-y-4">
+            <!-- Zuschnitt + Mitnahme in EINER Zeile: „wodurch?" und „und dann?" gehoeren zusammen. -->
+            <div class="flex flex-wrap items-center gap-2">
+              <label class="flex items-center gap-2 text-2xs text-[var(--color-text-muted)]">
+                <Icon icon="lucide:route" class="h-3.5 w-3.5" />
+                Path through
+                <select
+                  v-model="pathScope"
+                  class="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-2xs text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+                >
+                  <option value="">the whole codebase ({{ num(classes.length) }} classes)</option>
+                  <option v-for="p in pathPackages" :key="p.path" :value="p.path">
+                    {{ p.path }} ({{ p.classes }})
+                  </option>
+                </select>
+              </label>
+
+              <span v-if="readingPath.totals.classes" class="text-2xs text-[var(--color-text-muted)]">
+                <strong class="font-semibold text-[var(--color-text)]">{{ readingPath.totals.foundations }}</strong>
+                to start from ·
+                <strong class="font-semibold text-[var(--color-text)]">{{ readingPath.totals.depth }}</strong>
+                {{ readingPath.totals.depth === 1 ? 'layer' : 'layers' }} deep
+              </span>
+
+              <button
+                v-if="readingPath.totals.classes"
+                type="button"
+                class="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-2xs font-medium text-[var(--color-text)] transition hover:border-[var(--color-accent)] disabled:opacity-60"
+                :disabled="pathCopying"
+                title="Copy every class on this path as one text — in reading order, not alphabetical"
+                @click="copyPath"
+              >
+                <Icon
+                  :icon="pathCopied ? 'lucide:check' : pathCopying ? 'lucide:loader-2' : 'lucide:clipboard-copy'"
+                  class="h-3.5 w-3.5"
+                  :class="pathCopying ? 'animate-spin' : ''"
+                />
+                {{ pathCopied ? 'Copied' : `Copy all ${readingPath.totals.classes}` }}
+              </button>
+            </div>
+
+            <BusyState
+              v-if="pathLoading"
+              variant="panel"
+              title="Loading relations…"
+              detail="the stored class edges this order is built from"
+              :since="startedAt"
+              :rows="4"
+            />
+
+            <p
+              v-else-if="!readingPath.totals.classes"
+              class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-8 text-center text-2xs text-[var(--color-text-muted)]"
+            >
+              No classes in this scope.
+            </p>
+
+            <!-- Die Route. ⚠️ Eine Station nennt IMMER ihren Grund – eine nummerierte Liste ohne
+                 „warum hier?" waere eine Sortierung, der man glauben muesste. -->
+            <ol v-else class="space-y-1.5">
+              <li
+                v-for="s in readingPath.stations"
+                :key="s.fileId"
+                class="group flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 transition hover:border-[var(--color-accent)]"
+                @click="openClass(s.fileId)"
+              >
+                <span
+                  class="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-md text-3xs font-semibold tabular-nums"
+                  :style="{
+                    background: `color-mix(in srgb, ${STATION_STYLE[s.kind].color} 16%, transparent)`,
+                    color: STATION_STYLE[s.kind].color,
+                  }"
+                >{{ s.step }}</span>
+
+                <div class="min-w-0 flex-1">
+                  <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                    <span class="text-xs font-semibold text-[var(--color-text)]">{{ s.className }}</span>
+                    <span v-if="!pathScope && s.package" class="truncate font-mono text-3xs text-[var(--color-text-muted)]">{{ s.package }}</span>
+                    <span
+                      class="inline-flex items-center gap-1 rounded px-1 py-px text-3xs font-medium"
+                      :style="{
+                        background: `color-mix(in srgb, ${STATION_STYLE[s.kind].color} 12%, transparent)`,
+                        color: STATION_STYLE[s.kind].color,
+                      }"
+                    >
+                      <Icon :icon="STATION_STYLE[s.kind].icon" class="h-3 w-3" />
+                      {{ STATION_STYLE[s.kind].label }}
+                    </span>
+                    <!-- Der Brandherd-Rang faehrt mit, wo er etwas sagt: eine schwere Klasse mitten
+                         im Pfad ist die, fuer die man Zeit einplant. -->
+                    <span
+                      v-if="s.score != null && s.score >= 50"
+                      v-tip="`Hotspot rank ${s.score} — driven by ${s.driver}`"
+                      class="text-3xs font-semibold tabular-nums"
+                      :style="{ color: scoreColor(s.score) }"
+                    >{{ s.score }}</span>
+                  </div>
+                  <p class="mt-0.5 text-3xs leading-relaxed text-[var(--color-text-muted)]">{{ stationWhy(s) }}</p>
+                </div>
+
+                <Icon
+                  icon="lucide:arrow-up-right"
+                  class="mt-1 h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)] opacity-0 transition group-hover:opacity-100"
+                />
+              </li>
+            </ol>
           </section>
         </template>
       </div>

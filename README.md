@@ -30,7 +30,8 @@ copying one file.
   what hangs together, which article is the hub, and which ones nothing points at.
 - **Java code analysis** — parse `.java` locally (no JDK) and explore a class dependency graph.
 - **Code insights** — dependency cycles, a hotspot ranking and package balance, derived from what
-  is already stored.
+  is already stored — plus a **reading path**: the order that lets you read a package once,
+  foundations first.
 - **Topic bundles** — collect every class around one term (by name, by source, by meaning, by
   relation) and copy their whole source as one text, ready to paste into a chat.
 - **AI summaries** — optional, per method and per class, via [Ollama](https://ollama.com)

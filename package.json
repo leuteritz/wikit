@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.21.0",
-  "whatsNew": "The wiki gets its relationship graph",
+  "version": "4.22.0",
+  "whatsNew": "A reading path through unfamiliar code",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",
