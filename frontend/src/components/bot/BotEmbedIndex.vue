@@ -59,7 +59,11 @@ async function build(force = false) {
         summarize: (r) => {
           const n = (r?.code?.indexed ?? 0) + (r?.wiki?.indexed ?? 0)
           const blocked = r?.code?.started === false ? r.code.reason : r?.wiki?.started === false ? r.wiki.reason : null
-          return blocked || `Embedded ${n} source(s)`
+          if (blocked) return blocked
+          // Der Grund gehört auch hierher, nicht nur in den Toast: der verschwindet, die
+          // Aktivitätszeile bleibt stehen. „Embedded 0 source(s)" ohne ihn ist kein Ergebnis.
+          const why = r?.code?.reason || r?.wiki?.reason
+          return why ? `Embedded ${n} source(s) — ${why}` : `Embedded ${n} source(s)`
         },
       },
     )
@@ -72,10 +76,16 @@ async function build(force = false) {
     } else if (failed) {
       // Abgebrochen heisst nicht „nichts passiert": was geschrieben wurde, bleibt gültig, und der
       // nächste Lauf macht dort weiter. Genau das muss dastehen, sonst startet man von vorn.
+      //
+      // ⚠️ Davor steht der GRUND vom Server, nicht mehr ein Satz für jeden Fall. „Ollama stopped
+      // answering" war bei einem nicht gepullten Modell und bei einem zu knappen Timeout gleich
+      // falsch – und ausgerechnet beim Erst-Index scheitert der allererste Stapel, es steht also
+      // „0 of 2688" da und der einzige Hinweis darauf, was zu tun ist, fehlte.
+      const why = res?.code?.reason || res?.wiki?.reason || 'Ollama stopped answering'
       push({
         kind: 'warning',
         title: `${done} of ${done + failed} sources embedded`,
-        message: 'Ollama stopped answering — the rest stays for the next run.',
+        message: `${why} — the rest stays for the next run.`,
       })
     }
     await refresh()

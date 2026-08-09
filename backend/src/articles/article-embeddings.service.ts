@@ -194,12 +194,14 @@ export class ArticleEmbeddingsService {
 
       let done = 0;
       let failed = 0;
+      let reason: string | null = null;
       for (let i = 0; i < todo.length; i += EMBED_BATCH) {
         const slice = todo.slice(i, i + EMBED_BATCH);
-        const vectors = await this.ollama.embed(slice.map((it) => documentText(model, it.text)));
-        if (vectors.length !== slice.length) {
-          // Ollama weg oder Modell nicht gepullt: abbrechen statt weiter ins Leere zu fragen. Was
-          // bereits geschrieben ist, bleibt gueltig – der naechste Lauf macht dort weiter.
+        const { vectors, error } = await this.ollama.embed(slice.map((it) => documentText(model, it.text)));
+        if (error || vectors.length !== slice.length) {
+          // Abbrechen statt weiter ins Leere zu fragen; der Grund faehrt mit (gleiche Begruendung
+          // wie bei den Klassen). Was bereits geschrieben ist, bleibt gueltig.
+          reason = error || `Ollama returned ${vectors.length} vector(s) for ${slice.length} text(s)`;
           failed = todo.length - done;
           break;
         }
@@ -222,7 +224,7 @@ export class ArticleEmbeddingsService {
       // waere eine Falschauskunft.
       await this.ds.query(`DELETE FROM article_embeddings WHERE model <> ?`, [model]);
       this.cache = null;
-      return { started: true, indexed: done, skipped: items.length - todo.length, failed, model };
+      return { started: true, indexed: done, skipped: items.length - todo.length, failed, reason, model };
     } catch (err: any) {
       this.logger.warn(`Artikel-Index fehlgeschlagen: ${err?.message || err}`);
       throw err;

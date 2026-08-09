@@ -78,10 +78,11 @@ On first start the DB is created under `DATA_DIR` and seeded with a few demo art
 | `OLLAMA_URL` | `http://localhost:11434/api/generate` | Ollama endpoint. In Docker: `http://host.docker.internal:11434/api/generate`. |
 | `OLLAMA_MODEL` | `qwen2.5-coder:3b` | Model for AI summaries. |
 | `OLLAMA_EMBED_MODEL` | `nomic-embed-text` | Model for meaning-based search. Empty switches it off. |
-| `OLLAMA_TIMEOUT_MS` | `20000` | Abort and fall back to Javadoc if the model is too slow. |
+| `OLLAMA_TIMEOUT_MS` | `20000` | Abort and fall back to Javadoc if the model is too slow. Text generation only. |
+| `OLLAMA_EMBED_TIMEOUT_MS` | `120000` | Per batch while indexing, and the first batch also loads the model. Raise it on a Pi. |
 | `WIKI_BODY_LIMIT` | `64mb` | Largest accepted body. Raising it means raising `client_max_body_size` in `deploy/nginx.conf` too — nginx rejects first otherwise. |
 
-The three `OLLAMA_*` values are only the **default**; anything set under `/bot` wins. `PORT`, `HOST`
+The five `OLLAMA_*` values are only the **default**; anything set under `/bot` wins. `PORT`, `HOST`
 and `WIKI_DB` in `.env.example` are for bare-metal runs only.
 
 ## Java code analysis

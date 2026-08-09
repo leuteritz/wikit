@@ -44,7 +44,13 @@ const fieldsOf = (group) => state.fields.filter((f) => f.group === group)
 
 // Welche Env-Variable hinter dem Default steht – die Oberflaeche benennt sie am Feld, statt einen
 // Wert zu zeigen, den niemand einordnen kann.
-const ENV_NAMES = { host: 'OLLAMA_URL', model: 'OLLAMA_MODEL', timeoutMs: 'OLLAMA_TIMEOUT_MS' }
+const ENV_NAMES = {
+  host: 'OLLAMA_URL',
+  model: 'OLLAMA_MODEL',
+  timeoutMs: 'OLLAMA_TIMEOUT_MS',
+  embedModel: 'OLLAMA_EMBED_MODEL',
+  embedTimeoutMs: 'OLLAMA_EMBED_TIMEOUT_MS',
+}
 const envNameFor = (path) => (state.env?.[path] ? ENV_NAMES[path] || '' : '')
 
 const DOT = {

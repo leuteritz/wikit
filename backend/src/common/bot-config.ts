@@ -42,6 +42,15 @@ export interface BotConfig {
    */
   embedModel: string;
   timeoutMs: number;
+  /**
+   * Timeout fuer EINEN Embedding-Stapel. Bewusst getrennt von `timeoutMs`: der gilt fuer eine
+   * Generierung („so lange warte ich auf einen Satz"), hier warten dagegen `EMBED_BATCH` Texte auf
+   * einmal -- und der allererste Stapel traegt zusaetzlich die Ladezeit des Modells. Mit dem
+   * Generierungswert (Default 20 s) brach der Indexlauf auf einem Pi regelmaessig beim ERSTEN
+   * Stapel ab, und zwar mit „Ollama antwortet nicht" ueber einen Server, der nur noch nicht fertig
+   * war.
+   */
+  embedTimeoutMs: number;
   temperature: number | null;
   topP: number | null;
   numCtx: number | null;
@@ -182,6 +191,16 @@ export const BOT_FIELDS: BotFieldSpec[] = [
     hint: 'Idle timeout while streaming (reset per chunk), hard timeout for single calls. A slow model on a Pi needs a generous value.',
   },
   {
+    path: 'embedTimeoutMs',
+    type: 'int',
+    min: 1000,
+    max: 900000,
+    step: 5000,
+    group: 'connection',
+    label: 'Embedding timeout',
+    hint: 'Per batch of texts, not per text — and the first batch also waits for the model to load. Raise it if indexing stops right at the start.',
+  },
+  {
     path: 'temperature',
     type: 'float',
     min: 0,
@@ -309,6 +328,9 @@ export function envDefaults(): BotConfig {
     // Textmodell, das daneben im Speicher liegt.
     embedModel: process.env.OLLAMA_EMBED_MODEL || 'nomic-embed-text',
     timeoutMs: Number(process.env.OLLAMA_TIMEOUT_MS || 20000),
+    // Grosszuegig, weil der teuerste Stapel der erste ist: dort laedt Ollama das Modell erst von
+    // der Platte. Ein zu knapper Wert kostet nicht Genauigkeit, sondern den ganzen Lauf.
+    embedTimeoutMs: Number(process.env.OLLAMA_EMBED_TIMEOUT_MS || 120000),
     temperature: null,
     topP: null,
     numCtx: null,

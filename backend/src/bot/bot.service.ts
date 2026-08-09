@@ -86,6 +86,8 @@ export class BotService {
         host: !!process.env.OLLAMA_URL,
         model: !!process.env.OLLAMA_MODEL,
         timeoutMs: !!process.env.OLLAMA_TIMEOUT_MS,
+        embedModel: !!process.env.OLLAMA_EMBED_MODEL,
+        embedTimeoutMs: !!process.env.OLLAMA_EMBED_TIMEOUT_MS,
       },
     };
   }

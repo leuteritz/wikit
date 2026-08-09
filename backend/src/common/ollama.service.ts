@@ -43,6 +43,23 @@ export interface GenerateResult {
   error: string | null;
 }
 
+/**
+ * Ergebnis eines Embedding-Laufs.
+ *
+ * ⚠️ Frueher gab `embed()` bei jedem Problem `[]` zurueck -- und der Aufrufer machte daraus
+ * „Ollama antwortet nicht". Das ist bei genau EINEM von vier Faellen wahr: Zeitueberschreitung,
+ * fehlendes Modell, HTTP-Fehler und ein tatsaechlich nicht erreichbarer Server verlangen vier
+ * verschiedene naechste Schritte (Timeout hochsetzen, `ollama pull`, ins Log sehen, Ollama
+ * starten). Ein Sammelsatz fuer alle vier schickt jeden auf die falsche Suche -- dieselbe
+ * Begruendung wie hinter dem `reason` von `/ask`.
+ */
+export interface EmbedResult {
+  /** Vektoren in der Reihenfolge der Eingabe. Leer, wenn `error` gesetzt ist. */
+  vectors: number[][];
+  /** Klartext-Grund. `null` heisst: vollstaendig geliefert. */
+  error: string | null;
+}
+
 /** Overrides fuer einen einzelnen Aufruf -- der Playground testet Werte, BEVOR sie gespeichert sind. */
 export interface GenerateOverrides {
   host?: string;
@@ -285,59 +302,117 @@ export class OllamaService {
    * Ollama kennt zwei Endpunkte: das aeltere `/api/embeddings` (ein Text, Feld `embedding`) und
    * das neuere `/api/embed` (eine Liste, Feld `embeddings`). Gefragt wird das neuere zuerst –
    * eine Anfrage fuer einen ganzen Stapel statt einer je Klasse ist bei tausend Klassen der
-   * Unterschied zwischen Minuten und Sekunden –, und nur bei 404 faellt es auf das alte zurueck.
+   * Unterschied zwischen Minuten und Sekunden –, und nur bei einem 404 ueber die ROUTE faellt es
+   * auf das alte zurueck.
+   *
+   * ⚠️ **Ollama antwortet auf beide Faelle mit 404**, und sie bedeuten das Gegenteil voneinander:
+   * „diese Route kennt der Server nicht" (alte Ollama-Version, der alte Weg hilft) und „dieses
+   * Modell liegt hier nicht" (`ollama pull` fehlt, der alte Weg liefert denselben 404). Beides als
+   * Ersteres zu behandeln war der Grund, warum ein nicht gepulltes Embedding-Modell als
+   * „Ollama antwortet nicht" ankam. Unterschieden wird am Antworttext: den Modellnamen nennt nur
+   * die zweite Fassung, die Route-Meldung ist Gins nacktes „404 page not found".
+   *
+   * ⚠️ **Nach einer Zeitueberschreitung wird NICHT auf den alten Weg gewechselt.** Der Endpunkt hat
+   * nicht gefehlt, der Server war nur nicht fertig – dieselbe Anfrage einzeln zu wiederholen
+   * verdoppelt bloss die Wartezeit vor derselben Auskunft.
    *
    * Wie ueberall in diesem Service ist „Ollama antwortet nicht" KEIN Fehler, sondern ein leeres
-   * Ergebnis: der Aufrufer laesst den Index dann eben unvollstaendig und schreibt es an.
-   *
-   * @returns Vektoren in der Reihenfolge der Eingabe, oder `[]`.
+   * Ergebnis mit Grund: der Aufrufer laesst den Index dann eben unvollstaendig und schreibt an,
+   * WARUM.
    */
-  async embed(texts: string[], overrides?: GenerateOverrides): Promise<number[][]> {
+  async embed(texts: string[], overrides?: GenerateOverrides): Promise<EmbedResult> {
     const cfg = await this.settings.bot();
     const model = overrides?.model || cfg.embedModel;
-    if (!model || !texts.length) return [];
+    if (!model) return { vectors: [], error: 'No embedding model configured' };
+    if (!texts.length) return { vectors: [], error: null };
     const base = (overrides?.host || cfg.host || '').replace(/\/+$/, '');
-    const timeoutMs = overrides?.timeoutMs || cfg.timeoutMs;
+    // Der Embedding-Timeout, nicht der Generierungs-Timeout: hier warten `texts.length` Texte auf
+    // einmal, und beim ersten Stapel laedt Ollama das Modell erst (s. `embedTimeoutMs`).
+    const timeoutMs = overrides?.timeoutMs || cfg.embedTimeoutMs || cfg.timeoutMs;
 
-    const post = async (path: string, body: any): Promise<Response | null> => {
+    type Attempt = { res: Response; error: null } | { res: null; error: string };
+    const post = async (path: string, body: any): Promise<Attempt> => {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, timeoutMs);
       try {
-        return await fetch(`${base}${path}`, {
+        const res = await fetch(`${base}${path}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
           signal: controller.signal,
         });
-      } catch {
-        return null;
+        return { res, error: null };
+      } catch (err: any) {
+        return {
+          res: null,
+          error: timedOut
+            ? `No answer within ${timeoutMs} ms for a batch of ${texts.length} text(s) — the model may still be loading, or the embedding timeout is too tight`
+            : `Cannot reach Ollama at ${base}: ${err?.message || err}`,
+        };
       } finally {
         clearTimeout(timer);
       }
     };
 
-    const res = await post('/api/embed', { model, input: texts });
-    if (res?.ok) {
-      const data: any = await res.json().catch(() => null);
-      const rows = data?.embeddings;
-      if (Array.isArray(rows) && rows.length === texts.length) return rows;
+    // Was ein 404 wirklich sagt. Nennt der Antworttext das Modell, fehlt das Modell – dann ist der
+    // naechste Schritt `ollama pull` und nicht „anderer Endpunkt".
+    const missingModel = (detail: string): boolean => /model/i.test(detail);
+    const pullHint = `Model "${model}" is not installed on ${base} — run: ollama pull ${model}`;
+
+    const first = await post('/api/embed', { model, input: texts });
+    if (!first.res) {
+      this.logger.warn(`Ollama embed: ${first.error}`);
+      return { vectors: [], error: first.error };
     }
-    // Nur bei „Endpunkt gibt es nicht" den alten Weg gehen. Ein 500 bedeutet ein echtes Problem
-    // (Modell nicht gepullt) – dieselbe Anfrage einzeln zu wiederholen kostet nur Zeit.
-    if (res && res.status !== 404) {
-      this.logger.warn(`Ollama embed failed: HTTP ${res.status}`);
-      return [];
+    if (first.res.ok) {
+      const data: any = await first.res.json().catch(() => null);
+      const rows = data?.embeddings;
+      if (Array.isArray(rows) && rows.length === texts.length) return { vectors: rows, error: null };
+      const error = `Ollama returned ${Array.isArray(rows) ? rows.length : 0} vector(s) for ${texts.length} text(s)`;
+      this.logger.warn(`Ollama embed: ${error}`);
+      return { vectors: [], error };
     }
 
+    const detail = await first.res.text().catch(() => '');
+    if (first.res.status !== 404 || missingModel(detail)) {
+      const error =
+        first.res.status === 404 && missingModel(detail)
+          ? pullHint
+          : `Ollama embed failed: HTTP ${first.res.status} ${first.res.statusText}${detail ? ` – ${detail.slice(0, 200)}` : ''}`;
+      this.logger.warn(error);
+      return { vectors: [], error };
+    }
+
+    // Ab hier: die Route gibt es nicht (Ollama vor 0.3.4). Ein Text je Anfrage.
     const out: number[][] = [];
     for (const text of texts) {
       const old = await post('/api/embeddings', { model, prompt: text });
-      if (!old?.ok) return [];
-      const data: any = await old.json().catch(() => null);
-      if (!Array.isArray(data?.embedding)) return [];
+      if (!old.res) {
+        this.logger.warn(`Ollama embed (legacy): ${old.error}`);
+        return { vectors: [], error: old.error };
+      }
+      if (!old.res.ok) {
+        const body = await old.res.text().catch(() => '');
+        const error =
+          old.res.status === 404 && missingModel(body)
+            ? pullHint
+            : `Ollama embed failed: HTTP ${old.res.status} ${old.res.statusText}${body ? ` – ${body.slice(0, 200)}` : ''}`;
+        this.logger.warn(error);
+        return { vectors: [], error };
+      }
+      const data: any = await old.res.json().catch(() => null);
+      if (!Array.isArray(data?.embedding)) {
+        const error = 'Ollama returned no vector — is the model an embedding model?';
+        this.logger.warn(error);
+        return { vectors: [], error };
+      }
       out.push(data.embedding);
     }
-    return out;
+    return { vectors: out, error: null };
   }
 
   // Erzeugt eine kurze Wiki-Zusammenfassung (max. 3 Saetze) fuer eine Methode (nur Signatur+Javadoc).

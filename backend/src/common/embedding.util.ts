@@ -83,7 +83,8 @@ export async function embedQuery(
   model: string,
   question: string,
 ): Promise<Float32Array | null> {
-  const [vec] = await ollama.embed([queryText(model, question)]);
+  const { vectors } = await ollama.embed([queryText(model, question)]);
+  const [vec] = vectors;
   return vec ? normalize(vec) : null;
 }
 

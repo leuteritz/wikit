@@ -199,13 +199,19 @@ export class JavaEmbeddingsService {
       this.progress.emit(jobId, { phase: 'embed', done: 0, total: todo.length });
       let done = 0;
       let failed = 0;
+      let reason: string | null = null;
       for (let i = 0; i < todo.length; i += EMBED_BATCH) {
         const slice = todo.slice(i, i + EMBED_BATCH);
         const texts = slice.map((it) => documentText(model, it.text));
-        const vectors = await this.ollama.embed(texts);
-        if (vectors.length !== slice.length) {
-          // Ollama weg oder Modell nicht gepullt: abbrechen statt weiter ins Leere zu fragen. Was
-          // bereits geschrieben ist, bleibt gueltig – der naechste Lauf macht dort weiter.
+        const { vectors, error } = await this.ollama.embed(texts);
+        if (error || vectors.length !== slice.length) {
+          // Abbrechen statt weiter ins Leere zu fragen. Was bereits geschrieben ist, bleibt
+          // gueltig – der naechste Lauf macht dort weiter.
+          //
+          // ⚠️ Der GRUND faehrt mit. „Ollama antwortet nicht" ueber ein nicht gepulltes Modell oder
+          // einen zu knappen Timeout schickt auf die falsche Suche, und beim Erst-Index scheitert
+          // regelmaessig der ALLERERSTE Stapel – dort ist der Grund die ganze Auskunft.
+          reason = error || `Ollama returned ${vectors.length} vector(s) for ${slice.length} text(s)`;
           failed = todo.length - done;
           break;
         }
@@ -230,7 +236,7 @@ export class JavaEmbeddingsService {
       await this.ds.query(`DELETE FROM java_embeddings WHERE model <> ?`, [model]);
       this.cache = null;
       this.progress.emit(jobId, { phase: 'done', done, total: todo.length });
-      return { started: true, indexed: done, skipped: items.length - todo.length, failed, model };
+      return { started: true, indexed: done, skipped: items.length - todo.length, failed, reason, model };
     } finally {
       this.building = false;
     }
