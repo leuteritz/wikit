@@ -34,9 +34,12 @@ copying one file.
 - **Code insights** — dependency cycles, a hotspot ranking and package balance, derived from what
   is already stored. Click a hotspot and it works out **how it would split that class**, writing
   out the resulting **Java files in full** with your real method bodies. Plus **which classes no
-  test touches** (heaviest first), a **reading path**, **what is missing** (classes your packages
-  import but never uploaded) and **what the last import changed** — rebuilt from the saved sources,
-  so a cycle it created is named together with the arrow that closed it.
+  test touches**, a **reading path**, **what is missing** (classes your packages import but never
+  uploaded) and **what the last import changed** — a cycle it created is named together with the
+  arrow that closed it.
+- **Try it before you do it** — stage a refactoring (cut a relation, turn it around, move, merge or
+  drop a class) and every number is recomputed as if it had happened: what it heals, what it breaks,
+  and what it costs in call sites. Nothing is written.
 - **Architecture rules** — the one tab that does not measure but *decides*: write down what may
   depend on what (`web -/-> repo`, `only service -> repo`, `layers: web > service > repo`) and
   every relation is checked against it. Wikit suggests the rules your code already keeps today.

@@ -66,6 +66,7 @@ import terminal from '@iconify-icons/lucide/terminal'
 import checkCircle from '@iconify-icons/lucide/check-circle'
 import gitBranch from '@iconify-icons/lucide/git-branch'
 import gitFork from '@iconify-icons/lucide/git-fork'
+import gitMerge from '@iconify-icons/lucide/git-merge'
 import arrowUpFromLine from '@iconify-icons/lucide/arrow-up-from-line'
 import cornerUpLeft from '@iconify-icons/lucide/corner-up-left'
 // Aufteilungsvorschlag (/insights -> Hotspots): die Nutzer-Seite eines Schnitts, die drei Arten
@@ -193,6 +194,7 @@ const ICONS = {
   'lucide:check-circle': checkCircle,
   'lucide:git-branch': gitBranch,
   'lucide:git-fork': gitFork,
+  'lucide:git-merge': gitMerge,
   'lucide:arrow-up-from-line': arrowUpFromLine,
   'lucide:corner-up-left': cornerUpLeft,
   'lucide:unlink': unlink,

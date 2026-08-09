@@ -22,6 +22,7 @@ import { computed, ref, watch } from 'vue'
 import BusyState from '../BusyState.vue'
 import { Icon } from '../../lib/icons.js'
 import { vTip } from '../../lib/tooltip.js'
+import { useWhatIf } from '../../composables/useWhatIf.js'
 
 const props = defineProps({
   report: { type: Object, default: null },
@@ -35,6 +36,14 @@ const num = (n) => new Intl.NumberFormat().format(n ?? 0)
 // Die Mehrzahl wird mitgegeben, nicht aus einem angehängten „s" gebildet – gleiche Regel wie im
 // Drift-Bericht („2 classs" macht aus einem Bericht ein Provisorium).
 const plural = (n, one, many = `${one}s`) => `${num(n)} ${n === 1 ? one : many}`
+
+// Ein Verstoss lässt sich direkt in den Sandkasten legen: „diese Beziehung darf nicht sein" ist
+// eine Feststellung, „was passiert, wenn sie weg ist" die Frage danach. Der Store ist geteilt, der
+// Reiter daneben zeigt das Ergebnis (s. `useWhatIf`).
+const whatIf = useWhatIf()
+const cutOf = (v) => ({ op: 'remove-edge', from: v.fromId, to: v.toId })
+const staged = (v) => whatIf.has(cutOf(v))
+const stage = (v) => whatIf.add(cutOf(v))
 
 // --- Der Editor ---------------------------------------------------------------------------------
 // ⚠️ Der getippte Text lebt HIER und wird vom Server nur nachgezogen, wenn er sich dort wirklich
@@ -407,6 +416,19 @@ const help = ref(false)
                   {{ v.kind }}<template v-if="v.members.length"> · {{ v.members.join(', ') }}</template>
                   <template v-if="v.count > 1"> · {{ v.count }}×</template>
                 </span>
+                <!-- ⚠️ Die Zeile sagt, WO die Regel bricht. Ob es sich lohnt, sie hier zu heilen,
+                     sagt erst der Sandkasten – eine Regel einzuhalten kann anderswo einen Zyklus
+                     schliessen, und das sieht man dieser Zeile nicht an. -->
+                <button
+                  v-tip="'Stage removing this relation and see what else it would change'"
+                  type="button"
+                  class="ml-auto inline-flex shrink-0 items-center gap-1 rounded border border-[var(--color-border)] px-1.5 py-0.5 text-3xs transition hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+                  :class="staged(v) ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'"
+                  @click="stage(v)"
+                >
+                  <Icon :icon="staged(v) ? 'lucide:check' : 'lucide:git-fork'" class="h-3 w-3" />
+                  {{ staged(v) ? 'Staged' : 'Try this' }}
+                </button>
               </li>
             </ul>
             <p v-if="r.more" class="mt-2 text-3xs text-[var(--color-text-muted)]">

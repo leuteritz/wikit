@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import { computeEdges, ComputedEdge, EdgeParseCache, fqcnOf, importsFrom } from '../common/edge-compute';
 import { countCodeLines } from '../common/code-metrics';
 import { ClassRow, EdgeRow, InsightsService, Pair } from './insights.service';
+import { chainPairs, pairKey, partitionCycles } from './cycle-diff';
 
 /**
  * **Was hat sich verändert?** – der einzige Blick in `/insights`, der keinen Zustand beschreibt,
@@ -197,7 +198,7 @@ export class DriftService {
 
     // --- Abhaengigkeiten: was ist dazugekommen, was ist weg? -----------------------------------
     const nameOf = new Map<number, ClassRow>(classes.map((c) => [c.id, c]));
-    const key = (p: Pair) => `${p.from}\u0000${p.to}`;
+    const key = (p: Pair) => pairKey(p.from, p.to);
     const beforeByKey = new Map(beforePairs.map((p) => [key(p), p]));
     const afterByKey = new Map(afterPairs.map((p) => [key(p), p]));
 
@@ -220,50 +221,38 @@ export class DriftService {
       classes.map((c) => c.id),
       afterPairs,
     );
-    // Zwei Klassen gelten als „damals schon verklebt", wenn sie in DERSELBEN Gruppe lagen. Nur die
-    // Mitgliedermengen zu vergleichen ginge daneben, sobald eine Gruppe waechst oder zerfaellt.
-    const groupBefore = new Map<number, number>();
-    cyclesBefore.forEach((c, i) => c.members.forEach((m) => groupBefore.set(m as number, i)));
-    const groupAfter = new Map<number, number>();
-    cyclesAfter.forEach((c, i) => c.members.forEach((m) => groupAfter.set(m as number, i)));
-
+    // Was zwischen den beiden Staenden mit den Zyklen passiert ist. Die Regel dafuer („dieselbe
+    // GRUPPE, nicht dieselbe Mitgliedermenge") steht in `cycle-diff.ts`, weil der Sandkasten sie
+    // ein zweites Mal braucht – dort gegen einen vorgemerkten Umbau statt gegen einen frueheren
+    // Stand. Zwei Fassungen davon hiessen, dass der eine Bericht einen geheilten Zyklus meldet, wo
+    // der andere schweigt.
     const addedKeys = new Set(addedPairs.map(key));
-    const appeared = cyclesAfter
-      .filter((c) => {
-        // Neu ist der Kreis, wenn nicht ALLE seine Mitglieder damals schon gemeinsam in einer
-        // Gruppe lagen.
-        const groups = new Set(c.members.map((m) => groupBefore.get(m as number)));
-        return groups.size !== 1 || groups.has(undefined);
-      })
-      .map((c) => {
-        // Die Kante, die den Kreis schliesst: die einzige seiner Kette, die es damals nicht gab.
-        // Genau sie ist die Handlung – ohne sie bleibt „ein Zyklus ist entstanden" ein Befund
-        // ohne Adresse.
-        const closing = chainPairs(c.chain as number[])
-          .filter((k) => addedKeys.has(k))
-          .map((k) => {
-            const p = afterByKey.get(k)!;
-            return describe(p);
-          });
-        return {
-          classes: (c.members as number[]).slice(0, CYCLE_NAMES).map((id) => brief(nameOf.get(id))),
-          more: Math.max(0, c.members.length - CYCLE_NAMES),
-          length: c.members.length,
-          chain: (c.chain as number[]).map((id) => brief(nameOf.get(id))?.name),
-          closing,
-        };
-      });
+    const split = partitionCycles(cyclesBefore, cyclesAfter);
 
-    const healed = cyclesBefore
-      .filter((c) => {
-        const groups = new Set(c.members.map((m) => groupAfter.get(m as number)));
-        return groups.size !== 1 || groups.has(undefined);
-      })
-      .map((c) => ({
+    const appeared = split.appeared.map((c) => {
+      // Die Kante, die den Kreis schliesst: die einzige seiner Kette, die es damals nicht gab.
+      // Genau sie ist die Handlung – ohne sie bleibt „ein Zyklus ist entstanden" ein Befund
+      // ohne Adresse.
+      const closing = chainPairs(c.chain as number[])
+        .filter((k) => addedKeys.has(k))
+        .map((k) => {
+          const p = afterByKey.get(k)!;
+          return describe(p);
+        });
+      return {
         classes: (c.members as number[]).slice(0, CYCLE_NAMES).map((id) => brief(nameOf.get(id))),
         more: Math.max(0, c.members.length - CYCLE_NAMES),
         length: c.members.length,
-      }));
+        chain: (c.chain as number[]).map((id) => brief(nameOf.get(id))?.name),
+        closing,
+      };
+    });
+
+    const healed = split.healed.map((c) => ({
+      classes: (c.members as number[]).slice(0, CYCLE_NAMES).map((id) => brief(nameOf.get(id))),
+      more: Math.max(0, c.members.length - CYCLE_NAMES),
+      length: c.members.length,
+    }));
 
     // --- Gewachsen, geschrumpft, neu ----------------------------------------------------------
     //
@@ -394,15 +383,4 @@ function tombKey(e: { source_class: string; source_pkg: string | null; target_cl
   const from = e.source_pkg != null ? fqcnOf(e.source_pkg, e.source_class) : e.source_class;
   const to = e.target_pkg != null ? fqcnOf(e.target_pkg, e.target_class) : e.target_class;
   return `${from}\u0000${to}\u0000${e.method_name ?? ''}\u0000${e.kind ?? ''}`;
-}
-
-// Die Kanten einer Zyklenkette als Paar-Schluessel. ⚠️ `shortestCycle` liefert die Kette BEREITS
-// geschlossen (`A → B → C → A`), der Startknoten steht also zweimal darin – ein zusaetzlicher
-// Umlauf vom letzten zum ersten Glied waere die Kante `A → A`, die es nirgends gibt.
-function chainPairs(chain: number[]): string[] {
-  const out: string[] = [];
-  for (let i = 0; i + 1 < chain.length; i++) {
-    out.push(`${chain[i]}\u0000${chain[i + 1]}`);
-  }
-  return out;
 }

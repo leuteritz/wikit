@@ -307,6 +307,10 @@ export const api = {
   // Ganzer Text, nicht einzelne Zeilen: Reihenfolge, Leerzeilen und die `#`-Begruendungen gehoeren
   // zur Eingabe. Die Antwort ist derselbe Befund wie bei `getArchRules`.
   saveArchRules: (text) => http('PUT', '/insights/rules', { text }),
+  // Ein vorgemerkter Umbau, durchgerechnet. ⚠️ POST, obwohl NICHTS geschrieben wird: die Eingriffe
+  // sind eine Liste und gehoeren in einen Body – als Query-String waere ein Umbau aus zwoelf
+  // Schritten eine URL, die kein Proxy mehr durchlaesst. Am Bestand aendert sich dabei nichts.
+  simulateInsights: (changes) => http('POST', '/insights/simulate', { changes }),
 
   // --- Bot (Ollama-Konfiguration, /bot) -------------------------------------
   // Eine Antwort traegt Stand, Defaults, Overrides UND die Feldbeschreibung (Grenzen/Hinweise) –

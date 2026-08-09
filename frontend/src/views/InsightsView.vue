@@ -23,6 +23,8 @@ import ArchRules from '../components/insights/ArchRules.vue'
 import CyclePlan from '../components/insights/CyclePlan.vue'
 import DriftReport from '../components/insights/DriftReport.vue'
 import SplitPlan from '../components/insights/SplitPlan.vue'
+import WhatIf from '../components/insights/WhatIf.vue'
+import { useWhatIf } from '../composables/useWhatIf.js'
 import { Icon } from '../lib/icons.js'
 import { vTip } from '../lib/tooltip.js'
 import { api } from '../lib/api.js'
@@ -53,6 +55,10 @@ const TABS = [
   // acht davor beantworten „wie steht es?"; dieser fragt zurück „wie soll es sein?" – und das ist
   // die Frage, die man stellt, NACHDEM man die Befunde gesehen hat.
   { id: 'rules', label: 'Rules', icon: 'lucide:scale', hint: 'What you decided this code may depend on — and where it does not' },
+  // ⚠️ Und der letzte beantwortet die Frage, die nach ALLEN anderen kommt: „und was bringt es?".
+  // Neun Reiter sagen, wie es steht, zwei Pläne sagen, was man tun könnte – ob es sich lohnt, sagt
+  // bis hierher keiner.
+  { id: 'whatif', label: 'What if', icon: 'lucide:git-fork', hint: 'Try a refactoring on paper — and see what it would do to everything else' },
 ]
 
 // --- Was jeder Reiter beantwortet ---------------------------------------------------------------
@@ -151,8 +157,52 @@ const EXPLAIN = {
       ['Layers pay off twice', 'The layer line is also what the Cycles tab uses to pick where to break a loop. Without it, that pick is a guess from a list of common package names.'],
     ],
   },
+  whatif: {
+    title: 'Try the change before you make it',
+    what: 'Stage a refactoring here and every number on the other tabs is recomputed as if you had done it — nothing is written.',
+    fixes: [
+      ['A cut is never local', 'Removing one relation can open three loops and break a rule that held before. That is the whole reason this tab exists: the side effects are the part you cannot hold in your head.'],
+      ['Read the cost, not just the gain', 'Minus three cycles is worth nothing if it means rewriting forty call sites. Both numbers sit in the same card on purpose.'],
+      ['Take the suggestion, then argue with it', 'Every cycle and every rule violation has a “try this” button. It stages what the report already recommends — the point is to see whether the recommendation survives being measured.'],
+      ['This is a question, not an edit', 'Your code, your relations and the graph stay untouched. The way back is still: change the code, upload it, and read the Drift tab.'],
+    ],
+  },
 }
 const openFixes = ref(false)
+
+// --- Der Sandkasten ------------------------------------------------------------------------------
+// ⚠️ Die Zahl am Reiter ist ein ARBEITSSTAND, kein Befund – dieselbe Art Zahl wie beim Themen-Bündel
+// und ausdrücklich nicht die der Sidebar (die zählt Zyklen und Regelverstöße, also „damit stimmt
+// etwas nicht"). Ein vorgemerkter Umbau ist das Gegenteil davon: das, was man dagegen vorhat.
+const whatIf = useWhatIf()
+// Als eigener Verweis, weil nur oberste Refs im Template entpackt werden – `whatIf.count` wäre
+// dort ein Objekt und die Zahl daneben stünde als „[object Object]".
+const stagedCount = whatIf.count
+
+// Was der Bericht ohnehin empfiehlt, als Eingriff formuliert. ⚠️ Auf PACKAGE-Ebene gibt es keine
+// Kante, die man anfassen könnte – dort ist die Bruchstelle ein Bündel, und was man wirklich
+// entfernt, ist die tragende KLASSENbeziehung darin (`links[0]`, dieselbe, die daneben schon
+// namentlich dasteht). Ohne diese Übersetzung stünde im Sandkasten ein Eingriff über zwei Ordner.
+function cutOf(weakest, level = 'class', op = 'remove-edge') {
+  if (!weakest) return null
+  if (level === 'package') {
+    const link = weakest.links?.[0]
+    return link ? { op, from: link.fromId, to: link.toId } : null
+  }
+  return { op, from: weakest.from, to: weakest.to }
+}
+
+// Erst vormerken, dann hinüberführen: ein Knopf, der beim zweiten Druck dasselbe noch einmal
+// einsammelte, wäre eine Zeile mehr ohne Wirkung. Steht der Eingriff schon, ist der Knopf der Weg
+// zum Ergebnis – sonst wäre das Vormerken ein Klick, auf den scheinbar nichts folgt.
+function stageCut(change) {
+  if (!change) return
+  if (whatIf.has(change)) {
+    tab.value = 'whatif'
+    return
+  }
+  whatIf.add(change)
+}
 
 // Konkreter Vorschlag für GENAU diesen Zyklus – aus der Art der schwächsten Kante. Die drei
 // allgemeinen Wege stehen oben; das hier sagt, welcher davon hier gemeint ist und mit welchen
@@ -703,6 +753,16 @@ const plotted = computed(() => {
           >
             {{ totals.classCycles + totals.packageCycles }}
           </span>
+          <!-- ⚠️ Ein ARBEITSSTAND, kein Befund – deshalb die neutrale Akzentfarbe und keine
+               Warnfarbe: „drei Eingriffe vorgemerkt" ist nichts, was schiefsteht. Und deshalb
+               fehlt die Zahl bei leerer Liste ganz (gleiche Regel wie die Topic-Zahl in der
+               Sidebar): eine „0" wäre die Behauptung, hier fehle etwas. -->
+          <span
+            v-else-if="t.id === 'whatif' && stagedCount"
+            class="rounded bg-[var(--color-accent-soft)] px-1 font-mono text-3xs text-[var(--color-accent)]"
+          >
+            {{ stagedCount }}
+          </span>
         </button>
       </nav>
     </header>
@@ -988,6 +1048,25 @@ const plotted = computed(() => {
                         <span class="font-mono">{{ c.weakest.fromLabel }} → {{ c.weakest.toLabel }}</span>
                         <span class="opacity-70"> ({{ c.weakest.kind }}, {{ c.weakest.count }} {{ c.weakest.count === 1 ? 'relation' : 'relations' }})</span>
                         <br />{{ cutAdvice(c.weakest, 'package') }}
+                        <!-- ⚠️ Vorgemerkt wird die tragende KLASSENbeziehung, nicht die
+                             Package-Kante: die gibt es im Code nicht, man kann sie also auch nicht
+                             entfernen. Steht keine namentlich dabei, entfällt der Knopf – ein
+                             Vorschlag ohne Adresse wäre einer, den der Sandkasten nicht ausführen
+                             kann. -->
+                        <span v-if="cutOf(c.weakest, 'package')" class="mt-1.5 flex">
+                          <button
+                            v-tip="'Stage removing the class relation that carries this direction'"
+                            type="button"
+                            class="inline-flex items-center gap-1 rounded border border-[var(--color-border)] px-1.5 py-0.5 text-3xs transition hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+                            :class="whatIf.has(cutOf(c.weakest, 'package')) ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : ''"
+                            @click="stageCut(cutOf(c.weakest, 'package'))"
+                          >
+                            <Icon :icon="whatIf.has(cutOf(c.weakest, 'package')) ? 'lucide:check' : 'lucide:git-fork'" class="h-3 w-3" />
+                            {{ whatIf.has(cutOf(c.weakest, 'package'))
+                              ? 'Staged — open'
+                              : `Try cutting ${c.weakest.links[0].from} → ${c.weakest.links[0].to}` }}
+                          </button>
+                        </span>
                       </span>
                     </div>
                     <p v-if="c.size > c.chainLabels.length - 1" class="mt-1 text-2xs text-[var(--color-text-muted)]">
@@ -1038,6 +1117,31 @@ const plotted = computed(() => {
                         <span class="font-mono">{{ c.weakest.fromLabel }} → {{ c.weakest.toLabel }}</span>
                         <span class="opacity-70"> ({{ c.weakest.kind }}, {{ c.weakest.count }} {{ c.weakest.count === 1 ? 'relation' : 'relations' }})</span>
                         <br />{{ cutAdvice(c.weakest) }}
+                        <!-- ⚠️ Der Vorschlag endete bis hierher bei der Empfehlung. „Was bringt es?"
+                             ist die Frage direkt dahinter – und sie ist einen Klick entfernt,
+                             statt sie im Sandkasten von Hand nachzubauen. -->
+                        <span class="mt-1.5 flex flex-wrap gap-1.5">
+                          <button
+                            v-tip="'Stage this cut and see what it does to everything else'"
+                            type="button"
+                            class="inline-flex items-center gap-1 rounded border border-[var(--color-border)] px-1.5 py-0.5 text-3xs transition hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+                            :class="whatIf.has(cutOf(c.weakest)) ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : ''"
+                            @click="stageCut(cutOf(c.weakest))"
+                          >
+                            <Icon :icon="whatIf.has(cutOf(c.weakest)) ? 'lucide:check' : 'lucide:git-fork'" class="h-3 w-3" />
+                            {{ whatIf.has(cutOf(c.weakest)) ? 'Staged — open' : 'Try cutting it' }}
+                          </button>
+                          <button
+                            v-tip="'Stage inverting it instead — the dependency stays, its direction flips'"
+                            type="button"
+                            class="inline-flex items-center gap-1 rounded border border-[var(--color-border)] px-1.5 py-0.5 text-3xs transition hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+                            :class="whatIf.has(cutOf(c.weakest, 'class', 'invert-edge')) ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : ''"
+                            @click="stageCut(cutOf(c.weakest, 'class', 'invert-edge'))"
+                          >
+                            <Icon :icon="whatIf.has(cutOf(c.weakest, 'class', 'invert-edge')) ? 'lucide:check' : 'lucide:rotate-ccw'" class="h-3 w-3" />
+                            {{ whatIf.has(cutOf(c.weakest, 'class', 'invert-edge')) ? 'Staged — open' : 'Try turning it' }}
+                          </button>
+                        </span>
                       </span>
                     </div>
                     <p v-if="c.size > c.chainLabels.length - 1" class="mt-1 text-2xs text-[var(--color-text-muted)]">
@@ -1762,7 +1866,7 @@ const plotted = computed(() => {
           <!-- Aus demselben Grund eine eigene Komponente wie der Drift-Bericht – und hier zusätzlich,
                weil sie als einzige Ansicht des Berichts auch SCHREIBT. -->
           <ArchRules
-            v-else
+            v-else-if="tab === 'rules'"
             :report="archRules"
             :loading="archLoading"
             :saving="archSaving"
@@ -1770,6 +1874,12 @@ const plotted = computed(() => {
             @open-class="openClass"
             @save="saveRules"
           />
+
+          <!-- ==================== What if ==================== -->
+          <!-- Der einzige Reiter, der den Bericht nicht LIEST, sondern ihn ein zweites Mal rechnen
+               lässt – über einen Bestand, den es (noch) nicht gibt. Klassen und Packages kommen von
+               hier, weil sie längst geladen sind; die Beziehungen holt er sich selbst. -->
+          <WhatIf v-else :classes="classes" :packages="packages" @open-class="openClass" />
         </template>
       </div>
     </div>

@@ -265,7 +265,7 @@ export function checkRules(rules: Rule[], classes: RuleClass[], pairs: RulePair[
   // 1500 Klassen und zwanzig Regeln ist das der Unterschied zwischen einem Durchlauf und dreissig.
   const cache = new Map<string, Set<number>>();
   const setOf = (p: Pattern): Set<number> => {
-    const key = `${p.kind} ${p.raw}`;
+    const key = `${p.kind}\u0000${p.raw}`;
     let hit = cache.get(key);
     if (!hit) {
       hit = new Set<number>();
@@ -380,7 +380,7 @@ export function layerCheckFrom(rules: Rule[]): ((from: any, to: any) => boolean)
   // ohne Klassennamen. Der leere Name kann nur auf ein `class`-/`fqcn`-Muster passen, und das soll
   // er hier auch nicht.
   const rankOf = (path: any): number =>
-    patterns.findIndex((p) => matches(p, { id: -1, className: ' ', package: String(path ?? '') }));
+    patterns.findIndex((p) => matches(p, { id: -1, className: '\u0000', package: String(path ?? '') }));
   return (from: any, to: any) => {
     const a = rankOf(from);
     const b = rankOf(to);
@@ -431,14 +431,14 @@ export function suggestRules(classes: RuleClass[], pairs: RulePair[], existing: 
     const a = pkgOf.get(p.from) || '';
     const b = pkgOf.get(p.to) || '';
     if (!a || !b || a === b) continue;
-    const key = `${a} ${b}`;
+    const key = `${a}\u0000${b}`;
     between.set(key, (between.get(key) || 0) + 1);
   }
 
   const oneWay: Array<{ from: string; to: string; weight: number }> = [];
   for (const [key, weight] of between) {
-    const [a, b] = key.split(' ');
-    if (between.has(`${b} ${a}`)) continue; // beide Richtungen -> keine Entscheidung
+    const [a, b] = key.split('\u0000');
+    if (between.has(`${b}\u0000${a}`)) continue; // beide Richtungen -> keine Entscheidung
     if (weight < SUGGEST_MIN_EDGES) continue;
     oneWay.push({ from: b, to: a, weight }); // vorgeschlagen wird das VERBOT der Gegenrichtung
   }

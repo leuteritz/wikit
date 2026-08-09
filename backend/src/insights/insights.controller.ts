@@ -1,6 +1,7 @@
-import { BadRequestException, Body, Controller, Get, Param, ParseIntPipe, Put, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, ParseIntPipe, Post, Put, Query } from '@nestjs/common';
 import { DriftService } from './drift.service';
 import { InsightsService } from './insights.service';
+import { parseChanges } from './what-if';
 
 @Controller('insights')
 export class InsightsController {
@@ -51,6 +52,20 @@ export class InsightsController {
   @Get('drift')
   drift(@Query('since') since?: string) {
     return this.driftSvc.drift(since || null);
+  }
+
+  // Ein vorgemerkter Umbau, durchgerechnet. **POST, obwohl nichts geschrieben wird** – die Eingriffe
+  // sind eine Liste und gehoeren in einen Body: als Query-String waere ein Umbau aus zwoelf
+  // Schritten eine URL, die kein Proxy mehr durchlaesst. Die Antwort ist trotzdem reine Auskunft;
+  // am Bestand aendert sich nichts (s. `what-if.ts`).
+  //
+  // Die Eingaben prueft `parseChanges` – dieselbe Datei, die sie auch anwendet. Eine zweite Pruefung
+  // hier liefe beim naechsten neuen Eingriff auseinander.
+  @Post('simulate')
+  simulate(@Body() body: any) {
+    const { changes, error } = parseChanges(body?.changes);
+    if (error) throw new BadRequestException(error);
+    return this.svc.simulate(changes);
   }
 
   @Get('split/:fileId')
