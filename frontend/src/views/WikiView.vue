@@ -6,25 +6,33 @@ import { RouterLink } from 'vue-router'
 import { useArticles } from '../composables/useArticles.js'
 import BusyState from '../components/BusyState.vue'
 import WikiRelationGraph from '../components/WikiRelationGraph.vue'
+import WikiHealth from '../components/WikiHealth.vue'
 import { categoryColors, colorFor } from '../lib/wikiGraph.js'
 import { Icon } from '../lib/icons.js'
 
 const { articles, categories, loading, load } = useArticles()
 const filter = ref('')
 const startedAt = ref(Date.now())
-// Zwei Modi derselben Ansicht (gleiche Bauart wie „Class · Relation" in /code): die Liste
-// beantwortet „was gibt es?", der Graph „was haengt woran?".
+// DREI Modi derselben Ansicht (gleiche Bauart wie „Class · Relation" in /code): die Liste
+// beantwortet „was gibt es?", der Graph „was haengt woran?", der Bericht „woran muss ich ran?".
+// Derselbe Bestand, drei Fragen – deshalb ein Umschalter und kein dritter Sidebar-Eintrag.
 //
 // ⚠️ **Gemountet wird beim ERSTEN Umschalten, danach nur noch versteckt** (`v-if` + `v-show`).
 // Beides ist noetig und keins reicht allein: ein von Anfang an gemounteter Graph laege in einem
 // `display:none`-Container, misst dort 0x0 – und `fitView` passt ein Layout in nichts ein, das
 // Bild bliebe beim Umschalten leer. Ihn dagegen bei jedem Wechsel neu zu mounten hiesse, Daten,
 // Layout und gewaehlten Ausschnitt jedes Mal wegzuwerfen.
-const view = ref('list') // 'list' | 'graph'
+//
+// Fuer den Bericht gilt dieselbe Regel aus einem zweiten Grund: er kostet einen Request, und wer
+// nur die Liste ansieht, hat danach nicht gefragt (gleiche Begruendung wie bei den
+// Link-Vorschlaegen im Graphen). Einmal geholt, ueberlebt er das Hin- und Herschalten.
+const view = ref('list') // 'list' | 'graph' | 'health'
 const graphMounted = ref(false)
+const healthMounted = ref(false)
 
 function setView(next) {
   if (next === 'graph') graphMounted.value = true
+  if (next === 'health') healthMounted.value = true
   view.value = next
 }
 
@@ -84,13 +92,14 @@ const groups = computed(() => {
         </p>
       </div>
       <div class="flex items-center gap-2">
-        <!-- Umschalter: zwei Fragen an denselben Bestand. Die Liste sagt „was gibt es?",
-             der Graph „was haengt woran?". -->
+        <!-- Umschalter: drei Fragen an denselben Bestand. Die Liste sagt „was gibt es?",
+             der Graph „was haengt woran?", der Bericht „woran muss ich ran?". -->
         <div class="flex items-center rounded-lg border border-[var(--color-border)] p-0.5">
           <button
             v-for="m in [
               { key: 'list', icon: 'lucide:list', label: 'List' },
               { key: 'graph', icon: 'lucide:network', label: 'Graph' },
+              { key: 'health', icon: 'lucide:activity', label: 'Health' },
             ]"
             :key="m.key"
             type="button"
@@ -115,8 +124,13 @@ const groups = computed(() => {
       </div>
     </div>
 
-    <!-- Filter -->
-    <div class="mb-7 flex items-center gap-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3.5">
+    <!-- Filter. Im Bericht ausgeblendet: er filtert die Liste und markiert im Graphen, und ueber
+         einer Befundliste haette er gar keine Bedeutung – ein Bedienelement, das nichts entscheidet,
+         ist Ballast (gleiche Begruendung, aus der das Beziehungsnetz keine Kontextstufen hat). -->
+    <div
+      v-show="view !== 'health'"
+      class="mb-7 flex items-center gap-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3.5"
+    >
       <Icon icon="lucide:search" class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
       <input
         v-model="filter"
@@ -135,6 +149,12 @@ const groups = computed(() => {
          „wer haengt woran?" nicht mehr. -->
     <div v-if="graphMounted" v-show="view === 'graph'" class="h-[72vh] min-h-[26rem]">
       <WikiRelationGraph :categories="categories" :match-ids="matchIds" />
+    </div>
+
+    <!-- Der Bericht. Sein Verweis auf die verwaisten Artikel schaltet in den Graphen: der Befund
+         steht dort, also fuehrt der Satz auch dorthin, statt ihn nur zu erwaehnen. -->
+    <div v-if="healthMounted" v-show="view === 'health'">
+      <WikiHealth @show-graph="setView('graph')" />
     </div>
 
     <!-- Gruppen -->

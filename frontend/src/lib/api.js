@@ -113,6 +113,11 @@ export const api = {
   getRelatedArticles: (id) => http('GET', `/articles/${id}/related`, null, { silent: true }),
   getLinkSuggestions: () => http('GET', '/articles/suggestions', null, { silent: true }),
 
+  // Was man dem Wiki nicht ansieht: veraltete Klassenartikel, tote Links, Duplikate, Lücken.
+  // NICHT still – anders als die Vorschläge oben ist das hier die Antwort auf eine Frage, die
+  // jemand gerade gestellt hat, und ein stiller Fehlschlag sähe aus wie „alles in Ordnung".
+  getWikiHealth: () => http('GET', '/articles/health'),
+
   analyzeJava: (data) => http('POST', '/java/analyze', data),
   // Mehrklassen-/Roh-Paste-Analyse: { source, overwrite? }. Bei Duplikaten ohne overwrite
   // liefert das Backend { needsConfirm:true, conflicts:[...] } (200) statt zu schreiben.

@@ -1,17 +1,31 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put } from '@nestjs/common';
 import { ArticlesService } from './articles.service';
 import { ArticleEmbeddingsService } from './article-embeddings.service';
+import { ArticleHealthService } from './article-health.service';
 
 @Controller('articles')
 export class ArticlesController {
   constructor(
     private readonly svc: ArticlesService,
     private readonly embeddings: ArticleEmbeddingsService,
+    private readonly health: ArticleHealthService,
   ) {}
 
   @Get()
   list() {
     return this.svc.list();
+  }
+
+  // --- Was man dem Wiki nicht ansieht ---------------------------------------
+  // EIN Endpunkt, EINE Antwort – gleiche Begründung wie bei `/insights`: die vier Befunde entstehen
+  // aus demselben Durchlauf über denselben Bestand, und auf vier Routen verteilt könnten zwei
+  // Abschnitte derselben Seite verschiedene Stände zeigen.
+  //
+  // ⚠️ Einsegmentig, also zwingend VOR `:slug` – sonst sucht die Anwendung einen Artikel namens
+  // „health" und antwortet mit 404 auf eine Frage, die niemand gestellt hat.
+  @Get('health')
+  healthReport() {
+    return this.health.report();
   }
 
   // --- Bedeutungsindex der Artikel -----------------------------------------

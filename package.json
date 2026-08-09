@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.28.0",
-  "whatsNew": "Unlinked articles now suggest what to link to",
+  "version": "4.29.0",
+  "whatsNew": "Wiki Health finds stale articles and dead links",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

@@ -65,6 +65,20 @@ const SUGGEST_PERCENTILE = 0.9;
 // eigenen besten Nachbarn – bei fünf Artikeln sieht man die Liste ohnehin ganz.
 const MIN_PAIRS = 12;
 
+// ⚠️ Wie weit über der Vorschlagslatte ein Paar liegen muss, um „sagt zweimal dasselbe" zu heißen –
+// als ANTEIL der Strecke von dieser Latte bis zur perfekten Übereinstimmung, nicht als eigene Zahl.
+//
+// Zwei Fassungen scheiden aus: eine feste Schwelle (0,85) wäre wieder eine Aussage über ein Modell,
+// das der Betreiber wechseln kann; ein noch höheres Perzentil (0,99) wäre der Befund, der NIE 0
+// wird – die ähnlichsten zwei Artikel gibt es immer, genau wie die schwerste Klasse (deshalb zählt
+// die Sidebar auch Zyklen und keine Brandherde). Diese Fassung hat beides nicht: sie skaliert mit
+// dem Bestand und kann leer bleiben. Bei einer Latte von 0,62 liegt sie bei 0,81, bei 0,75 bei 0,87.
+const DUPLICATE_MARGIN = 0.5;
+
+// Wie viele Paare der Bericht höchstens zeigt. Ein Duplikat ist eine ZUSAMMENLEGUNG, also Handarbeit
+// an zwei Texten – zwanzig davon nebeneinander liest niemand durch, und was wegfällt wird gezählt.
+const DUPLICATE_LIMIT = 8;
+
 /** Ein Artikel, wie er als Vorschlag danebensteht. */
 export type SuggestedLink = {
   id: number;
@@ -78,6 +92,15 @@ export type SuggestedLink = {
 };
 
 type Meta = Omit<SuggestedLink, 'score'>;
+
+/** Zwei Artikel, die einander so ähnlich sind, dass einer von beiden vermutlich genügt. */
+export type DuplicatePair = {
+  a: Meta;
+  b: Meta;
+  score: number;
+  /** Steht schon eine Beziehung zwischen ihnen? Ändert die Handlung: verknüpfen ist dann erledigt. */
+  linked: boolean;
+};
 
 type Row = {
   id: number;
@@ -381,9 +404,10 @@ export class ArticleEmbeddingsService {
     reason: string | null;
     threshold: number | null;
     byArticle: Map<number, SuggestedLink[]>;
+    duplicates: DuplicatePair[];
   }> {
     const cfg = await this.settings.bot();
-    const empty = { byArticle: new Map<number, SuggestedLink[]>(), threshold: null };
+    const empty = { byArticle: new Map<number, SuggestedLink[]>(), threshold: null, duplicates: [] };
     if (!cfg.embedModel) {
       return { enabled: false, indexed: 0, reason: 'No embedding model configured', ...empty };
     }
@@ -407,12 +431,18 @@ export class ArticleEmbeddingsService {
     // Alle Paare EINMAL – die Latte braucht die ganze Verteilung, auch die der bereits verknüpften
     // Paare: sie sagen mit, wie ähnlich sich zwei zusammengehörende Artikel in diesem Wiki sind.
     const scores: number[] = [];
+    // Jedes bewertete Paar EINMAL, für die Duplikat-Auswertung weiter unten. Sie braucht die Paare
+    // selbst und nicht nur ihre Verteilung – und ihre Latte steht erst, wenn alle gerechnet sind.
+    // Ein zweiter Durchgang danach wäre dieselbe Rechnung ein zweites Mal; die Liste kostet in der
+    // Größenordnung nichts, weil `neighbours` unten ohnehin je Paar zwei Einträge bekommt.
+    const pairs: Array<{ a: number; b: number; score: number }> = [];
     const neighbours = new Map<number, SuggestedLink[]>(ids.map((id) => [id, []]));
     for (let i = 0; i < ids.length; i++) {
       for (let k = i + 1; k < ids.length; k++) {
         const score = similarity(vectors.get(ids[i])!, vectors.get(ids[k])!);
         if (score === null || score < FLOOR_SCORE) continue;
         scores.push(score);
+        pairs.push({ a: ids[i], b: ids[k], score });
         if (linked.has(pairKey(ids[i], ids[k]))) continue;
         const a = meta.get(ids[i]);
         const b = meta.get(ids[k]);
@@ -436,7 +466,54 @@ export class ArticleEmbeddingsService {
       if (keep.length) byArticle.set(id, keep);
     }
 
-    return { enabled: true, indexed: vectors.size, reason: null, threshold, byArticle };
+    // ⚠️ Duplikate schließen verknüpfte Paare NICHT aus – anders als die Vorschläge, und aus dem
+    // umgekehrten Grund: dort ist eine bestehende Beziehung die erledigte Handlung, hier ist sie
+    // eher ein Hinweis. Wer zwei Artikel verknüpft hat, weil sie zusammengehören, hat damit nicht
+    // gesagt, dass beide gebraucht werden.
+    const duplicates: DuplicatePair[] = [];
+    if (threshold !== null) {
+      const latch = threshold + (1 - threshold) * DUPLICATE_MARGIN;
+      for (const p of pairs) {
+        if (p.score < latch) continue;
+        const a = meta.get(p.a);
+        const b = meta.get(p.b);
+        if (a && b) duplicates.push({ a, b, score: p.score, linked: linked.has(pairKey(p.a, p.b)) });
+      }
+      duplicates.sort((x, y) => y.score - x.score);
+    }
+
+    return { enabled: true, indexed: vectors.size, reason: null, threshold, byArticle, duplicates };
+  }
+
+  /**
+   * Artikelpaare, die einander so ähnlich sind, dass sie vermutlich dasselbe sagen – für den
+   * Wiki-Bericht.
+   *
+   * Dritter Leser desselben Index, und wieder ohne einen einzigen zusätzlichen Ollama-Aufruf: es ist
+   * derselbe Paarvergleich, der die Link-Vorschläge trägt, nur eine Etage höher abgeschnitten. Was
+   * knapp über der Vorschlagslatte liegt, gehört verknüpft; was weit darüber liegt, gehört
+   * zusammengelegt.
+   */
+  async duplicatePairs(): Promise<{
+    enabled: boolean;
+    indexed: number;
+    reason: string | null;
+    /** Die Vorschlagslatte – `null` heißt „zu wenige Paare für eine Aussage", nicht „nichts gefunden". */
+    threshold: number | null;
+    total: number;
+    pairs: DuplicatePair[];
+  }> {
+    const { enabled, indexed, reason, threshold, duplicates } = await this.compute();
+    return {
+      enabled,
+      indexed,
+      // Eine Latte, die es nicht gibt, ist ein eigener Grund: bei einer Handvoll Artikel ist ein
+      // Perzentil der zweitgrößte Wert und keine Aussage (s. `MIN_PAIRS`).
+      reason: reason ?? (enabled && threshold === null ? 'Too few articles to tell what is unusually similar' : null),
+      threshold,
+      total: duplicates.length,
+      pairs: duplicates.slice(0, DUPLICATE_LIMIT),
+    };
   }
 
   /** Die Vorschläge zu EINEM Artikel – für den Abschnitt unter dem Text. */
