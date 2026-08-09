@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import { safeJson } from '../common/json.util';
 import { classMetrics } from '../common/code-metrics';
 import { buildSplitPlan, SplitConsumer, SplitMember } from './split-plan';
+import { buildTestShadow, ShadowImport } from './test-shadow';
 import { CodeFormatterService } from '../common/code-formatter.service';
 import { MarkdownService } from '../common/markdown.service';
 
@@ -355,9 +356,34 @@ export class InsightsService implements OnModuleInit {
     pkgCycles.forEach((c, i) => c.members.forEach((p) => cycleOfPkg.set(p as string, i)));
     for (const p of packages) p.cycle = cycleOfPkg.has(p.path) ? cycleOfPkg.get(p.path)! : null;
 
+    // Die Importzeilen – EINMAL gelesen, von ZWEI Auswertungen gebraucht. `outsideView` fragt sie,
+    // was dieser Code von aussen holt; der Testschatten, welche Klasse ein Testframework importiert.
+    // Zweimal abzufragen waeren zwei Durchlaeufe ueber dieselbe Tabelle in derselben Antwort.
+    const importRows: ShadowImport[] = await this.ds.query(
+      `SELECT from_file_id, to_class_name FROM java_dependencies`,
+    );
+
     // Der einzige Teil, der die Importe liest statt der Kanten – und der einzige, der etwas ueber
     // Klassen sagen kann, die gar nicht da sind (s. `outsideView`).
-    const outside = await this.outsideView(classes);
+    const outside = this.outsideView(classes, importRows);
+
+    // Was kein Test anfasst. Rechnet auf `classOut` statt auf `classes`, weil die Rangfolge die
+    // ganze Aussage ist: „ungetestet" allein ist eine Liste, „die schwerste Klasse ist ungetestet"
+    // ist ein Befund. Reine Rechnung – die Datei daneben kennt keine Datenbank.
+    const tests = buildTestShadow(
+      classOut.map((c) => ({
+        id: c.id,
+        className: c.className,
+        package: c.package,
+        score: c.score,
+        loc: c.loc,
+        complexity: c.complexity,
+        driver: c.driver,
+        cycle: c.cycle ?? null,
+      })),
+      pairs.map((p) => ({ from: p.from, to: p.to })),
+      importRows,
+    );
 
     const nameOf = new Map<number, string>(classes.map((c) => [c.id, c.class_name]));
 
@@ -404,6 +430,7 @@ export class InsightsService implements OnModuleInit {
       classes: classOut,
       packages,
       outside,
+      tests,
       cycles: {
         // `chain` traegt die Datei-Ids (der Absprung nach /code braucht sie), `chainLabels` die
         // Namen. Auf der Package-Ebene ist beides derselbe Pfad – die Oberflaeche liest dadurch
@@ -599,11 +626,7 @@ export class InsightsService implements OnModuleInit {
    * braucht keinen Import und kann hier nicht fehlen – sichtbar wird eine Luecke nur, wenn sie
    * jemand aus einem anderen Package importiert. `java.lang` gilt dasselbe.
    */
-  private async outsideView(classes: ClassRow[]): Promise<any> {
-    const rows: Array<{ from_file_id: number; to_class_name: string }> = await this.ds.query(
-      `SELECT d.from_file_id, d.to_class_name FROM java_dependencies d`,
-    );
-
+  private outsideView(classes: ClassRow[], rows: Array<{ from_file_id: number; to_class_name: string }>): any {
     const knownFqcn = new Set<string>();
     const knownPkgs = new Set<string>();
     const nameOf = new Map<number, string>();

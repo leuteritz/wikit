@@ -34,9 +34,10 @@ copying one file.
 - **Code insights** — dependency cycles, a hotspot ranking and package balance, derived from what
   is already stored. Click a hotspot and it works out **how it would split that class** — by state,
   by callers or by method — and writes out the resulting **Java files in full**, with your real
-  method bodies, ready to copy. Plus a **reading path**, **what is missing** (classes your own
-  packages import but never uploaded) and **what the last import changed** — rebuilt from the saved
-  sources, so a cycle it created is named together with the arrow that closed it.
+  method bodies. Plus **which classes no test touches** (heaviest first), a **reading path**,
+  **what is missing** (classes your packages import but never uploaded) and **what the last import
+  changed** — rebuilt from the saved sources, so a cycle it created is named together with the
+  arrow that closed it.
 - **Topic bundles** — collect every class around one term (by name, by source, by meaning, by
   relation) and copy their whole source as one text, ready to paste into a chat.
 - **AI summaries** — optional, per method and per class, via [Ollama](https://ollama.com)

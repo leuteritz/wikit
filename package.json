@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.30.0",
-  "whatsNew": "See what the last import changed",
+  "version": "4.31.0",
+  "whatsNew": "See which classes no test ever touches",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

@@ -127,6 +127,11 @@ import importIcon from '@iconify-icons/lucide/import'
 import puzzle from '@iconify-icons/lucide/puzzle'
 import coffee from '@iconify-icons/lucide/coffee'
 import asterisk from '@iconify-icons/lucide/asterisk'
+// Testschatten (/insights): der Kolben steht fuer den Test, der durchgestrichene fuer die Klasse,
+// die keiner anfasst – dieselbe Marke in beiden Zustaenden, damit die Liste ohne Legende lesbar ist.
+import flaskConical from '@iconify-icons/lucide/flask-conical'
+import flaskConicalOff from '@iconify-icons/lucide/flask-conical-off'
+import shield from '@iconify-icons/lucide/shield'
 
 // --- Phosphor (Duotone, fuer das Brand-Logo) ---
 import phBooksDuotone from '@iconify-icons/ph/books-duotone'
@@ -245,6 +250,10 @@ const ICONS = {
   'lucide:puzzle': puzzle,
   'lucide:coffee': coffee,
   'lucide:asterisk': asterisk,
+  // Reiter „Tests": was gepruefte wird, und was kein Test anfasst.
+  'lucide:flask-conical': flaskConical,
+  'lucide:flask-conical-off': flaskConicalOff,
+  'lucide:shield': shield,
   'ph:books-duotone': phBooksDuotone,
 }
 

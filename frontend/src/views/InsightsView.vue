@@ -6,8 +6,10 @@
 // ist eine RANGLISTE. Eine Rangliste in einen Graphen zu legen hiesse, sie in einen Ausschnitt zu
 // legen – aber der schlimmste Brandherd ist selten der, den man gerade ansieht.
 //
-// Vier Reiter, weil es vier Fragen sind: Wie ist die Lage (Overview)? Was ist verklebt (Cycles)?
-// Wo tut es weh (Hotspots)? Wie sind die Schichten geschnitten (Packages)?
+// Ein Reiter je Frage: Wie ist die Lage (Overview)? Was ist verklebt (Cycles)? Wo tut es weh
+// (Hotspots)? Was sichert nichts ab (Tests)? Wie sind die Schichten geschnitten (Packages)? Wo
+// fange ich an (Reading path)? Was fehlt (Outside)? Und was hat der letzte Import daran geändert
+// (Drift)?
 //
 // Jede Zeile ist ein Absprung: der Bericht endet nicht bei der Erkenntnis, sondern an der Stelle,
 // an der man etwas tun kann (`/code` mit der Klasse bzw. dem Package im Bild).
@@ -36,6 +38,9 @@ const TABS = [
   { id: 'overview', label: 'Overview', icon: 'lucide:layout-grid', hint: 'Totals and the three headline findings' },
   { id: 'cycles', label: 'Cycles', icon: 'lucide:repeat', hint: 'Dependency loops, and where to cut them' },
   { id: 'hotspots', label: 'Hotspots', icon: 'lucide:flame', hint: 'Where size, branching and coupling meet' },
+  // ⚠️ Direkt hinter den Brandherden, weil es die Anschlussfrage ist: „diese Klasse kostet dich
+  // Zeit" – „und fasst sie wenigstens ein Test an?".
+  { id: 'tests', label: 'Tests', icon: 'lucide:flask-conical', hint: 'Which classes no test ever touches — heaviest first' },
   { id: 'packages', label: 'Packages', icon: 'lucide:package', hint: 'Abstractness against instability' },
   // Die einzige Frage hier, die nicht „was stimmt nicht?" lautet, sondern „wo fange ich an?".
   { id: 'path', label: 'Reading path', icon: 'lucide:route', hint: 'The order that lets you read this code once' },
@@ -82,6 +87,16 @@ const EXPLAIN = {
       ['Fix the driver, not the score', 'The tag on each row says what makes it heavy. Splitting a long method helps a branching problem and does nothing for a coupling one.'],
       ['Check the cycle tag', 'A heavy class inside a dependency loop is the worst combination — you cannot even test it alone.'],
       ['Click a row to see how it comes apart', 'Wikit groups the methods by the fields they touch, by who calls them, and by where the branches sit — then names the parts and shows the change as before/after code.'],
+    ],
+  },
+  tests: {
+    title: 'The code no test ever touches',
+    what: 'Not “how many percent are covered” — which of the classes that already cost you the most has nothing holding it in place.',
+    fixes: [
+      ['The top row is the one that matters', 'A heavy class with no test is where a change is most likely to break something quietly. A small one without a test rarely is.'],
+      ['“Touched” is not “tested”', 'Some test runs through the class on its way somewhere else. That catches a crash, not a wrong answer — the class still has nothing checking what it returns.'],
+      ['Start with the driver, not the whole class', 'The tag says what makes it heavy. A branching class needs a test per branch; a coupled one usually needs the seam pulled out first.'],
+      ['A class in a cycle cannot be tested alone', 'If the row carries a cycle tag, break the loop first — until then any test has to build both classes to build one.'],
     ],
   },
   packages: {
@@ -373,6 +388,58 @@ const outsideKpis = computed(() => {
     { label: 'Wildcard imports', value: num(t.wildcards), icon: 'lucide:asterisk' },
   ]
 })
+
+// --- Tests ---------------------------------------------------------------------------------------
+// Der Testschatten faehrt in derselben `/api/insights`-Antwort mit – gerechnet wird er im Backend,
+// weil er die Importzeilen braucht (dort wird die Tabelle ohnehin fuer „Outside" gelesen) und weil
+// die Rangfolge auf dem Hotspot-Score beruht, der dort entsteht.
+const tests = computed(() => data.value?.tests || null)
+
+// Die drei Stufen der Abdeckung als Wort, nicht als Zahl – und mit ihrer Farbe. „touched" ist
+// bewusst keine Warnfarbe: es ist die mittlere Stufe und keine Verfehlung.
+const COVERAGE = {
+  tested: { label: 'tested', icon: 'lucide:flask-conical', color: 'var(--color-success)' },
+  touched: { label: 'only touched', icon: 'lucide:git-branch', color: 'var(--color-warning)' },
+  none: { label: 'no test', icon: 'lucide:flask-conical-off', color: 'var(--color-danger)' },
+}
+
+// ⚠️ DREI Leerzustaende, und nur der letzte ist ein gutes Ergebnis:
+//
+//   * `no-tests` – hier liegt kein Testcode. Das ist eine Aussage ueber den BESTAND, nicht ueber
+//     das Projekt: wer nur seinen Produktivcode hochlaedt, bekaeme sonst seine gesamte Codebasis
+//     als Mangelliste zurueck. Deshalb steht an dieser Stelle keine Rangliste und keine Prozentzahl.
+//   * `no-imports` – es gibt Klassen, aber keine gespeicherten Importzeilen (Altbestand). Dann
+//     beruht die Erkennung allein auf Namen, und das muss dabeistehen.
+//   * `all-covered` – jede Produktivklasse hat einen Test, der sie beim Namen nennt.
+const testsEmpty = computed(() => {
+  const t = tests.value?.totals
+  if (!t) return null
+  if (!t.tests) return t.importLines ? 'no-tests' : 'no-imports'
+  return tests.value.shadow.length ? null : 'all-covered'
+})
+
+const testKpis = computed(() => {
+  const t = tests.value?.totals
+  if (!t) return []
+  return [
+    // ⚠️ Die fuehrende Zahl ist die GEWICHTETE. „62 % der Klassen" behandelt eine
+    // Konstantenklasse wie den Brandherd daneben – und genau damit laesst sich die Zahl
+    // schoenrechnen. Ohne Kanten ist sie nicht definiert und steht als „–" da, nicht als 0 %.
+    {
+      label: 'Weight covered',
+      value: t.risk.pct == null ? '–' : `${t.risk.pct}%`,
+      icon: 'lucide:shield',
+      warn: t.risk.pct != null && t.risk.pct < 50,
+      tip: 'Share of the total hotspot weight that sits in classes a test names directly — not the share of classes.',
+    },
+    { label: 'No test at all', value: num(t.uncovered), icon: 'lucide:flask-conical-off', warn: t.uncovered > 0, tip: 'Not one test class names them, and none reaches them over a relation.' },
+    { label: 'Only touched', value: num(t.touched), icon: 'lucide:git-branch', tip: 'A test runs through them on its way somewhere else — that catches a crash, not a wrong result.' },
+    { label: 'Test classes', value: num(t.tests), icon: 'lucide:flask-conical', tip: `${t.byImport} recognised by their imports, ${t.byName} by their name alone.` },
+  ]
+})
+
+// Die Gegenliste bleibt zugeklappt: „was fehlt?" ist die Frage, mit der man den Reiter oeffnet.
+const showTestList = ref(false)
 
 // --- Drift ---------------------------------------------------------------------------------------
 //
@@ -1008,6 +1075,244 @@ const plotted = computed(() => {
             >
               {{ showAllHotspots ? `Show top ${TOP_N} only` : `Show all ${num(ranked.length)} classes` }}
             </button>
+          </section>
+
+          <!-- ==================== Tests ==================== -->
+          <section v-else-if="tab === 'tests'" class="space-y-5">
+            <!-- ⚠️ Die Bilanz steht nur da, wenn es ueberhaupt Tests gibt. Ohne einen einzigen
+                 waere „0 % covered" formal richtig und trotzdem eine Falschauskunft: gemessen wird
+                 dann nicht das Projekt, sondern was jemand hochgeladen hat. -->
+            <div v-if="tests && tests.totals.tests" class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div
+                v-for="k in testKpis"
+                :key="k.label"
+                v-tip="k.tip"
+                class="rounded-lg border bg-[var(--color-surface-2)] px-3 py-2"
+                :class="k.warn ? 'border-[var(--color-warning)]/40' : 'border-[var(--color-border)]'"
+              >
+                <p class="flex items-center gap-1.5 text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">
+                  <Icon :icon="k.icon" class="h-3 w-3" />
+                  {{ k.label }}
+                </p>
+                <p
+                  class="mt-0.5 font-mono text-lg font-semibold tabular-nums"
+                  :style="{ color: k.warn ? 'var(--color-warning)' : 'var(--color-text)' }"
+                >{{ k.value }}</p>
+              </div>
+            </div>
+
+            <!-- ⚠️ Drei Leerzustaende, und nur der letzte ist ein Lob. -->
+            <p
+              v-if="testsEmpty"
+              class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-8 text-center text-2xs leading-relaxed text-[var(--color-text-muted)]"
+            >
+              <template v-if="testsEmpty === 'all-covered'">
+                Every class here has a test that names it. Nothing sits in the shadow.
+              </template>
+              <template v-else-if="testsEmpty === 'no-imports'">
+                No import lines stored for these classes, so a test can only be recognised by its
+                name — and none of these names looks like one. Re-analyse the code and this fills in.
+              </template>
+              <template v-else>
+                No test classes in this workspace. That is a statement about what was uploaded, not
+                about the project — paste the test sources under “Add code” in the Code view and
+                every number here fills in.
+              </template>
+            </p>
+
+            <template v-else-if="tests">
+              <!-- Die Rangliste. Dieselbe Form wie die Brandherde, weil es dieselbe Frage in ihrer
+                   Fortsetzung ist – nur steht hier statt „wie teile ich sie?" die Abdeckung. -->
+              <div class="overflow-x-auto rounded-lg border border-[var(--color-border)]">
+                <table class="w-full min-w-[42rem] border-collapse text-xs">
+                  <thead>
+                    <tr class="border-b border-[var(--color-border)] bg-[var(--color-surface-offset)] text-left text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">
+                      <th class="px-3 py-2 font-medium">Weight</th>
+                      <th class="px-3 py-2 font-medium">Class</th>
+                      <th class="px-3 py-2 font-medium">Coverage</th>
+                      <th class="px-3 py-2 font-medium">Why it is heavy</th>
+                      <th class="px-3 py-2 text-right font-medium">Code lines</th>
+                      <th class="px-3 py-2 text-right font-medium">Branches</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="c in tests.shadow"
+                      :key="c.id"
+                      class="border-b border-[var(--color-border)] transition last:border-0 hover:bg-[var(--color-surface-offset)]"
+                    >
+                      <td class="px-3 py-1.5">
+                        <div class="flex items-center gap-2">
+                          <span class="w-6 shrink-0 text-right font-mono text-2xs" :style="{ color: scoreColor(c.score) }">
+                            {{ c.score }}
+                          </span>
+                          <span class="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-[var(--color-surface-offset)]">
+                            <span class="block h-full rounded-full" :style="{ width: `${c.score}%`, background: scoreColor(c.score) }" />
+                          </span>
+                        </div>
+                      </td>
+                      <td class="px-3 py-1.5">
+                        <button
+                          v-tip="'Open this class in the code view'"
+                          type="button"
+                          class="font-mono text-[var(--color-text)] underline-offset-2 transition hover:text-[var(--color-accent)] hover:underline"
+                          @click="openClass(c.id)"
+                        >{{ c.className }}</button>
+                        <span class="ml-1.5 text-2xs text-[var(--color-text-muted)]">{{ c.package }}</span>
+                        <!-- ⚠️ Der Zyklus-Hinweis gehoert genau hierher: eine Klasse in einer
+                             Schleife laesst sich nicht allein testen, also ist er der Grund,
+                             warum die Zeile ohne Test dasteht – und nicht nur eine Marke. -->
+                        <span
+                          v-if="c.cycle != null"
+                          v-tip="'In a dependency cycle — no test can build this class on its own'"
+                          class="ml-1.5 inline-flex items-center gap-0.5 rounded bg-[var(--color-danger)]/15 px-1 text-3xs text-[var(--color-danger)]"
+                        >
+                          <Icon icon="lucide:repeat" class="h-2.5 w-2.5" /> cycle
+                        </span>
+                      </td>
+                      <td class="px-3 py-1.5">
+                        <span
+                          class="inline-flex items-center gap-1 text-3xs"
+                          :style="{ color: COVERAGE[c.coverage].color }"
+                        >
+                          <Icon :icon="COVERAGE[c.coverage].icon" class="h-3 w-3" />
+                          {{ COVERAGE[c.coverage].label }}
+                        </span>
+                        <!-- Wer sie beruehrt, ist die Anschlussfrage – und der Absprung dorthin. -->
+                        <template v-if="c.by.length">
+                          <span class="ml-1 text-3xs text-[var(--color-text-muted)]">by</span>
+                          <button
+                            v-for="t in c.by"
+                            :key="t.id"
+                            type="button"
+                            class="ml-1 rounded bg-[var(--color-surface-offset)] px-1 py-px font-mono text-3xs text-[var(--color-text-muted)] transition hover:text-[var(--color-accent)]"
+                            @click="openClass(t.id)"
+                          >{{ t.className }}</button>
+                          <span v-if="c.byCount > c.by.length" class="ml-1 text-3xs text-[var(--color-text-muted)]">
+                            and {{ c.byCount - c.by.length }} more
+                          </span>
+                        </template>
+                      </td>
+                      <td class="px-3 py-1.5">
+                        <span
+                          v-if="DRIVER[c.driver]"
+                          v-tip="DRIVER[c.driver].hint"
+                          class="rounded bg-[var(--color-surface-offset)] px-1.5 py-0.5 text-3xs text-[var(--color-text-muted)]"
+                        >{{ DRIVER[c.driver].label }}</span>
+                      </td>
+                      <td class="px-3 py-1.5 text-right font-mono text-[var(--color-text-muted)]">{{ num(c.loc) }}</td>
+                      <td class="px-3 py-1.5 text-right font-mono text-[var(--color-text-muted)]">{{ num(c.complexity) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <p v-if="tests.moreShadow" class="text-3xs text-[var(--color-text-muted)]">
+                … and {{ plural(tests.moreShadow, 'class') }} more without a test, each lighter than the ones above.
+              </p>
+
+              <!-- Ein Test, dessen Name auf eine Klasse zeigt, die hier nicht liegt: derselbe
+                   Befund wie eine Luecke im Reiter „Outside", nur von der anderen Seite gesehen. -->
+              <section v-if="tests.orphans.length" class="space-y-2">
+                <header class="flex flex-wrap items-baseline gap-x-2">
+                  <span class="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--color-warning)]">
+                    <Icon icon="lucide:puzzle" class="h-3.5 w-3.5" />
+                    Tests whose subject is missing
+                  </span>
+                  <p class="w-full text-3xs leading-relaxed text-[var(--color-text-muted)]">
+                    The test is here, the class it is named after is not. Upload it and its coverage
+                    appears in the list above.
+                  </p>
+                </header>
+                <ul class="overflow-hidden rounded-lg border border-[var(--color-border)]">
+                  <li
+                    v-for="o in tests.orphans"
+                    :key="o.id"
+                    class="flex flex-wrap items-baseline gap-x-2 border-b border-[var(--color-border)] px-3 py-1.5 last:border-0"
+                  >
+                    <button
+                      type="button"
+                      class="font-mono text-xs text-[var(--color-text)] underline-offset-2 transition hover:text-[var(--color-accent)] hover:underline"
+                      @click="openClass(o.id)"
+                    >{{ o.className }}</button>
+                    <span class="text-3xs text-[var(--color-text-muted)]">expects</span>
+                    <span class="font-mono text-2xs text-[var(--color-warning)]">{{ o.expected }}</span>
+                    <span class="text-3xs text-[var(--color-text-muted)]">{{ o.package }}</span>
+                  </li>
+                </ul>
+                <p v-if="tests.moreOrphans" class="text-3xs text-[var(--color-text-muted)]">
+                  … and {{ plural(tests.moreOrphans, 'test') }} more.
+                </p>
+              </section>
+
+              <!-- ⚠️ Die Gegenliste. Ein Bericht, der nur Fehlendes zeigt, wird als Noergeln
+                   gelesen und irgendwann nicht mehr geoeffnet – dieselbe Ueberlegung wie beim
+                   geheilten Zyklus im Drift. Zugeklappt, weil „was fehlt?" die Frage ist, mit der
+                   man den Reiter oeffnet. -->
+              <section class="space-y-2">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-accent)] transition hover:underline"
+                  @click="showTestList = !showTestList"
+                >
+                  <Icon :icon="showTestList ? 'lucide:chevron-down' : 'lucide:chevron-right'" class="h-3.5 w-3.5" />
+                  What is tested — {{ plural(tests.totals.tests, 'test class') }}
+                </button>
+                <ul v-if="showTestList" class="overflow-hidden rounded-lg border border-[var(--color-border)]">
+                  <li
+                    v-for="t in tests.tests"
+                    :key="t.id"
+                    class="flex flex-wrap items-baseline gap-x-2 border-b border-[var(--color-border)] px-3 py-1.5 last:border-0"
+                  >
+                    <button
+                      type="button"
+                      class="font-mono text-xs text-[var(--color-text)] underline-offset-2 transition hover:text-[var(--color-accent)] hover:underline"
+                      @click="openClass(t.id)"
+                    >{{ t.className }}</button>
+                    <template v-if="t.subject">
+                      <Icon icon="lucide:arrow-right" class="h-3 w-3 text-[var(--color-text-muted)]" />
+                      <button
+                        type="button"
+                        class="font-mono text-2xs text-[var(--color-success)] underline-offset-2 transition hover:underline"
+                        @click="openClass(t.subject.id)"
+                      >{{ t.subject.className }}</button>
+                    </template>
+                    <span v-else class="text-3xs text-[var(--color-text-muted)]">no named subject</span>
+                    <span class="text-3xs text-[var(--color-text-muted)]">
+                      touches {{ plural(t.touches, 'class') }}
+                    </span>
+                    <!-- ⚠️ Woran erkannt wurde, gehoert an die Zeile: ein Befund, der auf einer
+                         Namensregel beruht, muss als solcher lesbar sein. -->
+                    <span
+                      v-tip="t.evidence === 'imports'
+                        ? 'Recognised by a test framework import — a hard match'
+                        : 'Recognised by its name alone — no test framework import is stored for it'"
+                      class="ml-auto rounded bg-[var(--color-surface-offset)] px-1 py-px text-3xs text-[var(--color-text-muted)]"
+                    >by {{ t.evidence === 'imports' ? 'import' : 'name' }}</span>
+                  </li>
+                </ul>
+                <p v-if="showTestList && tests.moreTests" class="text-3xs text-[var(--color-text-muted)]">
+                  … and {{ plural(tests.moreTests, 'test class') }} more.
+                </p>
+              </section>
+
+              <!-- ⚠️ Die Grenze der Auskunft gehoert unter die Liste. Ohne sie liest sich
+                   „no test" als „diese Klasse ist ungeprueft" – und das ist mehr, als hier
+                   gemessen werden kann. -->
+              <p class="flex items-start gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2.5 text-3xs leading-relaxed text-[var(--color-text-muted)]">
+                <Icon icon="lucide:info" class="mt-0.5 h-3 w-3 shrink-0" />
+                <span>
+                  This reads names and relations, never a test run. A test reaching its class through
+                  reflection, a Spring context or a shared helper leaves no relation behind and shows
+                  up as “no test” here. And a class that <em>has</em> one is not thereby covered —
+                  whether the test asserts anything is not something this can see.
+                  <template v-if="tests.totals.byName">
+                    {{ plural(tests.totals.byName, 'test class') }} here
+                    {{ tests.totals.byName === 1 ? 'was' : 'were' }} recognised by name alone.
+                  </template>
+                </span>
+              </p>
+            </template>
           </section>
 
           <!-- ==================== Packages ==================== -->
