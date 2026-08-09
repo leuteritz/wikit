@@ -260,6 +260,13 @@ export const api = {
     http('POST', '/java/embeddings/rebuild', { jobId, force }),
   clearJavaEmbeddings: () => http('DELETE', '/java/embeddings'),
 
+  // Derselbe Index ueber den zweiten Wissensspeicher – die Artikel. Eigener Endpunktsatz statt
+  // eines Feldes am Java-Stand: es ist ein anderer Bestand, und die EINE Bilanz daraus bildet
+  // `useEmbeddings`. Kein jobId: der Lauf dauert Sekunden und hat keinen Fortschrittsstrom.
+  getArticleEmbeddingStatus: () => http('GET', '/articles/embeddings', null, { silent: true }),
+  rebuildArticleEmbeddings: (force = false) => http('POST', '/articles/embeddings/rebuild', { force }),
+  clearArticleEmbeddings: () => http('DELETE', '/articles/embeddings'),
+
   // --- Ask the codebase (/ask) ----------------------------------------------
   // Erst den Strom oeffnen, dann starten (dieselbe Bauart wie Playground und analyze-progress):
   // die Quellen gehen VOR dem ersten Token raus, und ein spaeter geoeffneter Strom haette genau

@@ -123,26 +123,31 @@ watch(
 
 // ⚠️ **Die Zahl bei Ask ist ein Bestand, aber nicht der der Klassen: sie zaehlt, worauf Ask
 // ANTWORTEN kann.** Eine Frage selbst ist ein Vorgang – „so viele Fragen hast du gestellt" waere
-// eine Zahl, nach der niemand fragt. Die eingebetteten Klassen dagegen sind genau die Menge, aus
+// eine Zahl, nach der niemand fragt. Die eingebetteten Quellen dagegen sind genau die Menge, aus
 // der eine Antwort entstehen kann: steht dort 0, findet `/ask` nichts, egal was man tippt.
 //
-// Sie darf FEHLEN (wie die Topic-Zahl): ohne Klassen im Bestand gibt es keinen Index, und ein
-// nicht geladener Stand ist keine 0 – das waere die Behauptung „nichts indiziert", bevor jemand
+// ⚠️ Gezaehlt werden Klassen UND Wiki-Artikel (`useEmbeddings` summiert beide Indizes). Nur die
+// Klassen zu nehmen hiesse, in einem Wiki ohne hochgeladenen Code eine 0 zu zeigen – obwohl `/ask`
+// dort aus jedem indizierten Artikel antworten kann.
+//
+// Sie darf FEHLEN (wie die Topic-Zahl): ohne jeden Bestand gibt es keinen Index, und ein nicht
+// geladener Stand ist keine 0 – das waere die Behauptung „nichts indiziert", bevor jemand
 // nachgesehen hat. Ist der Index dagegen wirklich leer, IST die 0 die Aussage – sie faerbt sich
 // aber nicht (s. `navLinks`), denn sie beschreibt eine nicht eingerichtete Option, keinen Fehler.
 // Warum die 0 hier trotzdem stehen darf, wo sie bei Topic entfaellt: bei Topic hiesse sie „du hast
 // nichts eingesammelt" – eine Aussage ueber den Nutzer, nach der niemand gefragt hat. Hier heisst
 // sie „hier ist nichts zu holen", und genau das erklaert, warum `/ask` gleich nichts finden wird.
+const hasAskable = computed(() => files.value.length > 0 || articles.value.length > 0)
 const askCount = computed(() => {
-  if (!files.value.length) return null
+  if (!hasAskable.value) return null
   return embeddedCount.value
 })
 const askTitle = computed(() => {
-  if (!files.value.length) return 'Ask a question and get an answer backed by the classes it came from'
+  if (!hasAskable.value) return 'Ask a question and get an answer backed by the sources it came from'
   if (askCount.value == null) return 'Ask — checking the meaning index…'
   if (!embedEnabled.value) return 'Ask — no embedding model set, so there is nothing to search'
   if (!askCount.value) return 'Ask — the meaning index is empty, build it under Bot'
-  return `Ask — answers built from ${askCount.value} indexed ${askCount.value === 1 ? 'class' : 'classes'}`
+  return `Ask — answers built from ${askCount.value} indexed ${askCount.value === 1 ? 'source' : 'sources'} (classes and wiki articles)`
 })
 
 // `null` statt `0`, solange nichts gerechnet ist: eine 0 waere die Behauptung „keine Zyklen", und

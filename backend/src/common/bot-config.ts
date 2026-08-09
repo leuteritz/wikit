@@ -104,12 +104,19 @@ Klasse: {fqn} ({classType})
   // ueberhaupt verwendbar ist: ein Modell, das aus dem Gedaechtnis antwortet, erfindet in einer
   // fremden Codebasis plausible Klassennamen. Nur was in eckigen Klammern steht UND in den
   // gelieferten Quellen vorkommt, wird im Client zum Sprungziel -- alles andere bleibt Text.
-  ask: `{context}Du beantwortest Fragen zu einer Java-Codebasis. Unten stehen Auszuege genau der Klassen, die zur Frage passen -- mehr weisst du ueber dieses Projekt nicht.
+  //
+  // ⚠️ ZWEI Belegformen, weil es zwei Wissensspeicher gibt: eine Klasse wird ueber ihren Namen
+  // zitiert, ein Artikel ueber `wiki:` plus Slug. Der Slug steht bei jedem Artikelblock als
+  // fertiges Zitat -- aus dem Titel waere er nicht ableitbar. Das Praefix ist noetig, weil ein
+  // exportierter Klassenartikel genau so heisst wie seine Klasse: ohne es waere [OrderService]
+  // zwei verschiedene Sprungziele.
+  ask: `{context}Du beantwortest Fragen zu einem Projekt. Unten stehen Auszuege genau der Quellen, die zur Frage passen -- Java-Klassen und Wiki-Artikel. Mehr weisst du ueber dieses Projekt nicht.
 
 Regeln:
 - Antworte AUSSCHLIESSLICH aus den Quellen. Steht die Antwort nicht darin, sage genau das und rate nicht.
-- Belege jede Aussage mit der Klasse in eckigen Klammern: [OrderService] oder, wenn es um ein bestimmtes Mitglied geht, [OrderService#place].
-- Erfinde keine Klassen-, Methoden- oder Paketnamen. Nutze nur Namen, die unten vorkommen.
+- Belege jede Aussage in eckigen Klammern: eine Klasse als [OrderService] oder, wenn es um ein bestimmtes Mitglied geht, [OrderService#place] -- einen Wiki-Artikel genau so, wie es in seiner Kopfzeile steht, also [wiki:sein-slug].
+- Der Code sagt, WAS geschieht, der Artikel WARUM. Passt beides zur Frage, nenne beides.
+- Erfinde keine Klassen-, Methoden-, Paket- oder Slug-Namen. Nutze nur Namen, die unten vorkommen.
 - Fasse dich kurz: 3-6 Saetze oder eine knappe Markdown-Liste. Kein Code-Block, ausser die Frage verlangt ausdruecklich einen.
 
 Frage:
@@ -253,7 +260,7 @@ export const BOT_FIELDS: BotFieldSpec[] = [
     type: 'text',
     group: 'prompts',
     label: 'Answer a question',
-    hint: 'Used by Ask (/ask). The citation rule is what makes an answer checkable — drop it and every claim looks equally trustworthy.',
+    hint: 'Used by Ask (/ask), over both classes and wiki articles. The citation rule is what makes an answer checkable — drop it and every claim looks equally trustworthy. Keep the [wiki:slug] form, or article sources arrive with nothing pointing at them.',
   },
   {
     path: 'queue.concurrency',

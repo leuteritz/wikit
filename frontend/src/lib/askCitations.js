@@ -1,11 +1,18 @@
 // Belege in einer Ask-Antwort: `[OrderService]` bzw. `[OrderService#place]` im gerenderten Text
-// werden zu anklickbaren Chips, die in `/code` genau diese Klasse (und Zeile) aufschlagen.
+// werden zu anklickbaren Chips, die in `/code` genau diese Klasse (und Zeile) aufschlagen –
+// `[wiki:mein-slug]` entsprechend zu einem Chip, der den Wiki-Artikel oeffnet.
 //
 // ⚠️ **Die eine Regel dieser Datei: Nur ein Zitat, das zu einer GELIEFERTEN Quelle passt, wird zum
 // Chip.** Alles andere bleibt gewoehnlicher Text. Ein Sprachmodell erfindet in einer fremden
 // Codebasis plausible Klassennamen – und ein erfundener Beleg, der aussieht wie ein echter, ist
 // schlimmer als gar keiner: er laedt zum Nachsehen ein und fuehrt ins Leere. Was hier nicht
 // aufgeloest wird, ist damit auch sichtbar nicht belegt.
+//
+// ⚠️ **Ein Artikel wird ueber `wiki:` + SLUG zitiert, nicht ueber seinen Titel.** Zwei Gruende, und
+// beide sind zwingend: ein Titel traegt Leerzeichen und Satzzeichen (die Erkennung muesste raten,
+// wo das Zitat endet), und ein exportierter Klassenartikel heisst genau so wie seine Klasse –
+// `[OrderService]` waere ohne Praefix zwei verschiedene Sprungziele. Der Slug steht dem Modell im
+// Quellenblock als fertiges Zitat zur Verfuegung (s. `articleBlock` im AskService).
 //
 // Gearbeitet wird auf TEXTKNOTEN des gerenderten Markdowns, nicht auf dem HTML-String: eine Regex
 // ueber `<p>…</p>` trifft irgendwann in einem Attribut, und markdown-it laeuft hier mit
@@ -14,10 +21,11 @@
 
 export const CITE_CLASS = 'ask-cite'
 
-// `[Name]` oder `[Name#member]`. Bewusst eng: Buchstaben, Ziffern, `_`, `$` (Java-Identifier) und
-// `.` fuer den Fall, dass das Modell den vollen FQCN zitiert. Ein `[` mitten in Prosa („[siehe
-// oben]") faellt damit nicht in die Erkennung.
-const CITE_RE = /\[([A-Za-z_$][\w$.]*)(?:#([A-Za-z_$][\w$]*))?\]/g
+// Zwei Alternativen in EINER Regex, damit die Reihenfolge der Treffer im Text erhalten bleibt.
+// Links: `[wiki:slug]` – Slugs sind kebab-case, also zusaetzlich `-` (und `.`, falls jemand einen
+// Punkt im Slug hat). Rechts: `[Name]` / `[Name#member]`, bewusst eng auf Java-Identifier plus `.`
+// fuer den vollen FQCN. Ein `[` mitten in Prosa („[siehe oben]") faellt damit durch beide.
+const CITE_RE = /\[(?:wiki:([\w-][\w.-]*)|([A-Za-z_$][\w$.]*)(?:#([A-Za-z_$][\w$]*))?)\]/g
 
 /**
  * Nachschlagewerk aus den Quellen des Laufs.
@@ -26,10 +34,17 @@ const CITE_RE = /\[([A-Za-z_$][\w$.]*)(?:#([A-Za-z_$][\w$]*))?\]/g
  * dem Fliesstext uebernimmt, und ein Beleg, der nur an der Grossschreibung scheitert, waere eine
  * Falschauskunft ueber die eigene Antwort. Der FQCN zeigt auf dieselbe Quelle wie der einfache
  * Name – zwei Schreibweisen derselben Klasse sind nicht zwei Klassen.
+ *
+ * Artikel liegen im selben Map, aber in einem eigenen Namensraum (`wiki:`) – so kann eine Klasse
+ * und ein gleichnamiger Artikel nebeneinander stehen, ohne dass einer den anderen verdeckt.
  */
 export function buildCiteIndex(sources) {
   const byName = new Map()
   for (const s of sources || []) {
+    if (s.kind === 'article') {
+      byName.set(`wiki:${(s.slug || '').toLowerCase()}`, s)
+      continue
+    }
     const fqn = s.package ? `${s.package}.${s.className}` : s.className
     byName.set(s.className.toLowerCase(), s)
     byName.set(fqn.toLowerCase(), s)
@@ -44,15 +59,56 @@ export function buildCiteIndex(sources) {
  * Klasse ist belegt, nur die Methode hat das Modell danebengegriffen. Der Chip zeigt dann den
  * Klassennamen, nicht den erfundenen Methodennamen – sonst stuende ein Name im Bild, den es
  * nirgends gibt.
+ *
+ * @param {Map} index    aus `buildCiteIndex`.
+ * @param {object} cite  `{ slug }` fuer einen Artikel, sonst `{ className, member }`.
  */
-export function resolveCite(index, className, member) {
-  const source = index.get((className || '').toLowerCase())
+export function resolveCite(index, cite) {
+  if (cite.slug) {
+    const source = index.get(`wiki:${cite.slug.toLowerCase()}`)
+    return source ? { source, member: null, line: null } : null
+  }
+  const source = index.get((cite.className || '').toLowerCase())
   if (!source) return null
-  if (member) {
-    const hit = source.members?.find((m) => m.name === member)
+  if (cite.member) {
+    const hit = source.members?.find((m) => m.name === cite.member)
     if (hit) return { source, member: hit.name, line: hit.line ?? source.classLine ?? 1 }
   }
   return { source, member: null, line: source.classLine ?? 1 }
+}
+
+/**
+ * Der fertige Chip zu einem aufgeloesten Beleg.
+ *
+ * ⚠️ Die Herkunft steht als WORT im Chip (`wiki`), nicht als zweiter Farbton. Eine Farbe muesste
+ * hier eine Bedeutung tragen, die im Rest der Oberflaeche schon vergeben ist (Gruen heisst
+ * „erfolgreich", Gold „pruefen"), und ein Icon hiesse ein inline-SVG an einer Stelle, an der kein
+ * Vue laeuft – beides fuer eine Auskunft, die ein Wort direkt hinschreiben kann. Der Klassen-Chip
+ * bleibt dafuer Monospace: ein Klassenname IST Code, ein Artikeltitel ist Prosa.
+ */
+function buildChip({ source, member, line }) {
+  const chip = document.createElement('button')
+  chip.type = 'button'
+  chip.className = CITE_CLASS
+
+  if (source.kind === 'article') {
+    chip.classList.add(`${CITE_CLASS}--wiki`)
+    chip.dataset.slug = source.slug
+    chip.title = `Open “${source.title}” in the wiki`
+    const kind = document.createElement('span')
+    kind.className = `${CITE_CLASS}-kind`
+    kind.textContent = 'wiki'
+    chip.append(kind, document.createTextNode(source.title))
+    return chip
+  }
+
+  chip.dataset.fileId = String(source.fileId)
+  chip.dataset.line = String(line)
+  chip.title = member
+    ? `Open ${source.className}.${member}() in Code`
+    : `Open ${source.className} in Code`
+  chip.textContent = member ? `${source.className}.${member}` : source.className
+  return chip
 }
 
 /**
@@ -85,7 +141,7 @@ export function paintCitations(root, index) {
     const hits = []
     let m
     while ((m = CITE_RE.exec(text))) {
-      const resolved = resolveCite(index, m[1], m[2])
+      const resolved = resolveCite(index, { slug: m[1], className: m[2], member: m[3] })
       if (resolved) hits.push({ from: m.index, to: m.index + m[0].length, resolved })
     }
     if (!hits.length) continue
@@ -97,18 +153,7 @@ export function paintCitations(root, index) {
       let target = textNode
       if (h.to < target.nodeValue.length) target.splitText(h.to)
       if (h.from > 0) target = target.splitText(h.from)
-      const chip = document.createElement('button')
-      chip.type = 'button'
-      chip.className = CITE_CLASS
-      chip.dataset.fileId = String(h.resolved.source.fileId)
-      chip.dataset.line = String(h.resolved.line)
-      chip.title = h.resolved.member
-        ? `Open ${h.resolved.source.className}.${h.resolved.member}() in Code`
-        : `Open ${h.resolved.source.className} in Code`
-      chip.textContent = h.resolved.member
-        ? `${h.resolved.source.className}.${h.resolved.member}`
-        : h.resolved.source.className
-      target.parentNode.replaceChild(chip, target)
+      target.parentNode.replaceChild(buildChip(h.resolved), target)
       painted++
     }
   }

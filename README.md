@@ -24,8 +24,9 @@ copying one file.
   SQLite **FTS5** (a trigram index answers substrings and punctuation without reading any file).
   With Ollama it also finds classes **by meaning** — the ones that do the thing, whatever they
   call it.
-- **Ask the codebase** — a question in plain words, answered only from the classes that match.
-  Every claim carries the class it came from; one click opens it at the line.
+- **Ask your project** — a question in plain words, answered only from the classes *and wiki
+  articles* that match: the code says what happens, an article says why. Every claim carries the
+  source it came from; one click opens it.
 - **Relationship graph** — typed links between articles as a graph ([Vue Flow](https://vueflow.dev)):
   what hangs together, which article is the hub, and which ones nothing points at.
 - **Java code analysis** — parse `.java` locally (no JDK) and explore a class dependency graph.

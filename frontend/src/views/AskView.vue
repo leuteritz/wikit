@@ -1,5 +1,5 @@
 <script setup>
-// „Ask the codebase" (`/ask`): eine Frage in Prosa, eine belegte Antwort.
+// „Ask your project" (`/ask`): eine Frage in Prosa, eine belegte Antwort.
 //
 // ⚠️ **Die Quellen stehen VOR der Antwort, nicht darunter.** Wer fragt, sieht zuerst, worauf die
 // Antwort sich stuetzen wird – und erkennt eine falsche Auswahl, bevor er einen Text liest, der auf
@@ -9,6 +9,13 @@
 // `lib/askCitations.js`): ein Sprachmodell erfindet in einer fremden Codebasis plausible
 // Klassennamen, und ein erfundener Beleg in Chip-Form laedt zum Nachsehen ein und fuehrt ins Leere.
 // Aufgeloest = Chip mit Sprung, nicht aufgeloest = gewoehnlicher Text.
+//
+// ⚠️ **Gefragt werden BEIDE Wissensspeicher: Klassen und Wiki-Artikel.** Der Code sagt, WAS
+// geschieht, der Artikel WARUM – und „warum laeuft der Import zweistufig?" hat im Quelltext keine
+// Antwort. Die Quellenliste bleibt trotzdem EINE Liste in Rangfolge und wird nicht nach Herkunft
+// gruppiert: die Reihenfolge ist die Aussage der Bedeutungssuche („das passt am besten"), und in
+// zwei Bloecke zerlegt waere sie genau weg. Woher eine Quelle kommt, sagt ihr Chip; wie die
+// Auswahl insgesamt aussieht, sagt die Zeile darueber.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { Icon } from '../lib/icons.js'
@@ -16,12 +23,15 @@ import { api } from '../lib/api.js'
 import { renderClientMarkdown } from '../lib/clientMarkdown.js'
 import { buildCiteIndex, CITE_CLASS, paintCitations } from '../lib/askCitations.js'
 import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
+import { useEmbeddings } from '../composables/useEmbeddings.js'
 import { isTypingTarget } from '../lib/shortcuts.js'
 import BusyState from '../components/BusyState.vue'
 
 const route = useRoute()
 const router = useRouter()
 const { files, fetchFiles, lastFileId, lastTargetLine } = useJavaAnalyzer()
+// Nur fuer die Frage „gibt es hier ueberhaupt etwas zu fragen?" – der Stand kennt beide Bestaende.
+const { articles: articleIndex, ensure: ensureEmbeddings } = useEmbeddings()
 
 const question = ref('')
 const asking = ref(false)
@@ -40,11 +50,26 @@ let es = null
 let jobId = ''
 let clock = null
 
-// Ohne Klassen im Bestand gibt es nichts zu fragen – und der Leerzustand sagt das, statt eine
-// Bedeutungssuche ins Leere laufen zu lassen.
-const hasClasses = computed(() => files.value.length > 0)
+// Ohne Bestand gibt es nichts zu fragen – und der Leerzustand sagt das, statt eine Bedeutungssuche
+// ins Leere laufen zu lassen.
+//
+// ⚠️ Gezaehlt werden BEIDE Herkuenfte. An den Klassen allein zu haengen hiess, ein Wiki ohne
+// hochgeladenen Code mit einem gesperrten Eingabefeld zu empfangen – obwohl genau seine Artikel
+// die Frage beantworten koennten.
+const hasSources = computed(() => files.value.length > 0 || (articleIndex.value?.total ?? 0) > 0)
 
 const answerHtml = computed(() => (answer.value ? renderClientMarkdown(answer.value) : ''))
+
+// Die Bilanz der Auswahl. Sie steht ueber der Liste, weil die Liste selbst nach Rang sortiert ist
+// und die Aufteilung dort nur noch abzaehlbar waere.
+const sourceMix = computed(() => {
+  const classes = sources.value.filter((s) => s.kind !== 'article').length
+  const wiki = sources.value.length - classes
+  const parts = []
+  if (classes) parts.push(`${classes} ${classes === 1 ? 'class' : 'classes'}`)
+  if (wiki) parts.push(`${wiki} ${wiki === 1 ? 'article' : 'articles'}`)
+  return parts.join(' · ')
+})
 
 // Warum die Antwort leer blieb. Jeder Grund hat einen eigenen naechsten Schritt – „nichts gefunden"
 // fuer alle vier waere die Behauptung, die Codebasis gebe nichts her.
@@ -56,7 +81,7 @@ const EMPTY_TEXT = {
   },
   'not-indexed': {
     title: 'No meaning index yet',
-    hint: 'The classes are here, but their vectors are not. Build the index once in Bot → Embedding index.',
+    hint: 'Your classes and articles are here, but their vectors are not. Build the index once in Bot → Meaning index.',
     action: { label: 'Open Bot', to: '/bot' },
   },
   unavailable: {
@@ -65,8 +90,8 @@ const EMPTY_TEXT = {
     action: { label: 'Open Bot', to: '/bot' },
   },
   'no-match': {
-    title: 'Nothing in this codebase matches',
-    hint: 'No class came close enough to answer. Try naming a concept that appears in the code — or search the source directly.',
+    title: 'Nothing here matches',
+    hint: 'Neither a class nor an article came close enough to answer. Try naming a concept that appears in the project — or search the source directly.',
     action: { label: 'Open Code', to: '/code' },
   },
 }
@@ -190,11 +215,15 @@ watch([answerHtml, citeIndex], async () => {
   citeCount.value = paintCitations(answerEl.value, citeIndex.value)
 })
 
-// Klick auf einen Beleg -> Klasse in `/code` aufschlagen, auf der zitierten Zeile.
+// Klick auf einen Beleg -> Klasse in `/code` auf der zitierten Zeile, Artikel unter seinem Slug.
 // Event-Delegation, weil die Chips per DOM entstehen und keine Vue-Handler tragen.
 function onAnswerClick(ev) {
   const chip = ev.target.closest?.(`.${CITE_CLASS}`)
   if (!chip) return
+  if (chip.dataset.slug) {
+    router.push(`/article/${chip.dataset.slug}`)
+    return
+  }
   const fileId = Number(chip.dataset.fileId)
   const line = Number(chip.dataset.line)
   if (!fileId) return
@@ -203,7 +232,13 @@ function onAnswerClick(ev) {
   router.push('/code')
 }
 
+// Dasselbe Ziel aus der Quellenliste. Die Fallunterscheidung steht an beiden Stellen, weil es zwei
+// Gesten sind – aber sie liest dasselbe Feld (`kind`), also gibt es nur eine Regel.
 function openSource(s) {
+  if (s.kind === 'article') {
+    router.push(`/article/${s.slug}`)
+    return
+  }
   lastFileId.value = s.fileId
   lastTargetLine.value = s.classLine || null
   router.push('/code')
@@ -220,6 +255,8 @@ function onKeydown(e) {
 
 onMounted(() => {
   if (!files.value.length) fetchFiles().catch(() => {})
+  // Sagt, ob es ueberhaupt Artikel gibt – und damit, ob das Feld benutzbar ist.
+  ensureEmbeddings().catch(() => {})
   window.addEventListener('keydown', onKeydown)
   // Eine Frage in der URL ist eine Ansage – sie wird sofort gestellt, nicht nur eingesetzt.
   const q = (route.query.q || '').toString().trim()
@@ -247,11 +284,15 @@ const seconds = computed(() => (elapsed.value / 1000).toFixed(1))
     <header>
       <h1 class="flex items-center gap-2 text-2xl font-semibold tracking-tight text-[var(--color-text)]">
         <Icon icon="lucide:help-circle" class="h-6 w-6 text-[var(--color-accent)]" />
-        Ask the codebase
+        <!-- ⚠️ Nicht mehr „Ask the codebase": seit auch die Artikel gelesen werden, waere der
+             Titel eine Aussage ueber die Quellen, die nicht mehr stimmt – und ausgerechnet in
+             einer Ansicht, deren ganzer Wert an der Nachpruefbarkeit ihrer Quellen haengt. -->
+        Ask your project
       </h1>
       <p class="mt-1 text-sm text-[var(--color-text-muted)]">
-        Ask in plain words. The meaning index picks the classes that fit, and the answer is built
-        from those alone — every claim carries the class it came from.
+        Ask in plain words. The meaning index picks the classes and wiki articles that fit, and the
+        answer is built from those alone — every claim carries the source it came from. The code
+        says what happens, an article says why.
       </p>
     </header>
 
@@ -269,7 +310,7 @@ const seconds = computed(() => (elapsed.value / 1000).toFixed(1))
         placeholder="How does an order get placed?"
         aria-label="Ask a question about the codebase"
         spellcheck="false"
-        :disabled="!hasClasses"
+        :disabled="!hasSources"
         class="min-w-0 flex-1 bg-transparent py-1 text-sm text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)] disabled:opacity-50"
       />
       <button
@@ -284,14 +325,14 @@ const seconds = computed(() => (elapsed.value / 1000).toFixed(1))
         v-else
         type="submit"
         class="shrink-0 rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-xs font-semibold text-[var(--color-accent-contrast)] transition hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
-        :disabled="!question.trim() || !hasClasses"
+        :disabled="!question.trim() || !hasSources"
       >
         Ask
       </button>
     </form>
 
-    <p v-if="!hasClasses" class="rounded-lg bg-[var(--color-surface-offset)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
-      No classes analysed yet — add some code first, then ask about it.
+    <p v-if="!hasSources" class="rounded-lg bg-[var(--color-surface-offset)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
+      Nothing to ask about yet — add some code or write a wiki article first.
     </p>
 
     <p v-if="error" class="notice-warning rounded-lg px-3 py-2 text-sm">{{ error }}</p>
@@ -300,16 +341,34 @@ const seconds = computed(() => (elapsed.value / 1000).toFixed(1))
     <section v-if="sources.length" class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
       <h2 class="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
         <Icon icon="lucide:quote" class="h-3.5 w-3.5" />
-        Answering from {{ sources.length }} {{ sources.length === 1 ? 'class' : 'classes' }}
+        Answering from {{ sources.length }} {{ sources.length === 1 ? 'source' : 'sources' }}
+        <span class="font-normal normal-case tracking-normal opacity-70">— {{ sourceMix }}, best match first</span>
       </h2>
+      <!-- Eine Liste in RANGFOLGE, nicht zwei Bloecke nach Herkunft: die Reihenfolge ist die
+           Aussage der Bedeutungssuche, und gruppiert waere sie verschwunden. Die Herkunft steht
+           am Chip. -->
       <ul class="flex flex-wrap gap-1.5">
-        <li v-for="s in sources" :key="s.fileId">
+        <li v-for="s in sources" :key="s.kind === 'article' ? `a${s.articleId}` : `c${s.fileId}`">
           <button
+            v-if="s.kind === 'article'"
+            type="button"
+            class="ask-source ask-source--wiki"
+            :title="`“${s.title}” — open in the wiki`"
+            @click="openSource(s)"
+          >
+            <Icon icon="lucide:book-open" class="h-3 w-3 shrink-0 opacity-70" />
+            <span class="font-medium">{{ s.title }}</span>
+            <span v-if="s.category" class="opacity-60">{{ s.category }}</span>
+            <span class="tabular-nums opacity-50">{{ s.score }}</span>
+          </button>
+          <button
+            v-else
             type="button"
             class="ask-source"
             :title="`${s.package ? s.package + '.' : ''}${s.className} — open in Code`"
             @click="openSource(s)"
           >
+            <Icon icon="lucide:file-code" class="h-3 w-3 shrink-0 opacity-70" />
             <span class="font-medium">{{ s.className }}</span>
             <span class="opacity-60">{{ s.type }}</span>
             <span class="tabular-nums opacity-50">{{ s.score }}</span>
@@ -323,8 +382,8 @@ const seconds = computed(() => (elapsed.value / 1000).toFixed(1))
     <BusyState
       v-if="asking && phase === 'searching'"
       variant="panel"
-      title="Finding the classes that fit…"
-      detail="embedding the question · comparing vectors"
+      title="Finding the sources that fit…"
+      detail="embedding the question · comparing vectors across code and wiki"
       hint="The first question after a restart also loads the model — that is the slow one."
       :since="startedAt"
       :rows="2"
@@ -341,7 +400,7 @@ const seconds = computed(() => (elapsed.value / 1000).toFixed(1))
         <span class="ml-auto flex items-center gap-2 text-3xs tabular-nums text-[var(--color-text-muted)]">
           <!-- Die Zahl der aufgeloesten Belege steht da, weil „0 belegt" bei einer langen Antwort
                die wichtigste Auskunft ueber sie ist. -->
-          <span v-if="citeCount" :title="`${citeCount} citation(s) resolved to a class`">
+          <span v-if="citeCount" :title="`${citeCount} citation(s) resolved to a class or article`">
             {{ citeCount }} linked
           </span>
           <span>{{ seconds }}s</span>
@@ -387,11 +446,18 @@ const seconds = computed(() => (elapsed.value / 1000).toFixed(1))
   color: var(--color-accent);
 }
 
+/* Der Artikel-Chip in der Quellenliste. Dieselbe Form wie der Klassen-Chip – es sind zwei Quellen
+   derselben Antwort, keine zwei Ränge –, unterschieden durch das Icon und durch den nicht
+   monospacen Titel: ein Klassenname IST Code, ein Artikeltitel ist Prosa. */
+.ask-source--wiki .font-medium {
+  font-style: italic;
+}
+
 /* Beleg im Fliesstext. Bewusst als Chip und nicht als Link: er fuehrt nicht auf eine Seite,
    sondern schlaegt eine Klasse an einer Zeile auf – und er ist die einzige Stelle im Text, der man
    ansieht, dass sie geprueft ist. */
 .ask-answer :deep(.ask-cite) {
-  @apply mx-px inline-flex items-baseline rounded border px-1 py-px font-mono text-2xs font-medium transition;
+  @apply mx-px inline-flex items-baseline gap-1 rounded border px-1 py-px font-mono text-2xs font-medium transition;
   border-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
   background-color: var(--color-accent-soft);
   color: var(--color-accent);
@@ -400,6 +466,18 @@ const seconds = computed(() => (elapsed.value / 1000).toFixed(1))
 .ask-answer :deep(.ask-cite:hover) {
   background-color: var(--color-accent);
   color: var(--color-accent-contrast);
+}
+
+/* ⚠️ Ein Artikel-Beleg sagt seine Herkunft als WORT, nicht als zweiter Farbton: Grün heißt in
+   dieser Oberfläche „erfolgreich" und Gold „prüfen", und ein Icon hieße ein inline-SVG an einer
+   Stelle, an der kein Vue läuft (die Chips baut `askCitations.js` direkt im DOM). Der Titel steht
+   dafür in der Fließtextschrift – er ist Prosa, kein Bezeichner. */
+.ask-answer :deep(.ask-cite--wiki) {
+  @apply font-sans;
+}
+.ask-answer :deep(.ask-cite-kind) {
+  @apply rounded-sm px-1 font-mono text-3xs uppercase tracking-wide opacity-70;
+  background-color: color-mix(in srgb, var(--color-accent) 18%, transparent);
 }
 
 .notice-warning {

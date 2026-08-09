@@ -196,6 +196,26 @@ CREATE TABLE IF NOT EXISTS java_embeddings (
   created_at  TEXT DEFAULT (datetime('now'))
 );
 
+-- Dasselbe fuer Artikel -- damit /ask den zweiten Wissensspeicher dieses Wikis sieht.
+--
+-- Warum eine EIGENE Tabelle und keine Spalte mehr in java_embeddings: der Primaerschluessel traegt
+-- dort die CASCADE auf java_files, und zwei Fremdschluessel in einer Zeile waeren nur einer, der
+-- meistens NULL ist. Die Spalten sind absichtlich Zeichen fuer Zeichen dieselben -- was fuer den
+-- einen Index gilt, gilt fuer den anderen (siehe der Block darueber): source_hash macht "veraltet"
+-- ableitbar, model macht einen Modellwechsel erkennbar.
+--
+-- ⚠️ Beide Indizes MUESSEN dasselbe Modell benutzen. /ask mischt ihre Treffer in EINE Rangliste,
+-- und Vektoren aus verschiedenen Raeumen haben keinen vergleichbaren Abstand -- die gemischte Liste
+-- waere dann nach einer Zahl sortiert, die auf beiden Seiten etwas anderes bedeutet.
+CREATE TABLE IF NOT EXISTS article_embeddings (
+  article_id  INTEGER PRIMARY KEY REFERENCES articles(id) ON DELETE CASCADE,
+  model       TEXT NOT NULL,
+  dim         INTEGER NOT NULL,
+  source_hash TEXT NOT NULL,
+  vector      BLOB NOT NULL,
+  created_at  TEXT DEFAULT (datetime('now'))
+);
+
 -- Eigener FTS5-Index fuer analysierte Java-Klassen/Methoden: macht gespeicherte
 -- KI-Beschreibungen als Prompt-Kontext (Wissensquelle) UND den Rohquelltext (globale
 -- Code-Suche: Klassen-/Methoden-/Variablennamen) durchsuchbar. rowid = java_files.id.

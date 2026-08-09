@@ -1309,11 +1309,11 @@ const shortPackage = (pkg) => pkg || 'default package'
               <div class="grid h-full place-items-center px-8 text-center">
                 <div>
                   <Icon icon="lucide:help-circle" class="mx-auto h-7 w-7 text-[var(--color-accent)]" />
-                  <h3 class="mt-2 text-sm font-semibold text-[var(--color-text)]">Ask the codebase</h3>
+                  <h3 class="mt-2 text-sm font-semibold text-[var(--color-text)]">Ask your project</h3>
                   <p class="mt-1.5 text-xs leading-relaxed text-[var(--color-text-muted)]">
-                    The meaning index picks the classes that fit, and the answer is built from those
-                    alone. Every claim carries the class it came from — one click opens it at the
-                    line.
+                    The meaning index picks the classes and wiki articles that fit, and the answer is
+                    built from those alone. Every claim carries the source it came from — one click
+                    opens it.
                   </p>
                 </div>
               </div>

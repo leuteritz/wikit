@@ -7,16 +7,18 @@ import { OllamaService } from '../common/ollama.service';
 import { SettingsService } from '../common/settings.service';
 import { safeJson } from '../common/json.util';
 import { JavaEmbeddingsService } from '../java/java-embeddings.service';
+import { ArticleEmbeddingsService } from '../articles/article-embeddings.service';
+import { applyCutoff, embedQuery } from '../common/embedding.util';
 
 /**
- * „Ask the codebase" (`/ask`): eine Frage in Prosa, eine belegte Antwort.
+ * „Ask your project" (`/ask`): eine Frage in Prosa, eine belegte Antwort.
  *
  * Die Bedeutungssuche beantwortet „welche Klasse kuemmert sich darum?" mit einer Liste. Diese
  * Ansicht beantwortet dieselbe Frage mit einem Satz -- und genau deshalb ist sie ohne Belege
- * wertlos: eine Trefferliste kann man nachsehen, einen Fliesstext nicht. Drei Festlegungen:
+ * wertlos: eine Trefferliste kann man nachsehen, einen Fliesstext nicht. Vier Festlegungen:
  *
  * 1. **Retrieval schlaegt Gedaechtnis.** Das Modell bekommt ausschliesslich die abgerufenen
- *    Klassen und die Anweisung, nichts anderes zu verwenden. Ein Sprachmodell kennt „OrderService"
+ *    Quellen und die Anweisung, nichts anderes zu verwenden. Ein Sprachmodell kennt „OrderService"
  *    aus tausend fremden Projekten -- ohne diese Schranke antwortet es ueber die falsche Codebasis.
  * 2. **Die Quellen gehen VOR dem ersten Token raus** (`sources`-Event). Wer die Frage stellt, sieht
  *    sofort, worauf die Antwort sich stuetzen wird -- und erkennt eine falsche Auswahl, bevor er
@@ -25,17 +27,27 @@ import { JavaEmbeddingsService } from '../java/java-embeddings.service';
  *    Index, Ollama weg -- jedes davon ist eine eigene Auskunft mit einem eigenen naechsten
  *    Schritt. Eine leere Antwort „weiss ich nicht" waere die Behauptung, die Codebasis gebe
  *    nichts her.
+ * 4. ⚠️ **Gefragt werden BEIDE Wissensspeicher dieses Wikis, Klassen und Artikel.** Der Code sagt,
+ *    WAS passiert; der Artikel sagt, WARUM -- und „warum laeuft der Import zweistufig?" hat im
+ *    Quelltext keine Antwort. Nur die Klassen zu fragen hiess, auf so eine Frage „nichts gefunden"
+ *    zu melden: eine Aussage ueber die Auswahl der Quellen, die sich wie eine ueber das Projekt
+ *    liest. Gemischt wird in EINE Rangliste (s. `retrieve`), nicht in zwei Abschnitte -- welche
+ *    Herkunft eine Frage beantwortet, entscheidet die Frage und nicht die Ansicht.
  */
 
-// Wie viele Klassen in den Prompt wandern. Der relative Schnitt der Bedeutungssuche entscheidet
-// zuerst -- das hier ist der Deckel darueber. Mehr als eine Handvoll passt auf einem Pi
+// Wie viele Quellen in den Prompt wandern -- Klassen und Artikel ZUSAMMEN. Der relative Schnitt
+// entscheidet zuerst, das hier ist der Deckel darueber. Mehr als eine Handvoll passt auf einem Pi
 // (qwen2.5-coder:3b, kleines Fenster) ohnehin nicht sinnvoll hinein, und ab einer gewissen Menge
-// verduennt jede weitere Klasse die relevanten.
-const MAX_CLASSES = 6;
-// Obergrenze je Klasse und insgesamt. Gekuerzt wird an der Stelle, die am wenigsten aussagt (die
-// Mitgliederliste zuletzt) -- ein am Fensterende abgeschnittener Prompt verliert dagegen genau
-// das, was das Modell zuletzt gelesen haette: die Frage.
-const MAX_CLASS_CHARS = 1400;
+// verduennt jede weitere Quelle die relevanten.
+//
+// ⚠️ Bewusst KEINE Quote je Herkunft („mindestens 2 Klassen"). Eine Quote waere die Behauptung, die
+// Ansicht wisse besser als die Frage, woher die Antwort kommen sollte -- und bei einer reinen
+// Warum-Frage draengte sie eine Klasse hinein, die nichts beitraegt.
+const MAX_SOURCES = 6;
+// Obergrenze je Quelle und insgesamt. Gekuerzt wird an der Stelle, die am wenigsten aussagt (die
+// Mitgliederliste bzw. das Ende des Fliesstextes) -- ein am Fensterende abgeschnittener Prompt
+// verliert dagegen genau das, was das Modell zuletzt gelesen haette: die Frage.
+const MAX_SOURCE_CHARS = 1400;
 const MAX_TOTAL_CHARS = 8000;
 // Mitglieder je Klasse im Kontext. Eine Klasse mit 60 Methoden wuerde den Platz aller anderen
 // fressen; die ersten sagen ueber die Verantwortlichkeit mehr aus als die letzten.
@@ -53,15 +65,33 @@ export interface AskSourceMember {
   line: number | null;
 }
 
-export interface AskSource {
-  fileId: number;
-  className: string;
-  package: string;
-  type: string;
-  score: number;
-  classLine: number | null;
-  members: AskSourceMember[];
-}
+/**
+ * Eine Quelle, aus der die Antwort entsteht.
+ *
+ * ⚠️ `kind` ist das erste Feld und nicht ableitbar aus den anderen: der Client gruppiert danach,
+ * und vor allem entscheidet es das SPRUNGZIEL eines Belegs -- eine Klasse wird in `/code` an einer
+ * Zeile aufgeschlagen, ein Artikel unter seinem Slug geoeffnet. Aus `fileId != null` zu schliessen
+ * waere dieselbe Auskunft als Nebenwirkung eines anderen Feldes.
+ */
+export type AskSource =
+  | {
+      kind: 'class';
+      score: number;
+      fileId: number;
+      className: string;
+      package: string;
+      type: string;
+      classLine: number | null;
+      members: AskSourceMember[];
+    }
+  | {
+      kind: 'article';
+      score: number;
+      articleId: number;
+      slug: string;
+      title: string;
+      category: string;
+    };
 
 export interface AskEvent {
   phase: 'snapshot' | 'searching' | 'sources' | 'start' | 'token' | 'done' | 'error' | 'heartbeat';
@@ -100,6 +130,7 @@ export class AskService {
     private readonly ollama: OllamaService,
     private readonly settings: SettingsService,
     private readonly embeddings: JavaEmbeddingsService,
+    private readonly articleEmbeddings: ArticleEmbeddingsService,
   ) {}
 
   // --- SSE-Verwaltung (gleiche Bauart wie der Playground) ----------------------------------------
@@ -154,6 +185,49 @@ export class AskService {
   // --- Retrieval ---------------------------------------------------------------------------------
 
   /**
+   * Die Frage einmal einbetten und BEIDE Indizes damit bewerten.
+   *
+   * Drei Festlegungen:
+   *
+   * 1. ⚠️ **Die Frage wird EINMAL eingebettet**, nicht je Index. Das ist der einzige Ollama-Aufruf
+   *    der Retrieval-Phase; zweimal zu fragen kostete das Doppelte fuer denselben Vektor -- und auf
+   *    einem Pi ist genau dieser Aufruf die spuerbare Wartezeit vor der Antwort.
+   * 2. ⚠️ **Der relative Schnitt faellt ueber die VEREINIGUNG**, nicht je Herkunft (`applyCutoff`
+   *    auf der gemischten Liste). Je Seite zu schneiden waeren zwei Latten: der beste Artikel kaeme
+   *    dann neben die beste Klasse, auch wenn er deutlich schlechter passt. Genau deshalb geben die
+   *    beiden Dienste ungeschnitten zurueck.
+   * 3. **Jeder Grund ist eine eigene Auskunft.** „Nichts indiziert" heisst Index bauen, „nichts
+   *    passt" heisst anders fragen -- und beide sehen als leere Liste gleich aus. Deshalb faehrt
+   *    `indexed` aus den Diensten mit, statt aus einer leeren Trefferliste geraten zu werden.
+   */
+  private async retrieve(question: string, model: string): Promise<{
+    hits: Array<{ kind: 'class' | 'article'; id: number; score: number }>;
+    reason?: string;
+  }> {
+    const [classCount, articleCount] = await Promise.all([
+      this.embeddings.indexedCount(),
+      this.articleEmbeddings.indexedCount(),
+    ]);
+    if (!classCount && !articleCount) return { hits: [], reason: 'not-indexed' };
+
+    const qv = await embedQuery(this.ollama, model, question);
+    if (!qv) return { hits: [], reason: 'unavailable' };
+
+    const [fromCode, fromWiki] = await Promise.all([
+      this.embeddings.scoreAll(qv),
+      this.articleEmbeddings.scoreAll(qv),
+    ]);
+    const merged = [
+      ...fromCode.scored.map((s) => ({ kind: 'class' as const, id: s.id, score: s.score })),
+      ...fromWiki.scored.map((s) => ({ kind: 'article' as const, id: s.id, score: s.score })),
+    ].sort((a, b) => b.score - a.score);
+
+    const top = applyCutoff(merged, MAX_SOURCES);
+    if (!top.length) return { hits: [], reason: 'no-match' };
+    return { hits: top };
+  }
+
+  /**
    * Die abgerufenen Klassen mit dem, was sie ausmacht: Beschreibung und Mitglieder-Signaturen.
    *
    * Der Rohquelltext bleibt draussen -- aus demselben Grund, aus dem er nicht eingebettet wird: er
@@ -163,7 +237,7 @@ export class AskService {
    * `start_line` faehrt mit, weil sie den Beleg anklickbar macht: `[OrderService#place]` wird im
    * Client zum Sprung auf genau diese Zeile.
    */
-  private async loadSources(hits: Array<{ fileId: number; score: number }>): Promise<AskSource[]> {
+  private async loadClassSources(hits: Array<{ fileId: number; score: number }>): Promise<AskSource[]> {
     if (!hits.length) return [];
     const ids = hits.map((h) => h.fileId);
     const rows = await this.ds.query(
@@ -203,6 +277,7 @@ export class AskService {
       .map((h) => {
         const r = byId.get(h.fileId);
         return {
+          kind: 'class',
           fileId: h.fileId,
           className: r.class_name,
           package: r.package || '',
@@ -211,19 +286,73 @@ export class AskService {
           classLine: r.class_line ?? null,
           members: members.get(h.fileId) || [],
           // Nicht Teil des Client-Contracts, nur fuer den Prompt unten.
-          _text: this.blockFor(r, signatures.get(h.fileId) || []),
+          _text: this.classBlock(r, signatures.get(h.fileId) || []),
         } as AskSource & { _text: string };
       });
   }
 
-  /** Ein Quellenblock im Prompt. Gekuerzt wird hinten -- die Mitgliederliste sagt am wenigsten. */
-  private blockFor(row: any, signatures: string[]): string {
+  /**
+   * Die abgerufenen Artikel -- Titel, Kategorie und der entschlackte Fliesstext.
+   *
+   * ⚠️ Aufbereitet wird mit `plainText` des Embeddings-Dienstes, also mit GENAU dem Text, der auch
+   * eingebettet wurde. Eine zweite Aufbereitung hier hiesse, dass die Auswahl auf einem anderen
+   * Text beruht als die Antwort -- und dann waere ein Treffer erklaerbar, dessen Begruendung im
+   * Prompt gar nicht mehr steht.
+   */
+  private async loadArticleSources(hits: Array<{ articleId: number; score: number }>): Promise<AskSource[]> {
+    if (!hits.length) return [];
+    const ids = hits.map((h) => h.articleId);
+    const rows = await this.ds.query(
+      `SELECT a.id, a.slug, a.title, a.summary, a.content, c.name AS category
+         FROM articles a
+         LEFT JOIN categories c ON c.id = a.category_id
+        WHERE a.id IN (${ids.join(',')})`,
+    );
+    const byId = new Map<number, any>(rows.map((r: any) => [Number(r.id), r]));
+
+    return hits
+      .filter((h) => byId.has(h.articleId))
+      .map((h) => {
+        const r = byId.get(h.articleId);
+        return {
+          kind: 'article',
+          articleId: h.articleId,
+          slug: r.slug,
+          title: r.title,
+          category: r.category || '',
+          score: h.score,
+          _text: this.articleBlock(r),
+        } as AskSource & { _text: string };
+      });
+  }
+
+  /** Ein Klassenblock im Prompt. Gekuerzt wird hinten -- die Mitgliederliste sagt am wenigsten. */
+  private classBlock(row: any, signatures: string[]): string {
     const fqn = row.package ? `${row.package}.${row.class_name}` : row.class_name;
     const kind = row.stereotype || row.class_type || 'class';
     const desc = (row.description || '').replace(/\s+/g, ' ').trim();
     const head = `### ${row.class_name} (${kind}, ${fqn})`;
     const body = [desc, signatures.length ? signatures.join('\n') : ''].filter(Boolean).join('\n');
-    return `${head}\n${body}`.slice(0, MAX_CLASS_CHARS);
+    return `${head}\n${body}`.slice(0, MAX_SOURCE_CHARS);
+  }
+
+  /**
+   * Ein Artikelblock im Prompt.
+   *
+   * ⚠️ Der SLUG steht in der Kopfzeile, und zwar als fertiges Zitat. Ein Klassenname laesst sich
+   * aus dem Block ablesen, ein Slug nicht: „Why the import runs in two passes" gibt
+   * `import-two-passes` nicht her. Ohne die Zeile raet das Modell einen Slug, der Client loest ihn
+   * nicht auf, und der Artikel steht als Quelle da, ohne dass ein einziger Satz auf ihn zeigt.
+   */
+  private articleBlock(row: any): string {
+    const head = `### ${row.title} (wiki article${row.category ? `, ${row.category}` : ''}) — cite as [wiki:${row.slug}]`;
+    const body = [
+      (row.summary || '').replace(/\s+/g, ' ').trim(),
+      this.articleEmbeddings.plainText(row.content),
+    ]
+      .filter(Boolean)
+      .join('\n');
+    return `${head}\n${body}`.slice(0, MAX_SOURCE_CHARS);
   }
 
   // --- Lauf --------------------------------------------------------------------------------------
@@ -267,27 +396,42 @@ export class AskService {
     try {
       this.emit(jobId, { phase: 'searching', question });
 
-      const found = await this.embeddings.search(question, MAX_CLASSES);
-      if (!found.results?.length) {
-        // ⚠️ Jeder Grund hat einen eigenen naechsten Schritt (Modell setzen, Index bauen, Ollama
-        // starten) -- deshalb geht er maschinenlesbar raus und nicht als ein Satz fuer alle vier.
+      // ⚠️ Jeder Grund hat einen eigenen naechsten Schritt (Modell setzen, Index bauen, Ollama
+      // starten, anders fragen) -- deshalb geht er maschinenlesbar raus und nicht als ein Satz fuer
+      // alle vier. `disabled` faellt schon hier: ohne Modell gibt es nicht einmal eine Suche.
+      const model = cfg.embedModel || '';
+      const { hits, reason } = model
+        ? await this.retrieve(question, model)
+        : { hits: [] as Array<{ kind: 'class' | 'article'; id: number; score: number }>, reason: 'disabled' };
+
+      if (!hits.length) {
         run.done = true;
         this.emit(jobId, {
           phase: 'done',
           sources: [],
-          reason: found.reason || 'no-match',
+          reason: reason || 'no-match',
           text: '',
           elapsedMs: Date.now() - run.startedAt,
         });
         return;
       }
 
-      const withText = (await this.loadSources(
-        found.results.map((r: any) => ({ fileId: r.fileId, score: r.score })),
-      )) as Array<AskSource & { _text: string }>;
+      // Beide Herkuenfte laden und wieder in die gemischte Rangfolge bringen: die Reihenfolge ist
+      // die Aussage der Suche, und sie bestimmt hier zugleich die Quellenkarte und den Prompt.
+      const [classes, articles] = await Promise.all([
+        this.loadClassSources(
+          hits.filter((h) => h.kind === 'class').map((h) => ({ fileId: h.id, score: h.score })),
+        ),
+        this.loadArticleSources(
+          hits.filter((h) => h.kind === 'article').map((h) => ({ articleId: h.id, score: h.score })),
+        ),
+      ]);
+      const withText = [...classes, ...articles].sort((a, b) => b.score - a.score) as Array<
+        AskSource & { _text: string }
+      >;
 
       // Der Client-Contract traegt `_text` nicht: es ist Prompt-Material, keine Anzeige.
-      run.sources = withText.map(({ _text, ...rest }) => rest);
+      run.sources = withText.map(({ _text, ...rest }) => rest as AskSource);
       if (!run.sources.length) {
         run.done = true;
         this.emit(jobId, {
@@ -301,7 +445,7 @@ export class AskService {
       }
       this.emit(jobId, { phase: 'sources', sources: run.sources, question });
 
-      // Gesamtdeckel: lieber eine Klasse weniger als eine Frage, die das Fenster nicht mehr sieht.
+      // Gesamtdeckel: lieber eine Quelle weniger als eine Frage, die das Fenster nicht mehr sieht.
       const blocks: string[] = [];
       let budget = MAX_TOTAL_CHARS;
       for (const s of withText) {

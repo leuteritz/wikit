@@ -6,11 +6,16 @@ import { OllamaService } from '../common/ollama.service';
 import { SettingsService } from '../common/settings.service';
 import { safeJson } from '../common/json.util';
 import { JavaBatchProgressService } from './java-batch-progress.service';
-
-// Wie viele Klassen in EINER Ollama-Anfrage eingebettet werden. Ein Stapel spart den Roundtrip,
-// aber ein zu grosser laesst den Server bei einem Fehler von vorn anfangen – und auf einem Pi
-// kostet er spuerbar Speicher.
-const EMBED_BATCH = 16;
+import {
+  applyCutoff,
+  documentText,
+  EMBED_BATCH,
+  embedQuery,
+  FLOOR_SCORE,
+  normalize,
+  similarity,
+  toVector,
+} from '../common/embedding.util';
 
 // Obergrenze des eingebetteten Textes je Klasse. Embedding-Modelle haben ein festes Fenster
 // (nomic-embed-text: 8192 Token, empfohlen deutlich darunter); was darueber steht, wird
@@ -28,21 +33,6 @@ const SEARCH_LIMIT = 8;
 // von acht die falsche Antwort auf ein Thema, das dreissig Klassen umspannt. Der relative Schnitt
 // bleibt in beiden Faellen derselbe – er, nicht der Deckel, entscheidet ueber „passt noch".
 const SEARCH_MAX = 40;
-// ⚠️ Der Schnitt ist RELATIV zum besten Treffer, nicht absolut. Eine feste Schwelle wäre eine Zahl
-// über ein Modell, das der Betreiber jederzeit wechseln kann: derselbe Abstand bedeutet bei
-// nomic-embed-text etwas anderes als bei mxbai oder bge, und eine zu hohe Schwelle liefert dann
-// stillschweigend nichts, während eine zu niedrige die halbe Codebasis nach Rang sortiert.
-// „Deutlich schlechter als der beste" ist dagegen in jedem Vektorraum dieselbe Aussage.
-const RELATIVE_CUTOFF = 0.75;
-// Absolute Untergrenze nur als Notbremse: darunter hat das Modell nichts verstanden, und der beste
-// Treffer wäre eine geratene Auskunft mit Rangfolge.
-const FLOOR_SCORE = 0.15;
-
-// ⚠️ nomic-embed-text ist auf PRAEFIXE trainiert: derselbe Text ergibt als `search_document:` und
-// als `search_query:` verschiedene Vektoren, und ohne die Praefixe verliert das Modell messbar an
-// Trennschaerfe. Das ist modellspezifisch und deshalb an den Modellnamen gebunden – ein anderes
-// Modell bekommt seinen Text unveraendert.
-const usesNomicPrefix = (model: string) => /^nomic-embed/i.test(model || '');
 
 type Row = {
   id: number;
@@ -72,6 +62,12 @@ type Row = {
  * 3. **Der Vergleich läuft im Speicher, nicht in SQLite.** 1500 Vektoren sind 4,6 MB; sie je
  *    Anfrage aus der Datenbank zu lesen wäre teurer als der Vergleich selbst. Eine
  *    Vektor-Erweiterung (sqlite-vec) bräuchte es erst um eine Größenordnung später.
+ *
+ * ⚠️ Das ist der Index über die KLASSEN. Daneben steht der über die Artikel
+ * (`ArticleEmbeddingsService`), und `/ask` mischt beide zu einer Rangliste. Was dafür gleich sein
+ * MUSS – Modell, Präfixe, Normalisierung, Schnitt – liegt deshalb in `common/embedding.util.ts`
+ * und nicht hier: eine zweite Fassung davon wäre ein zweiter Vektorraum, dessen Abstände nichts
+ * mehr über den ersten aussagen.
  */
 @Injectable()
 export class JavaEmbeddingsService {
@@ -205,7 +201,7 @@ export class JavaEmbeddingsService {
       let failed = 0;
       for (let i = 0; i < todo.length; i += EMBED_BATCH) {
         const slice = todo.slice(i, i + EMBED_BATCH);
-        const texts = slice.map((it) => (usesNomicPrefix(model) ? `search_document: ${it.text}` : it.text));
+        const texts = slice.map((it) => documentText(model, it.text));
         const vectors = await this.ollama.embed(texts);
         if (vectors.length !== slice.length) {
           // Ollama weg oder Modell nicht gepullt: abbrechen statt weiter ins Leere zu fragen. Was
@@ -252,11 +248,36 @@ export class JavaEmbeddingsService {
     if (this.cache) return this.cache;
     const map = new Map<number, Float32Array>();
     for (const r of await this.ds.query(`SELECT file_id, vector FROM java_embeddings`)) {
-      const buf: Buffer = r.vector;
-      map.set(Number(r.file_id), new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4));
+      map.set(Number(r.file_id), toVector(r.vector as Buffer));
     }
     this.cache = map;
     return map;
+  }
+
+  /**
+   * Jede Klasse gegen eine bereits eingebettete Frage bewerten -- UNGESCHNITTEN.
+   *
+   * ⚠️ Der relative Schnitt fehlt hier mit Absicht: `/ask` mischt diese Liste mit der der Artikel
+   * und schneidet ueber die Vereinigung (s. `applyCutoff`). Zweimal vorzuschneiden hiesse, zwei
+   * verschiedene Latten anzulegen -- der beste Artikel kaeme dann neben die beste Klasse, auch wenn
+   * er deutlich schlechter passt.
+   *
+   * `indexed` faehrt mit, weil eine leere Liste zwei sehr verschiedene Dinge heissen kann: „nichts
+   * indiziert" (Index bauen) oder „nichts passt" (anders fragen).
+   */
+  async scoreAll(qv: Float32Array): Promise<{ indexed: number; scored: Array<{ id: number; score: number }> }> {
+    const map = await this.vectors();
+    const scored: Array<{ id: number; score: number }> = [];
+    for (const [id, vec] of map) {
+      const score = similarity(qv, vec); // null = Modellwechsel mitten im Bestand
+      if (score !== null && score >= FLOOR_SCORE) scored.push({ id, score });
+    }
+    return { indexed: map.size, scored };
+  }
+
+  /** Wie viele Klassen der Index gerade beantworten kann -- ohne einen Ollama-Aufruf. */
+  async indexedCount(): Promise<number> {
+    return (await this.vectors()).size;
   }
 
   async search(q: string, limit = SEARCH_LIMIT): Promise<any> {
@@ -266,27 +287,16 @@ export class JavaEmbeddingsService {
     const model = cfg.embedModel || '';
     if (!model) return { results: [], ready: false, reason: 'disabled' };
 
-    const map = await this.vectors();
-    if (!map.size) return { results: [], ready: false, reason: 'not-indexed' };
+    if (!(await this.indexedCount())) return { results: [], ready: false, reason: 'not-indexed' };
 
-    const [queryVec] = await this.ollama.embed([usesNomicPrefix(model) ? `search_query: ${query}` : query]);
     // Ollama nicht erreichbar ist kein Fehler, sondern eine leere Antwort mit Grund – die Palette
     // zeigt dann ihre beiden anderen Quellen und schreibt an, dass diese fehlt.
-    if (!queryVec) return { results: [], ready: false, reason: 'unavailable' };
-    const qv = normalize(queryVec);
+    const qv = await embedQuery(this.ollama, model, query);
+    if (!qv) return { results: [], ready: false, reason: 'unavailable' };
 
-    const scored: Array<{ id: number; score: number }> = [];
-    for (const [id, vec] of map) {
-      if (vec.length !== qv.length) continue; // Modellwechsel mitten im Bestand
-      let dot = 0;
-      for (let i = 0; i < qv.length; i++) dot += qv[i] * vec[i];
-      if (dot >= FLOOR_SCORE) scored.push({ id, score: dot });
-    }
+    const { scored } = await this.scoreAll(qv);
     scored.sort((a, b) => b.score - a.score);
-    const best = scored[0]?.score ?? 0;
-    const top = scored
-      .filter((s) => s.score >= best * RELATIVE_CUTOFF)
-      .slice(0, Math.max(1, Math.min(limit, SEARCH_MAX)));
+    const top = applyCutoff(scored, Math.min(limit, SEARCH_MAX));
     if (!top.length) return { results: [], ready: true, reason: 'no-match' };
 
     // Namen erst jetzt nachschlagen – und ueber den JOIN fallen geloeschte Klassen heraus, ohne
@@ -315,18 +325,3 @@ export class JavaEmbeddingsService {
   }
 }
 
-/**
- * Vektor auf Länge 1 bringen – danach ist das Skalarprodukt bereits die Kosinus-Ähnlichkeit.
- *
- * Ein Nullvektor (Modell hat nichts geliefert) bleibt einer: durch 0 zu teilen ergäbe NaN, und ein
- * NaN im Index vergiftet jeden späteren Vergleich lautlos.
- */
-function normalize(vec: number[]): Float32Array {
-  const out = new Float32Array(vec.length);
-  let sum = 0;
-  for (const v of vec) sum += v * v;
-  const len = Math.sqrt(sum);
-  if (!len) return out;
-  for (let i = 0; i < vec.length; i++) out[i] = vec[i] / len;
-  return out;
-}
