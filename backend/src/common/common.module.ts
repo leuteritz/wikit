@@ -4,6 +4,7 @@ import { ALL_ENTITIES } from '../entities';
 import { DatabaseService } from '../database/database.service';
 import { FtsService } from '../database/fts.service';
 import { CodeFormatterService } from './code-formatter.service';
+import { EdgeParseCache } from './edge-compute';
 import { MarkdownService } from './markdown.service';
 import { OllamaService } from './ollama.service';
 import { SeedService } from './seed.service';
@@ -20,6 +21,7 @@ import { TagsService } from './tags.service';
     DatabaseService,
     FtsService,
     CodeFormatterService,
+    EdgeParseCache,
     MarkdownService,
     OllamaService,
     SerializerService,
@@ -31,6 +33,7 @@ import { TagsService } from './tags.service';
     TypeOrmModule,
     FtsService,
     CodeFormatterService,
+    EdgeParseCache,
     MarkdownService,
     OllamaService,
     SerializerService,

@@ -113,6 +113,8 @@ import checkSquare from '@iconify-icons/lucide/check-square'
 import flame from '@iconify-icons/lucide/flame'
 import scissors from '@iconify-icons/lucide/scissors'
 import repeatIcon from '@iconify-icons/lucide/repeat'
+// Drift (/insights): der einzige Reiter, der eine Bewegung zeigt statt eines Zustands.
+import history from '@iconify-icons/lucide/history'
 // Ask (/ask): die Frage selbst und der Beleg, mit dem die Antwort sie stuetzt.
 import helpCircle from '@iconify-icons/lucide/help-circle'
 import quote from '@iconify-icons/lucide/quote'
@@ -232,6 +234,7 @@ const ICONS = {
   'lucide:flame': flame,
   'lucide:scissors': scissors,
   'lucide:repeat': repeatIcon,
+  'lucide:history': history,
   'lucide:help-circle': helpCircle,
   'lucide:quote': quote,
   'lucide:network': network,

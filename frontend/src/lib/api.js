@@ -295,6 +295,11 @@ export const api = {
   // der Rangliste und darf fehlen.
   getSplitPlan: (fileId, driver = '') =>
     http('GET', `/insights/split/${fileId}${driver ? `?driver=${encodeURIComponent(driver)}` : ''}`),
+  // Was hat sich seit einem frueheren Import veraendert? Ebenfalls eigener Request: der Lauf liest
+  // alte Quelltexte und rechnet einen ZWEITEN Graphen. `since` ist ein Punkt aus `points[]` der
+  // Antwort; ohne ihn waehlt der Bericht den Lauf vor dem letzten.
+  getDrift: (since = '') =>
+    http('GET', `/insights/drift${since ? `?since=${encodeURIComponent(since)}` : ''}`),
 
   // --- Bot (Ollama-Konfiguration, /bot) -------------------------------------
   // Eine Antwort traegt Stand, Defaults, Overrides UND die Feldbeschreibung (Grenzen/Hinweise) –

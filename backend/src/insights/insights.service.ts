@@ -84,7 +84,7 @@ const againstLayers = (from: any, to: any): boolean => {
   return a != null && b != null && a > b;
 };
 
-type ClassRow = {
+export type ClassRow = {
   id: number;
   package: string | null;
   class_name: string;
@@ -95,7 +95,7 @@ type ClassRow = {
   complexity: number | null;
 };
 
-type EdgeRow = {
+export type EdgeRow = {
   source_class: string;
   source_pkg: string | null;
   target_class: string;
@@ -108,7 +108,7 @@ type EdgeRow = {
 // Ein aufgeloestes Klassenpaar mit allem, was die Bruchstellen-Empfehlung braucht.
 // `members` sind die Methoden-/Feldnamen, ueber die das Paar zusammenhaengt – ohne sie liesse sich
 // kein Beispiel schreiben, das die Stelle beim Namen nennt („escape()" statt „the member").
-type Pair = { from: number; to: number; count: number; kind: string; confidence: number; members: string[] };
+export type Pair = { from: number; to: number; count: number; kind: string; confidence: number; members: string[] };
 
 // --- Eine Importzeile zerlegen ------------------------------------------------------------------
 //
@@ -766,7 +766,10 @@ export class InsightsService implements OnModuleInit {
   // Eine Klasse ist ihr FQCN, nicht ihr Name (dieselbe Regel wie in `recomputeAutoEdges`). Ist das
   // Package bekannt, entscheidet es; fehlt es (Altbestand oder default package), bleibt nur der
   // Name – und der zaehlt nur, wenn er im Bestand EINDEUTIG ist.
-  private resolveEdges(classes: ClassRow[], rows: EdgeRow[]): { pairs: Pair[]; unresolved: number } {
+  //
+  // Oeffentlich, weil der Drift-Bericht denselben Schritt fuer den Stand von DAMALS braucht: haette
+  // er eine eigene Fassung, verglichen am Ende zwei verschieden aufgeloeste Graphen.
+  resolveEdges(classes: ClassRow[], rows: EdgeRow[]): { pairs: Pair[]; unresolved: number } {
     const byFqcn = new Map<string, number>();
     const byName = new Map<string, number[]>();
     for (const c of classes) {
@@ -917,7 +920,11 @@ export class InsightsService implements OnModuleInit {
   // Tarjan, ITERATIV. Eine rekursive Fassung ist kuerzer, kippt aber bei einer langen
   // Abhaengigkeitskette in den Stack-Overflow – und genau eine solche Codebasis ist der Grund,
   // warum jemand nach Zyklen sucht.
-  private findCycles(
+  //
+  // Oeffentlich aus demselben Grund wie `resolveEdges`: der Drift-Bericht laesst sie ueber den
+  // Stand von damals laufen. „Dieser Kreis ist neu" ist nur eine Aussage, wenn beide Staende mit
+  // derselben Rechnung gesucht wurden.
+  findCycles(
     nodes: Array<number | string>,
     pairs: Pair[],
     useLayers = false,

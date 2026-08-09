@@ -25,6 +25,11 @@ export class JavaFileVersion {
   @Column({ name: 'ai_summary_html', type: 'text', nullable: true })
   ai_summary_html: string | null; // gerenderte Zusammenfassung (Cache)
 
+  // Zeitstempel des Laufs, der diese Zeile schrieb – alle Klassen eines Imports teilen ihn.
+  // Bezugspunkt des Drift-Berichts (NULL bei Altbestand, s. schema.ts).
+  @Column({ type: 'text', nullable: true })
+  batch: string | null;
+
   @Column({ name: 'created_at', type: 'text', nullable: true, insert: false, update: false })
   created_at: string;
 }

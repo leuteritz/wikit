@@ -127,6 +127,11 @@ CREATE INDEX IF NOT EXISTS idx_java_deps_from ON java_dependencies(from_file_id)
 -- bleibt stabil) UND hier ein Snapshot abgelegt. version_number ist 1-basiert je Klasse.
 -- diff = Unified-Diff zur Vorversion (NULL bei Version 1). ai_summary(_html) = KI-Zusammenfassung
 -- der Aenderung, asynchron nachgetragen (NULL bei Version 1 oder wenn Ollama fehlt).
+-- batch = Zeitstempel des LAUFS, der diese Zeile geschrieben hat (alle Klassen eines Imports
+-- teilen ihn). Er ist der Bezugspunkt des Drift-Berichts und die einzige Angabe, die sich NICHT
+-- ableiten laesst: created_at streut ueber die Sekunden eines Massen-Imports, und wer daraus
+-- Laeufe gruppieren wollte, brauchte eine erfundene Toleranz. NULL = Altbestand, dort bleibt
+-- der Kalendertag der Bezugspunkt.
 -- Hinweis: KEIN Semikolon in diesem Kommentar (SCHEMA wird beim Init daran gesplittet).
 CREATE TABLE IF NOT EXISTS java_file_versions (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -136,6 +141,7 @@ CREATE TABLE IF NOT EXISTS java_file_versions (
   diff            TEXT,
   ai_summary      TEXT,
   ai_summary_html TEXT,
+  batch           TEXT,
   created_at      TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE (java_file_id, version_number)
 );
@@ -282,4 +288,5 @@ export const COLUMN_MIGRATIONS: Array<{ table: string; column: string; ddl: stri
   { table: 'java_edges', column: 'kind', ddl: "ALTER TABLE java_edges ADD COLUMN kind TEXT NOT NULL DEFAULT 'call'" },
   { table: 'java_edges', column: 'source_pkg', ddl: 'ALTER TABLE java_edges ADD COLUMN source_pkg TEXT' },
   { table: 'java_edges', column: 'target_pkg', ddl: 'ALTER TABLE java_edges ADD COLUMN target_pkg TEXT' },
+  { table: 'java_file_versions', column: 'batch', ddl: 'ALTER TABLE java_file_versions ADD COLUMN batch TEXT' },
 ];

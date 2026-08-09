@@ -1,7 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, IsNull } from 'typeorm';
-import { createHash } from 'crypto';
 import { createPatch, structuredPatch } from 'diff';
 import { FtsService } from '../database/fts.service';
 import { TRIGRAM_MIN_CHARS } from '../database/schema';
@@ -12,7 +11,8 @@ import { buildSearchRegex, scanSource } from '../common/code-search.util';
 import { MarkdownService } from '../common/markdown.service';
 import { OllamaService } from '../common/ollama.service';
 import { SerializerService } from '../common/serializer.service';
-import { parseJava, parseJavaForEdges, splitJavaSources, JavaClassGraphInfo } from '../common/java-parser';
+import { parseJava, splitJavaSources } from '../common/java-parser';
+import { computeEdges, EdgeParseCache, fqcnOf } from '../common/edge-compute';
 import { JavaDependency } from '../entities/java-dependency.entity';
 import { JavaEdge } from '../entities/java-edge.entity';
 import { JavaFile } from '../entities/java-file.entity';
@@ -76,24 +76,6 @@ const TYPE_USAGE_CONTEXT = 3;
 // deshalb getrennt gezaehlt statt mitgeliefert.
 const TYPE_MENTION_HEADER_RE = /^\s*(?:import|package)\b/;
 
-// --- Kanten-Identitaet: der einfache Name reicht nicht --------------------------------------
-//
-// `efw.util.http.Header` und `wt.doc.Header` sind zwei Klassen. Solange die Kantenberechnung nur
-// mit einfachen Namen rechnete, verschmolzen sie zu einer: `definesMethod['Header']` enthielt die
-// Methoden BEIDER, und wer die eine benutzte, bekam eine Kante zur anderen. Alles unten ist
-// deshalb ueber den FQCN geschluesselt; der einfache Name bleibt nur die Beschriftung.
-const fqcnOf = (pkg: string, name: string): string => (pkg ? `${pkg}.${name}` : name);
-const simpleOf = (fqcn: string): string => fqcn.split('.').pop() || fqcn;
-
-// Ein analysierter Typ mit allem, was zum Aufloesen fremder Typnamen aus SEINER Sicht noetig ist.
-type EdgeClass = {
-  fqcn: string;
-  name: string;
-  pkg: string; // '' = default package
-  info: JavaClassGraphInfo;
-  imports: string[]; // FQCNs aus java_dependencies, inkl. `p.q.*`
-};
-
 // Die klassenbeschreibenden Spalten aus einem geparsten Typ – an drei Stellen gebraucht
 // (analyze, analyze-batch Insert + Overwrite-Update); getrennte Literale waeren dreimal die
 // Gelegenheit, ein neues Feld zu vergessen. `class_modifiers` ist JSON-als-TEXT (s. json.util).
@@ -152,6 +134,11 @@ function summarizeWarnings(items: string[], line: (x: string) => string, rest: (
   return [...items.slice(0, WARN_LIST_MAX).map(line), rest(items.length - WARN_LIST_MAX)];
 }
 
+// Zeitstempel EINES Schreiblaufs, im Format der SQLite-Spalten (`YYYY-MM-DD HH:MM:SS`, UTC ohne
+// Suffix – dasselbe, was `datetime('now')` liefert). Er klammert alle Versionen eines Imports
+// zusammen; der Drift-Bericht waehlt seinen Bezugspunkt daran.
+const runStamp = (): string => new Date().toISOString().slice(0, 19).replace('T', ' ');
+
 // java-parser (chevrotain) wirft bei einem Syntaxfehler eine mehrere Kilobyte lange Meldung
 // ("Expecting: one of these possible Token sequences: 1. … 157. …"). Fuer die UI bleibt davon
 // nur die Fundstelle uebrig – der Rest ist fuer den Nutzer wertlos.
@@ -183,6 +170,9 @@ export class JavaService {
     private readonly progress: JavaBatchProgressService,
     private readonly formatter: CodeFormatterService,
     private readonly embeddings: JavaEmbeddingsService,
+    // Geteilt mit dem Drift-Bericht (s. `EdgeParseCache`): eine unveraenderte Klasse wird damit
+    // genau einmal geparst, egal ob nach ihrem heutigen oder ihrem alten Stand gefragt wird.
+    private readonly parseCache: EdgeParseCache,
   ) {}
 
   // Datei analysieren: parsen + speichern (ohne KI -> Graph erscheint sofort).
@@ -234,7 +224,7 @@ export class JavaService {
       }
 
       // Erste Version im Changelog anlegen (Basislinie fuer spaetere Diffs; kein Diff/Summary).
-      await this.insertVersion(manager, fileId, source, null);
+      await this.insertVersion(manager, fileId, source, null, runStamp());
 
       // Klasse sofort in den Java-FTS aufnehmen (Wissensquelle fuer kuenftige Prompt-Anreicherung).
       await this.fts.indexJavaFile(manager, fileId);
@@ -399,6 +389,9 @@ export class JavaService {
     const changedVersions: Array<{ versionId: number; className: string; diff: string }> = [];
     // Wie viele Mitgliedsbeschreibungen ein Re-Upload behalten konnte (s. `carrySummaries`).
     let keptSummaries = 0;
+    // EIN Stempel fuer den ganzen Lauf – er ist die Klammer, an der der Drift-Bericht „dieser
+    // Import" von „der davor" unterscheidet. Je Klasse gestempelt waere die Klammer wieder weg.
+    const batch = runStamp();
     // Ab hier blockiert better-sqlite3 den Thread bis zum Commit: einmal melden, einmal den
     // Loop atmen lassen – danach traegt die Anzeige im Client die Phase ueber die Zeit weiter.
     this.progress.emit(jobId, { phase: 'save', done: 0, total: plans.length });
@@ -412,7 +405,7 @@ export class JavaService {
             where: { java_file_id: existing.id },
           });
           if (versionCount === 0) {
-            await this.insertVersion(manager, existing.id, existing.raw_source, null);
+            await this.insertVersion(manager, existing.id, existing.raw_source, null, batch);
           }
 
           await manager.getRepository(JavaFile).update(
@@ -444,7 +437,7 @@ export class JavaService {
             carry,
           );
 
-          const versionId = await this.insertVersion(manager, existing.id, it.chunk, plan.diff);
+          const versionId = await this.insertVersion(manager, existing.id, it.chunk, plan.diff, batch);
           changedVersions.push({ versionId, className: it.cls.class_name, diff: plan.diff! });
 
           await this.fts.indexJavaFile(manager, existing.id);
@@ -463,7 +456,7 @@ export class JavaService {
         const fileId = res.identifiers[0].id as number;
 
         await this.insertMethodsAndDeps(manager, fileId, it.cls.methods, it.imports);
-        await this.insertVersion(manager, fileId, it.chunk, null);
+        await this.insertVersion(manager, fileId, it.chunk, null, batch);
 
         await this.fts.indexJavaFile(manager, fileId);
         savedIds.push(fileId);
@@ -595,11 +588,16 @@ export class JavaService {
   }
 
   // Neuen Version-Snapshot anlegen (version_number = bisheriges Maximum + 1). Liefert die neue id.
+  //
+  // `batch` klammert alle Zeilen EINES Laufs zusammen – der Bezugspunkt des Drift-Berichts. Er
+  // wird uebergeben und nicht hier erzeugt: sonst bekaeme jede Klasse eines Massen-Imports ihren
+  // eigenen Stempel, und genau die Zusammengehoerigkeit ist die Aussage.
   private async insertVersion(
     manager: EntityManager,
     fileId: number,
     source: string,
     diff: string | null,
+    batch: string,
   ): Promise<number> {
     const maxRow = await manager
       .getRepository(JavaFileVersion)
@@ -613,6 +611,7 @@ export class JavaService {
       version_number: next,
       source,
       diff: diff ?? null,
+      batch,
     });
     return res.identifiers[0].id as number;
   }
@@ -1324,11 +1323,6 @@ export class JavaService {
   // aufgeloest. LOW (0.5): unqualifizierter Aufruf, dessen Methode in GENAU einer anderen
   // Klasse definiert ist ("Bitte pruefen"). Manuelle (is_manual=1) und verworfene
   // (dismissed=1) Kanten bleiben unangetastet. Laeuft INNERHALB der Aufrufer-Transaktion.
-  // Geparste Kanten-Infos je Datei, geschluesselt ueber den INHALT (sha1 des Rohquelltexts).
-  // Der Hash statt einer Versionsspalte, weil damit KEIN Schreibpfad ein „invalidate" braucht:
-  // genau diese Zeile vergisst man beim naechsten Endpunkt. Der Cache haelt nur so viele Eintraege,
-  // wie es Klassen gibt (Aufraeumen s. recomputeAutoEdges) – er ist eine Beschleunigung, kein Zustand.
-  private edgeParseCache = new Map<number, { hash: string; infos: JavaClassGraphInfo[] }>();
 
   // `jobId` schaltet den Live-Fortschritt ein (derselbe SSE-Strom wie analyze-batch/Reset). Die
   // Meldungen kommen aus dem Parse-Lauf, weil dort die Zeit vergeht – Kanten rechnen und schreiben
@@ -1346,283 +1340,20 @@ export class JavaService {
       else importsByFile.set(d.from_file_id, [d.to_class_name]);
     }
 
-    const classes: EdgeClass[] = [];
-    const byFqcn = new Map<string, EdgeClass>();
-    const byName = new Map<string, EdgeClass[]>();
-    const definesMethod = new Map<string, Set<string>>(); // FQCN -> definierte Methoden
-    const methodToClasses = new Map<string, Set<string>>(); // Methode -> definierende FQCNs
-
-    // Eintraege geloeschter Klassen mitnehmen – sonst waechst der Cache mit jedem Reset weiter.
-    const liveIds = new Set(files.map((f) => f.id));
-    for (const id of this.edgeParseCache.keys()) if (!liveIds.has(id)) this.edgeParseCache.delete(id);
-
-    let scanned = 0;
-    this.progress.emit(jobId, { phase: 'edges', done: 0, total: files.length });
-    for (const f of files) {
-      // Der Parser ist der teure Teil dieser Funktion – und sie laeuft nach JEDEM Schreibvorgang
-      // (analyze, analyze-batch, delete) einmal ueber die GESAMTE Codebasis. Gemessen ~6 ms je
-      // 2,4-KB-Klasse auf einer Entwicklungsmaschine: eine Codebasis mit einigen tausend Klassen
-      // parst der Pi damit minutenlang, bei jedem Klick auf „Recompute edges" erneut. Deshalb ein
-      // Cache je Datei-Inhalt: der erste Lauf zahlt, jeder weitere zahlt nur fuer das, was sich
-      // geaendert hat (bei einem Massen-Import also fuer die neuen Klassen statt fuer alle).
-      const hash = createHash('sha1').update(f.raw_source || '').digest('hex');
-      const cached = this.edgeParseCache.get(f.id);
-      let infos: JavaClassGraphInfo[];
-      if (cached && cached.hash === hash) {
-        infos = cached.infos;
-      } else {
-        try {
-          infos = parseJavaForEdges(f.raw_source);
-        } catch {
-          infos = []; // Parse-Fehler tolerieren (z. B. unvollstaendiger Code)
-        }
-        this.edgeParseCache.set(f.id, { hash, infos });
-      }
-      // Melden und Luft holen gehoeren ZUSAMMEN und stehen ausserhalb des Cache-Zweigs:
-      //  * Ein Lauf ueber tausende Dateien blockiert den Event-Loop komplett – waehrenddessen
-      //    antwortet der Server auf NICHTS, auch nicht auf das Queue-Polling (Regel wie in
-      //    analyzeBatch, YIELD_EVERY).
-      //  * Und ein `emit` ohne freien Event-Loop erreicht niemanden: die SSE-Antwort wird erst
-      //    geschrieben, wenn der Stapel leer ist. Stand die Atempause nur im Cache-Miss-Zweig,
-      //    kamen bei warmem Cache ALLE Ereignisse erst nach getaner Arbeit an – also nie.
-      // Gezaehlt werden ALLE Dateien (auch die aus dem Cache), sonst stuende der Balken still,
-      // waehrend die Neuberechnung laengst durchlaeuft.
-      if (++scanned % YIELD_EVERY === 0) {
-        this.progress.emit(jobId, { phase: 'edges', done: scanned, total: files.length });
-        await breathe();
-      }
-      for (const info of infos) {
-        const entry: EdgeClass = {
-          fqcn: fqcnOf(f.pkg || '', info.class_name),
-          name: info.class_name,
-          pkg: f.pkg || '',
-          info,
-          imports: importsByFile.get(f.id) || [],
-        };
-        // Zwei Klassen mit demselben FQCN kann es nicht geben (der Import verwirft Dubletten und
-        // meldet sie). Kommt es doch vor, gewinnt die erste – stabil statt zufaellig.
-        if (byFqcn.has(entry.fqcn)) continue;
-        byFqcn.set(entry.fqcn, entry);
-        const sameName = byName.get(entry.name);
-        if (sameName) sameName.push(entry);
-        else byName.set(entry.name, [entry]);
-        classes.push(entry);
-
-        const dm = new Set<string>();
-        definesMethod.set(entry.fqcn, dm);
-        for (const m of info.definedMethods) {
-          dm.add(m);
-          let mc = methodToClasses.get(m);
-          if (!mc) {
-            mc = new Set();
-            methodToClasses.set(m, mc);
-          }
-          mc.add(entry.fqcn);
-        }
-      }
-    }
-
-    // Parse durch – ab hier ist es Rechnen und Schreiben (Millisekunden). Der Balken steht damit
-    // auf voll, waehrend der Rest laeuft, statt kurz vor Schluss haengenzubleiben.
-    this.progress.emit(jobId, { phase: 'edges', done: files.length, total: files.length });
-
-    // Einen einfachen Typnamen AUS SICHT VON `from` aufloesen – in Javas Reihenfolge. Das ist der
-    // Kern der Eindeutigkeit: `Header` allein ist keine Klasse, `Header` in `efw.n8n` mit
-    // `import efw.util.http.Header` schon.
-    let ambiguous = 0;
-    const resolveType = (from: EdgeClass, name: string): EdgeClass | null => {
-      if (!name) return null;
-      // 1. Eigenes Package – dafuer braucht Java keinen Import, und es schlaegt jeden Import.
-      const own = byFqcn.get(fqcnOf(from.pkg, name));
-      if (own) return own;
-      // 2. Expliziter Import. Er ENTSCHEIDET: nennt er eine Klasse, die nicht analysiert ist, gibt
-      //    es hier keine Kante – auf eine gleichnamige aus einem anderen Package auszuweichen
-      //    waere nachweislich falsch, denn der Import sagt ausdruecklich etwas anderes.
-      for (const imp of from.imports) {
-        if (imp.endsWith('.*') || simpleOf(imp) !== name) continue;
-        return byFqcn.get(imp) || null;
-      }
-      // 3. Wildcard-Import (`import p.q.*`) – benennt immerhin das Package.
-      for (const imp of from.imports) {
-        if (!imp.endsWith('.*')) continue;
-        const hit = byFqcn.get(fqcnOf(imp.slice(0, -2), name));
-        if (hit) return hit;
-      }
-      // 4. Der Name ist im Bestand eindeutig -> dann ist nichts offen. Das traegt Codebasen ohne
-      //    gepflegte Importliste (Altbestand: java_dependencies leer) und Klassen aus derselben
-      //    Datei. Ist er es NICHT und hat nichts oben entschieden, entsteht keine Kante: eine
-      //    geratene waere hier genau der Fehler, den diese Umstellung beseitigt.
-      const list = byName.get(name);
-      if (list?.length === 1) return list[0];
-      if (list?.length) ambiguous++;
-      return null;
-    };
-
-    // Vererbung: Klasse -> AUFGELOESTE Ober-Typen (extends + implements). Ein unqualifizierter
-    // Aufruf, den die Klasse selbst nicht definiert, landet zuerst bei einem Vorfahren – nicht bei
-    // einer beliebigen anderen Klasse, die zufaellig denselben Methodennamen traegt.
-    const superOf = new Map<string, EdgeClass[]>();
-    for (const c of classes) {
-      const list: EdgeClass[] = [];
-      for (const t of c.info.superTypes || []) {
-        const hit = resolveType(c, t);
-        if (hit) list.push(hit);
-      }
-      superOf.set(c.fqcn, list);
-    }
-    // Kette hochlaufen, mit Besuchsmarkierung: zyklische Vererbung gibt es in gueltigem Java nicht,
-    // in halb analysiertem Bestand aber sehr wohl.
-    const resolveInherited = (A: EdgeClass, m: string): EdgeClass | null => {
-      const seen = new Set<string>([A.fqcn]);
-      const stack = [...(superOf.get(A.fqcn) || [])];
-      while (stack.length) {
-        const s = stack.pop() as EdgeClass;
-        if (!s || seen.has(s.fqcn)) continue;
-        seen.add(s.fqcn);
-        if (definesMethod.get(s.fqcn)?.has(m)) return s;
-        for (const up of superOf.get(s.fqcn) || []) stack.push(up);
-      }
-      return null;
-    };
-
-    const edges = new Map<
-      string,
-      { source: EdgeClass; target: EdgeClass; method: string | null; confidence: number; kind: string }
-    >();
-    const put = (A: EdgeClass | null, B: EdgeClass | null, m: string | null, c: number, kind: string) => {
-      if (!A || !B || A.fqcn === B.fqcn) return;
-      const key = `${A.fqcn}\u0000${B.fqcn}\u0000${m ?? ''}\u0000${kind}`;
-      const prev = edges.get(key);
-      if (!prev || c > prev.confidence) edges.set(key, { source: A, target: B, method: m, confidence: c, kind });
-    };
-
-    // Klassenpaare mit einer BENANNTEN Kante (Aufruf oder Feldzugriff) -> kein zusaetzliches
-    // `uses` dafuer. `uses` ist der Rueckfall fuer „Typbezug, aber kein Mitglied benannt";
-    // steht der Name schon am Pfeil, waere eine zweite, stummere Kante daneben nur Rauschen.
-    const pairHasCall = new Set<string>();
-    // Strukturell referenzierte Zielklassen je Quellklasse (Kandidaten fuer `uses`-Kanten).
-    const usesTargets = new Map<string, { from: EdgeClass; targets: Map<string, EdgeClass> }>();
-    const addUses = (A: EdgeClass, B: EdgeClass | null) => {
-      if (!B || A.fqcn === B.fqcn) return;
-      let e = usesTargets.get(A.fqcn);
-      if (!e) {
-        e = { from: A, targets: new Map() };
-        usesTargets.set(A.fqcn, e);
-      }
-      e.targets.set(B.fqcn, B);
-    };
-
-    for (const A of classes) {
-      const info = A.info;
-      // Typ-Bezuege (Feld-/Variablen-/Parameter-/Rueckgabetyp, new X(), statischer Zugriff, Cast,
-      // instanceof, catch, throws, extends/implements) als `uses`-Kandidaten.
-      for (const t of info.referencedTypes) addUses(A, resolveType(A, t));
-
-      // Feldzugriffe (`Http.GET`, `conn.timeout`) – eine eigene Kantenart, weil sie ein MITGLIED
-      // benennt und damit nachpruefbar ist, anders als ein blosser Typbezug. Bedingung: die
-      // Zielklasse deklariert das Feld auch. Ohne diese Pruefung stuende ein erfundener Name am
-      // Pfeil, sobald der Empfaenger falsch aufgeloest wurde.
-      for (const ref of info.fieldRefs || []) {
-        const B = resolveType(A, ref.type);
-        if (!B || B.fqcn === A.fqcn) continue;
-        addUses(A, B); // ein aufgeloester Empfaenger ist immer auch ein Typbezug
-        if (!Object.prototype.hasOwnProperty.call(B.info.fields, ref.field)) continue;
-        put(A, B, ref.field, 1.0, 'field');
-        pairHasCall.add(`${A.fqcn}\u0000${B.fqcn}`);
-      }
-
-      for (const caller of info.callers) {
-        for (const inv of caller.invocations) {
-          const m = inv.method;
-          // Empfaengertyp B aufloesen: erst als Typname (`new B().m()`, statisch `B.m()`), sonst
-          // ueber den Scope (Variable/Feld/Parameter -> Typ). Reihenfolge wie zuvor.
-          let B: EdgeClass | null = null;
-          if (inv.receiver) {
-            B = resolveType(A, inv.receiver);
-            if (!B) {
-              const t = caller.scope[inv.receiver];
-              if (t) B = resolveType(A, t);
-            }
-          }
-          // Aufgeloester Empfaenger ist immer ein Typ-Bezug (auch ohne Methoden-Treffer).
-          if (B) addUses(A, B);
-          if (B && B.fqcn !== A.fqcn && definesMethod.get(B.fqcn)?.has(m)) {
-            put(A, B, m, 1.0, 'call');
-            pairHasCall.add(`${A.fqcn}\u0000${B.fqcn}`);
-            continue;
-          }
-          // Empfaenger vorhanden, aber nicht aufloesbar (`foo().m()`, `a.b.m()`, `"x".m()`): hier
-          // ist NICHTS offen, was Java fuer uns entscheiden wuerde – das Ziel haengt an einem Typ,
-          // den wir nicht kennen. Alles Weitere unten gilt ausdruecklich nur fuer unqualifizierte
-          // Aufrufe; ohne diese Zeile lief `reg.getWorkflows().entrySet()` in die Heuristik und
-          // erzeugte eine Kante zu jeder eigenen Klasse, die zufaellig `entrySet()` definiert
-          // (gemeldet an einem Interface `RequestParams` – getroffen wurde aber `Map.entrySet`).
-          if (inv.receiverUnresolved) continue;
-          // Unqualifizierter Aufruf (`m(…)`, `this.m(…)`, `super.m(…)`) – in Javas Reihenfolge
-          // aufloesen, statt sofort zu raten. Vorher sprang die Berechnung direkt zur Heuristik
-          // und erzeugte damit Kanten fuer Aufrufe, die die Klasse selbst beantwortet.
-          if (inv.receiver === null) {
-            // 1. Eigene Methode: ein unqualifizierter Aufruf bindet in Java IMMER zuerst an die
-            //    eigene Klasse – dann gibt es hier gar keine Beziehung nach draussen.
-            //    `super.m()` meint ausdruecklich die Oberklasse und ist ausgenommen.
-            if (!inv.viaSuper && definesMethod.get(A.fqcn)?.has(m)) continue;
-            // 2. Geerbt: der Vorfahre, der `m` definiert. Kein Raten – das steht im Code.
-            const inherited = resolveInherited(A, m);
-            if (inherited) {
-              put(A, inherited, m, 1.0, 'call');
-              pairHasCall.add(`${A.fqcn}\u0000${inherited.fqcn}`);
-              continue;
-            }
-            // `super.m()` ohne analysierten Vorfahren: das Ziel ist bekannt (die Oberklasse), nur
-            // nicht vorhanden. Eine geratene Kante waere hier nachweislich falsch.
-            if (inv.viaSuper) continue;
-            // 3. Statischer Import – der einzige legale Weg zu einer FREMDEN Klasse ohne Empfaenger.
-            //    Der Parser liefert den EINFACHEN Namen der Traegerklasse; aufgeloest wird er wie
-            //    jeder andere Typname, also ueber die Importe dieser Datei.
-            const importedName = info.staticImports?.[m];
-            let target: EdgeClass | null = importedName ? resolveType(A, importedName) : null;
-            if (!target) {
-              for (const c of info.staticWildcardTypes || []) {
-                const hit = resolveType(A, c);
-                if (hit && definesMethod.get(hit.fqcn)?.has(m)) {
-                  target = hit;
-                  break;
-                }
-              }
-            }
-            if (target) {
-              put(A, target, m, 1.0, 'call');
-              pairHasCall.add(`${A.fqcn}\u0000${target.fqcn}`);
-              continue;
-            }
-            // 4. Rest: Methode in genau EINER anderen Klasse -> geraten, LOW ("Please review").
-            //    Bleibt drin, weil Vererbung auch ueber NICHT analysierte Klassen laeuft
-            //    (Framework-Basisklassen) und der Treffer dann oft stimmt – aber eben nur oft.
-            //    Gezaehlt wird ueber FQCNs: zwei gleichnamige Klassen sind hier ZWEI Kandidaten,
-            //    der Treffer also nicht mehr eindeutig – und genau das ist richtig so.
-            const defs = methodToClasses.get(m);
-            if (defs) {
-              const others = [...defs].filter((c) => c !== A.fqcn);
-              if (others.length === 1) {
-                const only = byFqcn.get(others[0]);
-                if (only) {
-                  put(A, only, m, 0.5, 'call');
-                  pairHasCall.add(`${A.fqcn}\u0000${only.fqcn}`);
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // Struktur-Kanten (`uses`) nur, wo das Paar noch keine Methoden-Kante hat.
-    for (const { from, targets } of usesTargets.values()) {
-      for (const B of targets.values()) {
-        if (pairHasCall.has(`${from.fqcn}\u0000${B.fqcn}`)) continue;
-        put(from, B, null, 1.0, 'uses');
-      }
-    }
+    // Die Rechnung selbst steht in `edge-compute.ts`: derselbe Code beantwortet im Drift-Bericht
+    // dieselbe Frage fuer den Stand von damals. Hier bleibt nur, was den BESTAND betrifft –
+    // Tombstones, manuelle Kanten, Schreiben.
+    const computed = await computeEdges(
+      files.map((f) => ({
+        pkg: f.pkg || '',
+        source: f.raw_source || '',
+        imports: importsByFile.get(f.id) || [],
+      })),
+      {
+        cache: this.parseCache,
+        onProgress: (done, total) => this.progress.emit(jobId, { phase: 'edges', done, total }),
+      },
+    );
 
     const repo = manager.getRepository(JavaEdge);
     // Verworfene Auto-Kanten (Tombstones) merken -> NICHT neu erzeugen. Zwei Schluesselraeume:
@@ -1648,43 +1379,34 @@ export class JavaService {
     // Nur aktive Auto-Kanten ersetzen; manuelle und Tombstone-Zeilen bleiben stehen.
     await repo.delete({ is_manual: 0, dismissed: 0 });
 
-    const computed = [...edges.values()];
-    const toInsert = computed
+    const toInsert = computed.edges
       .filter((e) => {
-        const tail = `${e.method ?? ''}\u0000${e.kind}`;
-        if (tombExact.has(`${e.source.fqcn}\u0000${e.target.fqcn}\u0000${tail}`)) return false;
-        return !tombByName.has(`${e.source.name}\u0000${e.target.name}\u0000${tail}`);
+        const tail = `${e.method_name ?? ''}\u0000${e.kind}`;
+        const from = fqcnOf(e.source_pkg || '', e.source_class);
+        const to = fqcnOf(e.target_pkg || '', e.target_class);
+        if (tombExact.has(`${from}\u0000${to}\u0000${tail}`)) return false;
+        return !tombByName.has(`${e.source_class}\u0000${e.target_class}\u0000${tail}`);
       })
-      .map((e) => ({
-        source_class: e.source.name,
-        source_pkg: e.source.pkg || null,
-        target_class: e.target.name,
-        target_pkg: e.target.pkg || null,
-        method_name: e.method,
-        confidence: e.confidence,
-        kind: e.kind,
-        is_manual: 0,
-        dismissed: 0,
-      }));
+      .map((e) => ({ ...e, is_manual: 0, dismissed: 0 }));
     if (toInsert.length) await insertChunked(repo, toInsert);
 
     // --- Debug-Log (docker logs wikit-backend): zeigt, was berechnet/gefiltert/eingefuegt wurde ---
-    const byKind = computed.reduce<Record<string, number>>((acc, e) => {
+    const byKind = computed.edges.reduce<Record<string, number>>((acc, e) => {
       acc[e.kind] = (acc[e.kind] || 0) + 1;
       return acc;
     }, {});
-    const suppressed = computed.length - toInsert.length;
+    const suppressed = computed.edges.length - toInsert.length;
     // Klassennamen nur bei ueberschaubarem Bestand ausschreiben: bei einigen tausend Klassen
     // waere das eine Logzeile von zig Kilobyte – bei JEDER Analyse, jedem Delete, jedem
     // Recompute. Die Zahl ist die Aussage, die Liste war nur zum Nachsehen bei wenigen Klassen.
     const NAME_LIST_MAX = 40;
-    const nameList = byFqcn.size <= NAME_LIST_MAX ? ` [${[...byFqcn.keys()].join(', ')}]` : '';
+    const nameList = computed.fqcns.length <= NAME_LIST_MAX ? ` [${computed.fqcns.join(', ')}]` : '';
     // `mehrdeutig` zaehlt Typnamen, die weder Package noch Import noch Eindeutigkeit klaeren
     // konnten – dort entsteht bewusst KEINE Kante. Steht die Zahl hoch, fehlen Importe.
     this.logger.log(
-      `[java-edges] recompute: ${byFqcn.size} Klassen${nameList} | ` +
-        `berechnet ${computed.length} ${JSON.stringify(byKind)} | ` +
-        `mehrdeutig ${ambiguous} | ` +
+      `[java-edges] recompute: ${computed.fqcns.length} Klassen${nameList} | ` +
+        `berechnet ${computed.edges.length} ${JSON.stringify(byKind)} | ` +
+        `mehrdeutig ${computed.ambiguous} | ` +
         `Tombstones ${tombExact.size + tombByName.size}, davon unterdrueckt ${suppressed} | ` +
         `eingefuegt ${toInsert.length}`,
     );

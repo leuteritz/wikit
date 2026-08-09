@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.29.0",
-  "whatsNew": "Wiki Health finds stale articles and dead links",
+  "version": "4.30.0",
+  "whatsNew": "See what the last import changed",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

@@ -18,6 +18,7 @@ import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { useJavaGraph } from '../composables/useJavaGraph.js'
 import BusyState from '../components/BusyState.vue'
 import CyclePlan from '../components/insights/CyclePlan.vue'
+import DriftReport from '../components/insights/DriftReport.vue'
 import SplitPlan from '../components/insights/SplitPlan.vue'
 import { Icon } from '../lib/icons.js'
 import { vTip } from '../lib/tooltip.js'
@@ -40,6 +41,8 @@ const TABS = [
   { id: 'path', label: 'Reading path', icon: 'lucide:route', hint: 'The order that lets you read this code once' },
   // Der einzige Reiter, der über den Rand des Bestands hinaussieht – „was ist NICHT hier?".
   { id: 'outside', label: 'Outside', icon: 'lucide:import', hint: 'What this workspace pulls in from elsewhere — and what is missing from it' },
+  // Und der einzige, der keinen Zustand zeigt, sondern eine BEWEGUNG.
+  { id: 'drift', label: 'Drift', icon: 'lucide:history', hint: 'What the last import changed — new cycles, new dependencies, growth' },
 ]
 
 // --- Was jeder Reiter beantwortet ---------------------------------------------------------------
@@ -106,6 +109,16 @@ const EXPLAIN = {
       ['Missing classes come first', 'They sit in packages you already have. Every one of them is a hole in the graph: relations that were never drawn, because the other end is not here.'],
       ['Add them the same way as the rest', 'Paste the missing sources under “Add code” in the Code view, then recompute edges — the cycles and hotspots on the other tabs change with them.'],
       ['Third-party tells you what to learn', 'The packages at the top are the APIs this code is actually written against. That is the reading list before the code itself.'],
+    ],
+  },
+  drift: {
+    title: 'What the last import changed',
+    what: 'Every other tab shows how the code stands right now. This one rebuilds an earlier state from the saved sources and compares the two.',
+    fixes: [
+      ['A new cycle is the one thing to act on today', 'Right now it is usually a single arrow someone added. Left alone it grows until the two classes cannot be separated at all.'],
+      ['Read the arrow that closed it', 'The loop is named with the exact call or field that completed it — that is the line to look at, not the whole class.'],
+      ['Growth is context, not a verdict', 'A class that gained 200 lines is not automatically worse. Check whether it also gained dependencies — that is what makes it harder to change.'],
+      ['Pick an older import to widen the view', 'The default compares against the state before the last upload. Choose an earlier one to see what a whole week did.'],
     ],
   },
 }
@@ -361,9 +374,32 @@ const outsideKpis = computed(() => {
   ]
 })
 
-// Kanten erst holen, wenn der Reiter zum ersten Mal offen ist.
+// --- Drift ---------------------------------------------------------------------------------------
+//
+// Eigener Request und erst beim ersten Öffnen: der Lauf rechnet einen ZWEITEN Graphen aus alten
+// Quelltexten – wer nur die Kennzahlen aufschlägt, soll ihn nicht bezahlen. Gleiche Begründung wie
+// beim Aufteilungsvorschlag, nur eine Ebene höher.
+const drift = ref(null)
+const driftLoading = ref(false)
+const driftSince = ref('')
+
+async function loadDrift(since = '') {
+  driftLoading.value = true
+  try {
+    drift.value = await api.getDrift(since)
+    // Der Server entscheidet den Bezugspunkt, wenn keiner (oder ein unbekannter) mitkam – die
+    // Auswahl muss danach zeigen, was WIRKLICH verglichen wurde, nicht was gewünscht war.
+    driftSince.value = drift.value?.since || ''
+  } finally {
+    driftLoading.value = false
+  }
+}
+const ensureDrift = () => (drift.value ? Promise.resolve(drift.value) : loadDrift())
+
+// Kanten bzw. Drift erst holen, wenn der Reiter zum ersten Mal offen ist.
 watch(tab, (t) => {
   if (t === 'path') ensurePathData()
+  if (t === 'drift') ensureDrift()
 })
 
 onMounted(() => ensure())
@@ -1194,7 +1230,7 @@ const plotted = computed(() => {
           </section>
 
           <!-- ==================== Outside ==================== -->
-          <section v-else class="space-y-5">
+          <section v-else-if="tab === 'outside'" class="space-y-5">
             <!-- Die Bilanz zuerst: die vier Zahlen erklären einander. Ohne die Plattform- und
                  Wildcard-Spalte daneben liest sich „missing" wie das ganze Bild. -->
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -1320,6 +1356,17 @@ const plotted = computed(() => {
               </p>
             </template>
           </section>
+
+          <!-- ==================== Drift ==================== -->
+          <!-- Der Bericht wohnt in einer eigenen Komponente: er ist die einzige Ansicht hier, die
+               ihre Daten selbst holt, und diese Datei ist lang genug. -->
+          <DriftReport
+            v-else
+            :report="drift"
+            :loading="driftLoading"
+            @open-class="openClass"
+            @pick-point="loadDrift"
+          />
         </template>
       </div>
     </div>
