@@ -120,6 +120,23 @@ function classColumns(cls: any, source: string) {
   };
 }
 
+/**
+ * Ein Mitglied identifizieren – nach Javas eigener Regel: Art, Name und **Parametertypen**.
+ *
+ * Der Name allein reicht nicht (zwei `of(...)` sind zwei Methoden), die Parameter*namen* gehören
+ * dagegen nicht dazu: sie unterscheiden keine Überladung.
+ *
+ * ⚠️ NUL als Trenner, und zwar als `\u0000`-**Escape**, nie als rohes Byte: ohne Sentinel
+ * kollidieren zusammengesetzte Schlüssel (`m` + `int,x` und `m,int` + `x` ergäben denselben), und
+ * ein rohes NUL macht die Datei für ripgrep zur Binärdatei – ein trefferloser Grep sähe dann aus
+ * wie „kommt nicht vor".
+ */
+function memberKey(kind: string | null, name: string, params: any): string {
+  const list = Array.isArray(params) ? params : safeJson<any[]>(params, []) || [];
+  const types = list.map((p: any) => String(p?.type ?? '')).join(',');
+  return `${kind || 'method'}\u0000${name}\u0000${types}`;
+}
+
 // Gleichartige Hinweise eines Massen-Imports zu Warnungstexten machen – gedeckelt.
 //
 // Drei Stellen brauchen das: nicht lesbare Abschnitte, Duplikate im Paste, unveraenderte
@@ -380,6 +397,8 @@ export class JavaService {
     const savedIds: number[] = [];
     const overwritten: string[] = [];
     const changedVersions: Array<{ versionId: number; className: string; diff: string }> = [];
+    // Wie viele Mitgliedsbeschreibungen ein Re-Upload behalten konnte (s. `carrySummaries`).
+    let keptSummaries = 0;
     // Ab hier blockiert better-sqlite3 den Thread bis zum Commit: einmal melden, einmal den
     // Loop atmen lassen – danach traegt die Anzeige im Client die Phase ueber die Zeit weiter.
     this.progress.emit(jobId, { phase: 'save', done: 0, total: plans.length });
@@ -404,9 +423,26 @@ export class JavaService {
               ...classColumns(it.cls, it.chunk),
             },
           );
+          // ⚠️ Die Beschreibungen der Mitglieder werden GERETTET, bevor die Zeilen fallen.
+          //
+          // Ein Re-Upload ersetzt die Methodenzeilen komplett – bei einer Klasse mit zwanzig
+          // Methoden, von denen sich eine geändert hat, waren damit zwanzig KI-Läufe verloren, und
+          // auf einem Pi ist das die teuerste Arbeit im ganzen Programm. Zweite, weniger
+          // offensichtliche Folge: die Beschreibungen gehen in den EINGEBETTETEN Text ein
+          // (s. `JavaEmbeddingsService.textFor`). Ohne die Rettung ändert sich damit der
+          // `source_hash` jeder angefassten Klasse zwangsläufig – sie gilt als veraltet und wird
+          // aus einem ÄRMEREN Text neu eingebettet. Mit ihr bleibt der Text stabil, solange sich
+          // Signaturen und Doku nicht geändert haben, und der Vektor bleibt gültig.
+          const carry = await this.carrySummaries(manager, existing.id);
           await manager.getRepository(JavaMethod).delete({ file_id: existing.id });
           await manager.getRepository(JavaDependency).delete({ from_file_id: existing.id });
-          await this.insertMethodsAndDeps(manager, existing.id, it.cls.methods, it.imports);
+          keptSummaries += await this.insertMethodsAndDeps(
+            manager,
+            existing.id,
+            it.cls.methods,
+            it.imports,
+            carry,
+          );
 
           const versionId = await this.insertVersion(manager, existing.id, it.chunk, plan.diff);
           changedVersions.push({ versionId, className: it.cls.class_name, diff: plan.diff! });
@@ -475,37 +511,78 @@ export class JavaService {
       graph: await this.serializer.graphForJavaFiles(),
       warnings,
       overwritten,
+      // Keine Warnung, sondern die gute Nachricht: was ein Re-Upload NICHT weggeworfen hat.
+      keptSummaries,
     };
   }
 
-  // Methoden + Import-Dependencies einer geparsten Klasse fuer file_id einfuegen. Gemeinsame
-  // Hilfe fuer Erst-Insert und Re-Upload (dort nach vorherigem Loeschen der alten Zeilen).
+  /**
+   * Die KI-Zusammenfassungen einer Klasse einsammeln, BEVOR ihre Methodenzeilen gelöscht werden.
+   *
+   * ⚠️ Aufgenommen wird nur **echte KI-Arbeit**. War `ai_summary` bloß der Javadoc-Fallback, liefert
+   * der Neuimport denselben Text ohnehin – und zwar den *aktuellen*: den alten mitzuschleppen hieße,
+   * ein frisch geändertes Javadoc durch seinen Vorgänger zu ersetzen.
+   */
+  private async carrySummaries(
+    manager: EntityManager,
+    fileId: number,
+  ): Promise<Map<string, { body: string; summary: string }>> {
+    const carry = new Map<string, { body: string; summary: string }>();
+    const rows = await manager.getRepository(JavaMethod).find({ where: { file_id: fileId } });
+    for (const row of rows) {
+      const summary = (row.ai_summary || '').trim();
+      if (!summary || summary === (row.javadoc || '').trim()) continue;
+      carry.set(memberKey(row.member_kind, row.method_name, row.parameters), {
+        body: row.body || '',
+        summary: row.ai_summary || '',
+      });
+    }
+    return carry;
+  }
+
+  /**
+   * Methoden + Import-Dependencies einer geparsten Klasse fuer file_id einfuegen. Gemeinsame
+   * Hilfe fuer Erst-Insert und Re-Upload (dort nach vorherigem Loeschen der alten Zeilen).
+   *
+   * `carry` rettet beim Re-Upload die Beschreibungen der Mitglieder, die sich nicht geändert haben
+   * (s. `carrySummaries` und den Aufrufer). Rückgabe: wie viele übernommen wurden.
+   */
   private async insertMethodsAndDeps(
     manager: EntityManager,
     fileId: number,
     methods: any[],
     imports: string[],
-  ): Promise<void> {
+    carry?: Map<string, { body: string; summary: string }>,
+  ): Promise<number> {
     // Blockweise statt Zeile fuer Zeile: ein Massen-Paste bringt zehntausende Methoden mit, und
     // jedes einzelne INSERT ist ein eigener TypeORM-Roundtrip. Der Deckel (insertChunked) bleibt
     // noetig – s. Kommentar dort zur zu tiefen Ausdrucks-Kette bei sehr grossen Mehrzeilen-Inserts.
+    let kept = 0;
     if (methods.length) {
       await insertChunked(
         manager.getRepository(JavaMethod),
-        methods.map((m) => ({
-          file_id: fileId,
-          method_name: m.method_name,
-          return_type: m.return_type,
-          parameters: JSON.stringify(m.parameters),
-          modifiers: JSON.stringify(m.modifiers ?? []),
-          javadoc: m.javadoc || '',
-          // ai_summary initial = Javadoc-Fallback (KI spaeter on-demand pro Methode).
-          ai_summary: m.javadoc || '',
-          body: m.body || '',
-          start_line: m.start_line ?? null,
-          body_start_line: m.body_start_line ?? null,
-          member_kind: m.member_kind ?? 'method',
-        })),
+        methods.map((m) => {
+          // ⚠️ Übernommen wird NUR bei identischem Rumpf. Eine Beschreibung beschreibt Code – bei
+          // geändertem Code wäre sie keine gerettete Auskunft mehr, sondern eine falsche.
+          const prev = carry?.get(memberKey(m.member_kind ?? 'method', m.method_name, m.parameters));
+          const reused = prev && prev.body === (m.body || '') ? prev.summary : '';
+          if (reused) kept++;
+          return {
+            file_id: fileId,
+            method_name: m.method_name,
+            return_type: m.return_type,
+            parameters: JSON.stringify(m.parameters),
+            modifiers: JSON.stringify(m.modifiers ?? []),
+            javadoc: m.javadoc || '',
+            // ai_summary initial = Javadoc-Fallback (KI spaeter on-demand pro Methode) – oder die
+            // gerettete Beschreibung eines unveraenderten Mitglieds.
+            ai_summary: reused || m.javadoc || '',
+            body: m.body || '',
+            start_line: m.start_line ?? null,
+            body_start_line: m.body_start_line ?? null,
+            member_kind: m.member_kind ?? 'method',
+          };
+        }),
       );
     }
     if (imports.length) {
@@ -514,6 +591,7 @@ export class JavaService {
         imports.map((fqn) => ({ from_file_id: fileId, to_class_name: fqn })),
       );
     }
+    return kept;
   }
 
   // Neuen Version-Snapshot anlegen (version_number = bisheriges Maximum + 1). Liefert die neue id.

@@ -1069,6 +1069,9 @@ function finishBatch(res) {
   // gelungen ist. Die Hinweise sind eine Warnung, kein Fehler: der Rest ist importiert.
   const parts = []
   if (res.overwritten?.length) parts.push(`${res.overwritten.length} overwritten.`)
+  // Was ein Re-Upload behalten hat, gehoert dazu: es ist die Antwort auf „muss ich jetzt alles
+  // noch mal analysieren lassen?" – und auf einem Pi ist das die Frage nach Stunden Rechenzeit.
+  if (res.keptSummaries) parts.push(`${res.keptSummaries} AI description(s) kept.`)
   if (saved.length) parts.push('Graph is ready – AI analysis runs in the background.')
   push({
     kind: 'success',
