@@ -18,7 +18,7 @@ import '@vue-flow/core/dist/theme-default.css'
 import { Icon } from '../lib/icons.js'
 import { api } from '../lib/api.js'
 import { layoutFlat } from '../lib/graphLayout.js'
-import { buildWikiGraph, categoryColors, colorFor, neighboursOf } from '../lib/wikiGraph.js'
+import { buildWikiGraph, categoryColors, colorFor, neighboursOf, suggestionEdges } from '../lib/wikiGraph.js'
 import { useRootScale } from '../composables/useRootScale.js'
 import BusyState from './BusyState.vue'
 
@@ -55,15 +55,32 @@ const hoverId = ref(null)
 // „zeigen" – sie auszublenden waere die stille Behauptung, es gebe sie nicht.
 const showOrphans = ref(true)
 
+// Link-Vorschläge: bewusst NICHT beim Laden geholt. Der Endpunkt vergleicht jeden Artikel mit jedem,
+// und wer die Ansicht nur ansieht, hat danach nicht gefragt. Geholt wird beim ersten Einschalten,
+// danach gemerkt (bis eine Verknüpfung entsteht – dann stimmt die Antwort nicht mehr).
+const showSuggestions = ref(false)
+const suggestions = ref(null)
+const suggestLoading = ref(false)
+
 const graph = computed(() => buildWikiGraph(raw.value))
 const colors = computed(() => categoryColors(props.categories))
+
+/** Die gezeichneten Vorschlagskanten – leer, solange der Umschalter aus ist. */
+const suggested = computed(() =>
+  showSuggestions.value && suggestions.value
+    ? suggestionEdges(graph.value.items, suggestions.value.articles || [])
+    : [],
+)
 
 const visible = computed(() =>
   showOrphans.value ? graph.value.items : graph.value.items.filter((n) => !n.orphan),
 )
 
+// ⚠️ Vorschlagskanten zählen beim Hover als Nachbarschaft mit. Ohne das dämpft der Fokus auf einen
+// verwaisten Artikel ausgerechnet die Karten weg, die er gerade vorschlägt – und die Frage beim
+// Draufzeigen lautet dort „wohin könnte der?".
 const neighbours = computed(() =>
-  hoverId.value == null ? new Set() : neighboursOf(graph.value.edges, hoverId.value),
+  hoverId.value == null ? new Set() : neighboursOf([...graph.value.edges, ...suggested.value], hoverId.value),
 )
 
 // Gedaempft wird nur beim Hover – und nur, was weder der Anker noch sein Nachbar ist (dieselbe
@@ -78,9 +95,20 @@ const nodes = computed(() => {
   if (!list.length) return []
   const ids = new Set(list.map((n) => n.id))
   const boxes = list.map((n) => ({ id: String(n.id), width: NODE_W.value, height: NODE_H.value }))
-  const links = graph.value.edges
-    .filter((e) => ids.has(e.source_id) && ids.has(e.target_id))
-    .map((e) => ({ source: String(e.source_id), target: String(e.target_id), kind: 'related' }))
+  // ⚠️ Die Vorschläge gehen INS LAYOUT, nicht nur ins Bild. Gemessen ohne sie: `layoutFlat` hält
+  // einen verwaisten Artikel für unverbunden und legt ihn ans Ende – die gestrichelte Linie lief
+  // dann quer über den ganzen Ausschnitt zu einer Karte am anderen Rand, und „der gehört
+  // vielleicht dorthin" ist genau die Aussage, die man auf einen Blick sehen soll. Als eigene
+  // `kind` (Gewicht 1 über `EDGE_WEIGHT`s Default): der Vorschlag zieht die Karten zusammen,
+  // sticht aber keine echte Beziehung aus.
+  const links = [
+    ...graph.value.edges
+      .filter((e) => ids.has(e.source_id) && ids.has(e.target_id))
+      .map((e) => ({ source: String(e.source_id), target: String(e.target_id), kind: 'related' })),
+    ...suggested.value
+      .filter((e) => ids.has(e.source_id) && ids.has(e.target_id))
+      .map((e) => ({ source: String(e.source_id), target: String(e.target_id), kind: 'suggest' })),
+  ]
   const { pos } = layoutFlat({ nodes: boxes, edges: links, scale: scale.value })
 
   return list.map((n) => {
@@ -96,9 +124,47 @@ const nodes = computed(() => {
   })
 })
 
+/**
+ * Die gestrichelten Vorschläge – dieselbe Kantenform, andere Aussage.
+ *
+ * ⚠️ Gestrichelt und ohne Pfeilspitze: eine durchgezogene Linie behauptet eine Beziehung, die
+ * niemand eingetragen hat. Dieselbe Sprache wie beim verwaisten Artikel selbst (gestrichelter
+ * Rahmen, kein Rot) – „noch nicht" ist kein Fehler.
+ */
+const suggestEdges = computed(() => {
+  const ids = new Set(visible.value.map((n) => String(n.id)))
+  return suggested.value
+    .filter((e) => ids.has(String(e.source_id)) && ids.has(String(e.target_id)))
+    .map((e) => {
+      const lit = hoverId.value != null && (e.source_id === hoverId.value || e.target_id === hoverId.value)
+      const dim = hoverId.value != null && !lit
+      return {
+        id: e.id,
+        source: String(e.source_id),
+        target: String(e.target_id),
+        type: 'smoothstep',
+        // Das Label ist der Wert, nicht die Geste: „0.81" sagt, wie sicher der Vorschlag ist, und
+        // dass man klicken kann, sagt die Zeile unter der Bilanz einmal für alle.
+        label: e.score.toFixed(2),
+        data: { suggestion: true, source_id: e.source_id, target_id: e.target_id },
+        class: 'wg-suggest',
+        style: {
+          stroke: lit ? 'var(--color-accent)' : 'var(--color-text-muted)',
+          strokeWidth: lit ? 2 : 1.2,
+          strokeDasharray: '5 4',
+          opacity: dim ? 0.12 : 0.75,
+        },
+        labelStyle: { fill: 'var(--color-text-muted)', fontSize: `${10 * scale.value}px` },
+        labelBgStyle: { fill: 'var(--color-surface)' },
+        labelBgPadding: [3, 2],
+        labelBgBorderRadius: 4,
+      }
+    })
+})
+
 const edges = computed(() => {
   const ids = new Set(visible.value.map((n) => String(n.id)))
-  return graph.value.edges
+  const real = graph.value.edges
     .filter((e) => ids.has(String(e.source_id)) && ids.has(String(e.target_id)))
     .map((e) => {
       const lit = hoverId.value != null && (e.source_id === hoverId.value || e.target_id === hoverId.value)
@@ -123,6 +189,8 @@ const edges = computed(() => {
         labelBgBorderRadius: 4,
       }
     })
+  // Die Vorschläge liegen ZUERST, damit eine echte Beziehung über einer gestrichelten zeichnet.
+  return [...suggestEdges.value, ...real]
 })
 
 async function load() {
@@ -142,10 +210,12 @@ onMounted(load)
 
 // Nach jedem Layoutwechsel einpassen. `fitView` ohne `nodes` ist der dokumentierte Weg für
 // „alles einpassen" – mit `nodes` waere es ein stiller No-Op (s. Stolperfallen).
+// Auch die Zahl der Vorschlagskanten zählt mit: sie gehen ins Layout ein, also ordnet sich das Bild
+// beim Umschalten neu – und ein Ausschnitt, der auf das alte Layout passte, passt dann nicht mehr.
 watch(
-  () => nodes.value.length,
-  async (n) => {
-    if (!n) return
+  () => `${nodes.value.length}:${suggested.value.length}`,
+  async () => {
+    if (!nodes.value.length) return
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
     fitView({ padding: 0.18 })
   },
@@ -154,6 +224,43 @@ watch(
 function openArticle(node) {
   const slug = node?.data?.slug
   if (slug) router.push(`/article/${slug}`)
+}
+
+async function loadSuggestions() {
+  suggestLoading.value = true
+  try {
+    suggestions.value = await api.getLinkSuggestions()
+  } catch {
+    // Still: ohne Antwort bleibt der Umschalter an und es erscheinen keine Linien. Warum, sagt
+    // die Zeile darunter – Ollama ist optional, ein Toast wäre eine Beschwerde darüber.
+    suggestions.value = null
+  } finally {
+    suggestLoading.value = false
+  }
+}
+
+async function toggleSuggestions() {
+  showSuggestions.value = !showSuggestions.value
+  if (!showSuggestions.value) return
+  // Vorschläge betreffen die Verwaisten – sie auszublenden und zugleich ihre Vorschläge zu
+  // verlangen wäre eine Ansicht, die auf ihre eigene Frage nichts zeigt.
+  showOrphans.value = true
+  if (!suggestions.value) await loadSuggestions()
+}
+
+/**
+ * Klick auf eine gestrichelte Linie: die Beziehung anlegen.
+ *
+ * Danach werden BEIDE Bestände neu geholt – der Graph, weil aus dem verwaisten Artikel gerade ein
+ * verknüpfter wurde, und die Vorschläge, weil dieses Paar jetzt keiner mehr ist. Sie nur aus der
+ * lokalen Liste zu streichen hiesse, die Regel „bestehende Beziehungen fallen raus" ein zweites Mal
+ * zu kennen.
+ */
+async function onEdgeClick(edge) {
+  const d = edge?.data
+  if (!d?.suggestion) return
+  await api.createRelation({ source_id: d.source_id, target_id: d.target_id, relation_type: 'related' })
+  await Promise.all([load(), loadSuggestions()])
 }
 </script>
 
@@ -201,6 +308,7 @@ function openArticle(node) {
         :nodes-connectable="false"
         :edges-updatable="false"
         @node-click="openArticle($event.node)"
+        @edge-click="onEdgeClick($event.edge)"
         @node-mouse-enter="hoverId = $event.node.data.id"
         @node-mouse-leave="hoverId = null"
         @pane-click="hoverId = null"
@@ -256,6 +364,41 @@ function openArticle(node) {
           <Icon icon="lucide:share-2" class="h-3.5 w-3.5" />
           {{ graph.totals.busiest.title }}
         </span>
+        <!-- Nur wenn es Verwaiste gibt: ein Knopf, der nichts zu finden hätte, stellt eine Frage,
+             die die Ansicht gerade mit „nichts offen" beantwortet hat. -->
+        <button
+          v-if="graph.totals.orphans"
+          type="button"
+          class="wg-toggle"
+          :class="showSuggestions ? 'wg-toggle--active' : ''"
+          v-tip="{
+            title: 'Suggest links for unlinked articles',
+            hint: 'Compares every article with every other one using the meaning index — no new AI call. Needs an embedding model and a built index.',
+          }"
+          @click="toggleSuggestions"
+        >
+          <Icon
+            :icon="suggestLoading ? 'lucide:loader-2' : 'lucide:sparkles'"
+            class="h-3.5 w-3.5"
+            :class="suggestLoading ? 'animate-spin' : ''"
+          />
+          suggest
+        </button>
+      </div>
+
+      <!-- Was die gestrichelte Linie ist und dass man sie anklicken kann – einmal für alle statt
+           an jeder Kante. Steht nur, solange der Modus an ist. -->
+      <div v-if="showSuggestions" class="wg-hint">
+        <template v-if="suggested.length">
+          <Icon icon="lucide:mouse-pointer-click" class="h-3.5 w-3.5 shrink-0" />
+          <span>Dashed lines are suggestions — click one to link the two articles.</span>
+        </template>
+        <template v-else-if="!suggestLoading">
+          <Icon icon="lucide:info" class="h-3.5 w-3.5 shrink-0" />
+          <!-- Ein leeres Ergebnis hat vier Gründe, und jeder hat einen anderen nächsten Schritt –
+               deshalb steht der Grund da und nicht „nothing found" (gleiche Regel wie bei /ask). -->
+          <span>{{ suggestions?.reason || 'Nothing close enough to suggest — the unlinked articles have no near neighbour here.' }}</span>
+        </template>
       </div>
     </template>
   </div>
@@ -334,6 +477,26 @@ function openArticle(node) {
 }
 .wg-toggle--on strong {
   color: var(--color-text);
+}
+/* Der Vorschlagsmodus ist ein ZUSTAND, kein Klick – also bleibt er sichtbar an. */
+.wg-toggle--active {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+.wg-hint {
+  @apply pointer-events-none absolute left-3 right-3 top-[3.4rem] flex items-center gap-1.5 text-3xs text-[var(--color-text-muted)];
+}
+
+/* Die gestrichelte Linie ist die einzige, die eine Handlung anbietet – der Zeiger sagt es, und die
+   breitere unsichtbare Trefferfläche von Vue Flow macht sie bei 1,2 px Strichstärke treffbar. */
+:deep(.wg-suggest) {
+  cursor: pointer;
+}
+:deep(.wg-suggest:hover) .vue-flow__edge-path {
+  stroke: var(--color-accent) !important;
+  stroke-width: 2.2 !important;
+  opacity: 1 !important;
 }
 .wg-busiest {
   @apply inline-flex max-w-[12rem] items-center gap-1 truncate;

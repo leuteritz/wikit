@@ -28,7 +28,8 @@ copying one file.
   articles* that match: the code says what happens, an article says why. Every claim carries the
   source it came from; one click opens it.
 - **Relationship graph** — typed links between articles as a graph ([Vue Flow](https://vueflow.dev)):
-  what hangs together, which article is the hub, and which ones nothing points at.
+  what hangs together, which article is the hub, and which ones nothing points at — and for those,
+  **which articles they could link to**, from the same meaning index `Ask` uses.
 - **Java code analysis** — parse `.java` locally (no JDK) and explore a class dependency graph.
 - **Code insights** — dependency cycles, a hotspot ranking and package balance, derived from what
   is already stored. Click a hotspot and it works out **how it would split that class** — by state,

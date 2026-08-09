@@ -80,6 +80,55 @@ export function buildWikiGraph({ nodes = [], edges = [] } = {}) {
   }
 }
 
+/**
+ * Vorschlagskanten aus `GET /api/articles/suggestions` – aber nur fuer die VERWAISTEN.
+ *
+ * ⚠️ Der verwaiste Artikel ist der Befund, um dessentwillen es diese Ansicht gibt, und der einzige,
+ * der ohne Vorschlag in einer Sackgasse endet: „nichts zeigt hierher" ist eine Auskunft, mit der
+ * man allein gelassen wird. Alle Paare zu zeichnen waere ehrlicher und trotzdem schlechter – bei
+ * vierzig Artikeln sind es achtzig zusaetzliche Linien, in denen genau der Befund wieder untergeht,
+ * den die Ansicht sichtbar machen soll.
+ *
+ * Zwei Festlegungen:
+ * - **Ein Paar, eine Linie.** Die Aehnlichkeit ist symmetrisch, also schlagen sich zwei verwaiste
+ *   Artikel gegenseitig vor – gezeichnet gaebe das zwei Linien zwischen denselben Karten.
+ * - **Die Richtung ist die Geste, nicht die Rechnung.** Ein Klick legt `source -> target` an, und
+ *   `source` ist der verwaiste: von dem Artikel aus, dem die Verknuepfung fehlt. Sind es beide,
+ *   entscheidet die kleinere Id – irgendeine Richtung muss es sein, und eine, die beim Neuladen
+ *   dieselbe bleibt, ist die einzige, die nicht verwirrt.
+ */
+export function suggestionEdges(items = [], suggestions = []) {
+  const orphans = new Set(items.filter((n) => n.orphan).map((n) => n.id))
+  const known = new Set(items.map((n) => n.id))
+  if (!orphans.size) return []
+
+  const seen = new Set()
+  const out = []
+  for (const entry of suggestions) {
+    for (const item of entry.items || []) {
+      const a = entry.id
+      const b = item.id
+      // Mindestens eine Seite muss verwaist sein – sonst ist es ein Vorschlag zwischen zwei
+      // Artikeln, die beide schon im Netz haengen, und der gehoert auf die Artikelseite.
+      if (!orphans.has(a) && !orphans.has(b)) continue
+      // Ein Vorschlag auf einen Artikel, den der Graph nicht kennt, waere eine Linie ins Leere.
+      if (!known.has(a) || !known.has(b)) continue
+      const key = a < b ? `${a}|${b}` : `${b}|${a}`
+      if (seen.has(key)) continue
+      seen.add(key)
+
+      const fromOrphan = orphans.has(a) && (!orphans.has(b) || a < b)
+      out.push({
+        id: `s${key}`,
+        source_id: fromOrphan ? a : b,
+        target_id: fromOrphan ? b : a,
+        score: item.score,
+      })
+    }
+  }
+  return out
+}
+
 /** Nachbarn eines Artikels (beide Richtungen) – fuer den Hover-Fokus. */
 export function neighboursOf(edges, id) {
   const set = new Set()

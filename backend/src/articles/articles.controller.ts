@@ -40,6 +40,24 @@ export class ArticlesController {
     return this.embeddings.clear();
   }
 
+  // --- Link-Vorschläge aus demselben Index ---------------------------------
+  // Sie stehen unter `articles/` und nicht unter `relations/`, obwohl sie Beziehungen vorschlagen:
+  // gerechnet werden sie aus dem Artikel-Bedeutungsindex, und der Pfad soll sagen, WOHER eine
+  // Auskunft kommt, nicht wer sie abholt (gleiche Begründung wie beim eigenen Endpunktsatz oben).
+  //
+  // ⚠️ Ebenfalls VOR `:slug` – „suggestions" ist kein Artikel.
+  @Get('suggestions')
+  suggestions() {
+    return this.embeddings.suggestAll();
+  }
+
+  // Zweisegmentig, kollidiert also nicht mit `:slug`. Über die **Id**, nicht den Slug: der Aufrufer
+  // hat den Artikel bereits geladen und kennt beide – und die Vorschläge sind über Ids geschlüsselt.
+  @Get(':id/related')
+  related(@Param('id') id: string) {
+    return this.embeddings.suggestFor(Number(id));
+  }
+
   @Get(':slug')
   get(@Param('slug') slug: string) {
     return this.svc.getBySlug(slug);

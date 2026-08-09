@@ -34,6 +34,22 @@ onMounted(async () => {
   }
 })
 
+/**
+ * Nach einer aus den Vorschlägen angelegten Beziehung den Artikel neu holen.
+ *
+ * ⚠️ Neu laden statt die Relation im Client einzuhängen: `relations` kommt fertig serialisiert vom
+ * Server, und sie hier zusammenzusetzen wäre eine zweite Fassung dieses Shapes. Der Request ist
+ * derselbe, der die Seite gefüllt hat.
+ */
+async function refresh() {
+  try {
+    article.value = await api.getArticle(props.slug)
+  } catch {
+    // Der sichtbare Stand bleibt der alte – das ist besser als eine leere Seite nach einem Klick,
+    // der selbst funktioniert hat.
+  }
+}
+
 async function onDelete(a) {
   if (!confirm(`Really delete article “${a.title}”?`)) return
   await remove(a.id)
@@ -62,7 +78,7 @@ async function onDelete(a) {
     <div v-else-if="article" class="mx-auto flex max-w-6xl gap-10">
       <div class="min-w-0 flex-1 pb-16">
         <JavaAnalysisPanel v-if="javaFile" :file="javaFile" :article-id="article.id" />
-        <ArticleView :article="article" @delete="onDelete" />
+        <ArticleView :article="article" @delete="onDelete" @linked="refresh" />
       </div>
       <aside class="hidden w-56 shrink-0 xl:block">
         <div class="sticky top-6">

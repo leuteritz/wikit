@@ -107,6 +107,12 @@ export const api = {
   createRelation: (data) => http('POST', '/relations', data),
   deleteRelation: (id) => http('DELETE', `/relations/${id}`),
 
+  // Link-Vorschläge aus dem Artikel-Bedeutungsindex. Beide sind still: ohne Embedding-Modell ist
+  // die Auskunft leer statt fehlerhaft, und ein Toast über eine Funktion, die man gar nicht
+  // aufgerufen hat, wäre eine Beschwerde über einen bewusst gewählten Zustand.
+  getRelatedArticles: (id) => http('GET', `/articles/${id}/related`, null, { silent: true }),
+  getLinkSuggestions: () => http('GET', '/articles/suggestions', null, { silent: true }),
+
   analyzeJava: (data) => http('POST', '/java/analyze', data),
   // Mehrklassen-/Roh-Paste-Analyse: { source, overwrite? }. Bei Duplikaten ohne overwrite
   // liefert das Backend { needsConfirm:true, conflicts:[...] } (200) statt zu schreiben.

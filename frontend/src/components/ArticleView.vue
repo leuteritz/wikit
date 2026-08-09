@@ -2,6 +2,7 @@
 import { ref, watch, nextTick, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import CategoryBadge from './CategoryBadge.vue'
+import RelatedArticles from './RelatedArticles.vue'
 import { Icon } from '../lib/icons.js'
 import { formatDateTime as fmtDate } from '../lib/format.js'
 import { isHighlightableVar, varColorClass } from '../lib/varHighlight.js'
@@ -9,7 +10,9 @@ import { isHighlightableVar, varColorClass } from '../lib/varHighlight.js'
 const props = defineProps({
   article: { type: Object, required: true },
 })
-defineEmits(['delete'])
+// `linked` reicht nur durch: die Vorschlagsliste hat eine Beziehung angelegt, also stimmt der
+// Abschnitt „Relations" darüber nicht mehr – und der gehört zum Artikel, nicht zu dieser Liste.
+defineEmits(['delete', 'linked'])
 
 const bodyEl = ref(null)
 
@@ -131,5 +134,9 @@ watch(() => props.article?.id, () => nextTick(enhanceCodeBlocks))
         </RouterLink>
       </div>
     </section>
+
+    <!-- Was noch dazugehören könnte. Steht UNTER den echten Beziehungen: eine Vermutung gehört
+         hinter das, was schon entschieden ist. -->
+    <RelatedArticles :article="article" @linked="$emit('linked')" />
   </article>
 </template>
