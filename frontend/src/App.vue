@@ -152,16 +152,30 @@ const askTitle = computed(() => {
 
 // `null` statt `0`, solange nichts gerechnet ist: eine 0 waere die Behauptung „keine Zyklen", und
 // die ist ohne die Rechnung nicht gedeckt. Ohne Klassen gibt es ohnehin nichts zu melden.
+//
+// ⚠️ **Gezaehlt werden ZWEI Befunde**: Zyklen und Beziehungen, die gegen eine aufgeschriebene Regel
+// laufen. Beide erfuellen die Bedingung, die an diese Zahl gestellt ist – sie koennen echt 0 werden
+// und fordern dann zu nichts auf (anders als Brandherde, die es in jeder Codebasis gibt). Und beide
+// sind dieselbe Art Aussage: „hier stimmt etwas nicht mit der Struktur". Sie getrennt zu zeigen
+// hiesse zwei Zahlen an einem Eintrag, und dann waere keine mehr auf einen Blick lesbar; welcher
+// Anteil woher kommt, sagt der `title`.
 const cycleCount = computed(() => {
   const t = insightTotals.value
   if (!t || !t.classes) return null
-  return t.classCycles + t.packageCycles
+  return t.classCycles + t.packageCycles + (t.ruleViolations || 0)
 })
 const cycleTitle = computed(() => {
+  const t = insightTotals.value
   const n = cycleCount.value
   if (n == null) return 'Insights'
-  if (!n) return 'Insights — no dependency cycles'
-  return `Insights — ${n} dependency ${n === 1 ? 'cycle' : 'cycles'}`
+  if (!n) return 'Insights — no dependency cycles, no broken rules'
+  const parts = []
+  const cycles = t.classCycles + t.packageCycles
+  if (cycles) parts.push(`${cycles} dependency ${cycles === 1 ? 'cycle' : 'cycles'}`)
+  if (t.ruleViolations) {
+    parts.push(`${t.ruleViolations} ${t.ruleViolations === 1 ? 'relation breaks' : 'relations break'} a rule`)
+  }
+  return `Insights — ${parts.join(' · ')}`
 })
 
 // Navigation: code-first (Analyzer zuerst, dann Wiki). Icons ausschliesslich via Iconify.

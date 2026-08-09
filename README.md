@@ -32,12 +32,14 @@ copying one file.
   **which articles they could link to**, from the same meaning index `Ask` uses.
 - **Java code analysis** — parse `.java` locally (no JDK) and explore a class dependency graph.
 - **Code insights** — dependency cycles, a hotspot ranking and package balance, derived from what
-  is already stored. Click a hotspot and it works out **how it would split that class** — by state,
-  by callers or by method — and writes out the resulting **Java files in full**, with your real
-  method bodies. Plus **which classes no test touches** (heaviest first), a **reading path**,
-  **what is missing** (classes your packages import but never uploaded) and **what the last import
-  changed** — rebuilt from the saved sources, so a cycle it created is named together with the
-  arrow that closed it.
+  is already stored. Click a hotspot and it works out **how it would split that class**, writing
+  out the resulting **Java files in full** with your real method bodies. Plus **which classes no
+  test touches** (heaviest first), a **reading path**, **what is missing** (classes your packages
+  import but never uploaded) and **what the last import changed** — rebuilt from the saved sources,
+  so a cycle it created is named together with the arrow that closed it.
+- **Architecture rules** — the one tab that does not measure but *decides*: write down what may
+  depend on what (`web -/-> repo`, `only service -> repo`, `layers: web > service > repo`) and
+  every relation is checked against it. Wikit suggests the rules your code already keeps today.
 - **Topic bundles** — collect every class around one term (by name, by source, by meaning, by
   relation) and copy their whole source as one text, ready to paste into a chat.
 - **AI summaries** — optional, per method and per class, via [Ollama](https://ollama.com)

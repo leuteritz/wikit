@@ -19,6 +19,7 @@ import { useInsights } from '../composables/useInsights.js'
 import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { useJavaGraph } from '../composables/useJavaGraph.js'
 import BusyState from '../components/BusyState.vue'
+import ArchRules from '../components/insights/ArchRules.vue'
 import CyclePlan from '../components/insights/CyclePlan.vue'
 import DriftReport from '../components/insights/DriftReport.vue'
 import SplitPlan from '../components/insights/SplitPlan.vue'
@@ -48,6 +49,10 @@ const TABS = [
   { id: 'outside', label: 'Outside', icon: 'lucide:import', hint: 'What this workspace pulls in from elsewhere — and what is missing from it' },
   // Und der einzige, der keinen Zustand zeigt, sondern eine BEWEGUNG.
   { id: 'drift', label: 'Drift', icon: 'lucide:history', hint: 'What the last import changed — new cycles, new dependencies, growth' },
+  // ⚠️ Ganz am Ende, und zwar als einziger Reiter, in dem man etwas FESTLEGT statt abzulesen. Die
+  // acht davor beantworten „wie steht es?"; dieser fragt zurück „wie soll es sein?" – und das ist
+  // die Frage, die man stellt, NACHDEM man die Befunde gesehen hat.
+  { id: 'rules', label: 'Rules', icon: 'lucide:scale', hint: 'What you decided this code may depend on — and where it does not' },
 ]
 
 // --- Was jeder Reiter beantwortet ---------------------------------------------------------------
@@ -134,6 +139,16 @@ const EXPLAIN = {
       ['Read the arrow that closed it', 'The loop is named with the exact call or field that completed it — that is the line to look at, not the whole class.'],
       ['Growth is context, not a verdict', 'A class that gained 200 lines is not automatically worse. Check whether it also gained dependencies — that is what makes it harder to change.'],
       ['Pick an older import to widen the view', 'The default compares against the state before the last upload. Choose an earlier one to see what a whole week did.'],
+    ],
+  },
+  rules: {
+    title: 'What this code is allowed to depend on',
+    what: 'Every other tab measures and has to guess what you meant by it. Here you write it down once, and Wikit checks it against every relation.',
+    fixes: [
+      ['Start with what you already do', 'The suggestions are not advice — each one is a direction this code keeps today. Adopting it means the next import cannot reverse it unnoticed.'],
+      ['Say why, not just what', 'A line starting with # becomes the reason shown next to the rule. In six months that sentence decides whether the rule still applies.'],
+      ['A rule that never applies is a typo', 'If nothing matches the name, the rule is not protecting anything — it only looks like it is. That is why it gets its own state instead of a green tick.'],
+      ['Layers pay off twice', 'The layer line is also what the Cycles tab uses to pick where to break a loop. Without it, that pick is a guess from a list of common package names.'],
     ],
   },
 }
@@ -463,10 +478,59 @@ async function loadDrift(since = '') {
 }
 const ensureDrift = () => (drift.value ? Promise.resolve(drift.value) : loadDrift())
 
-// Kanten bzw. Drift erst holen, wenn der Reiter zum ersten Mal offen ist.
+// --- Architektur-Regeln ---------------------------------------------------------------------------
+//
+// ⚠️ Eigener Request, obwohl `data.rules` denselben Befund trägt – und der Grund steht im Editor:
+// nach dem Speichern will man die Wirkung der geänderten Zeile SOFORT sehen, und dafür den ganzen
+// Bericht neu zu rechnen wäre ein Lauf über alles für zwei getippte Zeichen. Der Erststand kommt
+// deshalb aus der Übersicht (sie liegt bereits vor), jeder weitere aus dem eigenen Endpunkt.
+const archRules = ref(null)
+const archLoading = ref(false)
+const archSaving = ref(false)
+
+async function loadRules() {
+  archLoading.value = true
+  try {
+    archRules.value = await api.getArchRules()
+  } finally {
+    archLoading.value = false
+  }
+}
+// Der Bericht trägt die Regeln bereits mit – ihn beim Öffnen des Reiters zu wiederholen wäre ein
+// Request für eine Antwort, die schon dasteht. Fehlt er (noch), holt der Reiter selbst.
+const ensureRules = () => {
+  if (archRules.value) return Promise.resolve(archRules.value)
+  const fromReport = data.value?.rules
+  if (fromReport) {
+    archRules.value = { ...fromReport, unresolved: totals.value?.unresolved || 0 }
+    return Promise.resolve(archRules.value)
+  }
+  return loadRules()
+}
+
+/**
+ * Speichern – und danach den GANZEN Bericht nachziehen.
+ *
+ * ⚠️ Das ist keine Vorsicht, sondern nötig: eine `layers`-Zeile entscheidet mit, welche Kante die
+ * Zyklen-Bruchstelle vorschlägt, und die Zahl neben „Insights" in der Sidebar zählt die Verstöße
+ * mit. Nur den Reiter zu aktualisieren hiesse, zwei Ansichten desselben Standes auseinanderlaufen
+ * zu lassen – genau das, was der geteilte Store sonst verhindert.
+ */
+async function saveRules(text) {
+  archSaving.value = true
+  try {
+    archRules.value = await api.saveArchRules(text)
+    await reload()
+  } finally {
+    archSaving.value = false
+  }
+}
+
+// Kanten, Drift bzw. Regeln erst holen, wenn der Reiter zum ersten Mal offen ist.
 watch(tab, (t) => {
   if (t === 'path') ensurePathData()
   if (t === 'drift') ensureDrift()
+  if (t === 'rules') ensureRules()
 })
 
 onMounted(() => ensure())
@@ -733,6 +797,27 @@ const plotted = computed(() => {
 
           <!-- ==================== Overview ==================== -->
           <section v-if="tab === 'overview'" class="space-y-5">
+            <!-- ⚠️ Der einzige Befund, der es VOR die Bilanz schafft – und nur, wenn es ihn gibt.
+                 Ein Regelverstoß ist der stärkste Befund dieses Berichts: alles andere hat Wikit
+                 selbst für auffällig befunden, dies hier hat der Betreiber ausdrücklich verboten.
+                 Ein Balken, der nur bei Befund erscheint, kann auch nicht abstumpfen. -->
+            <button
+              v-if="data?.rules?.totals?.violations"
+              type="button"
+              class="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/5 px-4 py-2.5 text-left transition hover:border-[var(--color-danger)]"
+              @click="tab = 'rules'"
+            >
+              <Icon icon="lucide:scale" class="h-4 w-4 shrink-0 text-[var(--color-danger)]" />
+              <span class="text-sm text-[var(--color-text)]">
+                <span class="font-mono font-semibold text-[var(--color-danger)]">{{ num(data.rules.totals.violations) }}</span>
+                {{ data.rules.totals.violations === 1 ? 'relation breaks' : 'relations break' }}
+                a rule you wrote down.
+              </span>
+              <span class="text-2xs text-[var(--color-text-muted)]">
+                Every other finding here is Wikit's opinion — this one is yours. →
+              </span>
+            </button>
+
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
               <div
                 v-for="k in [
@@ -1666,11 +1751,24 @@ const plotted = computed(() => {
           <!-- Der Bericht wohnt in einer eigenen Komponente: er ist die einzige Ansicht hier, die
                ihre Daten selbst holt, und diese Datei ist lang genug. -->
           <DriftReport
-            v-else
+            v-else-if="tab === 'drift'"
             :report="drift"
             :loading="driftLoading"
             @open-class="openClass"
             @pick-point="loadDrift"
+          />
+
+          <!-- ==================== Rules ==================== -->
+          <!-- Aus demselben Grund eine eigene Komponente wie der Drift-Bericht – und hier zusätzlich,
+               weil sie als einzige Ansicht des Berichts auch SCHREIBT. -->
+          <ArchRules
+            v-else
+            :report="archRules"
+            :loading="archLoading"
+            :saving="archSaving"
+            :started-at="startedAt"
+            @open-class="openClass"
+            @save="saveRules"
           />
         </template>
       </div>

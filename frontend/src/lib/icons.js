@@ -132,6 +132,11 @@ import asterisk from '@iconify-icons/lucide/asterisk'
 import flaskConical from '@iconify-icons/lucide/flask-conical'
 import flaskConicalOff from '@iconify-icons/lucide/flask-conical-off'
 import shield from '@iconify-icons/lucide/shield'
+// Architektur-Regeln (/insights): die Waage steht fuer die VEREINBARUNG – der einzige Reiter, in
+// dem nicht gemessen, sondern festgelegt wird. Der durchgestrichene Kreis ist der dritte Zustand
+// einer Regel: sie trifft keine einzige Klasse und greift damit gar nicht.
+import scale from '@iconify-icons/lucide/scale'
+import circleSlash from '@iconify-icons/lucide/circle-slash'
 
 // --- Phosphor (Duotone, fuer das Brand-Logo) ---
 import phBooksDuotone from '@iconify-icons/ph/books-duotone'
@@ -254,6 +259,8 @@ const ICONS = {
   'lucide:flask-conical': flaskConical,
   'lucide:flask-conical-off': flaskConicalOff,
   'lucide:shield': shield,
+  'lucide:scale': scale,
+  'lucide:circle-slash': circleSlash,
   'ph:books-duotone': phBooksDuotone,
 }
 

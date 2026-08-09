@@ -300,6 +300,13 @@ export const api = {
   // Antwort; ohne ihn waehlt der Bericht den Lauf vor dem letzten.
   getDrift: (since = '') =>
     http('GET', `/insights/drift${since ? `?since=${encodeURIComponent(since)}` : ''}`),
+  // Die Architektur-Regeln samt Befund. Eigener Request neben `getInsights`, obwohl die Uebersicht
+  // dasselbe traegt: nach dem Speichern will man die Wirkung der geaenderten Zeile SOFORT sehen, und
+  // dafuer den ganzen Bericht neu zu rechnen waere ein Lauf ueber alles fuer zwei getippte Zeichen.
+  getArchRules: () => http('GET', '/insights/rules'),
+  // Ganzer Text, nicht einzelne Zeilen: Reihenfolge, Leerzeilen und die `#`-Begruendungen gehoeren
+  // zur Eingabe. Die Antwort ist derselbe Befund wie bei `getArchRules`.
+  saveArchRules: (text) => http('PUT', '/insights/rules', { text }),
 
   // --- Bot (Ollama-Konfiguration, /bot) -------------------------------------
   // Eine Antwort traegt Stand, Defaults, Overrides UND die Feldbeschreibung (Grenzen/Hinweise) –

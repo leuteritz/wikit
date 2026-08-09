@@ -1,4 +1,4 @@
-import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, ParseIntPipe, Put, Query } from '@nestjs/common';
 import { DriftService } from './drift.service';
 import { InsightsService } from './insights.service';
 
@@ -28,6 +28,26 @@ export class InsightsController {
   // Uebersicht: der Lauf liest alte Quelltexte und rechnet einen ZWEITEN Graphen – niemand zahlt
   // das mit, wer nur die Kennzahlen aufschlaegt. Ohne `since` waehlt der Bericht den Tag vor der
   // letzten Aenderung, also die Frage, mit der man ihn oeffnet.
+  // Die Architektur-Regeln samt ihrem Befund. Sie stehen zwar auch in der Uebersicht, aber der
+  // Editor braucht die Antwort auf eine GEAENDERTE Regel sofort – und dafuer den ganzen Bericht neu
+  // zu rechnen hiesse, fuer zwei getippte Zeichen alles noch einmal zu lesen.
+  //
+  // ⚠️ `rules` steht VOR `split/:fileId` und `drift`, was hier folgenlos ist (verschiedene Pfade),
+  // aber der Reihenfolge im Articles-Controller entspricht: feste Segmente vor Parametern.
+  @Get('rules')
+  rules() {
+    return this.svc.rules();
+  }
+
+  // Ganzer Text statt einzelner Zeilen: der Editor IST ein Textfeld, und Reihenfolge, Leerzeilen
+  // und die `#`-Begruendungen gehoeren zur Eingabe. PUT und nicht PATCH – die Antwort ersetzt den
+  // Stand vollstaendig.
+  @Put('rules')
+  saveRules(@Body() body: any) {
+    if (typeof body?.text !== 'string') throw new BadRequestException('Expected { text } with the rule lines');
+    return this.svc.saveRules(body.text);
+  }
+
   @Get('drift')
   drift(@Query('since') since?: string) {
     return this.driftSvc.drift(since || null);

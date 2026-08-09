@@ -5,6 +5,15 @@ import { safeJson } from '../common/json.util';
 import { classMetrics } from '../common/code-metrics';
 import { buildSplitPlan, SplitConsumer, SplitMember } from './split-plan';
 import { buildTestShadow, ShadowImport } from './test-shadow';
+import {
+  againstLayers,
+  checkRules,
+  layerCheckFrom,
+  parseRules,
+  Rule,
+  suggestRules,
+} from './arch-rules';
+import { Setting } from '../entities/setting.entity';
 import { CodeFormatterService } from '../common/code-formatter.service';
 import { MarkdownService } from '../common/markdown.service';
 
@@ -65,25 +74,15 @@ const PLATFORM_PREFIXES = [
 // ein echter Methodenaufruf selten.
 const BREAK_ORDER: Record<string, number> = { uses: 0, field: 1, call: 2 };
 
-// ⚠️ Uebliche Schichtnamen, von aussen nach innen. Eine KONVENTION, keine Wahrheit – aber eine, die
-// traegt: laeuft eine Kante von einer tieferen Schicht zurueck nach oben (repo -> web), ist sie
-// fast immer das Versehen und nicht die Absicht. Nur auf PACKAGE-Ebene angewandt; ein Klassenname
-// traegt keine Schicht, und dort waere es ein Ratespiel.
-const LAYER_RANK: Record<string, number> = {
-  ui: 0, web: 0, controller: 0, controllers: 0, rest: 0, view: 0, views: 0,
-  service: 1, services: 1, application: 1, usecase: 1, business: 1,
-  domain: 2, model: 2, entity: 2, entities: 2,
-  repo: 3, repository: 3, repositories: 3, dao: 3, persistence: 3, store: 3, db: 3,
-};
-const layerOf = (path: any): number | undefined =>
-  LAYER_RANK[String(path ?? '').split('.').pop()!.toLowerCase()];
-// Gegen die uebliche Richtung? Nur entscheidbar, wenn BEIDE Enden erkannt werden – sonst ist die
-// Antwort "weiss nicht" und nicht "nein".
-const againstLayers = (from: any, to: any): boolean => {
-  const a = layerOf(from);
-  const b = layerOf(to);
-  return a != null && b != null && a > b;
-};
+// Die Schicht-Konvention (LAYER_RANK, layerOf, againstLayers) steht in `arch-rules.ts`: sie ist der
+// RUECKFALL fuer den Fall, dass niemand Schichten aufgeschrieben hat, und dieselbe Liste erzeugt
+// dort den Vorschlag "diese vier Schichten liegen bei dir – als Regel festhalten?". Zwei Fassungen
+// waeren zwei Konventionen.
+
+// Wo der Regeltext liegt. Eine Zeile in der generischen `settings`-Tabelle statt einer eigenen:
+// eine FEHLENDE Zeile heisst "keine Regeln", und genau diese Unterscheidung braucht die Ansicht
+// (leeres Textfeld vs. bewusst geleert ist derselbe Zustand – niemand hat etwas festgelegt).
+const RULES_KEY = 'arch.rules';
 
 export type ClassRow = {
   id: number;
@@ -231,6 +230,90 @@ export class InsightsService implements OnModuleInit {
     }
   }
 
+  // --- Architektur-Regeln: lesen und schreiben --------------------------------------------------
+
+  /** Der Regeltext, wie er dasteht. Keine Zeile in `settings` = niemand hat etwas festgelegt. */
+  private async rulesText(): Promise<string> {
+    const row = await this.ds.getRepository(Setting).findOne({ where: { key: RULES_KEY } });
+    return row?.value ?? '';
+  }
+
+  /**
+   * Den Regeltext samt seinem Befund.
+   *
+   * ⚠️ Eigener Endpunkt, obwohl der Befund auch in `overview()` steht – und der Grund ist der
+   * Editor: nach dem Speichern will man SOFORT sehen, was die geänderte Regel findet, und dafür den
+   * ganzen Bericht neu zu rechnen hiesse, für zwei geänderte Zeichen alles noch einmal zu lesen.
+   * Umgekehrt braucht die Übersicht die Verstösse mit, weil die Sidebar-Zahl sie zählt.
+   */
+  async rules(): Promise<any> {
+    const classes: ClassRow[] = await this.ds.query(
+      `SELECT id, package, class_name, class_type, stereotype, class_modifiers, loc, complexity
+         FROM java_files ORDER BY class_name COLLATE NOCASE`,
+    );
+    const edgeRows: EdgeRow[] = await this.ds.query(
+      `SELECT source_class, source_pkg, target_class, target_pkg, kind, confidence, method_name
+         FROM java_edges WHERE dismissed = 0`,
+    );
+    const { pairs, unresolved } = this.resolveEdges(classes, edgeRows);
+    const text = await this.rulesText();
+    return { ...this.ruleReport(text, parseRules(text), classes, pairs), unresolved };
+  }
+
+  /**
+   * Den Regeltext ersetzen. Ganzer Text statt einzelner Zeilen: der Editor IST ein Textfeld, und
+   * Reihenfolge, Leerzeilen und die `#`-Begründungen gehören zur Eingabe – in Zeilen zerlegt wären
+   * sie beim ersten Speichern weg.
+   *
+   * ⚠️ Fehlerhafte Zeilen werden GESPEICHERT, nicht abgelehnt. Wer mitten im Schreiben abbricht,
+   * darf seinen Text nicht verlieren; die Meldung steht an der Zeile, und die Regel gilt eben
+   * nicht. Eine Speicherung, die den halben Text ablehnt, erzieht dazu, gar nicht erst zu tippen.
+   */
+  async saveRules(text: string): Promise<any> {
+    const value = String(text ?? '');
+    const repo = this.ds.getRepository(Setting);
+    // Ein leerer Text LOESCHT die Zeile – "keine Regeln" und "eine Regel, die leer ist" sind
+    // dasselbe, und zwei Darstellungen desselben Zustands wären eine zu viel (gleiche Regel wie
+    // beim Zurücksetzen einer Bot-Einstellung).
+    if (!value.trim()) await repo.delete(RULES_KEY);
+    else await repo.save({ key: RULES_KEY, value, updated_at: new Date().toISOString() });
+    return this.rules();
+  }
+
+  /**
+   * Text -> Regeln -> Befund. Eine Stelle, damit Übersicht und Editor dasselbe zeigen.
+   *
+   * Die geparsten Regeln kommen vom AUFRUFER: `overview()` braucht sie zusätzlich für die
+   * Zyklen-Bruchstelle, und zweimal zu parsen hiesse, zwei Fassungen derselben Zeilen zu haben.
+   */
+  private ruleReport(
+    text: string,
+    parsed: { rules: Rule[]; errors: any[] },
+    classes: ClassRow[],
+    pairs: Pair[],
+  ): any {
+    const shape = classes.map((c) => ({ id: c.id, className: c.class_name, package: c.package || '' }));
+    const { rules, errors } = parsed;
+    const checked = checkRules(rules, shape, pairs);
+    const violations = checked.reduce((s, r) => s + r.count, 0);
+    return {
+      text,
+      rules: checked,
+      errors,
+      suggestions: suggestRules(shape, pairs, rules),
+      totals: {
+        rules: rules.length,
+        violated: checked.filter((r) => r.status === 'violated').length,
+        inert: checked.filter((r) => r.status === 'inert').length,
+        violations,
+        errors: errors.length,
+        // Ob eine Schichtregel dasteht – die Zyklen-Bruchstelle sagt damit "gegen deine Regel"
+        // statt "sieht aus wie gegen die Schichten".
+        hasLayers: rules.some((r) => r.kind === 'layers'),
+      },
+    };
+  }
+
   // --- Die eine Antwort ------------------------------------------------------------------------
 
   async overview(): Promise<any> {
@@ -264,6 +347,14 @@ export class InsightsService implements OnModuleInit {
     if (pending && !this.backfilling) void this.backfillMetrics();
 
     const { pairs, unresolved } = this.resolveEdges(classes, edgeRows);
+
+    // Die Architektur-Regeln – und zwar VOR den Zyklen, denn eine `layers`-Regel entscheidet die
+    // Bruchstelle mit. Ohne sie bleibt es bei der Konvention (`againstLayers`), mit ihr wird aus
+    // "sieht aus wie gegen die Schichten" die Aussage "gegen deine Schichtregel".
+    const rulesText = await this.rulesText();
+    const parsedRules = parseRules(rulesText);
+    const layerCheck = layerCheckFrom(parsedRules.rules);
+
     const classCycles = this.findCycles(
       classes.map((c) => c.id),
       pairs,
@@ -346,11 +437,11 @@ export class InsightsService implements OnModuleInit {
     });
 
     const packages = this.packageMetrics(classes, pairs);
-    // `true` = Schichtnamen beruecksichtigen (s. LAYER_RANK).
+    // Schichten beruecksichtigen: die aufgeschriebene Regel, sonst die Konvention (s. arch-rules).
     const pkgCycles = this.findCycles(
       packages.map((p) => p.path),
       this.packagePairs(classes, pairs),
-      true,
+      layerCheck || true,
     );
     const cycleOfPkg = new Map<string, number>();
     pkgCycles.forEach((c, i) => c.members.forEach((p) => cycleOfPkg.set(p as string, i)));
@@ -384,6 +475,9 @@ export class InsightsService implements OnModuleInit {
       pairs.map((p) => ({ from: p.from, to: p.to })),
       importRows,
     );
+
+    // Die Regeln gegen dieselben Paare, aus denen auch Zyklen und Kennzahlen entstehen.
+    const rules = this.ruleReport(rulesText, parsedRules, classes, pairs);
 
     const nameOf = new Map<number, string>(classes.map((c) => [c.id, c.class_name]));
 
@@ -426,11 +520,19 @@ export class InsightsService implements OnModuleInit {
         // Klassen, die dieser Bestand importiert, aber nicht enthaelt, obwohl ihr Package hier
         // liegt. Die eine Zahl aus `outside`, die eine Aufgabe ist – deshalb steht sie oben.
         missing: outside.totals.gap.types,
+        // Beziehungen, die gegen eine aufgeschriebene Regel laufen. Sie steht hier oben, weil die
+        // Sidebar sie zu den Zyklen addiert: beides sind Befunde, und beide koennen echt 0 werden –
+        // die Bedingung, die an diese Zahl gestellt ist.
+        ruleViolations: rules.totals.violations,
       },
       classes: classOut,
       packages,
       outside,
       tests,
+      // Was der Betreiber festgelegt hat – und wo der Code es gerade nicht einhaelt. Teil DIESER
+      // Antwort, weil die Regeln auf denselben aufgeloesten Paaren rechnen: sie getrennt zu holen
+      // hiesse, den Graphen ein zweites Mal aufzuloesen, nur um dieselben Kanten anders zu lesen.
+      rules,
       cycles: {
         // `chain` traegt die Datei-Ids (der Absprung nach /code braucht sie), `chainLabels` die
         // Namen. Auf der Package-Ebene ist beides derselbe Pfad – die Oberflaeche liest dadurch
@@ -950,7 +1052,10 @@ export class InsightsService implements OnModuleInit {
   findCycles(
     nodes: Array<number | string>,
     pairs: Pair[],
-    useLayers = false,
+    // `false` = Schichten ignorieren · `true` = die Konvention · eine FUNKTION = die aufgeschriebene
+    // Schichtregel. Der dritte Fall ist der Grund für den Umbau: die Bruchstelle soll gegen das
+    // entscheiden, was jemand festgelegt hat, und nicht gegen das, was Wikit vermutet.
+    useLayers: boolean | ((from: any, to: any) => boolean) = false,
   ): Array<{ members: Array<number | string>; chain: Array<number | string>; weakest: any }> {
     const adj = new Map<any, any[]>();
     const edgeOf = new Map<string, Pair>();
@@ -1137,7 +1242,16 @@ function shortestCycle(group: any[], adj: Map<any, any[]>): any[] {
  * selten), dann die Zahl der Fundstellen (eine einzelne Benutzung ist schneller entfernt als
  * zwanzig), dann die Sicherheit (eine geratene Kante ist womoeglich gar keine).
  */
-function weakestOn(chain: any[], edgeOf: Map<string, Pair>, useLayers = false): any {
+function weakestOn(
+  chain: any[],
+  edgeOf: Map<string, Pair>,
+  useLayers: boolean | ((from: any, to: any) => boolean) = false,
+): any {
+  // Woran die Schichtfrage entschieden wird: an der aufgeschriebenen Regel, wenn es eine gibt –
+  // sonst an der Konvention. Der Unterschied faehrt bis in die Oberflaeche mit (`layerSource`), denn
+  // "sieht aus wie" und "verstoesst gegen deine Regel" sind zwei verschieden starke Saetze.
+  const violates = typeof useLayers === 'function' ? useLayers : useLayers ? againstLayers : null;
+
   // Rangfolge als Tupel, in dieser Reihenfolge verglichen (kleiner ist besser):
   //   1. Schichtverstoss – schlaegt alles. Eine Kante, die von innen zurueck nach aussen laeuft,
   //      IST der Fehler; die billigste Kante daneben ist regelmaessig `service -> repo`, also
@@ -1146,7 +1260,7 @@ function weakestOn(chain: any[], edgeOf: Map<string, Pair>, useLayers = false): 
   //   2. Art der Kante  – ein Typbezug loest sich leichter als ein Aufruf.
   //   3. Fundstellen    – eine einzelne Benutzung ist schneller entfernt als zwanzig.
   const rank = (e: Pair): number[] => [
-    useLayers && againstLayers(e.from, e.to) ? 0 : 1,
+    violates && violates(e.from, e.to) ? 0 : 1,
     BREAK_ORDER[e.kind] ?? 9,
     e.count,
   ];
@@ -1175,6 +1289,9 @@ function weakestOn(chain: any[], edgeOf: Map<string, Pair>, useLayers = false): 
     kind: best.kind,
     count: best.count,
     // Der Oberflaeche sagen, WARUM diese – sie soll die Konvention nicht ein zweites Mal raten.
-    againstLayers: useLayers && againstLayers(best.from, best.to),
+    againstLayers: !!(violates && violates(best.from, best.to)),
+    // 'rule' = der Betreiber hat die Schichten aufgeschrieben, 'convention' = geraten. Die Ansicht
+    // formuliert danach als Vermutung oder als Feststellung.
+    layerSource: typeof useLayers === 'function' ? 'rule' : 'convention',
   };
 }

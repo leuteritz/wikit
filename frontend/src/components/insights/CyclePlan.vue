@@ -71,8 +71,13 @@ const summary = computed(() => {
     afterVia: moved ? b : null,
     difference: moved ? `${s.to} moves to a package both may use.` : `One interface in ${a}; ${s.to} implements it.`,
     gain: `${a} builds and tests without ${b}.`,
+    // ⚠️ Zwei verschieden starke Sätze, und der Unterschied ist nicht kosmetisch: liegt eine
+    // `layers`-Regel vor, IST diese Kante ein Verstoß gegen eine Festlegung – ohne sie ist es eine
+    // Vermutung aus einer Liste üblicher Packagenamen, und die darf nicht klingen wie ein Befund.
     why: w.againstLayers
-      ? 'The only arrow running against the layers.'
+      ? w.layerSource === 'rule'
+        ? 'The only arrow running against your layer rule.'
+        : 'The only arrow running against what looks like the layer order.'
       : `The cheapest cut — ${w.count === 1 ? 'one relation' : `${w.count} relations`}, a ${w.kind}.`,
   }
 })

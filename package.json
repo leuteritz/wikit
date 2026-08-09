@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.31.0",
-  "whatsNew": "See which classes no test ever touches",
+  "version": "4.32.0",
+  "whatsNew": "Set architecture rules and see what breaks them",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",
