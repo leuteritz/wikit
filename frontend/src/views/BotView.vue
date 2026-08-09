@@ -33,6 +33,10 @@ const TABS = [
   { id: 'connection', label: 'Connection', icon: 'lucide:server', hint: 'Server, model and timeout' },
   { id: 'generation', label: 'Generation', icon: 'lucide:sliders-horizontal', hint: 'How the model answers, and how the queue runs' },
   { id: 'prompts', label: 'Prompts', icon: 'lucide:message-square', hint: 'Project context and the four templates' },
+  // Der eine Reiter, der NICHTS mit Ollama zu tun hat. Er steht hier, weil /bot die einzige
+  // Einstellungsseite ist – und er steht getrennt, damit ihn auch niemand für eine KI-Einstellung
+  // hält. Der Statuspunkt oben betrifft ihn nicht.
+  { id: 'wiki', label: 'Wiki', icon: 'lucide:book-open', hint: 'Settings that are not about the AI' },
   { id: 'playground', label: 'Playground', icon: 'lucide:zap', hint: 'Try a prompt before a mass run' },
 ]
 const tab = ref('connection')
@@ -50,6 +54,7 @@ const ENV_NAMES = {
   timeoutMs: 'OLLAMA_TIMEOUT_MS',
   embedModel: 'OLLAMA_EMBED_MODEL',
   embedTimeoutMs: 'OLLAMA_EMBED_TIMEOUT_MS',
+  'wiki.historyKeep': 'WIKI_HISTORY_KEEP',
 }
 const envNameFor = (path) => (state.env?.[path] ? ENV_NAMES[path] || '' : '')
 
@@ -339,6 +344,35 @@ watch(
             </section>
           </div>
 
+          <!-- ---------------- Wiki ---------------- -->
+          <div v-show="tab === 'wiki'" class="space-y-5">
+            <section class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
+              <h2 class="mb-1 font-mono text-2xs uppercase tracking-[0.14em] text-[var(--color-text-muted)]">Version history</h2>
+              <p class="mb-3.5 text-2xs text-[var(--color-text-muted)]">
+                Every article keeps its earlier text. Nothing here reaches Ollama — the status dot above
+                does not apply.
+              </p>
+              <div class="grid gap-4 lg:grid-cols-2 lg:gap-x-8">
+                <BotField
+                  v-for="f in fieldsOf('wiki')"
+                  :key="f.path"
+                  :spec="f"
+                  :model-value="getPath(draft, f.path)"
+                  :default-value="getPath(state.defaults, f.path)"
+                  :overridden="state.overrides.includes(f.path)"
+                  :env-name="envNameFor(f.path)"
+                  @update:model-value="updateField(f.path, $event)"
+                />
+              </div>
+              <!-- Eine gesenkte Grenze wirft beim naechsten Speichern weg, was darueber liegt –
+                   das gehoert VOR den Klick, nicht in die Fehlermeldung danach. -->
+              <p class="mt-3 text-2xs leading-relaxed text-[var(--color-text-muted)]">
+                Lowering this drops the surplus versions the next time an article is saved — oldest
+                first, and it cannot be undone.
+              </p>
+            </section>
+          </div>
+
           <!-- ---------------- Playground ---------------- -->
           <div v-show="tab === 'playground'">
             <section class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
@@ -358,9 +392,13 @@ watch(
               Reset everything to defaults
             </button>
             <p class="text-3xs text-[var(--color-text-muted)]">
-              Removes the stored values. Afterwards the environment variables apply again
-              (<span class="font-mono">OLLAMA_URL</span>, <span class="font-mono">OLLAMA_MODEL</span>,
-              <span class="font-mono">OLLAMA_TIMEOUT_MS</span>), and the shipped prompt templates.
+              <!-- „Everything" heißt seit dem Wiki-Reiter mehr als die Ollama-Werte. Die Zeile
+                   nennt sie, also muss sie vollständig sein – sonst verspricht der Knopf weniger,
+                   als er tut. -->
+              Removes the stored values — including the wiki ones. Afterwards the environment
+              variables apply again (<span class="font-mono">OLLAMA_URL</span>,
+              <span class="font-mono">OLLAMA_MODEL</span>, <span class="font-mono">OLLAMA_TIMEOUT_MS</span>,
+              <span class="font-mono">WIKI_HISTORY_KEEP</span>), and the shipped prompt templates.
             </p>
           </div>
         </template>

@@ -209,12 +209,17 @@ async function restore(v) {
           </button>
         </div>
 
+        <!-- Dass getrimmt wurde, MUSS dastehen: ein Verlauf, der bei Fassung 12 beginnt, sieht
+             sonst aus wie einer, der dort begonnen hat. -->
         <p
           v-if="data.trimmed"
           class="shrink-0 border-t border-[var(--color-border)] px-4 py-2 text-2xs leading-relaxed text-[var(--color-text-muted)]"
         >
-          Older versions were dropped — Wikit keeps the last {{ data.keep }} per article
-          (<span class="font-mono">WIKI_HISTORY_KEEP</span>).
+          <template v-if="data.keep">
+            Older versions were dropped — Wikit keeps the last {{ data.keep }} per article.
+            <RouterLink to="/bot" class="text-[var(--color-accent)] hover:underline">Change it</RouterLink>.
+          </template>
+          <template v-else>Older versions were dropped before the limit was lifted.</template>
         </p>
       </div>
 

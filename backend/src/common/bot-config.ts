@@ -28,6 +28,20 @@ export interface BotPrompts {
   ask: string;
 }
 
+/**
+ * Was NICHT die KI betrifft, aber trotzdem hier einstellbar ist.
+ *
+ * ⚠️ `/bot` ist die einzige Einstellungsseite der Anwendung -- eine zweite Route fuer ein Feld
+ * waere eine Seite, die zu neunzig Prozent leer ist. Dass es nichts mit Ollama zu tun hat, sagt
+ * der eigene Reiter, und der Statuspunkt der Seite betrifft weiterhin allein das Textmodell.
+ * Deshalb traegt das Feld auch einen eigenen DB-Schluessel (`wiki.*` statt `bot.*`, s. `key` in
+ * BotFieldSpec): unter `bot.` gespeichert wuerde es behaupten, eine Bot-Einstellung zu sein.
+ */
+export interface BotWikiConfig {
+  /** Fassungen je Artikel, die aufbewahrt werden. 0 = unbegrenzt. */
+  historyKeep: number;
+}
+
 export interface BotQueueConfig {
   /** Gleichzeitig laufende Klassen-Einheiten. 1 = das bisherige, strikt sequentielle Verhalten. */
   concurrency: number;
@@ -67,6 +81,7 @@ export interface BotConfig {
   projectContext: string;
   prompts: BotPrompts;
   queue: BotQueueConfig;
+  wiki: BotWikiConfig;
 }
 
 export type BotFieldType = 'string' | 'text' | 'int' | 'float' | 'enum';
@@ -74,6 +89,15 @@ export type BotFieldType = 'string' | 'text' | 'int' | 'float' | 'enum';
 export interface BotFieldSpec {
   /** Pfad im BotConfig-Objekt, z. B. 'prompts.method'. Zugleich der DB-Key ('bot.prompts.method'). */
   path: string;
+  /**
+   * Abweichender DB-Schluessel. Ohne ihn gilt `bot.<path>`.
+   *
+   * ⚠️ Noetig, sobald ein Feld hier steht, das keine Bot-Einstellung IST (s. BotWikiConfig): der
+   * Schluesselraum in `settings` soll sagen, wovon eine Zeile handelt -- ein
+   * `bot.wiki.historyKeep` waere die Behauptung, die Aufbewahrung von Artikelfassungen sei eine
+   * Angelegenheit der KI.
+   */
+  key?: string;
   type: BotFieldType;
   min?: number;
   max?: number;
@@ -86,7 +110,12 @@ export interface BotFieldSpec {
   label: string;
   hint: string;
   /** Gruppe fuer die Oberflaeche. */
-  group: 'connection' | 'generation' | 'prompts' | 'queue' | 'context';
+  group: 'connection' | 'generation' | 'prompts' | 'queue' | 'context' | 'wiki';
+}
+
+/** Der DB-Schluessel eines Feldes. EINE Definition -- lesen, schreiben und zuruecksetzen teilen sie. */
+export function settingKey(spec: BotFieldSpec): string {
+  return spec.key ?? `bot.${spec.path}`;
 }
 
 // Die vier Vorlagen. Sie sind WORTGLEICH die bisher hart im OllamaService stehenden Prompts --
@@ -330,6 +359,16 @@ export const BOT_FIELDS: BotFieldSpec[] = [
     label: 'Retry delay',
     hint: 'Wait before retrying. Gives a busy or restarting Ollama time to answer again.',
   },
+  {
+    path: 'wiki.historyKeep',
+    key: 'wiki.historyKeep',
+    type: 'int',
+    min: 0,
+    max: 1000,
+    group: 'wiki',
+    label: 'Article versions kept',
+    hint: 'How many versions of each article survive. Older ones are dropped on the next save, oldest first — the history then starts later than the article does, and says so. 0 keeps every version; on a Pi that is a promise about disk space you make once and pay for daily.',
+  },
 ];
 
 // OLLAMA_URL zeigte bisher auf den vollen Generate-Endpunkt. Die Oberflaeche konfiguriert den HOST,
@@ -363,6 +402,10 @@ export function envDefaults(): BotConfig {
     // 1 = das bisherige Verhalten. Ein hoeherer Default wuerde auf dem Pi still mehr Last erzeugen,
     // als der Bestand vertraegt -- wer mehr will, stellt es ein und sieht die Warnung daneben.
     queue: { concurrency: 1, retries: 1, retryDelayMs: 2000 },
+    // 50 Fassungen sind auf einem Pi harmlos (Markdown, ein paar Kilobyte) und reichen weit
+    // zurueck. Der Env-Name folgt den uebrigen Betriebsgroessen (WIKI_DB, WIKI_BODY_LIMIT), nicht
+    // den OLLAMA_*: die Aufbewahrung ist keine Frage an das Modell.
+    wiki: { historyKeep: Math.max(0, Number(process.env.WIKI_HISTORY_KEEP ?? 50) || 0) },
   };
 }
 

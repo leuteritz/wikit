@@ -10,6 +10,7 @@ import {
   getPath,
   normalizeHost,
   setPath,
+  settingKey,
 } from './bot-config';
 
 // Persistenz der Bot-Einstellungen: Env/Code liefert den Default, die Tabelle `settings` den
@@ -21,7 +22,12 @@ import {
 // tausenden Methoden also tausende Abfragen fuer Werte, die sich zwischendurch nie aendern. Es
 // gibt genau einen schreibenden Prozess, deshalb reicht das Verwerfen beim Schreiben.
 
-const PREFIX = 'bot.';
+// ⚠️ Der Schluesselraum heisst NICHT mehr durchgehend `bot.` -- ein Feld, das keine
+// Bot-Einstellung ist, traegt seinen eigenen (s. `key` in BotFieldSpec). Gelesen wird deshalb
+// ueber `settingKey(spec)` statt ueber einen Praefix-Schnitt: sonst kaeme ein `wiki.*`-Wert nie
+// an, und das Formular zeigte still den Default an, waehrend die Zeile daneben in der Tabelle
+// steht. Fremde Schluessel (`arch.rules`) bleiben unberuehrt, weil nur bekannte Felder gesucht
+// werden -- das war vorher der Zweck des Praefix-Filters.
 
 @Injectable()
 export class SettingsService {
@@ -47,15 +53,13 @@ export class SettingsService {
     const overrides: string[] = [];
     const rows = await this.ds.getRepository(Setting).find();
     for (const row of rows) {
-      if (!row.key.startsWith(PREFIX)) continue;
-      const path = row.key.slice(PREFIX.length);
-      const spec = this.spec(path);
       // Unbekannter Schluessel: stehen lassen, nicht anwenden. Er stammt aus einer aelteren oder
       // neueren Fassung -- ein Downgrade soll die Einstellung nicht loeschen.
+      const spec = BOT_FIELDS.find((f) => settingKey(f) === row.key);
       if (!spec) continue;
       try {
-        setPath(cfg, path, this.parse(spec, row.value));
-        overrides.push(path);
+        setPath(cfg, spec.path, this.parse(spec, row.value));
+        overrides.push(spec.path);
       } catch (e: any) {
         this.logger.warn(`Ignoring stored setting ${row.key}: ${e?.message || e}`);
       }
@@ -89,8 +93,8 @@ export class SettingsService {
       const raw = getPath(partial, spec.path);
       if (raw === undefined) continue; // nicht mitgeschickt = unveraendert
       const value = this.coerce(spec, raw);
-      if (value === null) removals.push(PREFIX + spec.path);
-      else writes.push({ key: PREFIX + spec.path, value: String(value) });
+      if (value === null) removals.push(settingKey(spec));
+      else writes.push({ key: settingKey(spec), value: String(value) });
     }
     if (!writes.length && !removals.length) return this.bot();
 
@@ -110,8 +114,9 @@ export class SettingsService {
    */
   async reset(paths?: string[]): Promise<BotConfig> {
     const keys = (paths && paths.length ? paths : BOT_FIELDS.map((f) => f.path))
-      .filter((p) => this.spec(p))
-      .map((p) => PREFIX + p);
+      .map((p) => this.spec(p))
+      .filter((s): s is BotFieldSpec => !!s)
+      .map((s) => settingKey(s));
     if (paths && paths.length && !keys.length) throw new BadRequestException('No known setting to reset');
     await this.ds.getRepository(Setting).delete(keys);
     this.cache = null;

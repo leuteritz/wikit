@@ -93,8 +93,8 @@ On first start the DB is created under `DATA_DIR` and seeded with a few demo art
 | `WIKI_BODY_LIMIT` | `64mb` | Largest accepted body. Raising it means raising `client_max_body_size` in `deploy/nginx.conf` too — nginx rejects first otherwise. |
 | `WIKI_HISTORY_KEEP` | `50` | Versions kept per article. `0` keeps every one of them. |
 
-The five `OLLAMA_*` values are only the **default**; anything set under `/bot` wins. `PORT`, `HOST`
-and `WIKI_DB` in `.env.example` are for bare-metal runs only.
+The five `OLLAMA_*` values and `WIKI_HISTORY_KEEP` are only the **default**; anything set under
+`/bot` wins. `PORT`, `HOST` and `WIKI_DB` in `.env.example` are for bare-metal runs only.
 
 ## Java code analysis
 

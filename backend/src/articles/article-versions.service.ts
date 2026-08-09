@@ -3,6 +3,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In } from 'typeorm';
 import { MarkdownService } from '../common/markdown.service';
 import { OllamaService } from '../common/ollama.service';
+import { SettingsService } from '../common/settings.service';
 import { Article } from '../entities/article.entity';
 import { ArticleVersion } from '../entities/article-version.entity';
 import { compareTexts, lineStats, unifiedDiff } from './text-diff';
@@ -40,11 +41,16 @@ export class ArticleVersionsService {
   /**
    * Wie viele Fassungen je Artikel aufbewahrt werden. 0 = unbegrenzt.
    *
-   * Betriebsgroesse wie WIKI_DB oder WIKI_BODY_LIMIT, deshalb Env und kein Feld in `/bot`: dort
-   * stehen Arbeitsentscheidungen ueber die KI, und ein Aufbewahrungs-Deckel unter "Generation"
-   * behauptete einen Zusammenhang, den es nicht gibt.
+   * ⚠️ Einstellbar zur Laufzeit (`/bot`, Reiter „Wiki"), Env `WIKI_HISTORY_KEEP` ist nur der
+   * Default -- gleiche Regel wie bei den Ollama-Werten. Deshalb wird der Wert bei JEDEM Lauf
+   * frisch gelesen und nicht in ein Feld gelegt: eine gesenkte Grenze soll beim naechsten
+   * Speichern greifen und nicht erst nach einem Neustart (dieselbe Ueberlegung wie bei
+   * `bot.queue.concurrency`, das der Runner nach jeder Klasse neu liest). Der Cache im
+   * SettingsService macht das billig.
    */
-  static readonly KEEP = Math.max(0, Number(process.env.WIKI_HISTORY_KEEP ?? 50) || 0);
+  private async keep(): Promise<number> {
+    return (await this.settings.bot()).wiki.historyKeep;
+  }
 
   /**
    * Laufende KI-Zusammenfassungen je Fassung.
@@ -60,6 +66,7 @@ export class ArticleVersionsService {
     @InjectDataSource() private readonly ds: DataSource,
     private readonly markdown: MarkdownService,
     private readonly ollama: OllamaService,
+    private readonly settings: SettingsService,
   ) {}
 
   // --- Schreibpfad ---------------------------------------------------------
@@ -213,14 +220,15 @@ export class ArticleVersionsService {
    * (FTS5 und Schema-DDL), und die Ids sind ohnehin in einer Abfrage zu haben.
    */
   private async trim(manager: EntityManager, articleId: number): Promise<void> {
-    if (!ArticleVersionsService.KEEP) return;
+    const keep = await this.keep();
+    if (!keep) return;
     const repo = manager.getRepository(ArticleVersion);
     const all = await repo.find({
       where: { article_id: articleId },
       order: { version_number: 'DESC' },
       select: { id: true },
     });
-    const doomed = all.slice(ArticleVersionsService.KEEP);
+    const doomed = all.slice(keep);
     if (doomed.length) await repo.delete({ id: In(doomed.map((d) => d.id)) });
   }
 
@@ -302,7 +310,7 @@ export class ArticleVersionsService {
       // Was der Bericht NICHT zeigen kann, steht in der Antwort statt nur in der Ansicht:
       // getrimmte Fassungen sind weg, und ein Verlauf, der bei Fassung 12 beginnt, sieht sonst
       // aus wie einer, der dort begonnen hat.
-      keep: ArticleVersionsService.KEEP,
+      keep: await this.keep(),
       trimmed: versions.length > 0 && versions[versions.length - 1].version_number > 1,
     };
   }

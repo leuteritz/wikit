@@ -88,6 +88,7 @@ export class BotService {
         timeoutMs: !!process.env.OLLAMA_TIMEOUT_MS,
         embedModel: !!process.env.OLLAMA_EMBED_MODEL,
         embedTimeoutMs: !!process.env.OLLAMA_EMBED_TIMEOUT_MS,
+        'wiki.historyKeep': !!process.env.WIKI_HISTORY_KEEP,
       },
     };
   }

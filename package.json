@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.34.0",
-  "whatsNew": "Compare and restore earlier versions of an article",
+  "version": "4.35.0",
+  "whatsNew": "Choose how many article versions to keep",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",
