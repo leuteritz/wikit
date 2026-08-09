@@ -294,10 +294,11 @@ export const api = {
   resetBotSettings: (paths = null) => http('POST', '/bot/settings/reset', paths ? { paths } : {}),
   // `host`/`model` optional: pruefen, BEVOR gespeichert wird. `silent`, weil die Antwort den Grund
   // bereits an Ort und Stelle anzeigt – ein Toast daneben waere dieselbe Meldung zweimal.
-  botHealth: ({ host = '', model = '' } = {}) => {
+  botHealth: ({ host = '', model = '', embedModel = '' } = {}) => {
     const q = new URLSearchParams()
     if (host) q.set('host', host)
     if (model) q.set('model', model)
+    if (embedModel) q.set('embedModel', embedModel)
     const s = q.toString()
     return http('GET', `/bot/health${s ? `?${s}` : ''}`, null, { silent: true })
   },

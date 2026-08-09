@@ -117,30 +117,50 @@ export class BotService {
   }
 
   /**
+   * Liegt `name` im Katalog? Ollama fuehrt Modelle als name:tag -- wer "qwen2.5-coder" eintraegt,
+   * meint ":latest", sonst meldete der Test ein fehlendes Modell, das der Server anstandslos laedt.
+   *
+   * Eine Funktion, weil sie fuer ZWEI Modelle gilt (Generierung und Embedding). Zweimal
+   * hingeschrieben waere die Tag-Regel zweimal zu pflegen.
+   */
+  private installed(models: any[], name: string): boolean {
+    return models.some((m: any) => {
+      const n = String(m?.name || m?.model || '');
+      return n === name || n === `${name}:latest` || n.split(':')[0] === name;
+    });
+  }
+
+  /**
    * Verbindungstest: erreichbar?, welche Ollama-Version, wie schnell antwortet der Server, und --
-   * die eigentlich wichtige Frage -- ist das eingestellte Modell dort ueberhaupt installiert.
+   * die eigentlich wichtige Frage -- sind die eingestellten Modelle dort ueberhaupt installiert.
    * Ein gruener Punkt bei fehlendem Modell waere eine Falschauskunft: die Generierung schluege
    * spaeter mit "model not found" fehl, und zwar erst mitten im Massenlauf.
+   *
+   * ⚠️ Geprueft werden BEIDE Modelle, und der Katalog dafuer wird ohnehin schon geholt -- das
+   * Embedding-Modell kostet also keine zweite Anfrage. Was es nicht tut: den Statuspunkt faerben
+   * (s. `useBot().status`). Die Bedeutungssuche ist optional, ein gelber Punkt ueber ein bewusst
+   * leer gelassenes Feld waere ein Daueralarm. Die Auskunft gehoert an die Karte, die den
+   * Indexlauf ausloest.
    */
-  async health(hostParam?: string, modelParam?: string): Promise<any> {
+  async health(hostParam?: string, modelParam?: string, embedModelParam?: string): Promise<any> {
     const cfg = await this.settings.bot();
     const host = normalizeHost(hostParam || cfg.host);
     const model = (modelParam || cfg.model || '').trim();
+    // Leeres Feld heisst „Bedeutungssuche aus" -- dann gibt es nichts zu pruefen und `null` ist die
+    // richtige Antwort, nicht `false`.
+    const embedModel = (embedModelParam ?? cfg.embedModel ?? '').trim();
     const startedAt = Date.now();
     try {
       const version = await this.probe(`${host}/api/version`);
       const latencyMs = Date.now() - startedAt;
       let models: any[] = [];
       let modelInstalled: boolean | null = null;
+      let embedModelInstalled: boolean | null = null;
       try {
         const tags = await this.probe(`${host}/api/tags`);
         models = Array.isArray(tags?.models) ? tags.models : [];
-        // Ollama fuehrt Modelle als name:tag. Wer "qwen2.5-coder" eintraegt, meint ":latest" --
-        // sonst meldete der Test ein fehlendes Modell, das der Server anstandslos laedt.
-        modelInstalled = models.some((m: any) => {
-          const n = String(m?.name || m?.model || '');
-          return n === model || n === `${model}:latest` || n.split(':')[0] === model;
-        });
+        modelInstalled = this.installed(models, model);
+        if (embedModel) embedModelInstalled = this.installed(models, embedModel);
       } catch {
         /* Version steht, Katalog nicht abrufbar -> "unbekannt" statt einer erfundenen Aussage */
       }
@@ -148,9 +168,11 @@ export class BotService {
         online: true,
         host,
         model,
+        embedModel,
         latencyMs,
         version: version?.version || null,
         modelInstalled,
+        embedModelInstalled,
         modelCount: models.length,
         error: null,
         checkedAt: new Date().toISOString(),
@@ -161,9 +183,11 @@ export class BotService {
         online: false,
         host,
         model,
+        embedModel,
         latencyMs: Date.now() - startedAt,
         version: null,
         modelInstalled: null,
+        embedModelInstalled: null,
         modelCount: 0,
         error: aborted
           ? `No answer from ${host} within ${PROBE_TIMEOUT_MS} ms`

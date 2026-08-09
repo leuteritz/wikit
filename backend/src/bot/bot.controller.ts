@@ -26,10 +26,14 @@ export class BotController {
     return this.svc.resetSettings(Array.isArray(body?.paths) ? body.paths : undefined);
   }
 
-  // Verbindungstest. `host`/`model` optional -> pruefen, bevor gespeichert wird.
+  // Verbindungstest. `host`/`model`/`embedModel` optional -> pruefen, bevor gespeichert wird.
   @Get('health')
-  health(@Query('host') host?: string, @Query('model') model?: string) {
-    return this.svc.health(host, model);
+  health(
+    @Query('host') host?: string,
+    @Query('model') model?: string,
+    @Query('embedModel') embedModel?: string,
+  ) {
+    return this.svc.health(host, model, embedModel);
   }
 
   // Installierte Modelle des Ollama-Servers (ollama pull). `host` optional wie oben.

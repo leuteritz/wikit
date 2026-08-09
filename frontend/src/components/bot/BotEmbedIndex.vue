@@ -18,8 +18,20 @@ import { api } from '../../lib/api.js'
 import { useActivity } from '../../composables/useActivity.js'
 import { useNotifications } from '../../composables/useNotifications.js'
 import { useEmbeddings } from '../../composables/useEmbeddings.js'
+import { copyToClipboard } from '../../lib/clipboard.js'
 import { Icon } from '../../lib/icons.js'
 import { vTip } from '../../lib/tooltip.js'
+
+// ⚠️ Der Verbindungsstand kommt als PROP, nicht aus einem eigenen Request. `BotHealthCard` holt ihn
+// oben auf derselben Seite ohnehin, und der Katalog, aus dem beide Aussagen stammen, ist derselbe
+// (`/api/tags`). Zweimal zu fragen waere zweimal derselbe Ollama-Aufruf für eine Karte, die
+// danebensteht -- und zwei Staende, die sich für einen Moment widersprechen können.
+const props = defineProps({
+  /** Antwort von `GET /api/bot/health`, oder `null` solange nicht geprüft. */
+  health: { type: Object, default: null },
+  /** Das Modell aus dem FORMULAR – die Karte soll auch für einen noch nicht gespeicherten Wert gelten. */
+  draftModel: { type: String, default: '' },
+})
 
 const { trackRun } = useActivity()
 const { push } = useNotifications()
@@ -40,6 +52,39 @@ const rows = computed(() => [
   { key: 'code', label: 'Classes', icon: 'lucide:file-code', s: java.value },
   { key: 'wiki', label: 'Articles', icon: 'lucide:book-open', s: articles.value },
 ])
+
+// --- Liegt das Modell überhaupt auf dem Server? ------------------------------------------------
+//
+// ⚠️ Die Frage gehört VOR den Knopf, nicht hinter ihn. Ohne sie ist der einzige Weg, das Fehlen zu
+// bemerken, ein Lauf, der bei „0 of 2688" abbricht – und der Statuspunkt oben sagt nichts dazu, er
+// prüft das Textmodell. Ein gepulltes Textmodell neben einem fehlenden Embedding-Modell ist dabei
+// der Normalfall: es kommt bei keinem anderen Pull mit.
+
+/** Das Modell, über das `health` tatsächlich eine Aussage gemacht hat. */
+const checkedModel = computed(() => props.health?.embedModel || '')
+
+// Ein geändertes, noch nicht geprüftes Feld erzeugt KEINE Aussage: sie handelte sonst von einem
+// Modell, das gar nicht mehr gemeint ist. Gleiche Regel wie beim Verbindungstest darüber.
+const unchecked = computed(() => !!props.draftModel && !!checkedModel.value && props.draftModel !== checkedModel.value)
+
+// Drei Zustände, und nur einer ist eine Aussage: `false` = liegt nicht dort, `true` = alles gut,
+// `null` = Katalog nicht abrufbar oder noch nicht geprüft. Aus `null` eine Warnung zu machen wäre
+// eine erfundene Auskunft – dieselbe Regel wie bei `modelInstalled`.
+const modelMissing = computed(
+  () => !unchecked.value && props.health?.online === true && props.health?.embedModelInstalled === false,
+)
+
+const pullCommand = computed(() => `ollama pull ${checkedModel.value}`)
+const copied = ref(false)
+
+async function copyPull() {
+  if (!(await copyToClipboard(pullCommand.value))) {
+    push({ kind: 'error', title: 'Copy failed', message: 'Select the command and copy it by hand.' })
+    return
+  }
+  copied.value = true
+  setTimeout(() => (copied.value = false), 1500)
+}
 
 async function build(force = false) {
   if (busy.value) return
@@ -147,6 +192,39 @@ async function clear() {
           </div>
         </dl>
         <p class="mt-1.5 font-mono text-3xs text-[var(--color-text-muted)]">model {{ model }}</p>
+
+        <!-- ⚠️ Der Befund steht VOR dem Knopf und nennt den fertigen Befehl. „Model not installed"
+             allein ist ein Befund, den man erst noch übersetzen muss – und die Übersetzung ist
+             immer dieselbe Zeile. Der Knopf bleibt trotzdem bedienbar: der Katalog kann
+             unvollständig sein, und ein gesperrter Knopf bei einer Fehlvermutung wäre schlimmer
+             als ein Lauf, der mit einer klaren Meldung endet. -->
+        <div
+          v-if="modelMissing"
+          class="mt-3 rounded-md border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 p-2.5"
+        >
+          <p class="flex items-start gap-1.5 text-2xs text-[var(--color-warning)]">
+            <Icon icon="lucide:alert-triangle" class="mt-px h-3.5 w-3.5 shrink-0" />
+            <span>
+              <strong class="font-semibold">{{ checkedModel }}</strong> is not pulled on
+              {{ props.health?.host }} — indexing will stop at the first batch. It does not come with
+              any other model.
+            </span>
+          </p>
+          <div class="mt-2 flex items-center gap-2">
+            <code
+              class="min-w-0 flex-1 overflow-x-auto rounded bg-[var(--color-surface-offset)] px-2 py-1 font-mono text-3xs text-[var(--color-text)]"
+            >{{ pullCommand }}</code>
+            <button
+              v-tip="{ title: 'Copy the command', hint: 'Run it on the machine Ollama runs on, not inside the Wikit container.' }"
+              type="button"
+              class="inline-flex shrink-0 items-center gap-1 rounded border border-[var(--color-border)] px-2 py-1 text-3xs font-medium text-[var(--color-text-muted)] transition hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+              @click="copyPull"
+            >
+              <Icon :icon="copied ? 'lucide:check' : 'lucide:copy'" class="h-3 w-3" />
+              {{ copied ? 'Copied' : 'Copy' }}
+            </button>
+          </div>
+        </div>
       </template>
 
       <div class="mt-3 flex flex-wrap items-center gap-2">

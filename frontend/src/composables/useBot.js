@@ -133,7 +133,7 @@ export function useBot() {
     state.healthChecking = true
     try {
       const src = useDraft ? state.draft : state.config
-      const res = await api.botHealth(src ? { host: src.host, model: src.model } : {})
+      const res = await api.botHealth(src ? { host: src.host, model: src.model, embedModel: src.embedModel } : {})
       state.health = res
       return res
     } catch (e) {
@@ -178,6 +178,11 @@ export function useBot() {
 
   // Ampel fuer die Sidebar: grau = ungeprueft, rot = nicht erreichbar, gelb = erreichbar, aber das
   // eingestellte Modell liegt dort nicht (die Generierung schluege spaeter fehl), gruen = bereit.
+  //
+  // ⚠️ Das EMBEDDING-Modell faerbt hier bewusst NICHT mit, obwohl `health` es seit 4.26.2 mitprueft.
+  // Die Bedeutungssuche ist optional (leeres Feld = aus), und ein gelber Punkt ueber einen bewusst
+  // gewaehlten Zustand ist ein Daueralarm -- dasselbe Argument wie gegen die faerbende Ask-Zahl in
+  // der Sidebar. Seine Auskunft steht an der Karte, die den Indexlauf ausloest (`BotEmbedIndex`).
   const status = computed(() => {
     if (!state.health) return 'unknown'
     if (!state.health.online) return 'offline'

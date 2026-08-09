@@ -263,7 +263,7 @@ watch(
             <!-- Der Bedeutungsindex gehoert unter das Modell, das ihn erzeugt: ein Modellwechsel
                  macht jeden gespeicherten Vektor ungueltig, und diese Folge muss dort stehen, wo
                  man wechselt. -->
-            <BotEmbedIndex />
+            <BotEmbedIndex :health="state.health" :draft-model="draft.embedModel" />
           </div>
 
           <!-- ---------------- Generation ---------------- -->
