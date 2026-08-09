@@ -4,6 +4,7 @@
 // von niemandem genutzter Importpfad fuer dieselben Klassen.
 import { Category } from './category.entity';
 import { Article } from './article.entity';
+import { ArticleVersion } from './article-version.entity';
 import { Tag } from './tag.entity';
 import { ArticleTag } from './article-tag.entity';
 import { Relation } from './relation.entity';
@@ -18,6 +19,7 @@ export const ALL_ENTITIES = [
   Setting,
   Category,
   Article,
+  ArticleVersion,
   Tag,
   ArticleTag,
   Relation,

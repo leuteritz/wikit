@@ -98,6 +98,15 @@ watch(() => props.article?.id, () => nextTick(enhanceCodeBlocks))
       </div>
 
       <div class="mt-5 flex gap-2">
+        <!-- Der Weg zum Gedächtnis des Artikels steht AM Artikel: „was stand hier vorher?" fragt
+             man beim Lesen, nicht in einer Übersicht. -->
+        <RouterLink
+          :to="`/article/${article.slug}/history`"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+        >
+          <Icon icon="lucide:history" class="h-4 w-4" />
+          History
+        </RouterLink>
         <button
           type="button"
           class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-danger)] transition hover:bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)]"

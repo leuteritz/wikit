@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.33.0",
-  "whatsNew": "Try a refactoring on paper before you do it",
+  "version": "4.34.0",
+  "whatsNew": "Compare and restore earlier versions of an article",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

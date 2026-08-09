@@ -54,6 +54,44 @@ CREATE VIRTUAL TABLE IF NOT EXISTS articles_fts USING fts5(
   tokenize = 'unicode61 remove_diacritics 2'
 );
 
+-- Fassungsverlauf eines Artikels. Das Gegenstueck zu java_file_versions, mit drei bewussten
+-- Unterschieden.
+--
+-- (1) KEINE diff-Spalte. Jede Zeile traegt den VOLLEN Text, also ist der Unterschied zur
+-- Vorfassung ableitbar -- und zwei beliebige Fassungen lassen sich gegeneinander rechnen, was
+-- ein gespeicherter Diff nur fuer je zwei benachbarte koennte. Dieselbe Ueberlegung wie bei
+-- java_embeddings.source_hash: ableitbar schlaegt gemerkt, weil kein Schreibpfad an eine
+-- Invalidierung denken muss.
+--
+-- (2) Der Snapshot ist der TEXT (title/summary/content), nicht der ganze Artikel. Kategorie und
+-- Tags haengen normalisiert an eigenen Tabellen -- sie hier mitzuschreiben waere eine zweite
+-- Wahrheit ueber dieselbe Zuordnung, und ein Wiederherstellen wuerde stillschweigend eine
+-- Verschlagwortung zuruecknehmen, nach der niemand gefragt hat.
+--
+-- (3) note = warum diese Fassung entstand, sofern es nicht die gewoehnliche Bearbeitung war
+-- (aktuell nur "restored from ..."). NULL ist der Normalfall. Ohne die Spalte saehe ein
+-- Wiederherstellen in der Liste aus wie eine normale Bearbeitung, und genau das ist es nicht.
+--
+-- created_at ist der Zeitpunkt, den die Fassung DARSTELLT, nicht der ihres INSERT: die erste
+-- Fassung eines Altbestand-Artikels wird beim ersten Speichern nachgesichert und traegt dann
+-- articles.updated_at von damals. Anders herum behauptete die Historie, ein seit Monaten
+-- unveraenderter Text sei in derselben Sekunde entstanden wie seine Aenderung.
+-- Hinweis: KEIN Semikolon in diesem Kommentar (SCHEMA wird beim Init daran gesplittet).
+CREATE TABLE IF NOT EXISTS article_versions (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  article_id      INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  version_number  INTEGER NOT NULL,
+  title           TEXT NOT NULL,
+  summary         TEXT NOT NULL DEFAULT '',
+  content         TEXT NOT NULL,
+  note            TEXT,
+  ai_summary      TEXT,
+  ai_summary_html TEXT,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (article_id, version_number)
+);
+CREATE INDEX IF NOT EXISTS idx_article_versions_article ON article_versions(article_id);
+
 -- Persistente Einstellungen (aktuell: der Bot-Bereich unter /bot). Bewusst key/value statt einer
 -- Spalte je Feld: eine FEHLENDE Zeile heisst "nicht gesetzt" und laesst damit den Default aus der
 -- Env bzw. dem Code gelten. Genau diese Unterscheidung braucht der Reset-Knopf je Feld -- mit

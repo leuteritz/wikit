@@ -18,6 +18,12 @@ export interface BotPrompts {
   class: string;
   /** Changelog-Eintrag aus einem Unified-Diff. */
   diff: string;
+  /**
+   * Dasselbe fuer einen WIKI-Artikel. Eigene Vorlage und nicht `diff` mit anderem Platzhalter:
+   * die Java-Fassung fragt nach neuen Methoden und geaenderten Signaturen, und ein Modell, das
+   * danach sucht, findet sie zur Not auch in einem Text ueber Urlaubsplanung.
+   */
+  articleDiff: string;
   /** Antwort auf eine Frage an die Codebasis, belegt aus den mitgelieferten Klassen (`/ask`). */
   ask: string;
 }
@@ -109,6 +115,12 @@ Klasse: {fqn} ({classType})
 {diff}
 \`\`\``,
 
+  articleDiff: `{context}Unten steht ein Unified-Diff eines Wiki-Artikels mit dem Titel "{title}". Fasse in EINEM kurzen Satz zusammen, was sich inhaltlich geaendert hat -- also worum es bei der Aenderung ging, nicht welche Zeilen betroffen sind. Nenne keine Zeilennummern und keine Markdown-Syntax. Ist die Aenderung rein sprachlich (Tippfehler, Umformulierung), sage genau das. Antworte nur mit dem Satz.
+
+\`\`\`diff
+{diff}
+\`\`\``,
+
   // ⚠️ Die Belegpflicht ist keine Hoeflichkeit, sondern die Bedingung, unter der die Antwort
   // ueberhaupt verwendbar ist: ein Modell, das aus dem Gedaechtnis antwortet, erfindet in einer
   // fremden Codebasis plausible Klassennamen. Nur was in eckigen Klammern steht UND in den
@@ -141,6 +153,7 @@ export const PROMPT_PLACEHOLDERS: Record<keyof BotPrompts, string[]> = {
   methodShort: ['context', 'signature', 'javadoc', 'className', 'methodName', 'returnType'],
   class: ['context', 'fqn', 'className', 'classType', 'package', 'methods'],
   diff: ['context', 'className', 'diff'],
+  articleDiff: ['context', 'title', 'diff'],
   ask: ['context', 'question', 'sources'],
 };
 
@@ -158,6 +171,7 @@ export const PLACEHOLDER_HELP: Record<string, string> = {
   package: 'Package of the class, empty for the default package.',
   methods: 'Comma-separated method names, already prefixed. Empty for a class without methods.',
   diff: 'Unified diff against the previous version.',
+  title: 'Title of the article this version belongs to.',
   question: 'The question as typed, unchanged.',
   sources: 'The retrieved classes with package, description and member signatures. This is everything the model knows about the codebase.',
 };
@@ -274,6 +288,13 @@ export const BOT_FIELDS: BotFieldSpec[] = [
   { path: 'prompts.methodShort', type: 'text', group: 'prompts', label: 'Short method summary', hint: 'Used by the single "summarize" call — signature and Javadoc only, no body.' },
   { path: 'prompts.class', type: 'text', group: 'prompts', label: 'Class description', hint: 'Runs after all methods of a class are done.' },
   { path: 'prompts.diff', type: 'text', group: 'prompts', label: 'Change summary', hint: 'Changelog entry generated when a class is re-imported.' },
+  {
+    path: 'prompts.articleDiff',
+    type: 'text',
+    group: 'prompts',
+    label: 'Article change summary',
+    hint: 'One line describing what changed, shown next to each version of an article. Placeholders: {title}, {diff}.',
+  },
   {
     path: 'prompts.ask',
     type: 'text',

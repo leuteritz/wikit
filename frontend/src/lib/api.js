@@ -97,6 +97,14 @@ export const api = {
   updateArticle: (id, data) => http('PUT', `/articles/${id}`, data),
   deleteArticle: (id) => http('DELETE', `/articles/${id}`),
 
+  // Fassungsverlauf eines Artikels. Über die Id, nicht den Slug: eine Fassung hängt am Artikel,
+  // und der Slug kann sich ändern, ohne dass sich am Text etwas tut.
+  listArticleVersions: (id) => http('GET', `/articles/${id}/versions`),
+  getArticleVersion: (id, version) => http('GET', `/articles/${id}/versions/${version}`),
+  // `from = 0` heißt „gegen nichts" – so lässt sich auch die älteste Fassung ansehen.
+  diffArticleVersions: (id, from, to) => http('GET', `/articles/${id}/versions/diff?from=${from}&to=${to}`),
+  restoreArticleVersion: (id, version) => http('POST', `/articles/${id}/versions/${version}/restore`),
+
   listCategories: () => http('GET', '/categories'),
   createCategory: (data) => http('POST', '/categories', data),
 

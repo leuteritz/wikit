@@ -19,6 +19,11 @@ const routes = [
   { path: '/new', name: 'new', component: () => import('./views/ArticleEdit.vue') },
   { path: '/edit/:slug', name: 'edit', component: () => import('./views/ArticleEdit.vue'), props: true },
   { path: '/article/:slug', name: 'article', component: () => import('./views/ArticleDetail.vue'), props: true },
+  // Eigene Route statt eines Modus in der Artikelansicht: ein Stand von damals ist etwas, das man
+  // verlinkt („so stand es vor dem Umbau"), und die zwei Spalten des Vergleichs brauchen die
+  // Breite, die der Artikeltext bewusst nicht nutzt. Die verglichenen Fassungen stehen deshalb in
+  // der URL – gleiche Überlegung wie bei /topic und /ask.
+  { path: '/article/:slug/history', name: 'article-history', component: () => import('./views/ArticleHistory.vue'), props: true },
 ]
 
 export default createRouter({

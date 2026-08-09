@@ -20,6 +20,8 @@ copying one file.
 
 - **Markdown editor** — split view (CodeMirror); HTML is rendered once on save, server-side, with
   Shiki syntax highlighting.
+- **Article history** — compare any two versions of an article word by word, and put an older one
+  back. Edits made in one sitting stay one version.
 - **Instant search** — `Ctrl/Cmd + K` over articles, classes, methods and raw source, backed by
   SQLite **FTS5** (a trigram index answers substrings and punctuation without reading any file).
   With Ollama it also finds classes **by meaning** — the ones that do the thing, whatever they
@@ -89,6 +91,7 @@ On first start the DB is created under `DATA_DIR` and seeded with a few demo art
 | `OLLAMA_TIMEOUT_MS` | `20000` | Abort and fall back to Javadoc if the model is too slow. Text generation only. |
 | `OLLAMA_EMBED_TIMEOUT_MS` | `120000` | Per batch while indexing, and the first batch also loads the model. Raise it on a Pi. |
 | `WIKI_BODY_LIMIT` | `64mb` | Largest accepted body. Raising it means raising `client_max_body_size` in `deploy/nginx.conf` too — nginx rejects first otherwise. |
+| `WIKI_HISTORY_KEEP` | `50` | Versions kept per article. `0` keeps every one of them. |
 
 The five `OLLAMA_*` values are only the **default**; anything set under `/bot` wins. `PORT`, `HOST`
 and `WIKI_DB` in `.env.example` are for bare-metal runs only.

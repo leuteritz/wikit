@@ -522,4 +522,24 @@ export class OllamaService {
     const { text } = await this.run(cfg, this.withLanguage(cfg, prompt), signal);
     return text;
   }
+
+  /**
+   * Ein Satz darueber, was sich an einem WIKI-Artikel geaendert hat.
+   *
+   * Eigene Methode statt eines zweiten Aufrufers von `generateDiffSummary`: der Unterschied ist
+   * nicht der Platzhalter, sondern die Frage (s. `DEFAULT_PROMPTS.articleDiff`).
+   */
+  async generateArticleDiffSummary(
+    { title, diff }: { title: string; diff: string },
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const cfg = await this.settings.bot();
+    const prompt = renderPrompt(cfg.prompts.articleDiff, {
+      context: this.contextBlock(cfg),
+      title,
+      diff,
+    });
+    const { text } = await this.run(cfg, this.withLanguage(cfg, prompt), signal);
+    return text;
+  }
 }

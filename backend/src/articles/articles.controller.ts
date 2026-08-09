@@ -1,7 +1,8 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query } from '@nestjs/common';
 import { ArticlesService } from './articles.service';
 import { ArticleEmbeddingsService } from './article-embeddings.service';
 import { ArticleHealthService } from './article-health.service';
+import { ArticleVersionsService } from './article-versions.service';
 
 @Controller('articles')
 export class ArticlesController {
@@ -9,6 +10,7 @@ export class ArticlesController {
     private readonly svc: ArticlesService,
     private readonly embeddings: ArticleEmbeddingsService,
     private readonly health: ArticleHealthService,
+    private readonly versions: ArticleVersionsService,
   ) {}
 
   @Get()
@@ -70,6 +72,37 @@ export class ArticlesController {
   @Get(':id/related')
   related(@Param('id') id: string) {
     return this.embeddings.suggestFor(Number(id));
+  }
+
+  // --- Fassungsverlauf -----------------------------------------------------
+  // Zweisegmentig, kollidiert also nicht mit `:slug`. Ueber die **Id** wie `:id/related`: der
+  // Aufrufer hat den Artikel bereits geladen, und eine Fassung haengt an der Id, nicht am Slug –
+  // der kann sich aendern, ohne dass sich am Text etwas tut.
+  @Get(':id/versions')
+  listVersions(@Param('id') id: string) {
+    return this.versions.list(Number(id));
+  }
+
+  // ⚠️ VOR `:version` – sonst sucht die Anwendung eine Fassung mit der Nummer „diff".
+  //
+  // `from` darf 0 sein („gegen nichts"): nur so laesst sich die aelteste vorhandene Fassung
+  // ansehen, ohne dass die Ansicht dafuer einen zweiten Modus braucht.
+  @Get(':id/versions/diff')
+  compareVersions(@Param('id') id: string, @Query('from') from: string, @Query('to') to: string) {
+    return this.versions.compare(Number(id), Number(from) || 0, Number(to));
+  }
+
+  @Get(':id/versions/:version')
+  getVersion(@Param('id') id: string, @Param('version') version: string) {
+    return this.versions.getOne(Number(id), Number(version));
+  }
+
+  // POST, weil es schreibt: die Fassung wird zum neuen Stand des Artikels – und zwar als weitere
+  // Fassung, nicht durch Beschneiden der Historie (s. ArticlesService.restoreVersion).
+  @Post(':id/versions/:version/restore')
+  @HttpCode(200)
+  restoreVersion(@Param('id') id: string, @Param('version') version: string) {
+    return this.svc.restoreVersion(id, version);
   }
 
   @Get(':slug')
