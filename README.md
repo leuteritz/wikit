@@ -18,8 +18,9 @@ copying one file.
 
 ## Features
 
-- **Markdown editor** — split view (CodeMirror); HTML is rendered once on save, server-side, with
-  Shiki syntax highlighting.
+- **Markdown editor** — split view (CodeMirror), `Ctrl/Cmd + S` to save; HTML is rendered once on
+  save, server-side, with Shiki highlighting. Unsaved work survives a reload or a closed tab: the
+  draft is kept in the browser and offered back the next time you open that article.
 - **Article history** — compare any two versions of an article word by word, and put an older one
   back. Edits made in one sitting stay one version.
 - **Instant search** — `Ctrl/Cmd + K` over articles, classes, methods and raw source, backed by

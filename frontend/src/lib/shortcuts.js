@@ -58,6 +58,10 @@ export const SHORTCUTS = [
   { id: 'step', keys: ['enter'], scope: 'code', label: 'Next match', hint: 'in the search — the graph moves to it, Shift+↵ goes back' },
   { id: 'analyze', keys: ['mod+enter'], scope: 'code', label: 'Run analysis', hint: 'inside “Add code”' },
 
+  // --- Wiki ---
+  { id: 'edit', keys: ['e'], scope: 'wiki', label: 'Edit this article', hint: 'while reading it' },
+  { id: 'save-article', keys: ['mod+s'], scope: 'wiki', label: 'Save the article', hint: 'in the editor' },
+
   // --- Bot-Bereich ---
   { id: 'save', keys: ['mod+s'], scope: 'bot', label: 'Save settings', hint: 'writes only the changed fields' },
   { id: 'run-prompt', keys: ['mod+enter'], scope: 'bot', label: 'Run the prompt', hint: 'in the playground' },
@@ -78,6 +82,7 @@ const SIDEBAR_IDS = {
   // Im Bot-Bereich ist „speichern" das Kuerzel, das man dort tatsaechlich braucht – die
   // Navigationsfolgen stehen weiter in der Uebersicht.
   bot: ['save', 'run-prompt', 'search', 'goto-code', 'help'],
+  wiki: ['edit', 'save-article', 'search', 'help'],
   default: ['search', 'goto-code', 'goto-wiki', 'help'],
 }
 
@@ -87,12 +92,18 @@ const SIDEBAR_IDS = {
 // Liste ohnehin ins `?`-Overlay fuehrt und dessen Taste selbst traegt.
 export const SIDEBAR_LIMIT = 3
 
+// Wo ein Artikel im Spiel ist (lesen, bearbeiten, anlegen), gelten die Wiki-Kuerzel – auch unter
+// `/new` und `/edit/…`, die nicht mit `/wiki` beginnen.
+const WIKI_PATHS = ['/wiki', '/article/', '/edit/', '/new', '/tag/']
+
 export function sidebarShortcuts(routePath, limit = SIDEBAR_LIMIT) {
   const ids = routePath.startsWith('/code')
     ? SIDEBAR_IDS.code
     : routePath.startsWith('/bot')
       ? SIDEBAR_IDS.bot
-      : SIDEBAR_IDS.default
+      : WIKI_PATHS.some((p) => routePath.startsWith(p))
+        ? SIDEBAR_IDS.wiki
+        : SIDEBAR_IDS.default
   return ids
     .map((id) => SHORTCUTS.find((s) => s.id === id))
     .filter(Boolean)
@@ -102,6 +113,7 @@ export function sidebarShortcuts(routePath, limit = SIDEBAR_LIMIT) {
 export const SHORTCUT_GROUPS = [
   { scope: 'global', title: 'Everywhere' },
   { scope: 'code', title: 'Code view' },
+  { scope: 'wiki', title: 'Wiki' },
   { scope: 'bot', title: 'Bot settings' },
   { scope: 'graph', title: 'Graph' },
   { scope: 'search', title: 'Search & result lists' },

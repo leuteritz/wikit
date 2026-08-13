@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.36.0",
-  "whatsNew": "Visible keyboard focus and calmer depth",
+  "version": "4.37.0",
+  "whatsNew": "Edit from the article, browse by tag",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

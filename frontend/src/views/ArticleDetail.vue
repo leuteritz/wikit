@@ -1,7 +1,8 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../lib/api.js'
+import { isTypingTarget } from '../lib/shortcuts.js'
 import { useArticles } from '../composables/useArticles.js'
 import ArticleView from '../components/ArticleView.vue'
 import BusyState from '../components/BusyState.vue'
@@ -55,6 +56,18 @@ async function onDelete(a) {
   await remove(a.id)
   router.push('/')
 }
+
+// `e` fuehrt in den Editor. Wie jedes Kuerzel der Anwendung prueft es `isTypingTarget` – sonst
+// verschwaende der Buchstabe in einem Suchfeld die Seite. Modifikatoren gehoeren dem Browser.
+function onKeydown(e) {
+  if (e.ctrlKey || e.metaKey || e.altKey) return
+  if (e.key !== 'e' || isTypingTarget(document.activeElement)) return
+  if (!article.value) return
+  e.preventDefault()
+  router.push(`/edit/${article.value.slug}`)
+}
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>

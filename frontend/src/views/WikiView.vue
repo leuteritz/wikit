@@ -7,12 +7,22 @@ import { useArticles } from '../composables/useArticles.js'
 import BusyState from '../components/BusyState.vue'
 import WikiRelationGraph from '../components/WikiRelationGraph.vue'
 import WikiHealth from '../components/WikiHealth.vue'
+import SectionLabel from '../components/ui/SectionLabel.vue'
 import { categoryColors, colorFor } from '../lib/wikiGraph.js'
+import { api } from '../lib/api.js'
 import { Icon } from '../lib/icons.js'
 
 const { articles, categories, loading, load } = useArticles()
 const filter = ref('')
 const startedAt = ref(Date.now())
+
+// Schlagwörter kommen vom eigenen Endpunkt statt aus `articles`: der Server sortiert bereits nach
+// Häufigkeit, und die Zahl neben dem Schlagwort ist die über den GESAMTEN Bestand – nicht die über
+// das, was der Filter gerade übriglässt.
+const TAG_PREVIEW = 16
+const tags = ref([])
+const allTags = ref(false)
+const shownTags = computed(() => (allTags.value ? tags.value : tags.value.slice(0, TAG_PREVIEW)))
 // DREI Modi derselben Ansicht (gleiche Bauart wie „Class · Relation" in /code): die Liste
 // beantwortet „was gibt es?", der Graph „was haengt woran?", der Bericht „woran muss ich ran?".
 // Derselbe Bestand, drei Fragen – deshalb ein Umschalter und kein dritter Sidebar-Eintrag.
@@ -36,7 +46,16 @@ function setView(next) {
   view.value = next
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  // Ohne Toast: eine fehlende Schlagwortleiste ist kein Grund, die Artikelliste mit einer
+  // Fehlermeldung zu überlagern (gleiche Regel wie bei den Link-Vorschlägen).
+  try {
+    tags.value = await api.listTags()
+  } catch {
+    tags.value = []
+  }
+})
 
 const filtered = computed(() => {
   const q = filter.value.trim().toLowerCase()
@@ -156,6 +175,35 @@ const groups = computed(() => {
     <div v-if="healthMounted" v-show="view === 'health'">
       <WikiHealth @show-graph="setView('graph')" />
     </div>
+
+    <!-- Schlagwörter: die Achse QUER zur Kategorie. Die Liste darunter ist nach Kategorie geordnet
+         (ein Artikel hat genau eine) – ein Schlagwort verbindet Artikel über diese Ordnung hinweg,
+         und genau das kann man hier anfassen. Nur die schwersten, der Rest auf Klick: eine
+         vollständige Wolke ist bei hundert Schlagwörtern keine Navigation mehr. -->
+    <section v-if="!loading && view === 'list' && tags.length" class="mb-8">
+      <div class="mb-2.5 flex items-baseline gap-2">
+        <SectionLabel as="h2">TAGS</SectionLabel>
+        <button
+          v-if="tags.length > TAG_PREVIEW"
+          type="button"
+          class="font-mono text-3xs text-accent transition hover:underline"
+          @click="allTags = !allTags"
+        >
+          {{ allTags ? 'show fewer' : `show all ${tags.length}` }}
+        </button>
+      </div>
+      <div class="flex flex-wrap gap-1.5">
+        <RouterLink
+          v-for="t in shownTags"
+          :key="t.id"
+          :to="`/tag/${encodeURIComponent(t.name)}`"
+          class="inline-flex items-center gap-1.5 rounded-md border border-line px-2 py-1 font-mono text-xs text-muted transition hover:border-accent hover:text-accent"
+        >
+          #{{ t.name }}
+          <span class="tabular-nums opacity-60">{{ t.count }}</span>
+        </RouterLink>
+      </div>
+    </section>
 
     <!-- Gruppen -->
     <div v-show="!loading && view === 'list'" class="flex flex-col gap-8">

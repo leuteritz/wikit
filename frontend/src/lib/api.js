@@ -108,6 +108,11 @@ export const api = {
   listCategories: () => http('GET', '/categories'),
   createCategory: (data) => http('POST', '/categories', data),
 
+  // Alle Schlagwörter mit ihrer Häufigkeit, absteigend – der Server sortiert bereits.
+  // Die Zuordnung Artikel→Tag steht schon in `listArticles()`; dieser Endpunkt liefert die
+  // Gegenrichtung (welche Schlagwörter GIBT es überhaupt, und wie schwer wiegen sie).
+  listTags: () => http('GET', '/tags'),
+
   search: (q) => http('GET', `/search?q=${encodeURIComponent(q)}`),
 
   // Das ganze Beziehungsnetz in EINER Antwort ({ nodes, edges }) – Grundlage des Wiki-Graphen.

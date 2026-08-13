@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch, nextTick, onMounted } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import CategoryBadge from './CategoryBadge.vue'
 import RelatedArticles from './RelatedArticles.vue'
 import { Icon } from '../lib/icons.js'
@@ -75,6 +75,27 @@ function onVarClick(e, pre) {
   })
 }
 
+// --- Interne Links bleiben in der Anwendung ------------------------------------------------------
+// Der Artikelrumpf kommt als fertiges HTML vom Server (`v-html`) – seine `<a href="/article/…">`
+// sind gewoehnliche Links und loesten deshalb einen VOLLEN Seiten-Neuladen aus: Router, Stores und
+// der ganze Bundle wurden fuer einen Sprung innerhalb desselben Wikis neu aufgebaut.
+//
+// Ein delegierter Handler an der Wurzel statt eines Handlers je Link: die Links entstehen erst beim
+// Rendern des Markdown, und nach jedem Nachladen muesste man sie erneut verdrahten.
+const router = useRouter()
+function onBodyClick(e) {
+  // Modifikatoren gehoeren dem Browser: Strg-Klick oeffnet einen neuen Tab, und das soll er.
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+  const a = e.target.closest('a')
+  if (!a || a.target === '_blank' || a.hasAttribute('download')) return
+  const href = a.getAttribute('href') || ''
+  // Nur eigene, absolute Pfade – externe Ziele, `mailto:` und reine Anker (`#heading`, die die
+  // Anker-Permalinks erzeugen) bleiben unangetastet.
+  if (!href.startsWith('/') || href.startsWith('//')) return
+  e.preventDefault()
+  router.push(href)
+}
+
 onMounted(enhanceCodeBlocks)
 watch(() => props.article?.id, () => nextTick(enhanceCodeBlocks))
 </script>
@@ -90,14 +111,29 @@ watch(() => props.article?.id, () => nextTick(enhanceCodeBlocks))
       <p v-if="article.summary" class="mt-2 text-lg text-muted">{{ article.summary }}</p>
 
       <div class="mt-4 flex flex-wrap items-center gap-2">
-        <span
+        <!-- Ein Schlagwort ist eine FRAGE („was gehört noch dazu?"), keine Beschriftung – seit es
+             `/tag/:name` gibt, führt es dorthin, statt nur dazustehen. -->
+        <RouterLink
           v-for="tag in article.tags"
           :key="tag"
-          class="rounded-md bg-accent-soft px-2 py-0.5 font-mono text-xs text-accent"
-        >#{{ tag }}</span>
+          :to="`/tag/${encodeURIComponent(tag)}`"
+          class="rounded-md bg-accent-soft px-2 py-0.5 font-mono text-xs text-accent transition hover:bg-accent hover:text-accent-contrast"
+        >#{{ tag }}</RouterLink>
       </div>
 
       <div class="mt-5 flex gap-2">
+        <!-- ⚠️ Der Bearbeiten-Knopf stand hier lange NICHT: `/edit/:slug` war ausschließlich über
+             einen Befund im Wiki-Health erreichbar. Der offensichtlichste Weg zu einem Artikel ist
+             aber der Artikel selbst – und er steht vor History und Delete, weil Bearbeiten das ist,
+             was man beim Lesen am häufigsten will. -->
+        <RouterLink
+          :to="`/edit/${article.slug}`"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-ink transition hover:border-accent hover:text-accent"
+        >
+          <Icon icon="lucide:file-edit" class="h-4 w-4" />
+          Edit
+          <kbd class="ml-0.5 rounded border border-line px-1 font-mono text-3xs text-muted">E</kbd>
+        </RouterLink>
         <!-- Der Weg zum Gedächtnis des Artikels steht AM Artikel: „was stand hier vorher?" fragt
              man beim Lesen, nicht in einer Übersicht. -->
         <RouterLink
@@ -122,6 +158,7 @@ watch(() => props.article?.id, () => nextTick(enhanceCodeBlocks))
       ref="bodyEl"
       class="article-body prose max-w-none dark:prose-invert prose-headings:scroll-mt-20 prose-a:text-accent"
       v-html="article.content_html"
+      @click="onBodyClick"
     />
 
     <!-- Zusammenhänge -->
