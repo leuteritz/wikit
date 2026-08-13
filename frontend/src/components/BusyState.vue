@@ -140,7 +140,7 @@ const skeletonRows = computed(() => (props.variant === 'panel' ? Math.min(Math.m
   @apply pointer-events-none absolute inset-0 z-20 grid place-items-center;
 }
 .busy--overlay .busy-card {
-  @apply max-w-[22rem] rounded-xl border px-4 py-3 shadow-lg;
+  @apply max-w-[22rem] rounded-xl border px-4 py-3 elev-2;
   border-color: var(--color-border);
   background: var(--color-surface-2);
 }

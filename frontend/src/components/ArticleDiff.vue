@@ -67,7 +67,7 @@ function cellText(segs) {
         </div>
       </template>
 
-      <p v-if="!rows.length" class="px-4 py-10 text-center text-sm text-[var(--color-text-muted)]">
+      <p v-if="!rows.length" class="px-4 py-10 text-center text-sm text-muted">
         These two versions are identical.
       </p>
     </div>
@@ -78,23 +78,23 @@ function cellText(segs) {
 @reference "../assets/style.css";
 
 .ad-wrap {
-  @apply overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)];
+  @apply overflow-hidden rounded-xl border border-line bg-surface;
 }
 
 .ad-meta {
-  @apply flex items-start gap-2 border-b border-[var(--color-border)] px-4 py-2.5 text-sm text-[var(--color-text)];
+  @apply flex items-start gap-2 border-b border-line px-4 py-2.5 text-sm text-ink;
   background-color: color-mix(in srgb, var(--color-accent) 7%, transparent);
 }
 
 .ad-head {
-  @apply grid border-b border-[var(--color-border)] bg-[var(--color-surface-offset)] font-mono text-2xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)];
+  @apply grid border-b border-line bg-surface-offset font-mono text-2xs font-semibold uppercase tracking-[0.12em] text-muted;
   grid-template-columns: 1fr 1fr;
 }
 .ad-head-cell {
   @apply px-4 py-2;
 }
 .ad-head-cell + .ad-head-cell {
-  @apply border-l border-[var(--color-border)];
+  @apply border-l border-line;
 }
 
 .ad-body {
@@ -109,16 +109,16 @@ function cellText(segs) {
 }
 
 .ad-no {
-  @apply select-none border-r border-[var(--color-border)] px-2 py-0.5 text-right font-mono text-2xs leading-6 text-[var(--color-text-muted)] opacity-60;
+  @apply select-none border-r border-line px-2 py-0.5 text-right font-mono text-2xs leading-6 text-muted opacity-60;
 }
 
 .ad-cell {
   /* pre-wrap: Einrückung und Leerzeilen von Markdown sind Bedeutung, kein Zufall – und lange
      Absätze müssen trotzdem umbrechen, sonst scrollt die Ansicht waagerecht. */
-  @apply whitespace-pre-wrap break-words px-3 py-0.5 font-mono text-xs leading-6 text-[var(--color-text)];
+  @apply whitespace-pre-wrap break-words px-3 py-0.5 font-mono text-xs leading-6 text-ink;
 }
 .ad-cell--left {
-  @apply border-r border-[var(--color-border)];
+  @apply border-r border-line;
 }
 
 /* Die Zeilen-Ebene: schwach, sagt nur „hier". */
@@ -152,9 +152,9 @@ function cellText(segs) {
   background-color: color-mix(in srgb, var(--color-text-muted) 5%, transparent);
 }
 .ad-gap-line {
-  @apply h-px flex-1 bg-[var(--color-border)];
+  @apply h-px flex-1 bg-line;
 }
 .ad-gap-text {
-  @apply font-mono text-2xs uppercase tracking-[0.1em] text-[var(--color-text-muted)];
+  @apply font-mono text-2xs uppercase tracking-[0.1em] text-muted;
 }
 </style>

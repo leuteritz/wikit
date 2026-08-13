@@ -151,11 +151,11 @@ async function clear() {
 </script>
 
 <template>
-  <div class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
+  <div class="rounded-lg border border-line bg-surface-2 p-4">
     <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-      <Icon icon="lucide:sparkles" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
-      <h3 class="text-sm font-semibold text-[var(--color-text)]">Meaning index</h3>
-      <span class="text-2xs text-[var(--color-text-muted)]">
+      <Icon icon="lucide:sparkles" class="h-4 w-4 shrink-0 text-accent" />
+      <h3 class="text-sm font-semibold text-ink">Meaning index</h3>
+      <span class="text-2xs text-muted">
         Lets search and Ask find a class or an article by what it means, not by the words in it.
       </span>
     </div>
@@ -163,18 +163,18 @@ async function clear() {
     <template v-if="known">
       <!-- Der Zustand hat drei Fälle, und sie bedeuten Verschiedenes: kein Modell (nichts
            möglich), leerer Index (nichts gebaut), teilweise (nutzbar, aber unvollständig). -->
-      <p v-if="!enabled" class="mt-2 text-2xs text-[var(--color-warning)]">
+      <p v-if="!enabled" class="mt-2 text-2xs text-warning">
         No embedding model set above — meaning-based search is off.
       </p>
       <template v-else>
         <div class="mt-3 flex items-center gap-3">
-          <span class="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--color-surface-offset)]">
+          <span class="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-offset">
             <span
-              class="block h-full rounded-full bg-[var(--color-accent)] transition-[width]"
+              class="block h-full rounded-full bg-accent transition-[width]"
               :style="{ width: `${percent}%` }"
             />
           </span>
-          <span class="shrink-0 font-mono text-2xs text-[var(--color-text-muted)]">
+          <span class="shrink-0 font-mono text-2xs text-muted">
             {{ indexed }}/{{ total }}
           </span>
         </div>
@@ -183,15 +183,15 @@ async function clear() {
              fehlen oder die Klassen – und genau das entscheidet, was Ask gerade nicht beantworten
              kann. -->
         <dl class="mt-2 space-y-1">
-          <div v-for="r in rows" :key="r.key" class="flex items-center gap-2 font-mono text-3xs text-[var(--color-text-muted)]">
+          <div v-for="r in rows" :key="r.key" class="flex items-center gap-2 font-mono text-3xs text-muted">
             <Icon :icon="r.icon" class="h-3 w-3 shrink-0 opacity-70" />
             <dt class="w-14 shrink-0 font-sans">{{ r.label }}</dt>
             <dd class="tabular-nums">{{ r.s?.indexed ?? 0 }}/{{ r.s?.total ?? 0 }}</dd>
-            <dd v-if="r.s?.stale" class="text-[var(--color-warning)]">{{ r.s.stale }} out of date</dd>
+            <dd v-if="r.s?.stale" class="text-warning">{{ r.s.stale }} out of date</dd>
             <dd v-if="r.s?.missing">{{ r.s.missing }} never indexed</dd>
           </div>
         </dl>
-        <p class="mt-1.5 font-mono text-3xs text-[var(--color-text-muted)]">model {{ model }}</p>
+        <p class="mt-1.5 font-mono text-3xs text-muted">model {{ model }}</p>
 
         <!-- ⚠️ Der Befund steht VOR dem Knopf und nennt den fertigen Befehl. „Model not installed"
              allein ist ein Befund, den man erst noch übersetzen muss – und die Übersetzung ist
@@ -200,9 +200,9 @@ async function clear() {
              als ein Lauf, der mit einer klaren Meldung endet. -->
         <div
           v-if="modelMissing"
-          class="mt-3 rounded-md border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 p-2.5"
+          class="mt-3 rounded-md border border-warning/40 bg-warning/10 p-2.5"
         >
-          <p class="flex items-start gap-1.5 text-2xs text-[var(--color-warning)]">
+          <p class="flex items-start gap-1.5 text-2xs text-warning">
             <Icon icon="lucide:alert-triangle" class="mt-px h-3.5 w-3.5 shrink-0" />
             <span>
               <strong class="font-semibold">{{ checkedModel }}</strong> is not pulled on
@@ -212,12 +212,12 @@ async function clear() {
           </p>
           <div class="mt-2 flex items-center gap-2">
             <code
-              class="min-w-0 flex-1 overflow-x-auto rounded bg-[var(--color-surface-offset)] px-2 py-1 font-mono text-3xs text-[var(--color-text)]"
+              class="min-w-0 flex-1 overflow-x-auto rounded bg-surface-offset px-2 py-1 font-mono text-3xs text-ink"
             >{{ pullCommand }}</code>
             <button
               v-tip="{ title: 'Copy the command', hint: 'Run it on the machine Ollama runs on, not inside the Wikit container.' }"
               type="button"
-              class="inline-flex shrink-0 items-center gap-1 rounded border border-[var(--color-border)] px-2 py-1 text-3xs font-medium text-[var(--color-text-muted)] transition hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+              class="inline-flex shrink-0 items-center gap-1 rounded border border-line px-2 py-1 text-3xs font-medium text-muted transition hover:border-line-strong hover:text-ink"
               @click="copyPull"
             >
               <Icon :icon="copied ? 'lucide:check' : 'lucide:copy'" class="h-3 w-3" />
@@ -233,7 +233,7 @@ async function clear() {
             ? { title: `Embed ${todo} source(s)`, hint: 'Only what is missing or out of date — unchanged classes and articles keep their vector.' }
             : { title: 'Everything is indexed', hint: 'Nothing changed since the last run.' }"
           type="button"
-          class="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-xs font-semibold text-[var(--color-accent-contrast)] transition hover:bg-[var(--color-accent-hover)] disabled:opacity-40"
+          class="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-accent-contrast transition hover:bg-accent-hover disabled:opacity-40"
           :disabled="busy || !enabled || !todo"
           @click="build(false)"
         >
@@ -243,7 +243,7 @@ async function clear() {
         <button
           v-tip="{ title: 'Rebuild everything', hint: 'Needed after switching models — old vectors are not comparable to new ones, and both indexes must share one model.' }"
           type="button"
-          class="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-muted)] transition hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)] disabled:opacity-40"
+          class="rounded-md border border-line px-3 py-1.5 text-xs font-medium text-muted transition hover:border-line-strong hover:text-ink disabled:opacity-40"
           :disabled="busy || !enabled || !total"
           @click="build(true)"
         >
@@ -252,7 +252,7 @@ async function clear() {
         <button
           v-if="indexed || todo"
           type="button"
-          class="ml-auto text-2xs text-[var(--color-text-muted)] underline-offset-2 transition hover:text-[var(--color-danger)] hover:underline"
+          class="ml-auto text-2xs text-muted underline-offset-2 transition hover:text-danger hover:underline"
           :disabled="busy"
           @click="clear"
         >
@@ -261,7 +261,7 @@ async function clear() {
       </div>
     </template>
 
-    <p v-else-if="loading" class="mt-2 text-2xs text-[var(--color-text-muted)]">Checking the index…</p>
-    <p v-else class="mt-2 text-2xs text-[var(--color-text-muted)]">Index status unavailable.</p>
+    <p v-else-if="loading" class="mt-2 text-2xs text-muted">Checking the index…</p>
+    <p v-else class="mt-2 text-2xs text-muted">Index status unavailable.</p>
   </div>
 </template>

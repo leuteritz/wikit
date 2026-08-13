@@ -203,10 +203,10 @@ const hint = computed(() => {
    sind es zwei Bloecke in EINER Karte – zwei getrennt gerahmte Kaesten waeren zwei Meldungen fuer
    eine Sache. */
 .act-card {
-  @apply rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2 transition;
+  @apply rounded-xl border border-line bg-surface p-2 transition;
 }
 .act-card:hover {
-  @apply border-[var(--color-border-strong)] bg-[var(--color-surface-offset)];
+  @apply border-line-strong bg-surface-offset;
 }
 /* Im Lauf traegt die Karte den Akzent – sie ist dann die einzige Stelle der Oberflaeche, an der
    sich etwas bewegt. Der Verlauf ist bewusst flach: ein kraeftiger Kasten in der Seitenspalte
@@ -224,17 +224,17 @@ const hint = computed(() => {
   @apply px-0.5 py-0.5;
 }
 .act-body--stacked {
-  @apply mt-2 border-t border-[var(--color-border)] pt-2;
+  @apply mt-2 border-t border-line pt-2;
 }
 
 .act-head {
-  @apply mb-1.5 flex items-center gap-1.5 text-[var(--color-accent)];
+  @apply mb-1.5 flex items-center gap-1.5 text-accent;
 }
 .act-head--ai {
-  @apply text-[var(--color-lavender)];
+  @apply text-lavender;
 }
 .act-head--idle {
-  @apply text-[var(--color-text-muted)];
+  @apply text-muted;
 }
 .act-title {
   @apply min-w-0 flex-1 truncate font-mono text-[0.59375rem] font-semibold uppercase tracking-[0.14em];
@@ -243,48 +243,48 @@ const hint = computed(() => {
   @apply shrink-0 font-mono text-2xs font-semibold tabular-nums;
 }
 .act-pct--idle {
-  @apply text-[var(--color-text-muted)];
+  @apply text-muted;
 }
 
 .act-bar {
-  @apply h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-surface-offset)];
+  @apply h-1.5 w-full overflow-hidden rounded-full bg-surface-offset;
 }
 .act-bar-fill {
-  @apply h-full rounded-full bg-[var(--color-accent)] transition-[width] duration-300 ease-out;
+  @apply h-full rounded-full bg-accent transition-[width] duration-300 ease-out;
 }
 .act-bar-fill--ai {
-  @apply bg-[var(--color-lavender)];
+  @apply bg-lavender;
 }
 
 .act-line {
-  @apply mt-2 truncate text-xs font-medium text-[var(--color-text)];
+  @apply mt-2 truncate text-xs font-medium text-ink;
 }
 .act-line--muted {
-  @apply text-[var(--color-text-muted)];
+  @apply text-muted;
 }
 .act-sub {
-  @apply mt-0.5 truncate font-mono text-2xs tabular-nums text-[var(--color-text-muted)];
+  @apply mt-0.5 truncate font-mono text-2xs tabular-nums text-muted;
 }
 
 .act-phases {
   @apply mt-2 flex gap-px;
 }
 .act-seg {
-  @apply h-1 overflow-hidden rounded-sm bg-[var(--color-surface-offset)];
+  @apply h-1 overflow-hidden rounded-sm bg-surface-offset;
 }
 .act-seg-fill {
   @apply h-full rounded-sm transition-[width] duration-300 ease-out;
 }
 
 .act-times {
-  @apply mt-1.5 flex items-baseline justify-between gap-2 font-mono text-2xs tabular-nums text-[var(--color-text-muted)];
+  @apply mt-1.5 flex items-baseline justify-between gap-2 font-mono text-2xs tabular-nums text-muted;
 }
 
 /* Ruhezustand: der Punkt traegt die Aussage, nicht die Flaeche. Gruen/rot erscheinen nur, solange
    ein frisches Ergebnis steht – ein dauerhaft gefaerbter Kasten in der Seitenspalte laese sich
    nach zehn Minuten wie eine offene Meldung. */
 .act-dot {
-  @apply h-2 w-2 shrink-0 rounded-full bg-[var(--color-text-muted)] opacity-50;
+  @apply h-2 w-2 shrink-0 rounded-full bg-muted opacity-50;
 }
 .act-dot.is-ok {
   background: var(--color-success);
@@ -309,9 +309,9 @@ const hint = computed(() => {
    Beim Ueberfahren tritt es hervor; dauerhaft kraeftig waere es ein zweites Bedienelement in einer
    Karte, die selbst schon eines ist. */
 .act-more {
-  @apply mt-2 flex items-center justify-end gap-1 border-t border-[var(--color-border)] px-0.5 pt-1.5 font-mono text-[0.59375rem] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)] opacity-60 transition;
+  @apply mt-2 flex items-center justify-end gap-1 border-t border-line px-0.5 pt-1.5 font-mono text-[0.59375rem] font-semibold uppercase tracking-[0.12em] text-muted opacity-60 transition;
 }
 .act-card:hover .act-more {
-  @apply text-[var(--color-accent)] opacity-100;
+  @apply text-accent opacity-100;
 }
 </style>

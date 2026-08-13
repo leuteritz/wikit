@@ -61,7 +61,7 @@ const facts = computed(() => {
 
 <template>
   <div
-    class="relative overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 pl-5"
+    class="relative overflow-hidden rounded-xl border border-line bg-surface-2 p-4 pl-5"
   >
     <span class="absolute inset-y-0 left-0 w-1" :style="{ background: meta.color }" />
 
@@ -74,22 +74,22 @@ const facts = computed(() => {
       </span>
 
       <div class="min-w-0 flex-1">
-        <p class="flex flex-wrap items-baseline gap-x-2 text-sm font-semibold text-[var(--color-text)]">
+        <p class="flex flex-wrap items-baseline gap-x-2 text-sm font-semibold text-ink">
           {{ checking ? 'Testing the connection…' : meta.title }}
-          <span v-if="health?.checkedAt && !checking" class="font-mono text-3xs font-normal text-[var(--color-text-muted)]">
+          <span v-if="health?.checkedAt && !checking" class="font-mono text-3xs font-normal text-muted">
             checked {{ formatRelative(health.checkedAt) }}
           </span>
         </p>
-        <p class="mt-1 text-2xs leading-relaxed text-[var(--color-text-muted)]">{{ detail }}</p>
+        <p class="mt-1 text-2xs leading-relaxed text-muted">{{ detail }}</p>
 
         <div v-if="facts.length" class="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5">
           <span
             v-for="f in facts"
             :key="f.label"
-            class="inline-flex items-center gap-1.5 font-mono text-2xs text-[var(--color-text-muted)]"
+            class="inline-flex items-center gap-1.5 font-mono text-2xs text-muted"
           >
             <Icon :icon="f.icon" class="h-3.5 w-3.5 opacity-70" />
-            <span class="font-semibold tabular-nums text-[var(--color-text)]">{{ f.value }}</span>
+            <span class="font-semibold tabular-nums text-ink">{{ f.value }}</span>
             {{ f.label }}
           </span>
         </div>
@@ -97,7 +97,7 @@ const facts = computed(() => {
 
       <button
         type="button"
-        class="shrink-0 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition hover:border-[var(--color-border-strong)] disabled:opacity-50"
+        class="shrink-0 rounded-md border border-line bg-surface px-3 py-1.5 text-xs font-medium text-ink transition hover:border-line-strong disabled:opacity-50"
         :disabled="checking"
         @click="$emit('check')"
       >
@@ -110,7 +110,7 @@ const facts = computed(() => {
 
     <!-- Der Test laeuft gegen das FORMULAR. Steht dort etwas anderes als gespeichert, gehoert das
          dazugesagt – sonst liest man ein gruenes Ergebnis als Aussage ueber den laufenden Betrieb. -->
-    <p v-if="dirty" class="mt-3 border-t border-[var(--color-border)] pt-2 font-mono text-3xs text-[var(--color-text-muted)]">
+    <p v-if="dirty" class="mt-3 border-t border-line pt-2 font-mono text-3xs text-muted">
       Tested against the form: {{ host }} · {{ model }} — not saved yet.
     </p>
   </div>

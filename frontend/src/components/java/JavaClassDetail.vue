@@ -604,17 +604,17 @@ async function removeFile() {
 </script>
 
 <template>
-  <aside class="flex h-full w-full flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]">
+  <aside class="flex h-full w-full flex-col overflow-hidden rounded-xl border border-line bg-surface-2">
     <!-- Header -->
-    <header class="flex items-start gap-3 border-b border-[var(--color-border)] px-4 py-3">
+    <header class="flex items-start gap-3 border-b border-line px-4 py-3">
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-2">
           <span class="rounded px-1.5 py-0.5 text-3xs font-semibold uppercase" :class="typeBadge">{{ classKindLabel }}</span>
-          <h2 class="truncate text-xl font-bold text-[var(--color-text)]">{{ head?.class_name }}</h2>
+          <h2 class="truncate text-xl font-bold text-ink">{{ head?.class_name }}</h2>
         </div>
-        <p v-if="head?.package" class="truncate font-mono text-xs text-[var(--color-text-muted)]">{{ head.package }}</p>
+        <p v-if="head?.package" class="truncate font-mono text-xs text-muted">{{ head.package }}</p>
         <div v-if="file" class="mt-1.5 flex flex-wrap items-center gap-1.5">
-          <span class="rounded-md bg-[var(--color-surface-offset)] px-1.5 py-0.5 text-3xs font-medium text-[var(--color-text-muted)]">
+          <span class="rounded-md bg-surface-offset px-1.5 py-0.5 text-3xs font-medium text-muted">
             {{ methodCount }} method(s)
           </span>
           <span
@@ -638,7 +638,7 @@ async function removeFile() {
              Sie stehen hier und nicht nur im Insights-Bericht, weil die Frage „ist das viel?"
              an der offenen Klasse gestellt wird. Ohne geladene Kennzahlen entfaellt die Zeile –
              ein Platzhalter fuer eine Zahl, die es vielleicht nie gibt, waere Unruhe. -->
-        <div v-if="metrics" class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-3xs text-[var(--color-text-muted)]">
+        <div v-if="metrics" class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-3xs text-muted">
           <span v-tip="'Code lines — blank lines and comment-only lines do not count'">
             {{ metrics.loc }} lines
           </span>
@@ -652,7 +652,7 @@ async function removeFile() {
             v-if="metrics.fanIn"
             v-tip="{ title: `${metrics.fanIn} classes use this one`, hint: 'Click for everything that breaks if it changes — direct and further out.' }"
             type="button"
-            class="underline-offset-2 transition hover:text-[var(--color-accent)] hover:underline"
+            class="underline-offset-2 transition hover:text-accent hover:underline"
             @click="emit('query', `impact: ${head?.package ? head.package + '.' : ''}${head?.class_name}`)"
           >{{ metrics.fanIn }} in</button>
           <span v-else v-tip="'Nothing uses this class'">0 in</span>
@@ -660,7 +660,7 @@ async function removeFile() {
           <span
             v-if="metrics.cycle != null"
             v-tip="'This class sits in a dependency cycle — see Insights'"
-            class="inline-flex items-center gap-0.5 rounded bg-[var(--color-danger)]/15 px-1 text-[var(--color-danger)]"
+            class="inline-flex items-center gap-0.5 rounded bg-danger/15 px-1 text-danger"
           >
             <Icon icon="lucide:repeat" class="h-2.5 w-2.5" /> cycle
           </span>
@@ -668,7 +668,7 @@ async function removeFile() {
       </div>
       <button
         type="button"
-        class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+        class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-muted transition hover:bg-surface-offset hover:text-ink"
         title="Close"
         @click="emit('close')"
       >
@@ -678,24 +678,24 @@ async function removeFile() {
 
     <!-- Tabs + Code-Suche, zwei Zeilen. Die drei Tabs bilden EINE Flex-Einheit, damit sie in einer
          schmalen dritten Spalte zusammenbleiben statt „History" allein umbrechen zu lassen. -->
-    <div v-if="file" class="flex shrink-0 flex-wrap items-center gap-1 border-b border-[var(--color-border)] px-4 pt-2">
+    <div v-if="file" class="flex shrink-0 flex-wrap items-center gap-1 border-b border-line px-4 pt-2">
       <div class="flex items-center gap-1">
       <button
         type="button"
         class="border-b-2 px-3 py-1.5 text-sm font-medium transition"
-        :class="tab === 'doc' ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
+        :class="tab === 'doc' ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-ink'"
         @click="tab = 'doc'"
       >Documentation</button>
       <button
         type="button"
         class="border-b-2 px-3 py-1.5 text-sm font-medium transition"
-        :class="tab === 'source' ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
+        :class="tab === 'source' ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-ink'"
         @click="tab = 'source'"
       >Source</button>
       <button
         type="button"
         class="border-b-2 px-3 py-1.5 text-sm font-medium transition"
-        :class="tab === 'history' ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
+        :class="tab === 'history' ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-ink'"
         @click="tab = 'history'"
       >History</button>
       </div>
@@ -706,10 +706,10 @@ async function removeFile() {
            Modus-Schalter und Navigation, und die draengen sich neben den Tabs auf jeder
            Spaltenbreite. -->
       <div
-        class="mb-1 flex w-full min-w-0 flex-wrap items-center gap-0.5 rounded-lg border bg-[var(--color-surface)] px-1.5 py-0.5 transition"
-        :class="searchFailed ? 'border-[var(--color-danger)]' : 'border-[var(--color-border)] focus-within:border-[var(--color-accent)]'"
+        class="mb-1 flex w-full min-w-0 flex-wrap items-center gap-0.5 rounded-lg border bg-surface px-1.5 py-0.5 transition"
+        :class="searchFailed ? 'border-danger' : 'border-line focus-within:border-accent'"
       >
-        <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
+        <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-muted" />
         <input
           ref="searchInput"
           :value="search"
@@ -717,7 +717,7 @@ async function removeFile() {
           placeholder="Search source…"
           aria-label="Search source code"
           spellcheck="false"
-          class="min-w-[6rem] flex-1 bg-transparent py-0.5 text-xs text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
+          class="min-w-[6rem] flex-1 bg-transparent py-0.5 text-xs text-ink outline-none placeholder:text-muted"
           @input="setQuery($event.target.value)"
           @keydown.enter.prevent="stepMatch($event.shiftKey ? -1 : 1)"
           @keydown.esc.prevent="closeSearch"
@@ -725,7 +725,7 @@ async function removeFile() {
         <span
           v-if="search"
           class="shrink-0 whitespace-nowrap px-0.5 text-3xs tabular-nums"
-          :class="searchFailed ? 'text-[var(--color-danger)]' : 'text-[var(--color-text-muted)]'"
+          :class="searchFailed ? 'text-danger' : 'text-muted'"
           :title="searchCounterTitle"
         >{{ searchCounter }}</span>
 
@@ -736,8 +736,8 @@ async function removeFile() {
           type="button"
           class="grid h-5 w-5 shrink-0 place-items-center rounded transition"
           :class="searchOpts[o.key]
-            ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)]'
-            : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]'"
+            ? 'bg-accent text-accent-contrast'
+            : 'text-muted hover:bg-surface-offset hover:text-ink'"
           :title="o.title"
           :aria-pressed="searchOpts[o.key]"
           @click="toggleSearchOpt(o.key)"
@@ -748,11 +748,11 @@ async function removeFile() {
         <!-- Navigation als EINE Einheit: in einer schmalen Spalte bricht die Leiste intern um, und
              ein einzeln abgetrennter Weiter-Pfeil waere dort ein Bedienelement ohne Zusammenhang. -->
         <div class="ml-auto flex shrink-0 items-center gap-0.5">
-        <span class="mx-0.5 h-4 w-px shrink-0 bg-[var(--color-border)]" />
+        <span class="mx-0.5 h-4 w-px shrink-0 bg-line" />
 
         <button
           type="button"
-          class="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-40 disabled:hover:bg-transparent"
+          class="grid h-5 w-5 shrink-0 place-items-center rounded text-muted transition hover:bg-surface-offset hover:text-ink disabled:opacity-40 disabled:hover:bg-transparent"
           title="Previous match (Shift+Enter)"
           :disabled="!matches.length"
           @click="stepMatch(-1)"
@@ -761,7 +761,7 @@ async function removeFile() {
         </button>
         <button
           type="button"
-          class="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-40 disabled:hover:bg-transparent"
+          class="grid h-5 w-5 shrink-0 place-items-center rounded text-muted transition hover:bg-surface-offset hover:text-ink disabled:opacity-40 disabled:hover:bg-transparent"
           title="Next match (Enter)"
           :disabled="!matches.length"
           @click="stepMatch(1)"
@@ -771,7 +771,7 @@ async function removeFile() {
         <button
           v-if="search"
           type="button"
-          class="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+          class="grid h-5 w-5 shrink-0 place-items-center rounded text-muted transition hover:bg-surface-offset hover:text-ink"
           title="Clear search (Esc)"
           @click="closeSearch"
         >
@@ -794,7 +794,7 @@ async function removeFile() {
         :since="loadStartedAt"
         :rows="loadingSkeletonRows"
       />
-      <div v-else-if="error" class="text-sm text-[var(--color-danger)]">{{ error }}</div>
+      <div v-else-if="error" class="text-sm text-danger">{{ error }}</div>
 
       <template v-else-if="file">
         <p v-if="notice" class="notice-warning mb-3 rounded-lg px-3 py-2 text-xs">{{ notice }}</p>
@@ -808,12 +808,12 @@ async function removeFile() {
         <!-- DOKU-TAB -->
         <template v-if="tab === 'doc'">
           <!-- Klassen-Zusammenfassung -->
-          <section class="mb-5 rounded-xl border border-[var(--color-border)] bg-[var(--color-accent-soft)] p-3">
+          <section class="mb-5 rounded-xl border border-line bg-accent-soft p-3">
             <div class="mb-1.5 flex items-center justify-between gap-2">
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-[var(--color-accent)]">Class summary</h3>
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-accent">Class summary</h3>
               <button
                 type="button"
-                class="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-accent)] px-2.5 py-1 text-xs font-semibold text-[var(--color-accent-contrast)] transition hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
+                class="inline-flex items-center gap-1.5 rounded-md bg-accent px-2.5 py-1 text-xs font-semibold text-accent-contrast transition hover:bg-accent-hover disabled:opacity-60"
                 :disabled="analysisBusy"
                 title="Regenerate the class summary and all methods"
                 @click="fullAnalysis"
@@ -827,23 +827,23 @@ async function removeFile() {
               </button>
             </div>
             <div v-if="file.description_html" class="prose prose-sm max-w-none dark:prose-invert" v-html="file.description_html" />
-            <p v-else class="text-sm italic text-[var(--color-text-muted)]">No AI class description yet – “Generate” uses the project context.</p>
+            <p v-else class="text-sm italic text-muted">No AI class description yet – “Generate” uses the project context.</p>
           </section>
 
           <!-- Methoden -->
-          <h3 class="mb-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Members ({{ memberCount }})</h3>
+          <h3 class="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Members ({{ memberCount }})</h3>
           <ul class="space-y-1.5">
-            <li v-for="m in members" :key="m.id" class="overflow-hidden rounded-lg border border-[var(--color-border)]">
+            <li v-for="m in members" :key="m.id" class="overflow-hidden rounded-lg border border-line">
               <button
                 type="button"
-                class="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-[var(--color-surface-offset)]"
+                class="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-surface-offset"
                 @click="toggle(m.id)"
               >
                 <span
                   v-if="memberChip(m)"
-                  class="shrink-0 rounded bg-[var(--color-surface-offset)] px-1.5 py-0.5 font-mono text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]"
+                  class="shrink-0 rounded bg-surface-offset px-1.5 py-0.5 font-mono text-3xs font-semibold uppercase tracking-wide text-muted"
                 >{{ memberChip(m) }}</span>
-                <code class="min-w-0 flex-1 truncate text-xs text-[var(--color-text)]">{{ signature(m) }}</code>
+                <code class="min-w-0 flex-1 truncate text-xs text-ink">{{ signature(m) }}</code>
                 <span
                   class="shrink-0 rounded px-1.5 py-0.5 text-[0.5625rem] font-semibold uppercase"
                   :class="{
@@ -854,10 +854,10 @@ async function removeFile() {
                 >
                   {{ { done: 'generated', running: '…', pending: 'waiting', idle: 'open' }[methodStatus(m)] }}
                 </span>
-                <Icon icon="lucide:chevron-down" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)] transition-transform" :class="openMethod === m.id ? 'rotate-180' : ''" />
+                <Icon icon="lucide:chevron-down" class="h-3.5 w-3.5 shrink-0 text-muted transition-transform" :class="openMethod === m.id ? 'rotate-180' : ''" />
               </button>
 
-              <div v-show="openMethod === m.id" class="border-t border-[var(--color-border)] px-3 py-2">
+              <div v-show="openMethod === m.id" class="border-t border-line px-3 py-2">
                 <!-- 1) Java-Code-Block: Signatur als erste Zeile + deklarationsfreier Rumpf, immer
                         dunkel (Editor-Optik), Leerzeilen (fuehrend/abschliessend + intern) entfernt.
                         Parameter sind farbig (eigene Schriftfarbe); Klick auf eine Variable markiert
@@ -871,7 +871,7 @@ async function removeFile() {
 
                 <!-- 2) KI-Analyse / Zusammenfassung -->
                 <div v-if="m.summary_html" class="prose prose-sm max-w-none dark:prose-invert" v-html="m.summary_html" />
-                <p v-else class="text-sm italic text-[var(--color-text-muted)]">No AI description yet – generate it via “Full AI analysis”.</p>
+                <p v-else class="text-sm italic text-muted">No AI description yet – generate it via “Full AI analysis”.</p>
               </div>
             </li>
           </ul>
@@ -907,12 +907,12 @@ async function removeFile() {
         <!-- HISTORY-TAB: Versionsverlauf (Changelog) -->
         <template v-else>
           <div class="mb-3 flex items-center justify-between gap-2">
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+            <h3 class="text-xs font-semibold uppercase tracking-wide text-muted">
               Version history
             </h3>
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-60"
+              class="inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 text-xs font-medium text-muted transition hover:bg-surface-offset hover:text-ink disabled:opacity-60"
               :disabled="versionsLoading"
               title="Reload version history"
               @click="loadVersions"
@@ -937,7 +937,7 @@ async function removeFile() {
 
           <p
             v-else-if="versionsLoaded && !versions.length"
-            class="text-sm italic text-[var(--color-text-muted)]"
+            class="text-sm italic text-muted"
           >
             No version history yet.
           </p>
@@ -946,19 +946,19 @@ async function removeFile() {
             <li
               v-for="v in versions"
               :key="v.id"
-              class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
+              class="rounded-xl border border-line bg-surface p-3"
             >
               <div class="mb-2 flex flex-wrap items-center gap-2">
-                <span class="rounded-md bg-[var(--color-accent-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--color-accent)]">
+                <span class="rounded-md bg-accent-soft px-2 py-0.5 text-xs font-semibold text-accent">
                   Version {{ v.version_number }}
                 </span>
                 <span v-if="!v.diff" class="badge-muted rounded px-1.5 py-0.5 text-3xs font-semibold uppercase">
                   Initial upload
                 </span>
-                <span class="text-xs text-[var(--color-text-muted)]">{{ formatRelative(v.created_at) }}</span>
+                <span class="text-xs text-muted">{{ formatRelative(v.created_at) }}</span>
                 <button
                   type="button"
-                  class="ml-auto inline-flex items-center gap-1 text-xs font-medium text-[var(--color-accent)] transition hover:text-[var(--color-accent-hover)]"
+                  class="ml-auto inline-flex items-center gap-1 text-xs font-medium text-accent transition hover:text-accent-hover"
                   @click="toggleSource(v)"
                 >
                   <Icon icon="lucide:code-2" class="h-3.5 w-3.5" />
@@ -973,24 +973,24 @@ async function removeFile() {
 
               <!-- Optional aufgeklappter Quelltext der Version -->
               <div v-if="v.id in openSources" class="mb-2 h-[40vh] min-h-[14rem]">
-                <div v-if="openSources[v.id] === null" class="animate-pulse h-full rounded-xl bg-[var(--color-surface-offset)]" />
+                <div v-if="openSources[v.id] === null" class="animate-pulse h-full rounded-xl bg-surface-offset" />
                 <JavaCodeEditor v-else :model-value="openSources[v.id]" readonly />
               </div>
 
               <!-- KI-Zusammenfassung der Aenderung -->
               <blockquote
                 v-if="summaryState(v) === 'ready'"
-                class="prose prose-sm max-w-none border-l-2 border-[var(--color-accent)] pl-3 dark:prose-invert"
+                class="prose prose-sm max-w-none border-l-2 border-accent pl-3 dark:prose-invert"
                 v-html="v.ai_summary_html"
               />
-              <p v-else-if="summaryState(v) === 'initial'" class="text-sm italic text-[var(--color-text-muted)]">
+              <p v-else-if="summaryState(v) === 'initial'" class="text-sm italic text-muted">
                 Initial version — no change summary.
               </p>
-              <p v-else-if="summaryState(v) === 'generating'" class="inline-flex items-center gap-1.5 text-sm italic text-[var(--color-text-muted)]">
+              <p v-else-if="summaryState(v) === 'generating'" class="inline-flex items-center gap-1.5 text-sm italic text-muted">
                 <Icon icon="lucide:loader-2" class="h-3.5 w-3.5 animate-spin" />
                 Generating AI change summary… (refresh in a moment)
               </p>
-              <p v-else class="text-sm italic text-[var(--color-text-muted)]">
+              <p v-else class="text-sm italic text-muted">
                 No AI summary available.
               </p>
             </li>
@@ -1000,18 +1000,18 @@ async function removeFile() {
     </div>
 
     <!-- Footer -->
-    <footer v-if="file" class="flex items-center gap-2 border-t border-[var(--color-border)] px-4 py-3">
+    <footer v-if="file" class="flex items-center gap-2 border-t border-line px-4 py-3">
       <RouterLink
         v-if="file.article_slug"
         :to="`/article/${file.article_slug}`"
-        class="flex-1 rounded-lg bg-[var(--color-success)] px-3 py-2 text-center text-sm font-semibold text-white transition hover:opacity-90"
+        class="flex-1 rounded-lg bg-success px-3 py-2 text-center text-sm font-semibold text-accent-contrast transition hover:opacity-90"
       >
         Open article
       </RouterLink>
       <button
         v-else
         type="button"
-        class="flex-1 rounded-lg bg-[var(--color-accent)] px-3 py-2 text-sm font-semibold text-[var(--color-accent-contrast)] transition hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
+        class="flex-1 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-contrast transition hover:bg-accent-hover disabled:opacity-60"
         :disabled="creating"
         @click="createArticle"
       >
@@ -1019,7 +1019,7 @@ async function removeFile() {
       </button>
       <button
         type="button"
-        class="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-danger)] transition hover:bg-[var(--color-surface-offset)]"
+        class="rounded-lg border border-line px-3 py-2 text-sm text-danger transition hover:bg-surface-offset"
         title="Delete file"
         @click="removeFile"
       >

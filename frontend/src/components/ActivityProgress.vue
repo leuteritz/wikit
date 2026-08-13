@@ -45,7 +45,7 @@ const nf = new Intl.NumberFormat()
         />
       </svg>
       <div class="absolute grid place-items-center">
-        <span class="font-mono text-3xl font-bold tabular-nums text-[var(--color-text)]">{{ runPercent }}<span class="text-lg text-[var(--color-text-muted)]">%</span></span>
+        <span class="font-mono text-3xl font-bold tabular-nums text-ink">{{ runPercent }}<span class="text-lg text-muted">%</span></span>
         <!-- Zaehler nur, solange er auch zaehlt: die Schreibphase kann keinen liefern
              (synchrone Transaktion), ein stehendes „0/5.000" waere irrefuehrend.
              Die Einheit steht dabei: je Phase zaehlt er etwas anderes, und ohne das Wort
@@ -53,7 +53,7 @@ const nf = new Intl.NumberFormat()
              nicht ist (die Phase ist nur EIN Abschnitt des Laufs). -->
         <!-- Breite gedeckelt und die Einheit auf einer eigenen Zeile: „2.000/2.680 classes scanned"
              ist laenger als der Kreis innen breit ist und lief sonst ueber dessen untere Linie. -->
-        <span v-if="progress.total && progress.done" class="mt-0.5 block max-w-[7.5rem] text-center font-mono text-2xs leading-tight tabular-nums text-[var(--color-text-muted)]">
+        <span v-if="progress.total && progress.done" class="mt-0.5 block max-w-[7.5rem] text-center font-mono text-2xs leading-tight tabular-nums text-muted">
           {{ nf.format(progress.done) }}/{{ nf.format(progress.total) }}
           <span v-if="runPhaseUnit" class="block opacity-70">{{ runPhaseUnit }}</span>
         </span>
@@ -61,23 +61,23 @@ const nf = new Intl.NumberFormat()
     </div>
 
     <div class="text-center">
-      <p class="text-sm font-semibold text-[var(--color-text)]">{{ runPhaseLabel }}</p>
+      <p class="text-sm font-semibold text-ink">{{ runPhaseLabel }}</p>
       <!-- Der Satz darunter haengt am Ort: im Import-Modal heisst er „du kannst das schliessen",
            im Detailfenster der Sidebar etwas anderes. Deshalb ein Slot statt eines festen Textes. -->
-      <p v-if="$slots.note" class="mt-1 text-xs text-[var(--color-text-muted)]"><slot name="note" /></p>
+      <p v-if="$slots.note" class="mt-1 text-xs text-muted"><slot name="note" /></p>
     </div>
 
     <!-- Phasenkette: zeigt, was schon durch ist und was noch kommt. -->
     <div class="flex flex-wrap items-center justify-center gap-x-2 gap-y-2">
       <template v-for="(p, i) in activePhases" :key="p.key">
-        <span v-if="i" class="h-px w-4 bg-[var(--color-border)]" />
+        <span v-if="i" class="h-px w-4 bg-line" />
         <span
           class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-2xs font-medium transition"
           :class="i < phaseIndex
-            ? 'border-[color-mix(in_srgb,var(--color-success)_40%,transparent)] bg-[color-mix(in_srgb,var(--color-success)_12%,transparent)] text-[var(--color-success)]'
+            ? 'border-[color-mix(in_srgb,var(--color-success)_40%,transparent)] bg-[color-mix(in_srgb,var(--color-success)_12%,transparent)] text-success'
             : i === phaseIndex
-              ? 'border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]'
-              : 'border-[var(--color-border)] text-[var(--color-text-muted)] opacity-60'"
+              ? 'border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)] bg-accent-soft text-accent'
+              : 'border-line text-muted opacity-60'"
         >
           <Icon v-if="i < phaseIndex" icon="lucide:check" class="h-3 w-3" />
           <Icon v-else-if="i === phaseIndex" icon="lucide:loader-2" class="h-3 w-3 animate-spin" />
@@ -89,15 +89,15 @@ const nf = new Intl.NumberFormat()
 
     <!-- Die zwei Zeiten: verstrichen und geschaetzte Restzeit. -->
     <div class="flex items-stretch gap-3">
-      <div class="min-w-[8.5rem] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 text-center">
-        <div class="font-mono text-xl font-semibold tabular-nums text-[var(--color-text)]">{{ formatDuration(elapsedMs) }}</div>
-        <div class="mt-1 text-3xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">elapsed</div>
+      <div class="min-w-[8.5rem] rounded-xl border border-line bg-surface px-4 py-2.5 text-center">
+        <div class="font-mono text-xl font-semibold tabular-nums text-ink">{{ formatDuration(elapsedMs) }}</div>
+        <div class="mt-1 text-3xs font-medium uppercase tracking-wide text-muted">elapsed</div>
       </div>
-      <div class="min-w-[8.5rem] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 text-center">
-        <div class="font-mono text-xl font-semibold tabular-nums text-[var(--color-text)]">
+      <div class="min-w-[8.5rem] rounded-xl border border-line bg-surface px-4 py-2.5 text-center">
+        <div class="font-mono text-xl font-semibold tabular-nums text-ink">
           {{ runRemainingMs != null ? formatDuration(runRemainingMs) : '–:––' }}
         </div>
-        <div class="mt-1 text-3xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">remaining</div>
+        <div class="mt-1 text-3xs font-medium uppercase tracking-wide text-muted">remaining</div>
       </div>
     </div>
   </div>

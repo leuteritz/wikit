@@ -160,18 +160,18 @@ const help = ref(false)
       <!-- Nur bei vorhandenen Regeln: eine Bilanz über nichts ist eine Reihe von Nullen, und die
            beantwortet die Frage „womit fange ich an?" nicht. -->
       <div v-if="!empty" class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
-          <p class="flex items-center gap-1.5 text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">
+        <div class="rounded-lg border border-line bg-surface-2 px-3 py-2">
+          <p class="flex items-center gap-1.5 text-3xs uppercase tracking-wide text-muted">
             <Icon icon="lucide:scale" class="h-3 w-3" />
             Rules
           </p>
-          <p class="mt-0.5 font-mono text-lg font-semibold tabular-nums text-[var(--color-text)]">{{ num(totals?.rules) }}</p>
+          <p class="mt-0.5 font-mono text-lg font-semibold tabular-nums text-ink">{{ num(totals?.rules) }}</p>
         </div>
         <div
-          class="rounded-lg border bg-[var(--color-surface-2)] px-3 py-2"
-          :class="totals?.violations ? 'border-[var(--color-danger)]/40' : 'border-[var(--color-border)]'"
+          class="rounded-lg border bg-surface-2 px-3 py-2"
+          :class="totals?.violations ? 'border-danger/40' : 'border-line'"
         >
-          <p class="flex items-center gap-1.5 text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">
+          <p class="flex items-center gap-1.5 text-3xs uppercase tracking-wide text-muted">
             <Icon icon="lucide:alert-triangle" class="h-3 w-3" />
             Relations breaking them
           </p>
@@ -180,8 +180,8 @@ const help = ref(false)
             :style="{ color: totals?.violations ? 'var(--color-danger)' : 'var(--color-text)' }"
           >{{ num(totals?.violations) }}</p>
         </div>
-        <div class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
-          <p class="flex items-center gap-1.5 text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">
+        <div class="rounded-lg border border-line bg-surface-2 px-3 py-2">
+          <p class="flex items-center gap-1.5 text-3xs uppercase tracking-wide text-muted">
             <Icon icon="lucide:circle-slash" class="h-3 w-3" />
             Never applying
           </p>
@@ -190,8 +190,8 @@ const help = ref(false)
             :style="{ color: totals?.inert ? 'var(--color-warning)' : 'var(--color-text)' }"
           >{{ num(totals?.inert) }}</p>
         </div>
-        <div class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
-          <p class="flex items-center gap-1.5 text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">
+        <div class="rounded-lg border border-line bg-surface-2 px-3 py-2">
+          <p class="flex items-center gap-1.5 text-3xs uppercase tracking-wide text-muted">
             <Icon icon="lucide:layers" class="h-3 w-3" />
             Layer order
           </p>
@@ -202,7 +202,7 @@ const help = ref(false)
             class="mt-0.5 text-lg font-semibold leading-tight"
             :style="{ color: totals?.hasLayers ? 'var(--color-text)' : 'var(--color-text-muted)' }"
           >{{ totals?.hasLayers ? 'Yours' : 'Not set' }}</p>
-          <p class="text-3xs leading-tight text-[var(--color-text-muted)]">
+          <p class="text-3xs leading-tight text-muted">
             {{ totals?.hasLayers ? 'the cycle tab uses it' : 'cycles fall back to a guess' }}
           </p>
         </div>
@@ -215,13 +215,13 @@ const help = ref(false)
            der eigentliche Gegner dieser Ansicht. -->
       <div
         v-if="suggestions.length"
-        class="rounded-lg border border-[var(--color-accent)]/30 bg-[var(--color-accent)]/5 p-4"
+        class="rounded-lg border border-accent/30 bg-accent/5 p-4"
       >
-        <p class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
-          <Icon icon="lucide:sparkles" class="h-4 w-4 text-[var(--color-accent)]" />
+        <p class="flex items-center gap-2 text-sm font-semibold text-ink">
+          <Icon icon="lucide:sparkles" class="h-4 w-4 text-accent" />
           {{ empty ? 'Start from what your code already does' : 'Suggested from your code' }}
         </p>
-        <p class="mt-1 text-2xs leading-relaxed text-[var(--color-text-muted)]">
+        <p class="mt-1 text-2xs leading-relaxed text-muted">
           These are not opinions — every line below is a direction this codebase already keeps today.
           Adopting one writes it down, so the next import cannot quietly reverse it.
         </p>
@@ -229,10 +229,10 @@ const help = ref(false)
           <li
             v-for="s in suggestions"
             :key="s.text"
-            class="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
+            class="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border border-line bg-surface px-3 py-2"
           >
-            <code class="font-mono text-xs text-[var(--color-text)]">{{ s.text }}</code>
-            <span class="text-3xs text-[var(--color-text-muted)]">{{ s.why }}</span>
+            <code class="font-mono text-xs text-ink">{{ s.text }}</code>
+            <span class="text-3xs text-muted">{{ s.why }}</span>
             <!-- ⚠️ Ein Vorschlag, der heute schon Verstösse hätte, verschweigt das nicht. Sonst
                  wird die Regel im Moment ihrer Übernahme rot, und das sieht aus wie ein Fehler des
                  Werkzeugs statt wie ein Befund über den Code. -->
@@ -243,7 +243,7 @@ const help = ref(false)
             >would flag {{ plural(s.wouldFlag, 'relation') }} today</span>
             <button
               type="button"
-              class="ml-auto inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-3xs font-medium text-[var(--color-text)] transition hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] disabled:opacity-50"
+              class="ml-auto inline-flex items-center gap-1 rounded-md border border-line bg-surface-2 px-2 py-1 text-3xs font-medium text-ink transition hover:border-accent hover:text-accent disabled:opacity-50"
               :disabled="saving"
               @click="adopt(s)"
             >
@@ -255,16 +255,16 @@ const help = ref(false)
       </div>
 
       <!-- ================= Der Editor ================= -->
-      <div class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]">
-        <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[var(--color-border)] px-4 py-2.5">
-          <span class="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-text)]">
-            <Icon icon="lucide:scale" class="h-3.5 w-3.5 text-[var(--color-text-muted)]" />
+      <div class="rounded-lg border border-line bg-surface-2">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-4 py-2.5">
+          <span class="inline-flex items-center gap-1.5 text-xs font-medium text-ink">
+            <Icon icon="lucide:scale" class="h-3.5 w-3.5 text-muted" />
             Your rules
           </span>
-          <span class="text-3xs text-[var(--color-text-muted)]">one per line · <code class="font-mono">#</code> for why</span>
+          <span class="text-3xs text-muted">one per line · <code class="font-mono">#</code> for why</span>
           <button
             type="button"
-            class="ml-auto inline-flex items-center gap-1 text-3xs text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
+            class="ml-auto inline-flex items-center gap-1 text-3xs text-muted transition hover:text-ink"
             @click="help = !help"
           >
             <Icon :icon="help ? 'lucide:chevron-down' : 'lucide:chevron-right'" class="h-3 w-3" />
@@ -273,7 +273,7 @@ const help = ref(false)
           <button
             v-if="dirty"
             type="button"
-            class="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] px-2 py-1 text-3xs text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
+            class="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-3xs text-muted transition hover:text-ink"
             :disabled="saving"
             @click="revert"
           >
@@ -297,22 +297,22 @@ const help = ref(false)
 
         <!-- Die Syntax in vier Zeilen. Zugeklappt, weil sie beim ersten Mal die Rettung und danach
              im Weg ist – gleiche Regel wie „What do I do with this?" über den Reitern. -->
-        <div v-if="help" class="border-b border-[var(--color-border)] px-4 py-3 text-2xs leading-relaxed text-[var(--color-text-muted)]">
+        <div v-if="help" class="border-b border-line px-4 py-3 text-2xs leading-relaxed text-muted">
           <dl class="grid gap-2 sm:grid-cols-2">
             <div>
-              <dt><code class="font-mono text-[var(--color-text)]">web -/-> repo</code></dt>
+              <dt><code class="font-mono text-ink">web -/-> repo</code></dt>
               <dd>Nothing in <code class="font-mono">web</code> may use <code class="font-mono">repo</code>.</dd>
             </div>
             <div>
-              <dt><code class="font-mono text-[var(--color-text)]">only service -> repo</code></dt>
+              <dt><code class="font-mono text-ink">only service -> repo</code></dt>
               <dd>Only <code class="font-mono">service</code> may reach into <code class="font-mono">repo</code>. Everything else is a violation.</dd>
             </div>
             <div>
-              <dt><code class="font-mono text-[var(--color-text)]">domain -/-> *</code></dt>
+              <dt><code class="font-mono text-ink">domain -/-> *</code></dt>
               <dd><code class="font-mono">domain</code> may not depend on anything outside itself.</dd>
             </div>
             <div>
-              <dt><code class="font-mono text-[var(--color-text)]">layers: web > service > repo</code></dt>
+              <dt><code class="font-mono text-ink">layers: web > service > repo</code></dt>
               <dd>Outermost first. Every arrow pointing back out is a violation — and the cycle tab uses this order too.</dd>
             </div>
           </dl>
@@ -329,7 +329,7 @@ const help = ref(false)
           :rows="rows"
           spellcheck="false"
           placeholder="# The web layer never talks to the database directly.&#10;web -/-> repo"
-          class="w-full resize-y bg-transparent px-4 py-3 font-mono text-xs leading-relaxed text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
+          class="w-full resize-y bg-transparent px-4 py-3 font-mono text-xs leading-relaxed text-ink outline-none placeholder:text-muted"
         />
       </div>
 
@@ -340,11 +340,11 @@ const help = ref(false)
         <li
           v-for="e in errors"
           :key="e.line"
-          class="flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-md border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/5 px-3 py-2 text-2xs"
+          class="flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-2xs"
         >
-          <span class="font-mono text-3xs text-[var(--color-text-muted)]">line {{ e.line }}</span>
-          <code class="font-mono text-[var(--color-text)]">{{ e.source }}</code>
-          <span class="text-[var(--color-text-muted)]">— {{ e.message }}</span>
+          <span class="font-mono text-3xs text-muted">line {{ e.line }}</span>
+          <code class="font-mono text-ink">{{ e.source }}</code>
+          <span class="text-muted">— {{ e.message }}</span>
         </li>
       </ul>
 
@@ -353,8 +353,8 @@ const help = ref(false)
         <li
           v-for="r in rules"
           :key="r.line"
-          class="overflow-hidden rounded-lg border bg-[var(--color-surface-2)]"
-          :class="r.status === 'violated' ? 'border-[var(--color-danger)]/40' : 'border-[var(--color-border)]'"
+          class="overflow-hidden rounded-lg border bg-surface-2"
+          :class="r.status === 'violated' ? 'border-danger/40' : 'border-line'"
         >
           <!-- Die ganze Kopfzeile klappt auf, aber nur wenn es etwas zu zeigen gibt: ein Chevron
                über einer erfüllten Regel verspricht einen Inhalt, den es nicht gibt. -->
@@ -362,19 +362,19 @@ const help = ref(false)
             :is="r.count ? 'button' : 'div'"
             :type="r.count ? 'button' : undefined"
             class="flex w-full items-start gap-3 px-4 py-3 text-left"
-            :class="r.count ? 'transition hover:bg-[var(--color-surface)]' : ''"
+            :class="r.count ? 'transition hover:bg-surface' : ''"
             @click="r.count && toggle(r.line)"
           >
             <Icon :icon="statusOf(r).icon" class="mt-0.5 h-4 w-4 shrink-0" :style="{ color: statusOf(r).color }" />
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                <code class="font-mono text-xs font-medium text-[var(--color-text)]">{{ r.text }}</code>
-                <span class="text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">{{ KIND_LABEL[r.kind] }}</span>
+                <code class="font-mono text-xs font-medium text-ink">{{ r.text }}</code>
+                <span class="text-3xs uppercase tracking-wide text-muted">{{ KIND_LABEL[r.kind] }}</span>
               </div>
-              <p class="mt-1 text-2xs text-[var(--color-text-muted)]">{{ summaryOf(r) }}</p>
+              <p class="mt-1 text-2xs text-muted">{{ summaryOf(r) }}</p>
               <!-- Das WARUM aus der `#`-Zeile darüber. Es ist der halbe Wert einer Regel: ohne ihn
                    weiss in einem halben Jahr niemand mehr, ob sie noch gelten soll. -->
-              <p v-if="r.note" class="mt-1 border-l-2 border-[var(--color-border)] pl-2 text-2xs italic text-[var(--color-text-muted)]">
+              <p v-if="r.note" class="mt-1 border-l-2 border-line pl-2 text-2xs italic text-muted">
                 {{ r.note }}
               </p>
             </div>
@@ -386,13 +386,13 @@ const help = ref(false)
             <Icon
               v-if="r.count"
               :icon="open === r.line ? 'lucide:chevron-down' : 'lucide:chevron-right'"
-              class="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]"
+              class="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted"
             />
           </component>
 
           <!-- Die Verstösse mit NAMEN. „2 violations" ist eine Sorge, diese Liste ist eine Aufgabe:
                jede Zeile ist die Stelle, an der man etwas ändert, und springt dorthin. -->
-          <div v-if="open === r.line && r.violations.length" class="border-t border-[var(--color-border)] px-4 py-3">
+          <div v-if="open === r.line && r.violations.length" class="border-t border-line px-4 py-3">
             <ul class="space-y-1">
               <li
                 v-for="v in r.violations"
@@ -401,18 +401,18 @@ const help = ref(false)
               >
                 <button
                   type="button"
-                  class="font-mono text-[var(--color-text)] underline decoration-dotted underline-offset-2 transition hover:text-[var(--color-accent)]"
+                  class="font-mono text-ink underline decoration-dotted underline-offset-2 transition hover:text-accent"
                   v-tip="v.fromPkg || 'default package'"
                   @click="emit('open-class', v.fromId)"
                 >{{ v.from }}</button>
-                <Icon icon="lucide:arrow-right" class="h-3 w-3 text-[var(--color-text-muted)]" />
+                <Icon icon="lucide:arrow-right" class="h-3 w-3 text-muted" />
                 <button
                   type="button"
-                  class="font-mono text-[var(--color-text)] underline decoration-dotted underline-offset-2 transition hover:text-[var(--color-accent)]"
+                  class="font-mono text-ink underline decoration-dotted underline-offset-2 transition hover:text-accent"
                   v-tip="v.toPkg || 'default package'"
                   @click="emit('open-class', v.toId)"
                 >{{ v.to }}</button>
-                <span class="text-3xs text-[var(--color-text-muted)]">
+                <span class="text-3xs text-muted">
                   {{ v.kind }}<template v-if="v.members.length"> · {{ v.members.join(', ') }}</template>
                   <template v-if="v.count > 1"> · {{ v.count }}×</template>
                 </span>
@@ -422,8 +422,8 @@ const help = ref(false)
                 <button
                   v-tip="'Stage removing this relation and see what else it would change'"
                   type="button"
-                  class="ml-auto inline-flex shrink-0 items-center gap-1 rounded border border-[var(--color-border)] px-1.5 py-0.5 text-3xs transition hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
-                  :class="staged(v) ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'"
+                  class="ml-auto inline-flex shrink-0 items-center gap-1 rounded border border-line px-1.5 py-0.5 text-3xs transition hover:border-accent hover:text-accent"
+                  :class="staged(v) ? 'border-accent text-accent' : 'text-muted'"
                   @click="stage(v)"
                 >
                   <Icon :icon="staged(v) ? 'lucide:check' : 'lucide:git-fork'" class="h-3 w-3" />
@@ -431,7 +431,7 @@ const help = ref(false)
                 </button>
               </li>
             </ul>
-            <p v-if="r.more" class="mt-2 text-3xs text-[var(--color-text-muted)]">
+            <p v-if="r.more" class="mt-2 text-3xs text-muted">
               … and {{ plural(r.more, 'more relation') }} not listed.
             </p>
           </div>
@@ -441,7 +441,7 @@ const help = ref(false)
       <!-- ================= Leerzustand ================= -->
       <p
         v-else-if="empty"
-        class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-8 text-center text-2xs leading-relaxed text-[var(--color-text-muted)]"
+        class="rounded-lg border border-line bg-surface-2 px-4 py-8 text-center text-2xs leading-relaxed text-muted"
       >
         No rules yet — so nothing here can be broken.
         <template v-if="!suggestions.length">
@@ -454,7 +454,7 @@ const help = ref(false)
       <!-- ================= Die Grenze der Auskunft ================= -->
       <!-- Sie steht unter der Liste, nicht in einem Tooltip: „holds" ohne diesen Satz liest sich
            als Freispruch, und er gilt nur für das, was Wikit überhaupt sehen kann. -->
-      <p v-if="!empty" class="text-3xs leading-relaxed text-[var(--color-text-muted)]">
+      <p v-if="!empty" class="text-3xs leading-relaxed text-muted">
         Checked against computed relations, never against import lines — an import that is never used
         is not a dependency. Reflection, dependency injection by name and code that is not uploaded
         leave no relation, so they cannot break a rule either.

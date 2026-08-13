@@ -2779,17 +2779,17 @@ watch(
 
 <template>
   <div
-    class="relative h-full w-full overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]"
+    class="relative h-full w-full overflow-hidden rounded-xl border border-line bg-surface"
   >
     <div v-if="!files.length" class="absolute inset-0 grid place-items-center px-6 text-center">
       <div class="max-w-xs">
-        <span class="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-[var(--color-surface-offset)] text-[var(--color-text-muted)]">
+        <span class="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-surface-offset text-muted">
           <Icon icon="lucide:git-fork" class="h-6 w-6" />
         </span>
-        <p class="mb-1 text-sm font-semibold text-[var(--color-text)]">Nothing to graph yet</p>
-        <p class="text-xs leading-relaxed text-[var(--color-text-muted)]">
-          Add <code class="rounded bg-[var(--color-surface-offset)] px-1 py-0.5 font-mono">.java</code> sources with
-          <span class="font-semibold text-[var(--color-text)]">Add code</span> – classes and their call edges appear here.
+        <p class="mb-1 text-sm font-semibold text-ink">Nothing to graph yet</p>
+        <p class="text-xs leading-relaxed text-muted">
+          Add <code class="rounded bg-surface-offset px-1 py-0.5 font-mono">.java</code> sources with
+          <span class="font-semibold text-ink">Add code</span> – classes and their call edges appear here.
         </p>
       </div>
     </div>
@@ -3024,7 +3024,7 @@ watch(
         @keydown.right.prevent="stepContext(1)"
       >
         <div class="vf-layers-head">
-          <Icon icon="lucide:layers" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+          <Icon icon="lucide:layers" class="h-4 w-4 shrink-0 text-accent" />
           <span class="vf-layers-title">Context</span>
           <span class="vf-layers-total">{{ searchScope.related }} related</span>
         </div>
@@ -3083,8 +3083,8 @@ watch(
               Ortsangabe mehr (die Treffer liegen quer durch die Codebasis). -->
       <div v-if="searchActive" class="vf-rail-sec">
         <div class="vf-rail-head">
-          <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
-          <span class="min-w-0 flex-1 truncate font-mono text-2xs text-[var(--color-text)]">“{{ searchQuery }}”</span>
+          <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-accent" />
+          <span class="min-w-0 flex-1 truncate font-mono text-2xs text-ink">“{{ searchQuery }}”</span>
           <button
             type="button"
             class="vf-rail-x"
@@ -3181,7 +3181,7 @@ watch(
     <div v-if="files.length" class="vf-topright">
       <div class="vf-view" @mouseleave="endViewPreview">
         <div class="vf-view-head">
-          <Icon icon="lucide:sliders-horizontal" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+          <Icon icon="lucide:sliders-horizontal" class="h-4 w-4 shrink-0 text-accent" />
           <span class="vf-view-title">View</span>
         </div>
 
@@ -3513,7 +3513,7 @@ watch(
 
           <div class="legend-head mt-1.5">Badges &amp; states</div>
           <div class="legend-row">
-            <Icon icon="lucide:sparkles" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
+            <Icon icon="lucide:sparkles" class="h-3.5 w-3.5 shrink-0 text-accent" />
             <span>AI-analyzed</span>
           </div>
           <div class="legend-row">

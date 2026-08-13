@@ -282,14 +282,14 @@ const seconds = computed(() => (elapsed.value / 1000).toFixed(1))
     <!-- Kopf: was diese Ansicht beantwortet. Steht IMMER sichtbar da (gleiche Regel wie in
          /insights): wer nicht weiss, was er sieht, sucht auch keine Erklaerung dazu. -->
     <header>
-      <h1 class="flex items-center gap-2 text-2xl font-semibold tracking-tight text-[var(--color-text)]">
-        <Icon icon="lucide:help-circle" class="h-6 w-6 text-[var(--color-accent)]" />
+      <h1 class="flex items-center gap-2 text-2xl font-semibold tracking-tight text-ink">
+        <Icon icon="lucide:help-circle" class="h-6 w-6 text-accent" />
         <!-- ⚠️ Nicht mehr „Ask the codebase": seit auch die Artikel gelesen werden, waere der
              Titel eine Aussage ueber die Quellen, die nicht mehr stimmt – und ausgerechnet in
              einer Ansicht, deren ganzer Wert an der Nachpruefbarkeit ihrer Quellen haengt. -->
         Ask your project
       </h1>
-      <p class="mt-1 text-sm text-[var(--color-text-muted)]">
+      <p class="mt-1 text-sm text-muted">
         Ask in plain words. The meaning index picks the classes and wiki articles that fit, and the
         answer is built from those alone — every claim carries the source it came from. The code
         says what happens, an article says why.
@@ -298,11 +298,11 @@ const seconds = computed(() => (elapsed.value / 1000).toFixed(1))
 
     <!-- Fragefeld -->
     <form
-      class="flex items-center gap-2 rounded-xl border bg-[var(--color-surface)] px-3 py-2 transition"
-      :class="error ? 'border-[var(--color-danger)]' : 'border-[var(--color-border)] focus-within:border-[var(--color-accent)]'"
+      class="flex items-center gap-2 rounded-xl border bg-surface px-3 py-2 transition"
+      :class="error ? 'border-danger' : 'border-line focus-within:border-accent'"
       @submit.prevent="ask"
     >
-      <Icon icon="lucide:sparkles" class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
+      <Icon icon="lucide:sparkles" class="h-4 w-4 shrink-0 text-muted" />
       <input
         ref="inputEl"
         v-model="question"
@@ -311,12 +311,12 @@ const seconds = computed(() => (elapsed.value / 1000).toFixed(1))
         aria-label="Ask a question about the codebase"
         spellcheck="false"
         :disabled="!hasSources"
-        class="min-w-0 flex-1 bg-transparent py-1 text-sm text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)] disabled:opacity-50"
+        class="min-w-0 flex-1 bg-transparent py-1 text-sm text-ink outline-none placeholder:text-muted disabled:opacity-50"
       />
       <button
         v-if="asking"
         type="button"
-        class="shrink-0 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+        class="shrink-0 rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-muted transition hover:bg-surface-offset hover:text-ink"
         @click="cancel"
       >
         Stop
@@ -324,22 +324,22 @@ const seconds = computed(() => (elapsed.value / 1000).toFixed(1))
       <button
         v-else
         type="submit"
-        class="shrink-0 rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-xs font-semibold text-[var(--color-accent-contrast)] transition hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
+        class="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-contrast transition hover:bg-accent-hover disabled:opacity-50"
         :disabled="!question.trim() || !hasSources"
       >
         Ask
       </button>
     </form>
 
-    <p v-if="!hasSources" class="rounded-lg bg-[var(--color-surface-offset)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
+    <p v-if="!hasSources" class="rounded-lg bg-surface-offset px-3 py-2 text-sm text-muted">
       Nothing to ask about yet — add some code or write a wiki article first.
     </p>
 
     <p v-if="error" class="notice-warning rounded-lg px-3 py-2 text-sm">{{ error }}</p>
 
     <!-- ⚠️ Die Quellen stehen VOR der Antwort: sie sind die Grundlage, nicht die Fussnote. -->
-    <section v-if="sources.length" class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-      <h2 class="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+    <section v-if="sources.length" class="rounded-xl border border-line bg-surface p-3">
+      <h2 class="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
         <Icon icon="lucide:quote" class="h-3.5 w-3.5" />
         Answering from {{ sources.length }} {{ sources.length === 1 ? 'source' : 'sources' }}
         <span class="font-normal normal-case tracking-normal opacity-70">— {{ sourceMix }}, best match first</span>
@@ -392,12 +392,12 @@ const seconds = computed(() => (elapsed.value / 1000).toFixed(1))
     <!-- Antwort -->
     <section
       v-if="answer || (asking && phase === 'answering')"
-      class="flex min-h-0 flex-1 flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]"
+      class="flex min-h-0 flex-1 flex-col rounded-xl border border-line bg-surface"
     >
-      <div class="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2">
-        <h2 class="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Answer</h2>
-        <Icon v-if="asking" icon="lucide:loader-2" class="h-3.5 w-3.5 animate-spin text-[var(--color-accent)]" />
-        <span class="ml-auto flex items-center gap-2 text-3xs tabular-nums text-[var(--color-text-muted)]">
+      <div class="flex items-center gap-2 border-b border-line px-3 py-2">
+        <h2 class="text-xs font-semibold uppercase tracking-wide text-muted">Answer</h2>
+        <Icon v-if="asking" icon="lucide:loader-2" class="h-3.5 w-3.5 animate-spin text-accent" />
+        <span class="ml-auto flex items-center gap-2 text-3xs tabular-nums text-muted">
           <!-- Die Zahl der aufgeloesten Belege steht da, weil „0 belegt" bei einer langen Antwort
                die wichtigste Auskunft ueber sie ist. -->
           <span v-if="citeCount" :title="`${citeCount} citation(s) resolved to a class or article`">
@@ -417,14 +417,14 @@ const seconds = computed(() => (elapsed.value / 1000).toFixed(1))
     <!-- Leerzustand mit Grund UND naechstem Schritt -->
     <section
       v-else-if="emptyInfo && !asking"
-      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-5 text-center"
+      class="rounded-xl border border-line bg-surface px-4 py-5 text-center"
     >
-      <Icon icon="lucide:info" class="mx-auto mb-2 h-5 w-5 text-[var(--color-text-muted)]" />
-      <p class="text-sm font-semibold text-[var(--color-text)]">{{ emptyInfo.title }}</p>
-      <p class="mx-auto mt-1 max-w-md text-xs text-[var(--color-text-muted)]">{{ emptyInfo.hint }}</p>
+      <Icon icon="lucide:info" class="mx-auto mb-2 h-5 w-5 text-muted" />
+      <p class="text-sm font-semibold text-ink">{{ emptyInfo.title }}</p>
+      <p class="mx-auto mt-1 max-w-md text-xs text-muted">{{ emptyInfo.hint }}</p>
       <RouterLink
         :to="emptyInfo.action.to"
-        class="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition hover:bg-[var(--color-surface-offset)]"
+        class="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink transition hover:bg-surface-offset"
       >
         {{ emptyInfo.action.label }}
         <Icon icon="lucide:arrow-up-right" class="h-3.5 w-3.5" />
@@ -439,7 +439,7 @@ const seconds = computed(() => (elapsed.value / 1000).toFixed(1))
 /* Quelle als Chip: dieselbe Sprache wie die Belege im Text, nur ohne den Akzentrahmen – die
    Quellenliste sagt „daraus entsteht die Antwort", der Beleg im Text „hierher gehoert dieser Satz". */
 .ask-source {
-  @apply inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-offset)] px-2 py-1 text-xs text-[var(--color-text)] transition;
+  @apply inline-flex items-center gap-1.5 rounded-md border border-line bg-surface-offset px-2 py-1 text-xs text-ink transition;
 }
 .ask-source:hover {
   border-color: var(--color-accent);

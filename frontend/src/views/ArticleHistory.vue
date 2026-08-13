@@ -117,16 +117,16 @@ async function restore(v) {
       <div class="flex min-w-0 items-center gap-3">
         <RouterLink
           :to="`/article/${slug}`"
-          class="grid h-8 w-8 place-items-center rounded-lg border border-[var(--color-border)] text-[var(--color-text-muted)] transition hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+          class="grid h-8 w-8 place-items-center rounded-lg border border-line text-muted transition hover:border-accent hover:text-accent"
           title="Back to the article"
         >
           <Icon icon="lucide:chevron-left" class="h-4 w-4" />
         </RouterLink>
         <div class="min-w-0">
-          <h1 class="truncate text-xl font-semibold text-[var(--color-text)]">
+          <h1 class="truncate text-xl font-semibold text-ink">
             {{ data?.article?.title || 'History' }}
           </h1>
-          <p class="font-mono text-2xs uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
+          <p class="font-mono text-2xs uppercase tracking-[0.12em] text-muted">
             Version history
           </p>
         </div>
@@ -144,7 +144,7 @@ async function restore(v) {
 
     <p
       v-else-if="error"
-      class="rounded-xl p-4 text-[var(--color-danger)]"
+      class="rounded-xl p-4 text-danger"
       style="background-color: color-mix(in srgb, var(--color-danger) 12%, transparent)"
     >{{ error }}</p>
 
@@ -152,11 +152,11 @@ async function restore(v) {
          erfundene „Fassung 1" trüge ein Datum, das nichts bedeutet (s. article-versions.service). -->
     <div
       v-else-if="!versions.length"
-      class="rounded-xl border border-dashed border-[var(--color-border)] px-6 py-12 text-center"
+      class="rounded-xl border border-dashed border-line px-6 py-12 text-center"
     >
-      <Icon icon="lucide:history" class="mx-auto mb-3 h-8 w-8 text-[var(--color-text-muted)] opacity-50" />
-      <p class="text-sm font-medium text-[var(--color-text)]">No versions yet</p>
-      <p class="mx-auto mt-1 max-w-md text-sm text-[var(--color-text-muted)]">
+      <Icon icon="lucide:history" class="mx-auto mb-3 h-8 w-8 text-muted opacity-50" />
+      <p class="text-sm font-medium text-ink">No versions yet</p>
+      <p class="mx-auto mt-1 max-w-md text-sm text-muted">
         This article was last saved before Wikit started keeping history. The next time you save it,
         the text as it stands today becomes version 1 — nothing is lost from here on.
       </p>
@@ -164,12 +164,12 @@ async function restore(v) {
 
     <div v-else class="grid min-h-0 flex-1 gap-5" style="grid-template-columns: 20rem minmax(0, 1fr)">
       <!-- Fassungsliste -->
-      <div class="flex min-h-0 flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div class="flex shrink-0 items-center justify-between border-b border-[var(--color-border)] px-4 py-2.5">
-          <span class="font-mono text-2xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
+      <div class="flex min-h-0 flex-col rounded-xl border border-line bg-surface">
+        <div class="flex shrink-0 items-center justify-between border-b border-line px-4 py-2.5">
+          <span class="font-mono text-2xs font-semibold uppercase tracking-[0.12em] text-muted">
             {{ versions.length }} {{ versions.length === 1 ? 'version' : 'versions' }}
           </span>
-          <span v-if="data.keep" class="font-mono text-2xs text-[var(--color-text-muted)] opacity-70">keep {{ data.keep }}</span>
+          <span v-if="data.keep" class="font-mono text-2xs text-muted opacity-70">keep {{ data.keep }}</span>
         </div>
 
         <div class="min-h-0 flex-1 overflow-auto">
@@ -182,30 +182,30 @@ async function restore(v) {
             @click="pick(v)"
           >
             <div class="flex items-baseline gap-2">
-              <span class="font-mono text-xs font-semibold text-[var(--color-text)]">v{{ v.version_number }}</span>
+              <span class="font-mono text-xs font-semibold text-ink">v{{ v.version_number }}</span>
               <span v-if="v.version_number === newest" class="vh-chip vh-chip--now">current</span>
               <span v-if="v.note" class="vh-chip vh-chip--note">restored</span>
-              <span class="ml-auto shrink-0 font-mono text-2xs text-[var(--color-text-muted)]">{{ formatRelative(v.created_at) }}</span>
+              <span class="ml-auto shrink-0 font-mono text-2xs text-muted">{{ formatRelative(v.created_at) }}</span>
             </div>
 
             <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-2xs">
-              <span v-if="v.stats" class="text-[var(--color-text-muted)]">
-                <span class="text-[var(--color-success)]">+{{ v.stats.added }}</span>
-                <span class="text-[var(--color-danger)]"> −{{ v.stats.removed }}</span>
+              <span v-if="v.stats" class="text-muted">
+                <span class="text-success">+{{ v.stats.added }}</span>
+                <span class="text-danger"> −{{ v.stats.removed }}</span>
               </span>
               <!-- Bei Prosa ist eine Zeile ein Absatz: „+1 −1" sieht beim Tippfehler aus wie beim
                    neu geschriebenen Abschnitt. Die Zeichenzahl trennt die beiden Fälle. -->
-              <span class="text-[var(--color-text-muted)] opacity-70">{{ v.chars.toLocaleString() }} chars</span>
+              <span class="text-muted opacity-70">{{ v.chars.toLocaleString() }} chars</span>
               <span v-if="v.title_changed" class="vh-chip vh-chip--meta">title</span>
               <span v-if="v.summary_changed" class="vh-chip vh-chip--meta">summary</span>
             </div>
 
             <!-- Der KI-Satz ist die Abkürzung vor dem Diff, nicht sein Ersatz. Fehlt er (kein
                  Ollama, noch nicht fertig, weggefallen beim Fortschreiben), fehlt genau er. -->
-            <p v-if="v.ai_summary" class="mt-1.5 line-clamp-3 text-xs leading-snug text-[var(--color-text-muted)]">
+            <p v-if="v.ai_summary" class="mt-1.5 line-clamp-3 text-xs leading-snug text-muted">
               {{ v.ai_summary }}
             </p>
-            <p v-else-if="v.note" class="mt-1.5 text-xs italic text-[var(--color-text-muted)]">{{ v.note }}</p>
+            <p v-else-if="v.note" class="mt-1.5 text-xs italic text-muted">{{ v.note }}</p>
           </button>
         </div>
 
@@ -213,11 +213,11 @@ async function restore(v) {
              sonst aus wie einer, der dort begonnen hat. -->
         <p
           v-if="data.trimmed"
-          class="shrink-0 border-t border-[var(--color-border)] px-4 py-2 text-2xs leading-relaxed text-[var(--color-text-muted)]"
+          class="shrink-0 border-t border-line px-4 py-2 text-2xs leading-relaxed text-muted"
         >
           <template v-if="data.keep">
             Older versions were dropped — Wikit keeps the last {{ data.keep }} per article.
-            <RouterLink to="/bot" class="text-[var(--color-accent)] hover:underline">Change it</RouterLink>.
+            <RouterLink to="/bot" class="text-accent hover:underline">Change it</RouterLink>.
           </template>
           <template v-else>Older versions were dropped before the limit was lifted.</template>
         </p>
@@ -227,7 +227,7 @@ async function restore(v) {
       <div class="flex min-h-0 flex-col">
         <div class="mb-3 flex shrink-0 flex-wrap items-center gap-3">
           <div class="flex items-center gap-2">
-            <label class="font-mono text-2xs uppercase tracking-[0.12em] text-[var(--color-text-muted)]">Compare</label>
+            <label class="font-mono text-2xs uppercase tracking-[0.12em] text-muted">Compare</label>
             <select v-model.number="from" class="vh-select">
               <!-- „Empty" ist keine Verlegenheitsoption: ohne sie ließe sich die älteste
                    vorhandene Fassung überhaupt nicht ansehen. -->
@@ -236,7 +236,7 @@ async function restore(v) {
                 v{{ v.version_number }} · {{ formatDateTime(v.created_at) }}
               </option>
             </select>
-            <Icon icon="lucide:arrow-right" class="h-4 w-4 text-[var(--color-text-muted)]" />
+            <Icon icon="lucide:arrow-right" class="h-4 w-4 text-muted" />
             <select v-model.number="to" class="vh-select">
               <option v-for="v in versions" :key="v.version_number" :value="v.version_number" :disabled="v.version_number <= from">
                 v{{ v.version_number }} · {{ formatDateTime(v.created_at) }}
@@ -245,14 +245,14 @@ async function restore(v) {
           </div>
 
           <div class="ml-auto flex items-center gap-2">
-            <span v-if="diff" class="font-mono text-2xs text-[var(--color-text-muted)]">
-              <span class="text-[var(--color-success)]">+{{ diff.stats.charsAdded.toLocaleString() }}</span>
-              <span class="text-[var(--color-danger)]"> −{{ diff.stats.charsRemoved.toLocaleString() }}</span>
+            <span v-if="diff" class="font-mono text-2xs text-muted">
+              <span class="text-success">+{{ diff.stats.charsAdded.toLocaleString() }}</span>
+              <span class="text-danger"> −{{ diff.stats.charsRemoved.toLocaleString() }}</span>
               chars
             </span>
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition enabled:hover:border-[var(--color-accent)] enabled:hover:text-[var(--color-accent)] disabled:opacity-40"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-ink transition enabled:hover:border-accent enabled:hover:text-accent disabled:opacity-40"
               :disabled="!canRestore"
               :title="canRestore ? `Bring version ${to} back as the current text` : 'This is already the current version'"
               @click="restore(to)"
@@ -265,12 +265,12 @@ async function restore(v) {
 
         <p
           v-if="restored"
-          class="mb-3 flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm text-[var(--color-text)]"
+          class="mb-3 flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm text-ink"
           style="background-color: color-mix(in srgb, var(--color-success) 14%, transparent)"
         >
-          <Icon icon="lucide:check" class="h-4 w-4 text-[var(--color-success)]" />
+          <Icon icon="lucide:check" class="h-4 w-4 text-success" />
           Version {{ restored }} is now the current text.
-          <RouterLink :to="`/article/${slug}`" class="font-medium text-[var(--color-accent)] hover:underline">Open the article</RouterLink>
+          <RouterLink :to="`/article/${slug}`" class="font-medium text-accent hover:underline">Open the article</RouterLink>
         </p>
 
         <div class="min-h-0 flex-1">
@@ -286,7 +286,7 @@ async function restore(v) {
 @reference "../assets/style.css";
 
 .vh-item {
-  @apply block w-full border-b border-[var(--color-border)] px-4 py-2.5 text-left transition hover:bg-[var(--color-surface-offset)];
+  @apply block w-full border-b border-line px-4 py-2.5 text-left transition hover:bg-surface-offset;
 }
 /* Die verglichene Fassung trägt den Akzent, die Basis nur eine Kante: „von hier bis dort" hat
    eine Richtung, und zwei gleich betonte Zeilen hätten keine. */
@@ -302,18 +302,18 @@ async function restore(v) {
   @apply rounded px-1.5 py-px font-mono text-3xs font-medium uppercase tracking-wide;
 }
 .vh-chip--now {
-  @apply bg-[var(--color-accent-soft)] text-[var(--color-accent)];
+  @apply bg-accent-soft text-accent;
 }
 .vh-chip--note {
   color: var(--color-warning);
   background-color: color-mix(in srgb, var(--color-warning) 16%, transparent);
 }
 .vh-chip--meta {
-  @apply text-[var(--color-text-muted)];
+  @apply text-muted;
   background-color: color-mix(in srgb, var(--color-text-muted) 12%, transparent);
 }
 
 .vh-select {
-  @apply rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 font-mono text-xs text-[var(--color-text)] outline-none transition focus:border-[var(--color-accent)];
+  @apply rounded-lg border border-line bg-surface-2 px-2 py-1.5 font-mono text-xs text-ink outline-none transition focus:border-accent;
 }
 </style>

@@ -73,20 +73,20 @@ function insert(name) {
         type="button"
         class="relative rounded-md border px-3 py-1.5 text-xs font-medium transition"
         :class="active === t.key
-          ? 'border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]'
-          : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-border-strong)]'"
+          ? 'border-accent bg-accent-soft text-accent'
+          : 'border-line text-muted hover:border-line-strong'"
         @click="active = t.key"
       >
         {{ t.label }}
         <span
           v-if="overrides.includes(`prompts.${t.key}`)"
-          class="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]"
+          class="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-accent"
           title="Custom template"
         />
       </button>
     </div>
 
-    <p v-if="activeTab" class="mb-2.5 text-2xs leading-relaxed text-[var(--color-text-muted)]">{{ activeTab.hint }}</p>
+    <p v-if="activeTab" class="mb-2.5 text-2xs leading-relaxed text-muted">{{ activeTab.hint }}</p>
 
     <!-- Platzhalter: was diese Vorlage kennt. Gedaempft = im Text gerade nicht verwendet. -->
     <div class="mb-2 flex flex-wrap items-center gap-1">
@@ -96,8 +96,8 @@ function insert(name) {
         type="button"
         class="rounded border px-1.5 py-0.5 font-mono text-3xs transition"
         :class="used.has(p)
-          ? 'border-[var(--color-accent)]/40 bg-[var(--color-accent-soft)] text-[var(--color-accent)]'
-          : 'border-dashed border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]'"
+          ? 'border-accent/40 bg-accent-soft text-accent'
+          : 'border-dashed border-line text-muted hover:border-line-strong hover:text-ink'"
         :title="placeholderHelp[p] || ''"
         @click="insert(p)"
       >{{ ph(p) }}</button>
@@ -105,35 +105,35 @@ function insert(name) {
 
     <textarea
       ref="area"
-      class="min-h-[16rem] w-full resize-y rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 font-mono text-xs leading-relaxed text-[var(--color-text)] transition focus:border-[var(--color-accent)] focus:outline-none"
+      class="min-h-[16rem] w-full resize-y rounded-lg border border-line bg-surface px-3 py-2.5 font-mono text-xs leading-relaxed text-ink transition focus:border-accent focus:outline-none"
       spellcheck="false"
       :value="text"
       @input="emit('update', active, $event.target.value)"
     />
 
     <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
-      <p v-if="missingContext" class="inline-flex items-start gap-1.5 text-2xs text-[var(--color-warning)]">
+      <p v-if="missingContext" class="inline-flex items-start gap-1.5 text-2xs text-warning">
         <Icon icon="lucide:alert-triangle" class="mt-px h-3.5 w-3.5 shrink-0" />
         <span>Without <code class="font-mono">{{ ph('context') }}</code> neither the project context nor the knowledge from earlier analyses reaches the model.</span>
       </p>
-      <p v-if="unknown.length" class="inline-flex items-start gap-1.5 text-2xs text-[var(--color-warning)]">
+      <p v-if="unknown.length" class="inline-flex items-start gap-1.5 text-2xs text-warning">
         <Icon icon="lucide:alert-triangle" class="mt-px h-3.5 w-3.5 shrink-0" />
         <span>Nothing replaces <code class="font-mono">{{ unknownList }}</code> — it stays in the prompt as literal text.</span>
       </p>
 
       <span class="ml-auto inline-flex items-center gap-2">
-        <span class="font-mono text-3xs text-[var(--color-text-muted)]">{{ text.length }} chars</span>
+        <span class="font-mono text-3xs text-muted">{{ text.length }} chars</span>
         <button
           v-if="!isDefault"
           type="button"
-          class="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] px-2 py-1 font-mono text-3xs text-[var(--color-text-muted)] transition hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+          class="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 font-mono text-3xs text-muted transition hover:border-line-strong hover:text-ink"
           title="Back to the template shipped with Wikit"
           @click="emit('reset', active)"
         >
           <Icon icon="lucide:rotate-ccw" class="h-3 w-3" />
           Restore default
         </button>
-        <span v-else class="font-mono text-3xs text-[var(--color-text-muted)]">default template</span>
+        <span v-else class="font-mono text-3xs text-muted">default template</span>
       </span>
     </div>
   </div>

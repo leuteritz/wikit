@@ -102,15 +102,15 @@ async function reRun(m) {
 </script>
 
 <template>
-  <section class="mb-8 overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-accent-soft)]">
+  <section class="mb-8 overflow-hidden rounded-2xl border border-line bg-accent-soft">
     <!-- Kopf -->
-    <header class="flex flex-wrap items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
-      <span class="grid h-9 w-9 place-items-center rounded-lg bg-[var(--color-accent)] text-[var(--color-accent-contrast)] shadow-sm">
+    <header class="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3">
+      <span class="grid h-9 w-9 place-items-center rounded-lg bg-accent text-accent-contrast elev-1">
         <Icon icon="lucide:sparkles" class="h-5 w-5" />
       </span>
       <div class="min-w-0 flex-1">
-        <h2 class="text-sm font-bold uppercase tracking-wide text-[var(--color-accent)]">AI code analysis</h2>
-        <p class="text-xs text-[var(--color-text-muted)]">
+        <h2 class="text-sm font-bold uppercase tracking-wide text-accent">AI code analysis</h2>
+        <p class="text-xs text-muted">
           {{ methods.length }} method(s)
           <span v-if="generatedAt"> · last {{ fmtDate(generatedAt) }}</span>
           <span v-else> · not analyzed yet</span>
@@ -118,7 +118,7 @@ async function reRun(m) {
       </div>
       <button
         type="button"
-        class="inline-flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
+        class="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast elev-1 transition hover:bg-accent-hover disabled:opacity-60"
         :disabled="analysis.running.value"
         @click="startAnalysis"
       >
@@ -132,7 +132,7 @@ async function reRun(m) {
       <!-- Kontext-Feld (einklappbar) -->
       <button
         type="button"
-        class="mb-3 inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-accent)] transition hover:opacity-80"
+        class="mb-3 inline-flex items-center gap-1.5 text-xs font-medium text-accent transition hover:opacity-80"
         @click="showContext = !showContext"
       >
         <Icon icon="lucide:chevron-right" class="h-3.5 w-3.5 transition-transform" :class="showContext ? 'rotate-90' : ''" />
@@ -143,30 +143,30 @@ async function reRun(m) {
         v-model="userContext"
         spellcheck="false"
         placeholder="e.g. Windchill background, module purpose… – fed into every AI prompt."
-        class="mb-4 h-20 w-full resize-y rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
+        class="mb-4 h-20 w-full resize-y rounded-xl border border-line bg-surface-2 p-3 text-sm text-ink outline-none transition focus:border-accent focus:ring-2 focus:ring-accent-soft"
       />
 
       <!-- Fortschritt -->
       <div v-if="analysis.running.value" class="mb-4">
         <div class="mb-1.5 flex items-center justify-between text-xs">
-          <span class="flex items-center gap-1.5 font-medium text-[var(--color-accent)]">
+          <span class="flex items-center gap-1.5 font-medium text-accent">
             <Icon icon="lucide:loader-2" class="h-3.5 w-3.5 animate-spin" />
             {{ runningLabel }}
-            <span class="tabular-nums font-normal text-[var(--color-text-muted)]">{{ fmtDur(analysis.stepElapsedMs.value) }}</span>
+            <span class="tabular-nums font-normal text-muted">{{ fmtDur(analysis.stepElapsedMs.value) }}</span>
           </span>
-          <span class="tabular-nums text-[var(--color-text-muted)]">{{ completed }}/{{ steps }}</span>
+          <span class="tabular-nums text-muted">{{ completed }}/{{ steps }}</span>
         </div>
-        <div class="h-2 w-full overflow-hidden rounded-full bg-[var(--color-accent-soft)]">
-          <div class="h-full rounded-full bg-[var(--color-accent)] transition-all duration-300" :style="{ width: percent + '%' }" />
+        <div class="h-2 w-full overflow-hidden rounded-full bg-accent-soft">
+          <div class="h-full rounded-full bg-accent transition-all duration-300" :style="{ width: percent + '%' }" />
         </div>
-        <div class="mt-1.5 flex items-center justify-between text-2xs text-[var(--color-text-muted)]">
+        <div class="mt-1.5 flex items-center justify-between text-2xs text-muted">
           <span class="tabular-nums">
             Total {{ fmtDur(analysis.totalElapsedMs.value) }}
             <span v-if="completed < steps"> · ~{{ fmtDur(analysis.etaMs.value) }} left</span>
           </span>
           <button
             type="button"
-            class="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] px-2 py-0.5 text-2xs font-medium text-[var(--color-danger)] transition hover:bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)] disabled:opacity-50"
+            class="inline-flex items-center gap-1 rounded-md border border-line px-2 py-0.5 text-2xs font-medium text-danger transition hover:bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)] disabled:opacity-50"
             :disabled="analysis.cancelling.value"
             @click="analysis.cancel(articleId)"
           >
@@ -178,7 +178,7 @@ async function reRun(m) {
         <div class="mt-2 flex flex-wrap items-center gap-1">
           <span
             class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-3xs font-medium"
-            :class="classState === 'done' ? 'badge-success' : classState === 'running' ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' : 'badge-muted'"
+            :class="classState === 'done' ? 'badge-success' : classState === 'running' ? 'bg-accent-soft text-accent' : 'badge-muted'"
           >
             <Icon v-if="classState === 'done'" icon="lucide:check" class="h-3 w-3" /><Icon v-else-if="classState === 'running'" icon="lucide:loader-2" class="h-3 w-3 animate-spin" />
             Class
@@ -187,42 +187,42 @@ async function reRun(m) {
             v-for="(m, i) in methods"
             :key="m.id"
             class="inline-flex h-5 min-w-[20px] items-center justify-center rounded-md px-1 text-3xs font-medium"
-            :class="methodState(i, m) === 'done' ? 'badge-success' : methodState(i, m) === 'running' ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' : 'badge-muted'"
+            :class="methodState(i, m) === 'done' ? 'badge-success' : methodState(i, m) === 'running' ? 'bg-accent-soft text-accent' : 'badge-muted'"
             :title="m.method_name"
           >{{ i + 1 }}</span>
         </div>
       </div>
 
       <!-- Stall-Watchdog: keine Antwort vom Server -->
-      <div v-if="analysis.stalled.value" class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg px-3 py-2 text-xs text-[var(--color-warning)]" style="background-color: color-mix(in srgb, var(--color-warning) 12%, transparent)">
+      <div v-if="analysis.stalled.value" class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg px-3 py-2 text-xs text-warning" style="background-color: color-mix(in srgb, var(--color-warning) 12%, transparent)">
         <span class="flex-1">No response from the server – the local AI may be stuck. The local AI on the Pi is slow (about 30–90 s per step).</span>
         <button
           v-if="analysis.running.value"
           type="button"
-          class="rounded-md border border-[var(--color-border-strong)] px-2 py-0.5 font-medium transition hover:bg-[color-mix(in_srgb,var(--color-warning)_18%,transparent)]"
+          class="rounded-md border border-line-strong px-2 py-0.5 font-medium transition hover:bg-[color-mix(in_srgb,var(--color-warning)_18%,transparent)]"
           :disabled="analysis.cancelling.value"
           @click="analysis.cancel(articleId)"
         >Cancel</button>
         <button
           type="button"
-          class="rounded-md border border-[var(--color-border-strong)] px-2 py-0.5 font-medium transition hover:bg-[color-mix(in_srgb,var(--color-warning)_18%,transparent)]"
+          class="rounded-md border border-line-strong px-2 py-0.5 font-medium transition hover:bg-[color-mix(in_srgb,var(--color-warning)_18%,transparent)]"
           @click="startAnalysis"
         >Restart</button>
       </div>
 
-      <p v-if="analysis.error.value" class="mb-3 rounded-lg px-3 py-2 text-xs text-[var(--color-danger)]" style="background-color: color-mix(in srgb, var(--color-danger) 12%, transparent)">{{ analysis.error.value }}</p>
-      <p v-if="notice" class="mb-3 rounded-lg px-3 py-2 text-xs text-[var(--color-warning)]" style="background-color: color-mix(in srgb, var(--color-warning) 12%, transparent)">{{ notice }}</p>
+      <p v-if="analysis.error.value" class="mb-3 rounded-lg px-3 py-2 text-xs text-danger" style="background-color: color-mix(in srgb, var(--color-danger) 12%, transparent)">{{ analysis.error.value }}</p>
+      <p v-if="notice" class="mb-3 rounded-lg px-3 py-2 text-xs text-warning" style="background-color: color-mix(in srgb, var(--color-warning) 12%, transparent)">{{ notice }}</p>
 
       <!-- Leerzustand -->
-      <div v-if="!hasContent && !analysis.running.value" class="rounded-lg border border-dashed border-[var(--color-border)] px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">
+      <div v-if="!hasContent && !analysis.running.value" class="rounded-lg border border-dashed border-line px-4 py-6 text-center text-sm text-muted">
         <p>Start the AI analysis to generate class and method descriptions – they appear here one by one.</p>
-        <p class="mt-1.5 text-xs text-[var(--color-text-muted)]">Note: The local AI runs on the Pi and is slow – expect about 30–90 s per step.</p>
+        <p class="mt-1.5 text-xs text-muted">Note: The local AI runs on the Pi and is slow – expect about 30–90 s per step.</p>
       </div>
 
       <!-- Klassenbeschreibung -->
       <div v-if="descriptionHtml" class="mb-6">
         <div
-          class="prose prose-sm max-w-none rounded-xl bg-[var(--color-surface-2)] px-4 py-3 dark:prose-invert"
+          class="prose prose-sm max-w-none rounded-xl bg-surface-2 px-4 py-3 dark:prose-invert"
           v-html="descriptionHtml"
         />
         <span
@@ -237,9 +237,9 @@ async function reRun(m) {
         <li
           v-for="(m, i) in methods"
           :key="m.id"
-          class="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]"
+          class="overflow-hidden rounded-xl border border-line bg-surface-2"
         >
-          <div class="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2">
+          <div class="flex items-center gap-2 border-b border-line px-3 py-2">
             <button
               type="button"
               class="group flex min-w-0 flex-1 items-center gap-1.5 text-left"
@@ -247,8 +247,8 @@ async function reRun(m) {
               :title="`Regenerate “${m.method_name}” individually`"
               @click="reRun(m)"
             >
-              <span class="truncate font-mono text-sm font-semibold text-[var(--color-accent)] group-hover:underline disabled:no-underline">{{ m.method_name }}</span>
-              <Icon v-if="methodState(i, m) !== 'running'" icon="lucide:refresh-cw" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)] transition group-hover:text-[var(--color-accent)]" />
+              <span class="truncate font-mono text-sm font-semibold text-accent group-hover:underline disabled:no-underline">{{ m.method_name }}</span>
+              <Icon v-if="methodState(i, m) !== 'running'" icon="lucide:refresh-cw" class="h-3.5 w-3.5 shrink-0 text-muted transition group-hover:text-accent" />
             </button>
             <span
               v-if="m.ai_generated === false"
@@ -260,8 +260,8 @@ async function reRun(m) {
               class="badge-success shrink-0 rounded-md px-1.5 py-0.5 text-3xs font-medium"
               title="AI text generated"
             >AI text</span>
-            <Icon v-if="methodState(i, m) === 'running'" icon="lucide:loader-2" class="h-4 w-4 shrink-0 animate-spin text-[var(--color-accent)]" />
-            <Icon v-else-if="methodState(i, m) === 'done'" icon="lucide:check" class="h-4 w-4 shrink-0 text-[var(--color-success)]" title="analyzed" />
+            <Icon v-if="methodState(i, m) === 'running'" icon="lucide:loader-2" class="h-4 w-4 shrink-0 animate-spin text-accent" />
+            <Icon v-else-if="methodState(i, m) === 'done'" icon="lucide:check" class="h-4 w-4 shrink-0 text-success" title="analyzed" />
           </div>
 
           <!-- Signatur (Shiki java, server-gerendert) -->
@@ -273,7 +273,7 @@ async function reRun(m) {
             class="prose prose-sm max-w-none px-3 pb-3 dark:prose-invert"
             v-html="m.summary_html"
           />
-          <p v-else class="px-3 pb-3 text-sm italic text-[var(--color-text-muted)]">No AI description yet – click the method name to generate.</p>
+          <p v-else class="px-3 pb-3 text-sm italic text-muted">No AI description yet – click the method name to generate.</p>
         </li>
       </ul>
     </div>

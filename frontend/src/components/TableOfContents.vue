@@ -36,8 +36,8 @@ function jump(id) {
 
 <template>
   <nav v-if="toc.length" class="text-sm">
-    <p class="mb-3 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">On this page</p>
-    <ul class="space-y-1 border-l border-[var(--color-border)]">
+    <p class="mb-3 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-muted">On this page</p>
+    <ul class="space-y-1 border-l border-line">
       <li v-for="item in toc" :key="item.id">
         <a
           href="javascript:void(0)"
@@ -45,8 +45,8 @@ function jump(id) {
           :class="[
             item.level === 3 ? 'pl-6' : 'pl-3',
             activeId === item.id
-              ? 'border-[var(--color-accent)] font-medium text-[var(--color-accent)]'
-              : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]',
+              ? 'border-accent font-medium text-accent'
+              : 'border-transparent text-muted hover:text-ink',
           ]"
           @click="jump(item.id)"
         >{{ item.text }}</a>

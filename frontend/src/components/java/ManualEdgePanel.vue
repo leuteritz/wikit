@@ -13,6 +13,7 @@
 // Dieses Panel ist reines UI: es emittiert nur save/close/swap.
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { Icon } from '../../lib/icons.js'
+import { useFocusTrap } from '../../composables/useFocusTrap.js'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -73,6 +74,15 @@ watch(
   },
 )
 onUnmounted(() => window.removeEventListener('keydown', onKeydown))
+
+// Der Slideover bleibt eine eigene Komponente (eigene Geometrie am rechten Rand, eigener
+// Backdrop) – den Fokus-Kaefig teilt er sich aber mit `ui/Modal`: mit `Tab` aus einem offenen
+// Overlay in die Seite dahinter zu laufen war vorher ueberall moeglich.
+const panelEl = ref(null)
+useFocusTrap(
+  panelEl,
+  computed(() => props.visible && !!props.sourceFile && !!props.targetFile),
+)
 </script>
 
 <template>
@@ -90,16 +100,18 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
         <!-- Panel am rechten Rand -->
         <aside
-          class="slideover-panel absolute right-0 top-0 flex h-full w-[min(92vw,26rem)] flex-col border-l border-[var(--color-border)] bg-[var(--color-surface-2)] shadow-2xl"
+          ref="panelEl"
+          tabindex="-1"
+          class="slideover-panel absolute right-0 top-0 flex h-full w-[min(92vw,26rem)] flex-col border-l border-line bg-surface-2 elev-4"
         >
-          <header class="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">
-            <h2 class="flex min-w-0 items-center gap-2 text-sm font-bold text-[var(--color-text)]">
-              <Icon icon="lucide:link" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+          <header class="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-3">
+            <h2 class="flex min-w-0 items-center gap-2 text-sm font-bold text-ink">
+              <Icon icon="lucide:link" class="h-4 w-4 shrink-0 text-accent" />
               <span class="truncate">Create connection</span>
             </h2>
             <button
               type="button"
-              class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+              class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-muted transition hover:bg-surface-offset hover:text-ink"
               title="Close (ESC)"
               aria-label="Close"
               @click="close"
@@ -111,17 +123,17 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           <div class="min-h-0 flex-1 overflow-y-auto px-4 py-4">
             <!-- ── Quelle: definierende Klasse (oben) ── -->
             <div class="flex items-start gap-2.5">
-              <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+              <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
                 <Icon icon="lucide:file-code" class="h-5 w-5" />
               </span>
               <div class="min-w-0 flex-1">
-                <div class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Source · defines</div>
-                <h3 class="truncate text-base font-bold text-[var(--color-text)]">{{ sourceFile.class_name }}</h3>
-                <p class="truncate font-mono text-2xs text-[var(--color-text-muted)]">{{ sourceFile.filename }}</p>
+                <div class="text-3xs font-semibold uppercase tracking-wide text-muted">Source · defines</div>
+                <h3 class="truncate text-base font-bold text-ink">{{ sourceFile.class_name }}</h3>
+                <p class="truncate font-mono text-2xs text-muted">{{ sourceFile.filename }}</p>
               </div>
               <button
                 type="button"
-                class="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-[var(--color-border)] text-[var(--color-text-muted)] transition hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+                class="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-line text-muted transition hover:border-accent hover:text-accent"
                 title="Swap direction"
                 aria-label="Swap direction"
                 @click="emit('swap')"
@@ -132,10 +144,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
             <!-- ── Methoden-Auswahl (Pflicht, falls vorhanden) ── -->
             <div class="mt-4">
-              <div class="mb-2 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+              <div class="mb-2 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-muted">
                 <Icon icon="lucide:braces" class="h-3.5 w-3.5" />
                 Called method
-                <span v-if="hasMethods" class="text-[var(--color-danger)]">*</span>
+                <span v-if="hasMethods" class="text-danger">*</span>
               </div>
               <div v-if="hasMethods" class="flex flex-wrap gap-1.5">
                 <button
@@ -144,46 +156,46 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                   type="button"
                   class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-mono text-xs transition"
                   :class="selectedMethod === name
-                    ? 'border-[var(--color-accent)] bg-[var(--color-accent)] text-[var(--color-accent-contrast)] shadow-sm'
-                    : 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]'"
+                    ? 'border-accent bg-accent text-accent-contrast elev-1'
+                    : 'border-line bg-surface text-ink hover:border-accent hover:text-accent'"
                   @click="pick(name)"
                 >
                   <Icon v-if="selectedMethod === name" icon="lucide:check" class="h-3 w-3 shrink-0" />
                   {{ name }}()
                 </button>
               </div>
-              <p v-else class="rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
+              <p v-else class="rounded-lg border border-dashed border-line bg-surface px-3 py-2 text-xs text-muted">
                 This class has no analyzed methods – the connection is created without a method name.
               </p>
             </div>
 
             <!-- ── Richtungs-Divider ── -->
             <div class="my-4 flex items-center gap-3">
-              <span class="h-px flex-1 bg-[var(--color-border)]" />
-              <span class="grid h-7 w-7 place-items-center rounded-full bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+              <span class="h-px flex-1 bg-line" />
+              <span class="grid h-7 w-7 place-items-center rounded-full bg-accent-soft text-accent">
                 <Icon icon="lucide:arrow-down" class="h-4 w-4" />
               </span>
-              <span class="h-px flex-1 bg-[var(--color-border)]" />
+              <span class="h-px flex-1 bg-line" />
             </div>
 
             <!-- ── Anwender: nutzende Klasse (unten) ── -->
             <div class="flex items-start gap-2.5">
-              <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+              <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
                 <Icon icon="lucide:code-2" class="h-5 w-5" />
               </span>
               <div class="min-w-0 flex-1">
-                <div class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Consumer · calls</div>
-                <h3 class="truncate text-base font-bold text-[var(--color-text)]">{{ targetFile.class_name }}</h3>
-                <p class="truncate font-mono text-2xs text-[var(--color-text-muted)]">{{ targetFile.filename }}</p>
+                <div class="text-3xs font-semibold uppercase tracking-wide text-muted">Consumer · calls</div>
+                <h3 class="truncate text-base font-bold text-ink">{{ targetFile.class_name }}</h3>
+                <p class="truncate font-mono text-2xs text-muted">{{ targetFile.filename }}</p>
               </div>
             </div>
           </div>
 
           <!-- Footer: speichern -->
-          <footer class="shrink-0 border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3">
+          <footer class="shrink-0 border-t border-line bg-surface-2 px-4 py-3">
             <button
               type="button"
-              class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+              class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast elev-1 transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
               :disabled="!canSave"
               @click="save"
             >

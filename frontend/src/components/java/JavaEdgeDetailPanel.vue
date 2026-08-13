@@ -561,10 +561,10 @@ watch(
        Beziehung sehe ich hier?" auch nach 300 Zeilen Code noch beantwortet ist. -->
   <div
     v-if="visible && edge"
-    class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]"
+    class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-surface-2"
   >
           <!-- Kopf: Definition -> Nutzung (gleiche Richtung wie der Graph-Pfeil) -->
-          <header class="shrink-0 border-b border-[var(--color-border)] px-3 py-2.5">
+          <header class="shrink-0 border-b border-line px-3 py-2.5">
             <div class="flex items-center justify-between gap-2">
               <span class="ed-kind" :style="{ '--k': isField ? 'var(--color-lavender)' : 'var(--color-accent)' }">
                 <Icon :icon="isField ? 'lucide:variable' : 'lucide:braces'" class="h-3 w-3 shrink-0" />
@@ -587,7 +587,7 @@ watch(
               <button
                 v-if="back"
                 type="button"
-                class="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-2xs font-semibold text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+                class="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-2xs font-semibold text-muted transition hover:bg-surface-offset hover:text-ink"
                 :title="`Back to ${back}`"
                 @click="close"
               >
@@ -597,10 +597,10 @@ watch(
             </div>
             <!-- Die zwei Klassen tragen die Aussage und bekommen deshalb eine eigene Zeile: in
                  einer schmalen Spalte neben Badges gedrängt blieben von beiden nur Wortanfänge. -->
-            <div class="mt-1.5 flex min-w-0 items-center gap-1.5 text-sm font-bold text-[var(--color-text)]">
-              <Icon icon="lucide:share-2" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+            <div class="mt-1.5 flex min-w-0 items-center gap-1.5 text-sm font-bold text-ink">
+              <Icon icon="lucide:share-2" class="h-4 w-4 shrink-0 text-accent" />
               <span class="truncate" :title="edge.toClass">{{ edge.toClass }}</span>
-              <Icon icon="lucide:arrow-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
+              <Icon icon="lucide:arrow-right" class="h-3.5 w-3.5 shrink-0 text-muted" />
               <span class="truncate" :title="edge.fromClass">{{ edge.fromClass }}</span>
             </div>
 
@@ -611,13 +611,13 @@ watch(
                  ein Feld, das nichts finden kann, waere ein Angebot ins Leere. -->
             <div v-if="!loading" class="mt-2">
               <div
-                class="flex w-full min-w-0 flex-wrap items-center gap-0.5 rounded-lg border bg-[var(--color-surface)] px-1.5 py-0.5 transition"
+                class="flex w-full min-w-0 flex-wrap items-center gap-0.5 rounded-lg border bg-surface px-1.5 py-0.5 transition"
                 :class="[
-                  searchFailed ? 'border-[var(--color-danger)]' : 'border-[var(--color-border)] focus-within:border-[var(--color-accent)]',
+                  searchFailed ? 'border-danger' : 'border-line focus-within:border-accent',
                   { 'search-picked': searchPicked },
                 ]"
               >
-                <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
+                <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-muted" />
                 <input
                   ref="searchInput"
                   :value="search"
@@ -625,7 +625,7 @@ watch(
                   :placeholder="`Search this ${isField ? 'access' : 'call'}…`"
                   aria-label="Search the code of this relation"
                   spellcheck="false"
-                  class="min-w-[5rem] flex-1 bg-transparent py-0.5 text-xs text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
+                  class="min-w-[5rem] flex-1 bg-transparent py-0.5 text-xs text-ink outline-none placeholder:text-muted"
                   @input="setQuery($event.target.value)"
                   @keydown.enter.prevent="stepMatch($event.shiftKey ? -1 : 1)"
                   @keydown.esc.prevent.stop="closeSearch"
@@ -633,7 +633,7 @@ watch(
                 <span
                   v-if="search"
                   class="shrink-0 whitespace-nowrap px-0.5 text-3xs tabular-nums"
-                  :class="searchFailed ? 'text-[var(--color-danger)]' : 'text-[var(--color-text-muted)]'"
+                  :class="searchFailed ? 'text-danger' : 'text-muted'"
                   :title="searchCounterTitle"
                 >{{ searchCounter }}</span>
 
@@ -644,8 +644,8 @@ watch(
                   type="button"
                   class="grid h-5 w-5 shrink-0 place-items-center rounded transition"
                   :class="searchOpts[o.key]
-                    ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)]'
-                    : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]'"
+                    ? 'bg-accent text-accent-contrast'
+                    : 'text-muted hover:bg-surface-offset hover:text-ink'"
                   :title="o.title"
                   :aria-pressed="searchOpts[o.key]"
                   @click="toggleSearchOpt(o.key)"
@@ -657,10 +657,10 @@ watch(
                      um, und ein einzeln abgetrennter Weiter-Pfeil waere dort ein Bedienelement
                      ohne Zusammenhang. -->
                 <div class="ml-auto flex shrink-0 items-center gap-0.5">
-                  <span class="mx-0.5 h-4 w-px shrink-0 bg-[var(--color-border)]" />
+                  <span class="mx-0.5 h-4 w-px shrink-0 bg-line" />
                   <button
                     type="button"
-                    class="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-40 disabled:hover:bg-transparent"
+                    class="grid h-5 w-5 shrink-0 place-items-center rounded text-muted transition hover:bg-surface-offset hover:text-ink disabled:opacity-40 disabled:hover:bg-transparent"
                     title="Previous match (Shift+Enter)"
                     :disabled="!hitCount"
                     @click="stepMatch(-1)"
@@ -669,7 +669,7 @@ watch(
                   </button>
                   <button
                     type="button"
-                    class="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-40 disabled:hover:bg-transparent"
+                    class="grid h-5 w-5 shrink-0 place-items-center rounded text-muted transition hover:bg-surface-offset hover:text-ink disabled:opacity-40 disabled:hover:bg-transparent"
                     title="Next match (Enter)"
                     :disabled="!hitCount"
                     @click="stepMatch(1)"
@@ -679,7 +679,7 @@ watch(
                   <button
                     v-if="search"
                     type="button"
-                    class="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+                    class="grid h-5 w-5 shrink-0 place-items-center rounded text-muted transition hover:bg-surface-offset hover:text-ink"
                     title="Clear search (Esc)"
                     @click="closeSearch"
                   >
@@ -744,12 +744,12 @@ watch(
             <!-- ── Quelle: definierende Klasse + Methoden-Quellcode (Shiki) ── -->
             <section class="p-3">
               <div class="mb-3 flex flex-wrap items-center gap-2.5">
-                <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+                <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
                   <Icon icon="lucide:file-code" class="h-5 w-5" />
                 </span>
                 <div class="min-w-0">
-                  <div class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Source · defines</div>
-                  <h2 class="truncate text-base font-bold text-[var(--color-text)]">{{ edge.toClass }}</h2>
+                  <div class="text-3xs font-semibold uppercase tracking-wide text-muted">Source · defines</div>
+                  <h2 class="truncate text-base font-bold text-ink">{{ edge.toClass }}</h2>
                 </div>
 
                 <!-- Farb-Legende der Kante: welche Farbe steht fuer welche Methode. Reine Anzeige,
@@ -766,7 +766,7 @@ watch(
                 <article
                   v-for="c in calleeList"
                   :key="c.name"
-                  class="method-card overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-offset)]"
+                  class="method-card overflow-hidden rounded-xl border border-line bg-surface-offset"
                   :style="mcVars(c.name)"
                 >
                   <!-- Methoden-Header: Name + „Definiert in"-Sprung + (Datei · Zeilenbereich) +
@@ -793,7 +793,7 @@ watch(
                       <button
                         v-if="snippets[c.name]?.html"
                         type="button"
-                        class="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-2xs font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-accent)]"
+                        class="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-2xs font-medium text-muted transition hover:bg-surface-offset hover:text-accent"
                         :title="`Open in the source of ${edge.toClass} and highlight the method`"
                         @click="openDefinition(c)"
                       >
@@ -802,7 +802,7 @@ watch(
                       </button>
                       <span
                         v-if="snippets[c.name]?.filename"
-                        class="inline-flex min-w-0 items-center gap-1 truncate font-mono text-2xs text-[var(--color-text-muted)]"
+                        class="inline-flex min-w-0 items-center gap-1 truncate font-mono text-2xs text-muted"
                         :title="snippets[c.name].filename"
                       >
                         <Icon icon="lucide:file-code" class="h-3 w-3 shrink-0" />
@@ -811,8 +811,8 @@ watch(
                       <button
                         v-if="snippets[c.name]?.html"
                         type="button"
-                        class="grid h-7 w-7 shrink-0 place-items-center rounded-md transition hover:bg-[var(--color-surface-offset)]"
-                        :class="copiedKey === 'src:' + c.name ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
+                        class="grid h-7 w-7 shrink-0 place-items-center rounded-md transition hover:bg-surface-offset"
+                        :class="copiedKey === 'src:' + c.name ? 'text-accent' : 'text-muted hover:text-ink'"
                         :title="copiedKey === 'src:' + c.name ? 'Copied to clipboard' : 'Copy code'"
                         :aria-label="copiedKey === 'src:' + c.name ? 'Copied to clipboard' : 'Copy code'"
                         @click="copyCode('src:' + c.name, snippets[c.name].code)"
@@ -826,7 +826,7 @@ watch(
                         <button
                           v-if="confirmingDelete !== c.edgeId"
                           type="button"
-                          class="grid h-7 w-7 shrink-0 place-items-center rounded-md text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-danger)]"
+                          class="grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted transition hover:bg-surface-offset hover:text-danger"
                           :title="`Delete connection “${c.name}()”`"
                           :aria-label="`Delete connection ${c.name}`"
                           @click="confirmingDelete = c.edgeId"
@@ -834,10 +834,10 @@ watch(
                           <Icon icon="lucide:trash-2" class="h-3.5 w-3.5" />
                         </button>
                         <span v-else class="inline-flex shrink-0 items-center gap-1">
-                          <span class="text-2xs font-semibold text-[var(--color-danger)]">Delete?</span>
+                          <span class="text-2xs font-semibold text-danger">Delete?</span>
                           <button
                             type="button"
-                            class="grid h-7 w-7 place-items-center rounded-md text-[var(--color-danger)] transition hover:bg-[var(--color-surface-offset)]"
+                            class="grid h-7 w-7 place-items-center rounded-md text-danger transition hover:bg-surface-offset"
                             title="Confirm delete"
                             aria-label="Confirm delete"
                             @click="deleteMethodEdge(c.edgeId)"
@@ -846,7 +846,7 @@ watch(
                           </button>
                           <button
                             type="button"
-                            class="grid h-7 w-7 place-items-center rounded-md text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+                            class="grid h-7 w-7 place-items-center rounded-md text-muted transition hover:bg-surface-offset hover:text-ink"
                             title="Cancel"
                             aria-label="Cancel"
                             @click="confirmingDelete = null"
@@ -876,11 +876,11 @@ watch(
 
                   <!-- EIN kombinierter Code-Block: Signatur + Rumpf, leerzeilenfrei (Shiki, Dual-Theme) -->
                   <div class="px-3 pb-2">
-                    <div v-if="snippets[c.name]?.loading" class="flex items-center gap-2 px-1 py-3 text-xs text-[var(--color-text-muted)]">
+                    <div v-if="snippets[c.name]?.loading" class="flex items-center gap-2 px-1 py-3 text-xs text-muted">
                       <Icon icon="lucide:loader-2" class="h-3.5 w-3.5 animate-spin" />
                       Loading source…
                     </div>
-                    <p v-else-if="snippets[c.name]?.error" class="px-1 py-2 text-xs text-[var(--color-danger)]">
+                    <p v-else-if="snippets[c.name]?.error" class="px-1 py-2 text-xs text-danger">
                       {{ snippets[c.name].error }}
                     </p>
                     <div
@@ -897,32 +897,32 @@ watch(
 
             <!-- ── Divider: Richtung Definition -> Nutzung ── -->
             <div class="flex items-center gap-3 px-3">
-              <span class="h-px flex-1 bg-[var(--color-border)]" />
-              <span class="grid h-8 w-8 place-items-center rounded-full bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+              <span class="h-px flex-1 bg-line" />
+              <span class="grid h-8 w-8 place-items-center rounded-full bg-accent-soft text-accent">
                 <Icon icon="lucide:arrow-down" class="h-4 w-4 edge-arrow" />
               </span>
-              <span class="h-px flex-1 bg-[var(--color-border)]" />
+              <span class="h-px flex-1 bg-line" />
             </div>
 
             <!-- ── Anwender: aufrufende Klasse mit exakter Aufrufzeile ── -->
             <section class="p-3">
               <div class="mb-3 flex items-center gap-2.5">
-                <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+                <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
                   <Icon icon="lucide:code-2" class="h-5 w-5" />
                 </span>
                 <div class="min-w-0">
-                  <div class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Consumer · {{ isField ? 'reads' : 'calls' }}</div>
-                  <h2 class="truncate text-base font-bold text-[var(--color-text)]">{{ edge.fromClass }}</h2>
+                  <div class="text-3xs font-semibold uppercase tracking-wide text-muted">Consumer · {{ isField ? 'reads' : 'calls' }}</div>
+                  <h2 class="truncate text-base font-bold text-ink">{{ edge.fromClass }}</h2>
                 </div>
               </div>
 
               <div class="space-y-4">
                 <div v-for="grp in callerGroups" :key="grp.callerMethod">
-                  <div v-if="usageSnippets[grp.callerMethod]?.loading" class="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-offset)] px-3 py-3 text-xs text-[var(--color-text-muted)]">
+                  <div v-if="usageSnippets[grp.callerMethod]?.loading" class="flex items-center gap-2 rounded-lg border border-line bg-surface-offset px-3 py-3 text-xs text-muted">
                     <Icon icon="lucide:loader-2" class="h-3.5 w-3.5 animate-spin" />
                     Loading source…
                   </div>
-                  <p v-else-if="usageSnippets[grp.callerMethod]?.error" class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-offset)] px-3 py-2 text-xs text-[var(--color-danger)]">
+                  <p v-else-if="usageSnippets[grp.callerMethod]?.error" class="rounded-lg border border-line bg-surface-offset px-3 py-2 text-xs text-danger">
                     {{ usageSnippets[grp.callerMethod].error }}
                   </p>
 
@@ -931,7 +931,7 @@ watch(
                     <div
                       v-for="(site, i) in usageSnippets[grp.callerMethod]?.sites || []"
                       :key="i"
-                      class="method-card overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-offset)]"
+                      class="method-card overflow-hidden rounded-lg border border-line bg-surface-offset"
                       :style="mcVars(site.calleeMethod)"
                     >
                       <!-- Site-Header: Aufruf-Kette (aufrufende Methode → aufgerufene Methode) links,
@@ -940,12 +940,12 @@ watch(
                            getrennt (kein Aneinanderreihen). Der Callee traegt die Farbe seiner
                            Definitionskarte oben – Streifen, Badge, Aufrufzeile und Code-Token ziehen
                            dieselbe Variable. -->
-                      <div class="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2">
+                      <div class="flex items-center gap-2 border-b border-line px-3 py-2">
                         <span class="mc-badge">
                           <Icon icon="lucide:corner-down-right" class="h-3.5 w-3.5" />
                         </span>
-                        <code class="font-mono text-sm font-semibold text-[var(--color-text)]">{{ callerName(grp.callerMethod, grp.callerIsField) }}</code>
-                        <Icon icon="lucide:arrow-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
+                        <code class="font-mono text-sm font-semibold text-ink">{{ callerName(grp.callerMethod, grp.callerIsField) }}</code>
+                        <Icon icon="lucide:arrow-right" class="h-3.5 w-3.5 shrink-0 text-muted" />
                         <code class="mc-name font-mono text-sm font-semibold">{{ memberName(site.calleeMethod) }}</code>
                         <!-- Genau diese Zeile ist die geratene Stelle -> das Badge gehoert hierher,
                              nicht nur an die Definition oben. -->
@@ -959,7 +959,7 @@ watch(
                         </span>
                         <div class="ml-auto flex min-w-0 items-center gap-1.5">
                           <span
-                            class="inline-flex min-w-0 items-center gap-1 truncate font-mono text-2xs text-[var(--color-text-muted)]"
+                            class="inline-flex min-w-0 items-center gap-1 truncate font-mono text-2xs text-muted"
                             :title="site.lineExact ? (isField ? 'Exact line of the access' : 'Exact call line') : 'Line estimated – re-analyze the file for the exact line'"
                           >
                             <Icon icon="lucide:file-code" class="h-3 w-3 shrink-0" />
@@ -967,7 +967,7 @@ watch(
                           </span>
                           <button
                             type="button"
-                            class="grid h-6 w-6 shrink-0 place-items-center rounded-md text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+                            class="grid h-6 w-6 shrink-0 place-items-center rounded-md text-muted transition hover:bg-surface-offset hover:text-ink"
                             title="Open in source (jump to line)"
                             aria-label="Open in source (jump to line)"
                             @click="navigateTo(edge.fromFileId, site.line)"
@@ -988,14 +988,14 @@ watch(
           <!-- Footer: zur Quell-/Aufruferklasse springen (read-only). Waehrend des Ladens weg –
                ein Sprung in eine Klasse, deren Stelle noch gar nicht feststeht, waere ein Angebot
                ins Leere. -->
-          <footer v-if="!loading" class="shrink-0 border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
+          <footer v-if="!loading" class="shrink-0 border-t border-line bg-surface-2 px-3 py-2">
             <div class="flex flex-wrap items-center justify-end gap-2">
               <button
                 type="button"
-                class="mr-auto inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text)] transition hover:bg-[var(--color-surface-offset)]"
+                class="mr-auto inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-ink transition hover:bg-surface-offset"
                 @click="openSourceClass"
               >
-                <Icon icon="lucide:file-code" class="h-4 w-4 text-[var(--color-text-muted)]" />
+                <Icon icon="lucide:file-code" class="h-4 w-4 text-muted" />
                 To class
               </button>
             </div>

@@ -4,9 +4,27 @@
 /* Klassenbasierter Dark-Mode (statt prefers-color-scheme) -> per Toggle steuerbar. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Schrift: IBM Plex offline gebundelt (s. main.js). Ueber @theme, damit Tailwinds
-   font-sans/font-mono-Utilities + der Base-Font auf IBM Plex laufen. */
-@theme {
+/* --- Theme-Tokens: was Tailwind zu UTILITIES machen soll ---------------------------------------
+ * Hier steht NUR, was als Utility gebraucht wird – `bg-accent`, `text-muted`, `border-line`.
+ * Alles Uebrige (abgeleitete Rollen-/Typ-Farben, Methodenfarben, Graph-Toene) bleibt unten im
+ * `:root`, weil es dort ausschliesslich aus rohem CSS und aus JS-Strings gelesen wird.
+ *
+ * WARUM `static`: Tailwind gibt eine Theme-Variable normalerweise nur aus, wenn eine generierte
+ * Utility oder ein `var()` IN DERSELBEN CSS-Datei sie braucht. `<style scoped>`-Bloecke der
+ * Komponenten zaehlen dabei NICHT mit – die kompiliert das Vue-Plugin getrennt gegen `@reference`.
+ * Ein Token, das nur noch dort lebt, fiele also lautlos aus dem Output; das Symptom waere kein
+ * Build-Fehler, sondern unsichtbarer Text. `static` erzwingt die Ausgabe aller Variablen.
+ *
+ * WARUM die Werte hier und NICHT mehr in `:root`: `@theme` landet in `@layer theme`, das `:root`
+ * unten ist unlayered – und unlayered schlaegt jede Layer-Regel. Stuende ein Token in beiden,
+ * gewaenne immer der `:root`-Wert und dieser Block waere eine stille Attrappe. Jedes Token hat
+ * genau EINEN Ort.
+ *
+ * Der Dark-Mode ueberschreibt dieselben Namen weiter unten in `html.dark`; die Utilities
+ * kompilieren zu `var(--color-…)` und folgen deshalb zur Laufzeit.                              */
+@theme static {
+  /* Schrift: IBM Plex offline gebundelt (s. main.js). Ueber @theme, damit Tailwinds
+     font-sans/font-mono-Utilities + der Base-Font auf IBM Plex laufen. */
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
 
@@ -15,19 +33,6 @@
      bei der Root-Skalierung unten NICHT mitgewachsen waeren. Als rem-Tokens skalieren sie mit. */
   --text-3xs: 0.625rem;  /* 10px bei 16px-Root */
   --text-2xs: 0.6875rem; /* 11px bei 16px-Root */
-}
-
-/* --- Design-Tokens (klassenbasierter Dark-Mode) ---------------------------- *
- * Palette „Wikit Redesign" (warmes IBM-Plex-System, Beige/Taupe):
- *   accent (olive/taupe) #857e61 · thistle #b3819c · lavender #7d7bad · cyan #3f93a0
- *   beige #9a8574 · success #5b957a · warning #a9824c · danger #b06b76.
- * Light-Surfaces aus warmem Off-White (kein reines Weiss), Dark-Surfaces aus fast
- * schwarzem Warmbraun (kein reines Schwarz). Zusatz-Hues (thistle/lavender/cyan)
- * fuer Kategorien + Package-Faerbung im Graph.
- * Komponenten referenzieren diese Tokens via Tailwind-Arbitrary-Values,
- * z. B. bg-[var(--color-accent)] / text-[var(--color-accent)].                */
-:root {
-  color-scheme: light dark;
 
   --color-accent: #857e61;          /* Olive/Taupe – Primaer/Akzent */
   --color-accent-hover: #6c6650;    /* dunkler fuer Hover */
@@ -37,25 +42,69 @@
   --color-surface: #f3f1ea;         /* Seite (warmes Off-White) */
   --color-surface-2: #fbfaf6;       /* hellere Card-Flaeche */
   --color-surface-offset: #e6e3d6;  /* Wells/Inputs (dritte Tiefenstufe) */
-  --color-surface-2b: #eceada;      /* Panel-Insets / Graph-Canvas (design --surface-2) */
-  --color-border: #dcd7c8;          /* warme Trennlinie */
-  --color-border-strong: #c7c0ac;   /* kraeftigerer Rahmen (Inputs/Modals) */
-  --color-text: #26251d;            /* warmes Fast-Schwarz */
-  --color-text-muted: #7d7666;      /* gedaempftes Warmgrau */
+
+  /* Vier Tokens tragen hier einen ANDEREN Namen als frueher, damit die Utility lesbar wird:
+     `text-muted` statt `text-text-muted`, `border-line` statt `border-border`. Die alten Namen
+     leben unten in `:root` als reaktive Aliase weiter – deshalb laufen die rohen
+     `var(--color-text-muted)`-Stellen in scoped CSS, in :style-Bindings und in den JS-Strings
+     (lib/insightsScale.js, lib/wikiGraph.js) unveraendert weiter, und der Dark-Mode muss nur
+     EINEN Namen umschreiben statt zwei. */
+  --color-ink: #26251d;             /* warmes Fast-Schwarz   (frueher --color-text) */
+  --color-muted: #7d7666;           /* gedaempftes Warmgrau  (frueher --color-text-muted) */
+  --color-line: #dcd7c8;            /* warme Trennlinie      (frueher --color-border) */
+  --color-line-strong: #c7c0ac;     /* kraeftiger Rahmen     (frueher --color-border-strong) */
 
   --color-success: #5b957a;         /* gedaempftes Gruen */
   --color-warning: #a9824c;         /* warmes Gold/Ocker */
   --color-danger: #b06b76;          /* gedaempftes Rosen-Rot */
 
-  /* Zusatz-Hues (Kategorien + Package-Faerbung im Graph). */
+  /* Zusatz-Hues, die AUCH als Utility vorkommen. Die uebrigen (cyan, beige, thistle-soft,
+     review, edge-highlight, surface-2b) stehen unten – sie werden nur roh gelesen. */
+  --color-lavender: #7d7bad;
+  --color-lavender-soft: #e7e6f2;
+  --color-thistle: #b3819c;
+}
+
+/* --- Design-Tokens (klassenbasierter Dark-Mode) ---------------------------- *
+ * Palette „Wikit Redesign" (warmes IBM-Plex-System, Beige/Taupe):
+ *   accent (olive/taupe) #857e61 · thistle #b3819c · lavender #7d7bad · cyan #3f93a0
+ *   beige #9a8574 · success #5b957a · warning #a9824c · danger #b06b76.
+ * Light-Surfaces aus warmem Off-White (kein reines Weiss), Dark-Surfaces aus fast
+ * schwarzem Warmbraun (kein reines Schwarz). Zusatz-Hues (thistle/lavender/cyan)
+ * fuer Kategorien + Package-Faerbung im Graph.
+ * Die Farben, die als Utility gebraucht werden, stehen im `@theme static`-Block oben
+ * (`bg-accent`, `text-muted`, `border-line`, …). Hier steht nur, was ROH gelesen wird:
+ * die Aliase auf die vier umbenannten Tokens, die abgeleiteten Achsen und die Graph-Toene. */
+:root {
+  color-scheme: light dark;
+
+  /* --- Aliase auf die vier umbenannten Theme-Tokens -------------------------------------------
+     Sie tragen keinen eigenen Wert, sondern zeigen auf den Theme-Token. Damit gilt:
+       - die ~570 rohen `var(--color-text-muted)`-Stellen in scoped CSS, :style-Bindings und
+         JS-Strings laufen unveraendert weiter,
+       - die abgeleiteten `--color-role-*` unten ebenso,
+       - und `html.dark` muss trotzdem nur EINEN Namen ueberschreiben: `var()` wird auf dem
+         Element aufgeloest, und `:root` wie `html.dark` treffen dasselbe Element (useTheme
+         setzt `.dark` auf document.documentElement) – der Alias liest also immer den
+         gueltigen Theme-Wert. */
+  --color-text: var(--color-ink);
+  --color-text-muted: var(--color-muted);
+  --color-border: var(--color-line);
+  --color-border-strong: var(--color-line-strong);
+
+  /* Farbe des Tastatur-Fokusrings (Regel weiter unten). Eigener Name, weil „woran erkenne ich den
+     Fokus" eine andere Frage ist als „was ist die Primaerfarbe" – heute dieselbe Antwort. */
+  --color-ring: var(--color-accent);
+
+  --color-surface-2b: #eceada;      /* Panel-Insets / Graph-Canvas (design --surface-2) */
+
+  /* Zusatz-Hues (Kategorien + Package-Faerbung im Graph). Nur die ohne Utility-Bedarf –
+     lavender, lavender-soft und thistle stehen oben im @theme. */
   /* „Please review" am Kanten-Label: kraeftiger als --color-warning, weil das Badge deckend
      gefuellt ist und in BEIDEN Themes dieselbe Warnfarbe traegt. Eine Zahl, drei Leser
      (Badge, Labelrahmen, Legende). */
   --color-review: #d4a017;
-  --color-thistle: #b3819c;
   --color-thistle-soft: #f0e4ea;
-  --color-lavender: #7d7bad;
-  --color-lavender-soft: #e7e6f2;
   --color-cyan: #3f93a0;
   --color-cyan-soft: #dcf4f7;
   --color-beige: #9a8574;
@@ -120,10 +169,14 @@ html.dark {
   --color-surface-2: #211f16;       /* Card-Flaeche */
   --color-surface-offset: #302c20;  /* Wells/Inputs */
   --color-surface-2b: #2a271c;      /* Panel-Insets / Graph-Canvas */
-  --color-border: #3a3527;
-  --color-border-strong: #4b4534;
-  --color-text: #e7e4d6;            /* heller Bodytext */
-  --color-text-muted: #9c937f;
+
+  /* Nur die NEUEN Namen – die Aliase (--color-border, --color-text, …) oben in `:root`
+     zeigen darauf und folgen automatisch. Ein zweiter Eintrag hier waere eine zweite
+     Fassung derselben Farbe. */
+  --color-line: #3a3527;
+  --color-line-strong: #4b4534;
+  --color-ink: #e7e4d6;             /* heller Bodytext */
+  --color-muted: #9c937f;
 
   --color-success: #7bc0a2;
   --color-warning: #d0a869;
@@ -150,6 +203,41 @@ html.dark {
   /* role provider/consumer/hub/isolated erben reaktiv aus den theme-faehigen Tokens oben */
 }
 
+/* --- Elevation: vier Stufen, eine Aussage je Stufe -------------------------------------------- *
+ * Vorher lagen Tailwinds `shadow-sm/lg/xl/2xl` verstreut herum – neutrale Graustufen auf einer
+ * durchweg warmen Palette, und im Dark-Mode unveraendert, wo derselbe Schatten nichts mehr sagt.
+ *
+ * Die Stufen bedeuten:
+ *   elev-1  liegt auf .......... Chips, kbd, Karten in einer Liste
+ *   elev-2  hebt sich ab ....... Popover, Hover-Zustand einer Karte
+ *   elev-3  schwebt ............ Modal-Karten
+ *   elev-4  ueber allem ........ Overlays, die die ganze Ansicht anhalten
+ *
+ * WARUM eigene Tokens statt `@theme { --shadow-* }`: Tailwind setzt Schattenwerte zur BAUZEIT in
+ * die Utility ein und liest die Variable zur Laufzeit gar nicht mehr. Ein `html.dark`-Override
+ * waere damit wirkungslos – genau das, was hier gebraucht wird. Ueber `@utility` bleibt der
+ * `var()`-Verweis in der Regel stehen und der Dark-Mode greift.
+ *
+ * Der Ton ist im Light-Mode das warme Fast-Schwarz der Schrift (kein neutrales Grau, das auf
+ * Beige kalt wirkt); im Dark-Mode ist neutrales Schwarz richtig, weil die Flaeche die Waerme
+ * schon traegt und ein warmer Schatten dort als Schmutz liest.                                  */
+:root {
+  --elev-1: 0 1px 2px 0 rgb(38 37 29 / 0.06);
+  --elev-2: 0 2px 6px -1px rgb(38 37 29 / 0.08), 0 1px 2px 0 rgb(38 37 29 / 0.05);
+  --elev-3: 0 8px 24px -6px rgb(38 37 29 / 0.12), 0 2px 6px -2px rgb(38 37 29 / 0.06);
+  --elev-4: 0 20px 48px -12px rgb(38 37 29 / 0.18), 0 4px 12px -4px rgb(38 37 29 / 0.08);
+}
+html.dark {
+  --elev-1: 0 1px 2px 0 rgb(0 0 0 / 0.45);
+  --elev-2: 0 2px 6px -1px rgb(0 0 0 / 0.55), 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --elev-3: 0 8px 24px -6px rgb(0 0 0 / 0.6), 0 2px 6px -2px rgb(0 0 0 / 0.45);
+  --elev-4: 0 20px 48px -12px rgb(0 0 0 / 0.7), 0 4px 12px -4px rgb(0 0 0 / 0.5);
+}
+@utility elev-1 { box-shadow: var(--elev-1); }
+@utility elev-2 { box-shadow: var(--elev-2); }
+@utility elev-3 { box-shadow: var(--elev-3); }
+@utility elev-4 { box-shadow: var(--elev-4); }
+
 /* --- Typografischer Massstab: EINE Stellschraube fuer die ganze App ---------------------------
  * Alle Groessen (Schrift, Abstaende, Radien der Tailwind-Utilities) haengen an rem, also an der
  * Root-Schriftgroesse. Statt eines festen Wertes waechst sie mit der Viewport-Breite: auf einem
@@ -172,6 +260,38 @@ body {
   font-family: var(--font-sans);
   background-color: var(--color-surface);
   color: var(--color-text);
+}
+
+/* --- Sichtbarer Tastatur-Fokus --------------------------------------------------------------- *
+ * Die Anwendung wird ueber die Tastatur bedient (Strg+K, `?`, `g`+Taste, `/`, Pfeile in jeder
+ * Trefferliste) – bis hierher zeigte sie aber nirgends, WO der Fokus steht. Eine Regel fuer alles,
+ * statt sie an jedem Bedienelement zu wiederholen.
+ *
+ * `:focus-visible`, nicht `:focus`: der Ring erscheint bei Tastatur-Bedienung, nicht nach einem
+ * Mausklick auf einen Knopf.
+ *
+ * WARUM in `@layer base` und WARUM ohne `!important` – beides ist die Bedingung dafuer, dass die
+ * Regel nichts kaputt macht:
+ *   - Tailwinds `outline-none` liegt in `@layer utilities`, also HINTER `base`. Die 24 Eingabe-
+ *     felder, die ihren Fokus bewusst ueber `focus:border-accent` zeigen, behalten das und
+ *     bekommen keinen zweiten Ring. Stuende diese Regel unlayered, schluege sie jede Utility.
+ *   - CodeMirror setzt `.cm-content { outline: none }` mit hoeherer Spezifitaet und gewinnt
+ *     ebenfalls – der Editor bringt seinen eigenen Cursor mit.                                  */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+}
+
+/* Vue Flow gibt JEDEM Knoten `tabIndex=0` (`nodesFocusable` ist per Default an). Zwei Gruende,
+   den Ring dort trotzdem abzuschalten: der Knoten liegt im Transform-Layer, ein Outline skaliert
+   also mit dem Zoom mit (bei 0.3 unsichtbar, bei 2.0 ein Balken) – und durch mehrere hundert
+   Karten zu tabben ist kein Bedienweg, den die Ansicht anbietet. Gesucht wird hier ueber die
+   Suche links, nicht mit der Tabulatortaste. Spezifitaet (0,2,0) schlaegt die Regel oben. */
+.vue-flow__node:focus-visible,
+.vue-flow__pane:focus-visible {
+  outline: none;
 }
 
 /* --- Shiki: zwei Themes ueber CSS-Variablen (defaultColor: false) ---------- */

@@ -6,10 +6,11 @@
 //
 // Layout: langgezogenes Querformat. Links die sortierte Jobliste (abgeschlossen -> aktiv ->
 // wartend), rechts grossflaechig das Live-Terminal des laufenden Jobs.
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useJavaQueue, isFinishedStatus as isFinished } from '../../composables/useJavaQueue.js'
 import { Icon } from '../../lib/icons.js'
 import { formatEta } from '../../lib/format.js'
+import Modal from '../ui/Modal.vue'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -104,13 +105,13 @@ function statusInfo(s) {
 }
 // Kompaktes Erfolgs-/Status-Icon fuer abgeschlossene Jobs.
 const FINISHED_ICON = {
-  done: { icon: 'lucide:check-circle', cls: 'text-[var(--color-success)]' },
-  'done-with-errors': { icon: 'lucide:alert-triangle', cls: 'text-[var(--color-warning)]' },
-  failed: { icon: 'lucide:alert-triangle', cls: 'text-[var(--color-danger)]' },
-  cancelled: { icon: 'lucide:x', cls: 'text-[var(--color-text-muted)]' },
+  done: { icon: 'lucide:check-circle', cls: 'text-success' },
+  'done-with-errors': { icon: 'lucide:alert-triangle', cls: 'text-warning' },
+  failed: { icon: 'lucide:alert-triangle', cls: 'text-danger' },
+  cancelled: { icon: 'lucide:x', cls: 'text-muted' },
 }
 function finishedIcon(s) {
-  return FINISHED_ICON[s] || { icon: 'lucide:check-circle', cls: 'text-[var(--color-text-muted)]' }
+  return FINISHED_ICON[s] || { icon: 'lucide:check-circle', cls: 'text-muted' }
 }
 // Phasen-Hinweis fuer den laufenden Job (Methoden zuerst, dann Klassen-Text).
 function phaseLabel(j) {
@@ -150,257 +151,227 @@ async function onMarkAllRead() {
   }
 }
 
-// ESC schliesst das Modal, solange es offen ist.
-function onKey(e) {
-  if (e.key === 'Escape') emit('close')
-}
-watch(
-  () => props.open,
-  (open) => {
-    if (open) window.addEventListener('keydown', onKey)
-    else window.removeEventListener('keydown', onKey)
-  },
-)
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+// ESC liegt jetzt an `ui/Modal` (`close-on-escape`) – derselbe Listener, nur nicht mehr hier.
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="queue-modal">
-      <div
-        v-if="open"
-        class="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 backdrop-blur-sm"
-        @click.self="emit('close')"
-      >
-        <section
-          class="flex max-h-[85vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)] shadow-xl"
+  <!-- `close-on-escape`: dieses Modal brachte seinen eigenen Escape-Listener mit und behaelt das
+       Verhalten. Es gehoert keiner uebergeordneten Vorrangordnung an – anders als das
+       Analyse-Modal in CodeView, das erst schliessen darf, wenn kein Konflikt-Dialog darueber
+       liegt. -->
+  <Modal
+    :open="open"
+    size="full"
+    max-height="max-h-[85vh]"
+    label="AI queue"
+    close-on-escape
+    @close="emit('close')"
+  >
+    <!-- Kopfzeile: Titel + Zaehler + globale Aktionen + Schliessen -->
+    <header class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-3.5">
+      <div class="flex min-w-0 items-center gap-2.5">
+        <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
+          <Icon icon="lucide:list-checks" class="h-5 w-5" />
+        </span>
+        <div class="min-w-0">
+          <h2 class="text-lg font-bold leading-tight tracking-tight text-ink">AI Queue</h2>
+          <p class="truncate text-xs text-muted">
+            One unit per class: methods first, then the class summary – refreshes every 3&nbsp;seconds.
+          </p>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <button
+          v-if="finishedCount"
+          type="button"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-success transition hover:bg-[color-mix(in_srgb,var(--color-success)_12%,transparent)]"
+          title="Mark all finished entries as read and hide them"
+          @click="onMarkAllRead"
         >
-          <!-- Kopfzeile: Titel + Zaehler + globale Aktionen + Schliessen -->
-          <header class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] px-5 py-3.5">
-            <div class="flex min-w-0 items-center gap-2.5">
-              <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
-                <Icon icon="lucide:list-checks" class="h-5 w-5" />
-              </span>
-              <div class="min-w-0">
-                <h2 class="text-lg font-bold leading-tight tracking-tight text-[var(--color-text)]">AI Queue</h2>
-                <p class="truncate text-xs text-[var(--color-text-muted)]">
-                  One unit per class: methods first, then the class summary – refreshes every 3&nbsp;seconds.
-                </p>
-              </div>
-            </div>
-            <div class="flex flex-wrap items-center gap-2">
-              <button
-                v-if="finishedCount"
-                type="button"
-                class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-success)] transition hover:bg-[color-mix(in_srgb,var(--color-success)_12%,transparent)]"
-                title="Mark all finished entries as read and hide them"
-                @click="onMarkAllRead"
-              >
-                <Icon icon="lucide:check-circle" class="h-4 w-4" />
-                Mark all read ({{ finishedCount }})
-              </button>
-              <button
-                v-if="allJobs.length"
-                type="button"
-                class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-danger)] transition hover:bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)]"
-                title="Cancel all jobs and clear the list"
-                @click="onCancelAll"
-              >
-                <Icon icon="lucide:trash-2" class="h-4 w-4" />
-                Cancel all
-              </button>
-              <button
-                type="button"
-                class="grid h-8 w-8 place-items-center rounded-lg text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
-                title="Close"
-                aria-label="Close"
-                @click="emit('close')"
-              >
-                <Icon icon="lucide:x" class="h-5 w-5" />
-              </button>
-            </div>
-          </header>
+          <Icon icon="lucide:check-circle" class="h-4 w-4" />
+          Mark all read ({{ finishedCount }})
+        </button>
+        <button
+          v-if="allJobs.length"
+          type="button"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-danger transition hover:bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)]"
+          title="Cancel all jobs and clear the list"
+          @click="onCancelAll"
+        >
+          <Icon icon="lucide:trash-2" class="h-4 w-4" />
+          Cancel all
+        </button>
+        <button
+          type="button"
+          class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-offset hover:text-ink"
+          title="Close"
+          aria-label="Close"
+          @click="emit('close')"
+        >
+          <Icon icon="lucide:x" class="h-5 w-5" />
+        </button>
+      </div>
+    </header>
 
-          <!-- Gesamtfortschritt: bei hunderten Klassen laeuft die Queue lange – wie weit sie ist
-               und wie lange es noch dauert, gehoert deshalb ueber die Einzelliste, nicht hinein. -->
-          <div v-if="overall" class="shrink-0 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-3">
-            <div class="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <span class="font-mono text-sm font-semibold tabular-nums text-[var(--color-text)]">
-                {{ overall.finished }}<span class="text-[var(--color-text-muted)]">/{{ overall.total }}</span>
+    <!-- Gesamtfortschritt: bei hunderten Klassen laeuft die Queue lange – wie weit sie ist
+         und wie lange es noch dauert, gehoert deshalb ueber die Einzelliste, nicht hinein. -->
+    <div v-if="overall" class="shrink-0 border-b border-line bg-surface px-5 py-3">
+      <div class="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span class="font-mono text-sm font-semibold tabular-nums text-ink">
+          {{ overall.finished }}<span class="text-muted">/{{ overall.total }}</span>
+        </span>
+        <span class="text-xs text-muted">classes analyzed</span>
+        <span class="font-mono text-xs tabular-nums text-muted">{{ overall.percent }}%</span>
+        <span v-if="overall.eta" class="ml-auto inline-flex items-center gap-1.5 font-mono text-xs text-lavender">
+          <Icon icon="lucide:clock" class="h-3.5 w-3.5" />
+          {{ overall.eta }} remaining
+        </span>
+        <span v-else-if="!overall.active" class="ml-auto inline-flex items-center gap-1.5 text-xs text-success">
+          <Icon icon="lucide:check-circle" class="h-3.5 w-3.5" />
+          All done
+        </span>
+      </div>
+      <div class="h-1.5 w-full overflow-hidden rounded-full bg-surface-offset">
+        <div
+          class="h-full rounded-full transition-[width] duration-500 ease-out"
+          :class="overall.active ? 'bg-lavender' : 'bg-success'"
+          :style="{ width: Math.max(overall.percent, overall.finished ? 2 : 0) + '%' }"
+        />
+      </div>
+    </div>
+
+    <!-- Koerper: links Jobliste, rechts Live-Terminal (langgezogenes Querformat) -->
+    <div class="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[1.1fr_0.9fr]">
+      <!-- Linke Spalte: sortierte Jobliste -->
+      <div class="flex min-h-0 flex-col border-b border-line lg:border-b-0 lg:border-r">
+        <div v-if="ordered.length" class="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+          <article
+            v-for="j in ordered"
+            :key="j.fileId"
+            class="rounded-2xl border border-line bg-surface p-4 transition"
+            :class="j.status === 'running' ? 'ring-1 ring-accent/40' : ''"
+          >
+            <div class="mb-2 flex flex-wrap items-center gap-2">
+              <Icon
+                v-if="isFinished(j.status)"
+                :icon="finishedIcon(j.status).icon"
+                class="h-4 w-4 shrink-0"
+                :class="finishedIcon(j.status).cls"
+              />
+              <Icon
+                v-else-if="j.status === 'running'"
+                icon="lucide:loader-2"
+                class="h-4 w-4 shrink-0 animate-spin text-accent"
+              />
+              <Icon v-else icon="lucide:sparkles" class="h-4 w-4 shrink-0 text-muted" />
+
+              <span class="badge-lavender rounded px-1.5 py-0.5 text-3xs font-semibold uppercase">
+                AI analysis
               </span>
-              <span class="text-xs text-[var(--color-text-muted)]">classes analyzed</span>
-              <span class="font-mono text-xs tabular-nums text-[var(--color-text-muted)]">{{ overall.percent }}%</span>
-              <span v-if="overall.eta" class="ml-auto inline-flex items-center gap-1.5 font-mono text-xs text-[var(--color-lavender)]">
-                <Icon icon="lucide:clock" class="h-3.5 w-3.5" />
-                {{ overall.eta }} remaining
-              </span>
-              <span v-else-if="!overall.active" class="ml-auto inline-flex items-center gap-1.5 text-xs text-[var(--color-success)]">
-                <Icon icon="lucide:check-circle" class="h-3.5 w-3.5" />
-                All done
-              </span>
+              <button
+                type="button"
+                class="min-w-0 flex-1 truncate text-left font-semibold text-ink transition hover:text-accent"
+                :title="`Open ${j.className} in the analyzer`"
+                @click="openClass(j)"
+              >{{ j.className }}</button>
+              <span class="rounded-md px-2 py-0.5 text-2xs font-semibold" :class="statusInfo(j.status).cls">{{ statusInfo(j.status).label }}</span>
+              <span v-if="j.finishedAt && isFinished(j.status)" class="shrink-0 text-2xs text-muted">{{ fmtTime(j.finishedAt) }}</span>
+              <button
+                type="button"
+                class="shrink-0 rounded-md p-1 text-muted transition hover:bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)] hover:text-danger"
+                :title="isFinished(j.status) ? 'Remove from list' : 'Cancel job'"
+                :aria-label="isFinished(j.status) ? 'Remove from list' : 'Cancel job'"
+                @click.stop="onCancel(j)"
+              >
+                <Icon icon="lucide:x" class="h-4 w-4" />
+              </button>
             </div>
-            <div class="h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-surface-offset)]">
+            <p v-if="j.package" class="mb-2 truncate font-mono text-2xs text-muted">{{ j.package }}</p>
+
+            <div class="mb-1.5 flex items-center justify-between text-xs">
+              <span class="flex min-w-0 items-center gap-1.5" :class="j.status === 'running' ? 'text-accent' : 'text-muted'">
+                <template v-if="j.status === 'running'">
+                  <span class="rounded bg-accent-soft px-1.5 py-0.5 text-3xs font-semibold uppercase text-accent">{{ phaseLabel(j) }}</span>
+                  <span class="truncate">
+                    <template v-if="j.current">{{ j.current.name }}<template v-if="j.phase !== 'class'">()</template></template>
+                    <template v-else>preparing…</template>
+                  </span>
+                </template>
+                <template v-else-if="j.status === 'queued'">waiting…</template>
+                <template v-else>{{ j.done }}/{{ j.total }} steps<template v-if="j.failed"> · {{ j.failed }} errors</template></template>
+              </span>
+              <span class="shrink-0 tabular-nums text-muted">{{ j.done }}/{{ j.total }}</span>
+            </div>
+            <div class="h-2 w-full overflow-hidden rounded-full bg-surface-offset">
               <div
-                class="h-full rounded-full transition-[width] duration-500 ease-out"
-                :class="overall.active ? 'bg-[var(--color-lavender)]' : 'bg-[var(--color-success)]'"
-                :style="{ width: Math.max(overall.percent, overall.finished ? 2 : 0) + '%' }"
+                class="h-full rounded-full transition-all duration-300"
+                :class="j.status === 'failed' ? 'bg-danger' : j.status === 'done-with-errors' ? 'bg-warning' : isFinished(j.status) ? 'bg-success' : 'bg-accent'"
+                :style="{ width: percent(j) + '%' }"
               />
             </div>
-          </div>
 
-          <!-- Koerper: links Jobliste, rechts Live-Terminal (langgezogenes Querformat) -->
-          <div class="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[1.1fr_0.9fr]">
-            <!-- Linke Spalte: sortierte Jobliste -->
-            <div class="flex min-h-0 flex-col border-b border-[var(--color-border)] lg:border-b-0 lg:border-r">
-              <div v-if="ordered.length" class="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-                <article
-                  v-for="j in ordered"
-                  :key="j.fileId"
-                  class="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition"
-                  :class="j.status === 'running' ? 'ring-1 ring-[var(--color-accent)]/40' : ''"
-                >
-                  <div class="mb-2 flex flex-wrap items-center gap-2">
-                    <Icon
-                      v-if="isFinished(j.status)"
-                      :icon="finishedIcon(j.status).icon"
-                      class="h-4 w-4 shrink-0"
-                      :class="finishedIcon(j.status).cls"
-                    />
-                    <Icon
-                      v-else-if="j.status === 'running'"
-                      icon="lucide:loader-2"
-                      class="h-4 w-4 shrink-0 animate-spin text-[var(--color-accent)]"
-                    />
-                    <Icon v-else icon="lucide:sparkles" class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
+            <p v-if="j.ollamaUnavailable" class="mt-2 flex items-center gap-1 text-2xs text-warning">
+              <Icon icon="lucide:alert-triangle" class="h-3.5 w-3.5 shrink-0" />
+              Ollama unreachable – using fallback text.
+            </p>
+          </article>
+        </div>
 
-                    <span class="badge-lavender rounded px-1.5 py-0.5 text-3xs font-semibold uppercase">
-                      AI analysis
-                    </span>
-                    <button
-                      type="button"
-                      class="min-w-0 flex-1 truncate text-left font-semibold text-[var(--color-text)] transition hover:text-[var(--color-accent)]"
-                      :title="`Open ${j.className} in the analyzer`"
-                      @click="openClass(j)"
-                    >{{ j.className }}</button>
-                    <span class="rounded-md px-2 py-0.5 text-2xs font-semibold" :class="statusInfo(j.status).cls">{{ statusInfo(j.status).label }}</span>
-                    <span v-if="j.finishedAt && isFinished(j.status)" class="shrink-0 text-2xs text-[var(--color-text-muted)]">{{ fmtTime(j.finishedAt) }}</span>
-                    <button
-                      type="button"
-                      class="shrink-0 rounded-md p-1 text-[var(--color-text-muted)] transition hover:bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)] hover:text-[var(--color-danger)]"
-                      :title="isFinished(j.status) ? 'Remove from list' : 'Cancel job'"
-                      :aria-label="isFinished(j.status) ? 'Remove from list' : 'Cancel job'"
-                      @click.stop="onCancel(j)"
-                    >
-                      <Icon icon="lucide:x" class="h-4 w-4" />
-                    </button>
-                  </div>
-                  <p v-if="j.package" class="mb-2 truncate font-mono text-2xs text-[var(--color-text-muted)]">{{ j.package }}</p>
+        <div v-else class="grid min-h-[14rem] flex-1 place-items-center px-6 text-center">
+          <p class="text-sm text-muted">
+            No analysis started yet. Pick a class in the analyzer and start a summary,
+            or use “Analyze”.
+          </p>
+        </div>
 
-                  <div class="mb-1.5 flex items-center justify-between text-xs">
-                    <span class="flex min-w-0 items-center gap-1.5" :class="j.status === 'running' ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'">
-                      <template v-if="j.status === 'running'">
-                        <span class="rounded bg-[var(--color-accent-soft)] px-1.5 py-0.5 text-3xs font-semibold uppercase text-[var(--color-accent)]">{{ phaseLabel(j) }}</span>
-                        <span class="truncate">
-                          <template v-if="j.current">{{ j.current.name }}<template v-if="j.phase !== 'class'">()</template></template>
-                          <template v-else>preparing…</template>
-                        </span>
-                      </template>
-                      <template v-else-if="j.status === 'queued'">waiting…</template>
-                      <template v-else>{{ j.done }}/{{ j.total }} steps<template v-if="j.failed"> · {{ j.failed }} errors</template></template>
-                    </span>
-                    <span class="shrink-0 tabular-nums text-[var(--color-text-muted)]">{{ j.done }}/{{ j.total }}</span>
-                  </div>
-                  <div class="h-2 w-full overflow-hidden rounded-full bg-[var(--color-surface-offset)]">
-                    <div
-                      class="h-full rounded-full transition-all duration-300"
-                      :class="j.status === 'failed' ? 'bg-[var(--color-danger)]' : j.status === 'done-with-errors' ? 'bg-[var(--color-warning)]' : isFinished(j.status) ? 'bg-[var(--color-success)]' : 'bg-[var(--color-accent)]'"
-                      :style="{ width: percent(j) + '%' }"
-                    />
-                  </div>
-
-                  <p v-if="j.ollamaUnavailable" class="mt-2 flex items-center gap-1 text-2xs text-[var(--color-warning)]">
-                    <Icon icon="lucide:alert-triangle" class="h-3.5 w-3.5 shrink-0" />
-                    Ollama unreachable – using fallback text.
-                  </p>
-                </article>
-              </div>
-
-              <div v-else class="grid min-h-[14rem] flex-1 place-items-center px-6 text-center">
-                <p class="text-sm text-[var(--color-text-muted)]">
-                  No analysis started yet. Pick a class in the analyzer and start a summary,
-                  or use “Analyze”.
-                </p>
-              </div>
-
-              <p v-if="ordered.length" class="shrink-0 border-t border-[var(--color-border)] px-4 py-2 text-center text-xs text-[var(--color-text-muted)]">
-                {{ activeCount }} active · {{ finishedCount }} finished
-              </p>
-            </div>
-
-            <!-- Rechte Spalte: grossflaechiges Live-Terminal des laufenden Jobs -->
-            <div class="flex min-h-0 flex-col p-4">
-              <div class="mb-2 flex items-center justify-between gap-2">
-                <span class="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-                  <Icon icon="lucide:terminal" class="h-3.5 w-3.5" />
-                  Live output
-                </span>
-                <span
-                  v-if="runningJob"
-                  class="flex shrink-0 items-center gap-1.5 text-2xs tabular-nums text-[var(--color-accent)]"
-                >
-                  <Icon icon="lucide:loader-2" class="h-3 w-3 animate-spin" />
-                  {{ runningLive ? runningLive.tokens : 0 }} tokens generated…
-                </span>
-              </div>
-
-              <template v-if="runningJob">
-                <div class="mb-2 flex min-w-0 items-center gap-2 text-sm">
-                  <span class="rounded bg-[var(--color-accent-soft)] px-1.5 py-0.5 text-3xs font-semibold uppercase text-[var(--color-accent)]">{{ phaseLabel(runningJob) }}</span>
-                  <span class="min-w-0 flex-1 truncate font-semibold text-[var(--color-text)]">{{ runningJob.className }}</span>
-                  <span class="shrink-0 tabular-nums text-xs text-[var(--color-text-muted)]">{{ runningJob.done }}/{{ runningJob.total }}</span>
-                </div>
-                <pre ref="logEl" class="queue-log min-h-0 flex-1">{{ (runningLive && runningLive.text) || 'Waiting for Ollama…' }}</pre>
-                <!-- Indeterminierte Fortschritts-Bar: Ollama liefert keinen numerischen Fortschritt -->
-                <div class="mt-2 h-1 w-full overflow-hidden rounded-full bg-[var(--color-surface-offset)]">
-                  <div class="queue-indeterminate h-full w-2/5 rounded-full bg-[var(--color-accent)]" />
-                </div>
-              </template>
-
-              <div v-else class="grid min-h-0 flex-1 place-items-center rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-surface)]/40 px-6 text-center">
-                <p class="flex flex-col items-center gap-2 text-sm text-[var(--color-text-muted)]">
-                  <Icon icon="lucide:terminal" class="h-6 w-6 opacity-60" />
-                  No analysis running. Live tokens appear here while a class is being summarized.
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
+        <p v-if="ordered.length" class="shrink-0 border-t border-line px-4 py-2 text-center text-xs text-muted">
+          {{ activeCount }} active · {{ finishedCount }} finished
+        </p>
       </div>
-    </Transition>
-  </Teleport>
+
+      <!-- Rechte Spalte: grossflaechiges Live-Terminal des laufenden Jobs -->
+      <div class="flex min-h-0 flex-col p-4">
+        <div class="mb-2 flex items-center justify-between gap-2">
+          <span class="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-muted">
+            <Icon icon="lucide:terminal" class="h-3.5 w-3.5" />
+            Live output
+          </span>
+          <span
+            v-if="runningJob"
+            class="flex shrink-0 items-center gap-1.5 text-2xs tabular-nums text-accent"
+          >
+            <Icon icon="lucide:loader-2" class="h-3 w-3 animate-spin" />
+            {{ runningLive ? runningLive.tokens : 0 }} tokens generated…
+          </span>
+        </div>
+
+        <template v-if="runningJob">
+          <div class="mb-2 flex min-w-0 items-center gap-2 text-sm">
+            <span class="rounded bg-accent-soft px-1.5 py-0.5 text-3xs font-semibold uppercase text-accent">{{ phaseLabel(runningJob) }}</span>
+            <span class="min-w-0 flex-1 truncate font-semibold text-ink">{{ runningJob.className }}</span>
+            <span class="shrink-0 tabular-nums text-xs text-muted">{{ runningJob.done }}/{{ runningJob.total }}</span>
+          </div>
+          <pre ref="logEl" class="queue-log min-h-0 flex-1">{{ (runningLive && runningLive.text) || 'Waiting for Ollama…' }}</pre>
+          <!-- Indeterminierte Fortschritts-Bar: Ollama liefert keinen numerischen Fortschritt -->
+          <div class="mt-2 h-1 w-full overflow-hidden rounded-full bg-surface-offset">
+            <div class="queue-indeterminate h-full w-2/5 rounded-full bg-accent" />
+          </div>
+        </template>
+
+        <div v-else class="grid min-h-0 flex-1 place-items-center rounded-lg border border-dashed border-line bg-surface/40 px-6 text-center">
+          <p class="flex flex-col items-center gap-2 text-sm text-muted">
+            <Icon icon="lucide:terminal" class="h-6 w-6 opacity-60" />
+            No analysis running. Live tokens appear here while a class is being summarized.
+          </p>
+        </div>
+      </div>
+    </div>
+  </Modal>
 </template>
 
 <style scoped>
 @reference "../../assets/style.css";
-
-/* Funktionale Transition fuers Modal (Fade + leichtes Anheben). */
-.queue-modal-enter-active,
-.queue-modal-leave-active {
-  transition: opacity 0.18s ease;
-}
-.queue-modal-enter-active section,
-.queue-modal-leave-active section {
-  transition: transform 0.18s ease, opacity 0.18s ease;
-}
-.queue-modal-enter-from,
-.queue-modal-leave-to {
-  opacity: 0;
-}
-.queue-modal-enter-from section,
-.queue-modal-leave-to section {
-  opacity: 0;
-  transform: translateY(-8px) scale(0.98);
-}
+/* Die eigene `queue-modal`-Transition ist entfallen – sie steht jetzt in `ui/Modal.vue`. */
 
 /* Abgedunkelter Terminal-/Log-Bereich: scrollbar, monospace. Auch im Light-Mode ein Terminal. */
 .queue-log {

@@ -80,13 +80,13 @@ async function undo(item) {
 </script>
 
 <template>
-  <section v-if="items.length" class="mt-8 border-t border-[var(--color-border)] pt-6">
-    <h2 class="mb-1 font-mono text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
+  <section v-if="items.length" class="mt-8 border-t border-line pt-6">
+    <h2 class="mb-1 font-mono text-xs font-semibold uppercase tracking-[0.12em] text-muted">
       Suggested links
     </h2>
     <!-- Ein Satz sagt, woher die Liste kommt. Ohne ihn liest sie sich wie eine gepflegte
          Beziehung, und der Nutzer wüsste nicht, dass er hier entscheidet. -->
-    <p class="mb-4 text-xs text-[var(--color-text-muted)]">
+    <p class="mb-4 text-xs text-muted">
       Not linked yet, but close in meaning — the number is how close.
     </p>
 
@@ -143,7 +143,7 @@ async function undo(item) {
 @reference "../assets/style.css";
 
 .ra-row {
-  @apply flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] py-2 pl-3 pr-2 transition;
+  @apply flex items-center gap-2 rounded-xl border border-line bg-surface-2 py-2 pl-3 pr-2 transition;
 }
 .ra-row:hover {
   border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
@@ -155,22 +155,22 @@ async function undo(item) {
 }
 
 .ra-link {
-  @apply flex min-w-0 flex-1 items-center gap-1.5 text-sm font-medium text-[var(--color-text)] transition;
+  @apply flex min-w-0 flex-1 items-center gap-1.5 text-sm font-medium text-ink transition;
 }
 .ra-link:hover {
   color: var(--color-accent);
 }
 
 .ra-chip {
-  @apply shrink-0 rounded bg-[var(--color-surface-offset)] px-1.5 py-0.5 font-mono text-3xs font-medium uppercase tracking-wide text-[var(--color-text-muted)];
+  @apply shrink-0 rounded bg-surface-offset px-1.5 py-0.5 font-mono text-3xs font-medium uppercase tracking-wide text-muted;
 }
 
 .ra-score {
-  @apply shrink-0 cursor-default font-mono text-2xs tabular-nums text-[var(--color-text-muted)];
+  @apply shrink-0 cursor-default font-mono text-2xs tabular-nums text-muted;
 }
 
 .ra-btn {
-  @apply inline-flex shrink-0 items-center gap-1 rounded-lg border border-[var(--color-border)] px-2 py-1 text-2xs font-medium text-[var(--color-text-muted)] transition;
+  @apply inline-flex shrink-0 items-center gap-1 rounded-lg border border-line px-2 py-1 text-2xs font-medium text-muted transition;
 }
 .ra-btn:hover {
   border-color: var(--color-accent);

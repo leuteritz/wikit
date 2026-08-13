@@ -246,25 +246,25 @@ function isActive(to) {
 </script>
 
 <template>
-  <div class="flex h-screen overflow-hidden bg-[var(--color-surface)] text-[var(--color-text)]">
+  <div class="flex h-screen overflow-hidden bg-surface text-ink">
     <!-- ============================ SIDEBAR ============================ -->
     <aside
-      class="flex h-full w-16 shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-4 lg:w-60 lg:px-3"
+      class="flex h-full w-16 shrink-0 flex-col border-r border-line bg-surface-2 px-2 py-4 lg:w-60 lg:px-3"
     >
       <!-- Brand: Wikit-Icon bleibt IMMER neben dem Titel. Die Version steht als Chip statt als
            graue Zeile – sie ist die Auskunft „welche Fassung laeuft hier", nicht eine Fussnote.
            „· LOCAL" ist entfallen: dass es lokal laeuft, sagt schon die ganze Anwendung. -->
       <RouterLink
         to="/"
-        class="flex items-center gap-2.5 rounded-lg px-1 py-1.5 transition hover:bg-[var(--color-surface-offset)] lg:px-2"
+        class="flex items-center gap-2.5 rounded-lg px-1 py-1.5 transition hover:bg-surface-offset lg:px-2"
         title="Home"
       >
-        <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+        <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
           <Icon :icon="WIKI_ICON" class="text-xl" />
         </span>
         <span class="hidden min-w-0 flex-col items-start gap-0.5 leading-tight lg:flex">
-          <span class="truncate font-mono text-[0.9375rem] font-semibold tracking-tight text-[var(--color-text)]">{{ WIKI_TITLE }}</span>
-          <span class="rounded bg-[var(--color-accent-soft)] px-1.5 py-px font-mono text-2xs font-semibold tracking-[0.06em] text-[var(--color-accent)]">v{{ WIKI_VERSION }}</span>
+          <span class="truncate font-mono text-[0.9375rem] font-semibold tracking-tight text-ink">{{ WIKI_TITLE }}</span>
+          <span class="rounded bg-accent-soft px-1.5 py-px font-mono text-2xs font-semibold tracking-[0.06em] text-accent">v{{ WIKI_VERSION }}</span>
         </span>
       </RouterLink>
       <!-- Was diese Fassung gebracht hat. Steht UNTER der Nummer, weil es dieselbe Auskunft
@@ -286,26 +286,26 @@ function isActive(to) {
         :title="WIKI_WHATS_NEW"
       >
         <span
-          class="line-clamp-2 text-2xs italic leading-snug text-[var(--color-text-muted)] transition-colors duration-200 group-hover:text-[var(--color-text)]"
+          class="line-clamp-2 text-2xs italic leading-snug text-muted transition-colors duration-200 group-hover:text-ink"
         >
-          <span class="not-italic text-[var(--color-accent)]">“</span>{{ WIKI_WHATS_NEW }}<span class="not-italic text-[var(--color-accent)]">”</span>
+          <span class="not-italic text-accent">“</span>{{ WIKI_WHATS_NEW }}<span class="not-italic text-accent">”</span>
         </span>
       </p>
 
       <!-- Suche (oeffnet die Palette) -->
       <button
         type="button"
-        class="mb-4 mt-2.5 flex w-full items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-offset)] px-2 py-2 text-[var(--color-text-muted)] transition hover:border-[var(--color-border-strong)] lg:px-2.5"
+        class="mb-4 mt-2.5 flex w-full items-center gap-2 rounded-md border border-line bg-surface-offset px-2 py-2 text-muted transition hover:border-line-strong lg:px-2.5"
         title="Search (Ctrl+K)"
         @click="searchOpen = true"
       >
         <Icon icon="lucide:search" class="h-4 w-4 shrink-0" />
         <span class="hidden flex-1 truncate text-left text-[0.78125rem] lg:inline">Search…</span>
-        <kbd class="ml-auto hidden shrink-0 rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-[0.59375rem] tracking-wide text-[var(--color-text-muted)] lg:inline">Ctrl K</kbd>
+        <kbd class="ml-auto hidden shrink-0 rounded border border-line px-1.5 py-0.5 font-mono text-[0.59375rem] tracking-wide text-muted lg:inline">Ctrl K</kbd>
       </button>
 
       <!-- Navigation -->
-      <p class="hidden px-2 pb-2 font-mono text-[0.59375rem] font-semibold tracking-[0.16em] text-[var(--color-text-muted)] lg:block">NAVIGATE</p>
+      <p class="hidden px-2 pb-2 font-mono text-[0.59375rem] font-semibold tracking-[0.16em] text-muted lg:block">NAVIGATE</p>
       <nav class="flex flex-col gap-1">
         <RouterLink
           v-for="link in navLinks"
@@ -313,13 +313,13 @@ function isActive(to) {
           :to="link.to"
           class="relative flex items-center gap-2.5 rounded-md px-2 py-2 text-[0.8125rem] font-medium transition lg:px-2.5"
           :class="isActive(link.to)
-            ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]'
-            : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-offset)]'"
+            ? 'bg-accent-soft text-accent'
+            : 'text-muted hover:bg-surface-offset'"
           :title="link.title || link.label"
         >
           <span
             v-if="isActive(link.to)"
-            class="absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-r bg-[var(--color-accent)]"
+            class="absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-r bg-accent"
           />
           <span class="relative shrink-0">
             <Icon :icon="link.icon" class="h-[18px] w-[18px]" />
@@ -327,7 +327,7 @@ function isActive(to) {
                  Punkt am Symbol, damit die Auskunft auf jeder Breite ankommt. -->
             <span
               v-if="link.status"
-              class="absolute -right-1 -top-0.5 h-2 w-2 rounded-full ring-2 ring-[var(--color-surface-2)] lg:hidden"
+              class="absolute -right-1 -top-0.5 h-2 w-2 rounded-full ring-2 ring-surface-2 lg:hidden"
               :style="{ background: DOT_COLOR[link.status] }"
             />
             <!-- Ersatz fuer die Fortschrittskarte in der schmalen Icon-Spalte: dort ist fuer eine
@@ -336,7 +336,7 @@ function isActive(to) {
                  einen laufenden Vorgang – und genau das ist die Aussage. -->
             <span
               v-if="link.to === '/code' && activityBusy"
-              class="absolute -right-1 -top-0.5 h-2 w-2 animate-pulse rounded-full bg-[var(--color-accent)] ring-2 ring-[var(--color-surface-2)] lg:hidden"
+              class="absolute -right-1 -top-0.5 h-2 w-2 animate-pulse rounded-full bg-accent ring-2 ring-surface-2 lg:hidden"
             />
           </span>
           <span class="hidden flex-1 lg:inline">{{ link.label }}</span>
@@ -358,8 +358,8 @@ function isActive(to) {
             v-else
             class="ml-auto mr-2 hidden w-6 shrink-0 text-center font-mono text-2xs lg:inline"
             :class="link.warn
-              ? 'text-[var(--color-danger)]'
-              : isActive(link.to) ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'"
+              ? 'text-danger'
+              : isActive(link.to) ? 'text-accent' : 'text-muted'"
           >{{ link.count }}</span>
         </RouterLink>
       </nav>
@@ -382,21 +382,21 @@ function isActive(to) {
       <div class="mb-3 hidden lg:block">
         <button
           type="button"
-          class="mb-1.5 flex w-full items-center gap-1.5 px-2 font-mono text-[0.59375rem] font-semibold tracking-[0.16em] text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
+          class="mb-1.5 flex w-full items-center gap-1.5 px-2 font-mono text-[0.59375rem] font-semibold tracking-[0.16em] text-muted transition hover:text-ink"
           title="Show all keyboard shortcuts (?)"
           @click="shortcutsOpen = true"
         >
           SHORTCUTS
           <!-- Die Taste steht am Einstieg, seit `help` nicht mehr in der gekuerzten Liste steht –
                sonst waere die Uebersicht nur noch mit der Maus erreichbar. -->
-          <kbd class="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1 py-px font-mono text-[0.59375rem] font-medium text-[var(--color-text)]">?</kbd>
+          <kbd class="rounded border border-line bg-surface px-1 py-px font-mono text-[0.59375rem] font-medium text-ink">?</kbd>
           <Icon icon="lucide:arrow-up-right" class="ml-auto h-3 w-3 opacity-60" />
         </button>
         <ul class="space-y-1">
           <li
             v-for="s in sidebarKeys"
             :key="s.id"
-            class="flex items-center gap-2 rounded-md px-2 py-1 text-[var(--color-text-muted)]"
+            class="flex items-center gap-2 rounded-md px-2 py-1 text-muted"
           >
             <span class="flex shrink-0 items-center gap-1">
               <template v-for="(combo, ci) in s.keys" :key="combo">
@@ -404,7 +404,7 @@ function isActive(to) {
                 <kbd
                   v-for="chip in keyChips(combo)"
                   :key="chip"
-                  class="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1 py-px font-mono text-[0.59375rem] font-medium text-[var(--color-text)]"
+                  class="rounded border border-line bg-surface px-1 py-px font-mono text-[0.59375rem] font-medium text-ink"
                 >{{ chip }}</kbd>
               </template>
             </span>
@@ -416,7 +416,7 @@ function isActive(to) {
       <!-- Neuer Artikel -->
       <RouterLink
         to="/new"
-        class="mb-2 flex items-center justify-center gap-1.5 rounded-md bg-[var(--color-accent)] px-2 py-2 text-[0.78125rem] font-semibold text-[var(--color-accent-contrast)] transition hover:bg-[var(--color-accent-hover)]"
+        class="mb-2 flex items-center justify-center gap-1.5 rounded-md bg-accent px-2 py-2 text-[0.78125rem] font-semibold text-accent-contrast transition hover:bg-accent-hover"
         title="New article"
       >
         <Icon icon="lucide:plus" class="h-4 w-4 shrink-0" />
@@ -426,15 +426,15 @@ function isActive(to) {
       <!-- Theme-Toggle (Pill) -->
       <button
         type="button"
-        class="flex w-full items-center gap-2.5 rounded-md border border-[var(--color-border)] px-2 py-2 font-mono text-2xs tracking-wide text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] lg:px-2.5"
+        class="flex w-full items-center gap-2.5 rounded-md border border-line px-2 py-2 font-mono text-2xs tracking-wide text-muted transition hover:bg-surface-offset lg:px-2.5"
         :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
         @click="toggleTheme"
       >
-        <Icon :icon="isDark ? 'lucide:moon' : 'lucide:sun'" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+        <Icon :icon="isDark ? 'lucide:moon' : 'lucide:sun'" class="h-4 w-4 shrink-0 text-accent" />
         <span class="hidden flex-1 text-left uppercase lg:inline">{{ theme }}</span>
-        <span class="hidden h-[15px] w-[26px] shrink-0 rounded-full bg-[var(--color-accent-soft)] lg:inline-block" style="position:relative">
+        <span class="hidden h-[15px] w-[26px] shrink-0 rounded-full bg-accent-soft lg:inline-block" style="position:relative">
           <span
-            class="absolute top-[2px] h-[11px] w-[11px] rounded-full bg-[var(--color-accent)] transition-[left]"
+            class="absolute top-[2px] h-[11px] w-[11px] rounded-full bg-accent transition-[left]"
             :style="{ left: isDark ? '13px' : '2px' }"
           />
         </span>

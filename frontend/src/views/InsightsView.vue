@@ -702,15 +702,15 @@ const plotted = computed(() => {
   <div class="flex h-full min-h-0 flex-col">
     <!-- ======================= Kopfzeile ======================= -->
     <header
-      class="sticky top-0 z-20 border-b border-[var(--color-border)] bg-[var(--color-surface)]/95 px-5 py-3 backdrop-blur"
+      class="sticky top-0 z-20 border-b border-line bg-surface/95 px-5 py-3 backdrop-blur"
     >
       <div class="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-4 gap-y-2">
-        <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+        <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
           <Icon icon="lucide:activity" class="h-5 w-5" />
         </span>
         <div class="min-w-0">
-          <h1 class="font-mono text-base font-semibold tracking-tight text-[var(--color-text)]">Insights</h1>
-          <p class="truncate text-2xs text-[var(--color-text-muted)]">
+          <h1 class="font-mono text-base font-semibold tracking-tight text-ink">Insights</h1>
+          <p class="truncate text-2xs text-muted">
             <template v-if="totals">
               {{ num(totals.classes) }} classes · {{ num(totals.packages) }} packages ·
               {{ num(totals.relations) }} relations
@@ -723,7 +723,7 @@ const plotted = computed(() => {
           <button
             v-tip="'Recompute every metric from the current data'"
             type="button"
-            class="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-muted)] transition hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)] disabled:opacity-40"
+            class="inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1.5 text-xs font-medium text-muted transition hover:border-line-strong hover:text-ink disabled:opacity-40"
             :disabled="loading"
             @click="refresh"
           >
@@ -741,15 +741,15 @@ const plotted = computed(() => {
           type="button"
           class="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition"
           :class="tab === t.id
-            ? 'border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]'
-            : 'border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-surface-offset)]'"
+            ? 'border-accent bg-accent-soft text-accent'
+            : 'border-transparent text-muted hover:bg-surface-offset'"
           @click="tab = t.id"
         >
           <Icon :icon="t.icon" class="h-3.5 w-3.5" />
           {{ t.label }}
           <span
             v-if="t.id === 'cycles' && totals && (totals.classCycles || totals.packageCycles)"
-            class="rounded bg-[var(--color-danger)]/15 px-1 font-mono text-3xs text-[var(--color-danger)]"
+            class="rounded bg-danger/15 px-1 font-mono text-3xs text-danger"
           >
             {{ totals.classCycles + totals.packageCycles }}
           </span>
@@ -759,7 +759,7 @@ const plotted = computed(() => {
                Sidebar): eine „0" wäre die Behauptung, hier fehle etwas. -->
           <span
             v-else-if="t.id === 'whatif' && stagedCount"
-            class="rounded bg-[var(--color-accent-soft)] px-1 font-mono text-3xs text-[var(--color-accent)]"
+            class="rounded bg-accent-soft px-1 font-mono text-3xs text-accent"
           >
             {{ stagedCount }}
           </span>
@@ -782,13 +782,13 @@ const plotted = computed(() => {
           <!-- Ein leerer Bericht braucht seinen GRUND: ohne ihn liest er sich wie ein guter Befund. -->
           <div
             v-if="emptyReason"
-            class="mb-5 flex items-start gap-3 rounded-lg border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 px-4 py-3"
+            class="mb-5 flex items-start gap-3 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3"
           >
-            <Icon icon="lucide:alert-triangle" class="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-warning)]" />
-            <div class="min-w-0 text-xs text-[var(--color-text)]">
+            <Icon icon="lucide:alert-triangle" class="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+            <div class="min-w-0 text-xs text-ink">
               <p v-if="emptyReason === 'no-classes'" class="font-medium">No classes analysed yet.</p>
               <p v-else class="font-medium">No relations computed yet.</p>
-              <p class="mt-0.5 text-[var(--color-text-muted)]">
+              <p class="mt-0.5 text-muted">
                 <template v-if="emptyReason === 'no-classes'">
                   Add Java code in the Code view — every number here is derived from it.
                 </template>
@@ -805,30 +805,30 @@ const plotted = computed(() => {
                Icon des Reiters: dieselbe Marke wie in der Leiste darüber, also ist ohne ein Wort
                klar, wozu der Satz gehört. Die Handlungsanleitung bleibt zugeklappt – beim ersten
                Mal die Rettung, danach im Weg. -->
-          <div class="mb-5 flex items-start gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-5 py-4">
-            <span class="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+          <div class="mb-5 flex items-start gap-4 rounded-xl border border-line bg-surface-2 px-5 py-4">
+            <span class="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent">
               <Icon :icon="tabMeta.icon" class="h-5 w-5" />
             </span>
             <div class="min-w-0 flex-1">
-              <h2 class="text-xl font-semibold leading-snug tracking-tight text-[var(--color-text)]">
+              <h2 class="text-xl font-semibold leading-snug tracking-tight text-ink">
                 {{ EXPLAIN[tab].title }}
               </h2>
-              <p class="mt-1 max-w-3xl text-sm leading-relaxed text-[var(--color-text-muted)]">
+              <p class="mt-1 max-w-3xl text-sm leading-relaxed text-muted">
                 {{ EXPLAIN[tab].what }}
               </p>
               <template v-if="EXPLAIN[tab].fixes">
                 <button
                   type="button"
-                  class="mt-2.5 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-accent)] transition hover:underline"
+                  class="mt-2.5 inline-flex items-center gap-1 text-xs font-medium text-accent transition hover:underline"
                   @click="openFixes = !openFixes"
                 >
                   <Icon :icon="openFixes ? 'lucide:chevron-down' : 'lucide:chevron-right'" class="h-3.5 w-3.5" />
                   What do I do with this?
                 </button>
-                <ul v-if="openFixes" class="mt-2.5 space-y-2 border-l-2 border-[var(--color-border)] pl-3.5">
+                <ul v-if="openFixes" class="mt-2.5 space-y-2 border-l-2 border-line pl-3.5">
                   <li v-for="([title, body]) in EXPLAIN[tab].fixes" :key="title" class="max-w-3xl text-xs leading-relaxed">
-                    <span class="font-semibold text-[var(--color-text)]">{{ title }}</span>
-                    <span class="text-[var(--color-text-muted)]"> — {{ body }}</span>
+                    <span class="font-semibold text-ink">{{ title }}</span>
+                    <span class="text-muted"> — {{ body }}</span>
                   </li>
                 </ul>
               </template>
@@ -842,7 +842,7 @@ const plotted = computed(() => {
                stand vor dem Satz, der überhaupt erst sagt, was man da sieht. -->
           <div
             v-if="tab === 'overview' && (totals.unresolved || totals.pending)"
-            class="mb-5 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-2xs text-[var(--color-text-muted)]"
+            class="mb-5 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-line bg-surface-2 px-4 py-2 text-2xs text-muted"
           >
             <span v-if="totals.unresolved" class="inline-flex items-center gap-1.5">
               <Icon icon="lucide:unlink" class="h-3.5 w-3.5" />
@@ -864,16 +864,16 @@ const plotted = computed(() => {
             <button
               v-if="data?.rules?.totals?.violations"
               type="button"
-              class="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/5 px-4 py-2.5 text-left transition hover:border-[var(--color-danger)]"
+              class="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-danger/40 bg-danger/5 px-4 py-2.5 text-left transition hover:border-danger"
               @click="tab = 'rules'"
             >
-              <Icon icon="lucide:scale" class="h-4 w-4 shrink-0 text-[var(--color-danger)]" />
-              <span class="text-sm text-[var(--color-text)]">
-                <span class="font-mono font-semibold text-[var(--color-danger)]">{{ num(data.rules.totals.violations) }}</span>
+              <Icon icon="lucide:scale" class="h-4 w-4 shrink-0 text-danger" />
+              <span class="text-sm text-ink">
+                <span class="font-mono font-semibold text-danger">{{ num(data.rules.totals.violations) }}</span>
                 {{ data.rules.totals.violations === 1 ? 'relation breaks' : 'relations break' }}
                 a rule you wrote down.
               </span>
-              <span class="text-2xs text-[var(--color-text-muted)]">
+              <span class="text-2xs text-muted">
                 Every other finding here is Wikit's opinion — this one is yours. →
               </span>
             </button>
@@ -889,13 +889,13 @@ const plotted = computed(() => {
                   { label: 'Cycles', value: num(totals.classCycles + totals.packageCycles), icon: 'lucide:repeat' },
                 ]"
                 :key="k.label"
-                class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2.5"
+                class="rounded-lg border border-line bg-surface-2 px-3 py-2.5"
               >
-                <p class="flex items-center gap-1.5 text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">
+                <p class="flex items-center gap-1.5 text-3xs uppercase tracking-wide text-muted">
                   <Icon :icon="k.icon" class="h-3 w-3" />
                   {{ k.label }}
                 </p>
-                <p class="mt-1 font-mono text-lg font-semibold text-[var(--color-text)]">{{ k.value }}</p>
+                <p class="mt-1 font-mono text-lg font-semibold text-ink">{{ k.value }}</p>
               </div>
             </div>
 
@@ -903,21 +903,21 @@ const plotted = computed(() => {
               <!-- Zyklen -->
               <button
                 type="button"
-                class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 text-left transition hover:border-[var(--color-border-strong)]"
+                class="rounded-lg border border-line bg-surface-2 p-4 text-left transition hover:border-line-strong"
                 @click="tab = 'cycles'"
               >
-                <p class="flex items-center gap-1.5 text-2xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+                <p class="flex items-center gap-1.5 text-2xs font-medium uppercase tracking-wide text-muted">
                   <Icon icon="lucide:repeat" class="h-3.5 w-3.5" /> Tangles
                 </p>
-                <p v-if="totals.packageCycles || totals.classCycles" class="mt-2 text-sm text-[var(--color-text)]">
-                  <span class="font-mono text-xl font-semibold text-[var(--color-danger)]">{{ totals.packageCycles }}</span>
+                <p v-if="totals.packageCycles || totals.classCycles" class="mt-2 text-sm text-ink">
+                  <span class="font-mono text-xl font-semibold text-danger">{{ totals.packageCycles }}</span>
                   package {{ totals.packageCycles === 1 ? 'cycle' : 'cycles' }},
                   <span class="font-mono font-semibold">{{ totals.classCycles }}</span> between classes.
                 </p>
-                <p v-else class="mt-2 text-sm text-[var(--color-text)]">
+                <p v-else class="mt-2 text-sm text-ink">
                   No dependency loops — every relation points one way.
                 </p>
-                <p class="mt-1 text-2xs text-[var(--color-text-muted)]">
+                <p class="mt-1 text-2xs text-muted">
                   <template v-if="totals.packageCycles || totals.classCycles">
                     Each one names the easiest place to cut it. →
                   </template>
@@ -928,20 +928,20 @@ const plotted = computed(() => {
               <!-- Brandherd -->
               <button
                 type="button"
-                class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 text-left transition hover:border-[var(--color-border-strong)]"
+                class="rounded-lg border border-line bg-surface-2 p-4 text-left transition hover:border-line-strong"
                 @click="tab = 'hotspots'"
               >
-                <p class="flex items-center gap-1.5 text-2xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+                <p class="flex items-center gap-1.5 text-2xs font-medium uppercase tracking-wide text-muted">
                   <Icon icon="lucide:flame" class="h-3.5 w-3.5" /> Hottest class
                 </p>
-                <p v-if="ranked[0]" class="mt-2 truncate font-mono text-sm font-semibold text-[var(--color-text)]">
+                <p v-if="ranked[0]" class="mt-2 truncate font-mono text-sm font-semibold text-ink">
                   {{ ranked[0].className }}
                 </p>
-                <p v-if="ranked[0]" class="mt-1 text-2xs text-[var(--color-text-muted)]">
+                <p v-if="ranked[0]" class="mt-1 text-2xs text-muted">
                   {{ num(ranked[0].loc) }} code lines · {{ num(ranked[0].complexity) }} branches ·
                   {{ ranked[0].fanIn + ranked[0].fanOut }} neighbours
                 </p>
-                <p v-if="ranked[0] && DRIVER[ranked[0].driver]" class="mt-1 text-2xs text-[var(--color-text-muted)]">
+                <p v-if="ranked[0] && DRIVER[ranked[0].driver]" class="mt-1 text-2xs text-muted">
                   {{ DRIVER[ranked[0].driver].hint }}
                 </p>
               </button>
@@ -949,22 +949,22 @@ const plotted = computed(() => {
               <!-- Hauptsequenz -->
               <button
                 type="button"
-                class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 text-left transition hover:border-[var(--color-border-strong)]"
+                class="rounded-lg border border-line bg-surface-2 p-4 text-left transition hover:border-line-strong"
                 @click="tab = 'packages'"
               >
-                <p class="flex items-center gap-1.5 text-2xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+                <p class="flex items-center gap-1.5 text-2xs font-medium uppercase tracking-wide text-muted">
                   <Icon icon="lucide:target" class="h-3.5 w-3.5" /> Furthest off balance
                 </p>
                 <template v-if="worstPackage">
-                  <p class="mt-2 truncate font-mono text-sm font-semibold text-[var(--color-text)]">
+                  <p class="mt-2 truncate font-mono text-sm font-semibold text-ink">
                     {{ worstPackage.path }}
                   </p>
-                  <p class="mt-1 text-2xs text-[var(--color-text-muted)]">
+                  <p class="mt-1 text-2xs text-muted">
                     {{ offBalanceLabel(worstPackage) }} ({{ pct(worstPackage.distance) }} off balance).
                   </p>
-                  <p class="mt-1 text-2xs text-[var(--color-text-muted)]">{{ packageAdvice(worstPackage) }}</p>
+                  <p class="mt-1 text-2xs text-muted">{{ packageAdvice(worstPackage) }}</p>
                 </template>
-                <p v-else class="mt-2 text-2xs text-[var(--color-text-muted)]">
+                <p v-else class="mt-2 text-2xs text-muted">
                   Needs relations between packages.
                 </p>
               </button>
@@ -973,30 +973,30 @@ const plotted = computed(() => {
             <!-- Die Uebersicht endet nicht bei der Bilanz: „wo fange ich an?" ist die Frage, mit
                  der man herkommt, und fuenf Zeilen beantworten sie, ohne einen Reiter zu wechseln. -->
             <div v-if="ranked.length">
-              <h2 class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+              <h2 class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted">
                 <Icon icon="lucide:flame" class="h-3.5 w-3.5" /> Where to start
               </h2>
-              <ul class="divide-y divide-[var(--color-border)] overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]">
+              <ul class="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface-2">
                 <li v-for="c in ranked.slice(0, 5)" :key="c.id">
                   <button
                     type="button"
-                    class="flex w-full items-center gap-3 px-3 py-2 text-left transition hover:bg-[var(--color-surface-offset)]"
+                    class="flex w-full items-center gap-3 px-3 py-2 text-left transition hover:bg-surface-offset"
                     @click="openClass(c.id)"
                   >
                     <span class="w-6 shrink-0 text-right font-mono text-2xs" :style="{ color: scoreColor(c.score) }">
                       {{ c.score }}
                     </span>
-                    <span class="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-[var(--color-surface-offset)]">
+                    <span class="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-surface-offset">
                       <span class="block h-full rounded-full" :style="{ width: `${c.score}%`, background: scoreColor(c.score) }" />
                     </span>
                     <span class="min-w-0 flex-1 truncate">
-                      <span class="font-mono text-xs text-[var(--color-text)]">{{ c.className }}</span>
-                      <span class="ml-1.5 text-2xs text-[var(--color-text-muted)]">{{ c.package }}</span>
+                      <span class="font-mono text-xs text-ink">{{ c.className }}</span>
+                      <span class="ml-1.5 text-2xs text-muted">{{ c.package }}</span>
                     </span>
-                    <span class="shrink-0 font-mono text-2xs text-[var(--color-text-muted)]">
+                    <span class="shrink-0 font-mono text-2xs text-muted">
                       {{ num(c.loc) }} lines · {{ num(c.complexity) }} branches · {{ c.fanIn + c.fanOut }} neighbours
                     </span>
-                    <Icon icon="lucide:arrow-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
+                    <Icon icon="lucide:arrow-right" class="h-3.5 w-3.5 shrink-0 text-muted" />
                   </button>
                 </li>
               </ul>
@@ -1005,10 +1005,10 @@ const plotted = computed(() => {
 
           <!-- ==================== Cycles ==================== -->
           <section v-else-if="tab === 'cycles'" class="space-y-6">
-            <div v-if="!cycles.packages.length && !cycles.classes.length" class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-8 text-center">
-              <Icon icon="lucide:check-circle" class="mx-auto h-6 w-6 text-[var(--color-success)]" />
-              <p class="mt-2 text-sm text-[var(--color-text)]">No cycles found.</p>
-              <p class="mt-1 text-2xs text-[var(--color-text-muted)]">
+            <div v-if="!cycles.packages.length && !cycles.classes.length" class="rounded-lg border border-line bg-surface-2 px-4 py-8 text-center">
+              <Icon icon="lucide:check-circle" class="mx-auto h-6 w-6 text-success" />
+              <p class="mt-2 text-sm text-ink">No cycles found.</p>
+              <p class="mt-1 text-2xs text-muted">
                 Every dependency points one way — packages and classes can be read in isolation.
               </p>
             </div>
@@ -1016,7 +1016,7 @@ const plotted = computed(() => {
             <template v-else>
               <!-- Package-Zyklen zuerst: sie treffen die Architektur, nicht eine Datei. -->
               <div v-if="cycles.packages.length">
-                <h2 class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                <h2 class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted">
                   <Icon icon="lucide:package" class="h-3.5 w-3.5" />
                   Package cycles
                   <span class="font-mono normal-case">({{ cycles.packages.length }})</span>
@@ -1025,26 +1025,26 @@ const plotted = computed(() => {
                   <article
                     v-for="(c, i) in cycles.packages"
                     :key="`p${i}`"
-                    class="rounded-lg border border-[var(--color-danger)]/30 bg-[var(--color-surface-2)] p-3"
+                    class="rounded-lg border border-danger/30 bg-surface-2 p-3"
                   >
                     <div class="flex flex-wrap items-center gap-1.5">
                       <template v-for="(p, k) in c.chainLabels" :key="k">
                         <button
                           type="button"
-                          class="rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-2xs text-[var(--color-text)] transition hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+                          class="rounded border border-line px-1.5 py-0.5 font-mono text-2xs text-ink transition hover:border-accent hover:text-accent"
                           @click="openPackage(p)"
                         >
                           {{ p }}
                         </button>
-                        <Icon v-if="k < c.chainLabels.length - 1" icon="lucide:arrow-right" class="h-3 w-3 text-[var(--color-text-muted)]" />
+                        <Icon v-if="k < c.chainLabels.length - 1" icon="lucide:arrow-right" class="h-3 w-3 text-muted" />
                       </template>
                     </div>
                     <!-- Nicht nur WO man schneidet, sondern WIE: „easiest cut: A → B" allein ist
                          eine Feststellung, keine Handlung. -->
-                    <div v-if="c.weakest" class="mt-2 flex items-start gap-1.5 text-2xs text-[var(--color-text-muted)]">
-                      <Icon icon="lucide:scissors" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-warning)]" />
+                    <div v-if="c.weakest" class="mt-2 flex items-start gap-1.5 text-2xs text-muted">
+                      <Icon icon="lucide:scissors" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
                       <span class="min-w-0">
-                        <span class="font-medium text-[var(--color-text)]">Easiest cut</span> —
+                        <span class="font-medium text-ink">Easiest cut</span> —
                         <span class="font-mono">{{ c.weakest.fromLabel }} → {{ c.weakest.toLabel }}</span>
                         <span class="opacity-70"> ({{ c.weakest.kind }}, {{ c.weakest.count }} {{ c.weakest.count === 1 ? 'relation' : 'relations' }})</span>
                         <br />{{ cutAdvice(c.weakest, 'package') }}
@@ -1057,8 +1057,8 @@ const plotted = computed(() => {
                           <button
                             v-tip="'Stage removing the class relation that carries this direction'"
                             type="button"
-                            class="inline-flex items-center gap-1 rounded border border-[var(--color-border)] px-1.5 py-0.5 text-3xs transition hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
-                            :class="whatIf.has(cutOf(c.weakest, 'package')) ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : ''"
+                            class="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-3xs transition hover:border-accent hover:text-accent"
+                            :class="whatIf.has(cutOf(c.weakest, 'package')) ? 'border-accent text-accent' : ''"
                             @click="stageCut(cutOf(c.weakest, 'package'))"
                           >
                             <Icon :icon="whatIf.has(cutOf(c.weakest, 'package')) ? 'lucide:check' : 'lucide:git-fork'" class="h-3 w-3" />
@@ -1069,7 +1069,7 @@ const plotted = computed(() => {
                         </span>
                       </span>
                     </div>
-                    <p v-if="c.size > c.chainLabels.length - 1" class="mt-1 text-2xs text-[var(--color-text-muted)]">
+                    <p v-if="c.size > c.chainLabels.length - 1" class="mt-1 text-2xs text-muted">
                       Part of a group of {{ c.size }} packages that all reach each other.
                     </p>
 
@@ -1085,7 +1085,7 @@ const plotted = computed(() => {
               </div>
 
               <div v-if="cycles.classes.length">
-                <h2 class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                <h2 class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted">
                   <Icon icon="lucide:box" class="h-3.5 w-3.5" />
                   Class cycles
                   <span class="font-mono normal-case">({{ cycles.classes.length }})</span>
@@ -1094,26 +1094,26 @@ const plotted = computed(() => {
                   <article
                     v-for="(c, i) in cycles.classes"
                     :key="`c${i}`"
-                    class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3"
+                    class="rounded-lg border border-line bg-surface-2 p-3"
                   >
                     <div class="flex flex-wrap items-center gap-1.5">
                       <template v-for="(name, k) in c.chainLabels" :key="k">
                         <button
                           type="button"
-                          class="rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-2xs text-[var(--color-text)] transition hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+                          class="rounded border border-line px-1.5 py-0.5 font-mono text-2xs text-ink transition hover:border-accent hover:text-accent"
                           @click="openClass(c.chain[k])"
                         >
                           {{ name }}
                         </button>
-                        <Icon v-if="k < c.chainLabels.length - 1" icon="lucide:arrow-right" class="h-3 w-3 text-[var(--color-text-muted)]" />
+                        <Icon v-if="k < c.chainLabels.length - 1" icon="lucide:arrow-right" class="h-3 w-3 text-muted" />
                       </template>
                     </div>
                     <!-- Nicht nur WO man schneidet, sondern WIE: „easiest cut: A → B" allein ist
                          eine Feststellung, keine Handlung. -->
-                    <div v-if="c.weakest" class="mt-2 flex items-start gap-1.5 text-2xs text-[var(--color-text-muted)]">
-                      <Icon icon="lucide:scissors" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-warning)]" />
+                    <div v-if="c.weakest" class="mt-2 flex items-start gap-1.5 text-2xs text-muted">
+                      <Icon icon="lucide:scissors" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
                       <span class="min-w-0">
-                        <span class="font-medium text-[var(--color-text)]">Easiest cut</span> —
+                        <span class="font-medium text-ink">Easiest cut</span> —
                         <span class="font-mono">{{ c.weakest.fromLabel }} → {{ c.weakest.toLabel }}</span>
                         <span class="opacity-70"> ({{ c.weakest.kind }}, {{ c.weakest.count }} {{ c.weakest.count === 1 ? 'relation' : 'relations' }})</span>
                         <br />{{ cutAdvice(c.weakest) }}
@@ -1124,8 +1124,8 @@ const plotted = computed(() => {
                           <button
                             v-tip="'Stage this cut and see what it does to everything else'"
                             type="button"
-                            class="inline-flex items-center gap-1 rounded border border-[var(--color-border)] px-1.5 py-0.5 text-3xs transition hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
-                            :class="whatIf.has(cutOf(c.weakest)) ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : ''"
+                            class="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-3xs transition hover:border-accent hover:text-accent"
+                            :class="whatIf.has(cutOf(c.weakest)) ? 'border-accent text-accent' : ''"
                             @click="stageCut(cutOf(c.weakest))"
                           >
                             <Icon :icon="whatIf.has(cutOf(c.weakest)) ? 'lucide:check' : 'lucide:git-fork'" class="h-3 w-3" />
@@ -1134,8 +1134,8 @@ const plotted = computed(() => {
                           <button
                             v-tip="'Stage inverting it instead — the dependency stays, its direction flips'"
                             type="button"
-                            class="inline-flex items-center gap-1 rounded border border-[var(--color-border)] px-1.5 py-0.5 text-3xs transition hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
-                            :class="whatIf.has(cutOf(c.weakest, 'class', 'invert-edge')) ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : ''"
+                            class="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-3xs transition hover:border-accent hover:text-accent"
+                            :class="whatIf.has(cutOf(c.weakest, 'class', 'invert-edge')) ? 'border-accent text-accent' : ''"
                             @click="stageCut(cutOf(c.weakest, 'class', 'invert-edge'))"
                           >
                             <Icon :icon="whatIf.has(cutOf(c.weakest, 'class', 'invert-edge')) ? 'lucide:check' : 'lucide:rotate-ccw'" class="h-3 w-3" />
@@ -1144,7 +1144,7 @@ const plotted = computed(() => {
                         </span>
                       </span>
                     </div>
-                    <p v-if="c.size > c.chainLabels.length - 1" class="mt-1 text-2xs text-[var(--color-text-muted)]">
+                    <p v-if="c.size > c.chainLabels.length - 1" class="mt-1 text-2xs text-muted">
                       Part of a group of {{ c.size }} classes that all reach each other.
                     </p>
 
@@ -1163,14 +1163,14 @@ const plotted = computed(() => {
 
           <!-- ==================== Hotspots ==================== -->
           <section v-else-if="tab === 'hotspots'" class="space-y-3">
-            <p v-if="!totals.hasChurn" class="text-2xs text-[var(--color-text-muted)]">
+            <p v-if="!totals.hasChurn" class="text-2xs text-muted">
               Change frequency is not counted yet — it starts once a class is imported a second time.
             </p>
 
-            <div class="overflow-x-auto rounded-lg border border-[var(--color-border)]">
+            <div class="overflow-x-auto rounded-lg border border-line">
               <table class="w-full min-w-[42rem] border-collapse text-xs">
                 <thead>
-                  <tr class="border-b border-[var(--color-border)] bg-[var(--color-surface-offset)] text-left text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">
+                  <tr class="border-b border-line bg-surface-offset text-left text-3xs uppercase tracking-wide text-muted">
                     <th class="px-3 py-2 font-medium">Score</th>
                     <th class="px-3 py-2 font-medium">Class</th>
                     <th class="px-3 py-2 font-medium">Why</th>
@@ -1184,8 +1184,8 @@ const plotted = computed(() => {
                   <template v-for="c in hotspots" :key="c.id">
                   <tr
                     v-tip="'Show how this class could be split'"
-                    class="cursor-pointer border-b border-[var(--color-border)] transition hover:bg-[var(--color-surface-offset)]"
-                    :class="openSplit === c.id ? 'bg-[var(--color-surface-offset)]' : ''"
+                    class="cursor-pointer border-b border-line transition hover:bg-surface-offset"
+                    :class="openSplit === c.id ? 'bg-surface-offset' : ''"
                     @click="toggleSplit(c.id)"
                   >
                     <td class="px-3 py-1.5">
@@ -1194,12 +1194,12 @@ const plotted = computed(() => {
                              ist die Zeile eine Zeile, und niemand klickt darauf. -->
                         <Icon
                           :icon="openSplit === c.id ? 'lucide:chevron-down' : 'lucide:chevron-right'"
-                          class="h-3 w-3 shrink-0 text-[var(--color-text-muted)]"
+                          class="h-3 w-3 shrink-0 text-muted"
                         />
                         <span class="w-6 shrink-0 text-right font-mono text-2xs" :style="{ color: scoreColor(c.score) }">
                           {{ c.score }}
                         </span>
-                        <span class="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-[var(--color-surface-offset)]">
+                        <span class="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-surface-offset">
                           <span class="block h-full rounded-full" :style="{ width: `${c.score}%`, background: scoreColor(c.score) }" />
                         </span>
                       </div>
@@ -1210,14 +1210,14 @@ const plotted = computed(() => {
                       <button
                         v-tip="'Open this class in the code view'"
                         type="button"
-                        class="font-mono text-[var(--color-text)] underline-offset-2 transition hover:text-[var(--color-accent)] hover:underline"
+                        class="font-mono text-ink underline-offset-2 transition hover:text-accent hover:underline"
                         @click.stop="openClass(c.id)"
                       >{{ c.className }}</button>
-                      <span class="ml-1.5 text-2xs text-[var(--color-text-muted)]">{{ c.package }}</span>
+                      <span class="ml-1.5 text-2xs text-muted">{{ c.package }}</span>
                       <span
                         v-if="c.cycle != null"
                         v-tip="'This class sits in a dependency cycle'"
-                        class="ml-1.5 inline-flex items-center gap-0.5 rounded bg-[var(--color-danger)]/15 px-1 text-3xs text-[var(--color-danger)]"
+                        class="ml-1.5 inline-flex items-center gap-0.5 rounded bg-danger/15 px-1 text-3xs text-danger"
                       >
                         <Icon icon="lucide:repeat" class="h-2.5 w-2.5" /> cycle
                       </span>
@@ -1229,13 +1229,13 @@ const plotted = computed(() => {
                       <span
                         v-if="DRIVER[c.driver]"
                         v-tip="DRIVER[c.driver].hint"
-                        class="rounded bg-[var(--color-surface-offset)] px-1.5 py-0.5 text-3xs text-[var(--color-text-muted)]"
+                        class="rounded bg-surface-offset px-1.5 py-0.5 text-3xs text-muted"
                       >{{ DRIVER[c.driver].label }}</span>
                     </td>
-                    <td class="px-3 py-1.5 text-right font-mono text-[var(--color-text-muted)]">{{ num(c.loc) }}</td>
-                    <td class="px-3 py-1.5 text-right font-mono text-[var(--color-text-muted)]">{{ num(c.complexity) }}</td>
-                    <td class="px-3 py-1.5 text-right font-mono text-[var(--color-text-muted)]">{{ c.fanIn }} / {{ c.fanOut }}</td>
-                    <td v-if="totals.hasChurn" class="px-3 py-1.5 text-right font-mono text-[var(--color-text-muted)]">{{ c.churn }}</td>
+                    <td class="px-3 py-1.5 text-right font-mono text-muted">{{ num(c.loc) }}</td>
+                    <td class="px-3 py-1.5 text-right font-mono text-muted">{{ num(c.complexity) }}</td>
+                    <td class="px-3 py-1.5 text-right font-mono text-muted">{{ c.fanIn }} / {{ c.fanOut }}</td>
+                    <td v-if="totals.hasChurn" class="px-3 py-1.5 text-right font-mono text-muted">{{ c.churn }}</td>
                   </tr>
                   <!-- ⚠️ Der Plan liegt in einer EIGENEN Zeile über die volle Breite, nicht in der
                        letzten Zelle: er trägt zwei Code-Fenster nebeneinander, und die hätten in
@@ -1259,7 +1259,7 @@ const plotted = computed(() => {
             <button
               v-if="ranked.length > TOP_N"
               type="button"
-              class="text-2xs text-[var(--color-text-muted)] underline-offset-2 hover:text-[var(--color-text)] hover:underline"
+              class="text-2xs text-muted underline-offset-2 hover:text-ink hover:underline"
               @click="showAllHotspots = !showAllHotspots"
             >
               {{ showAllHotspots ? `Show top ${TOP_N} only` : `Show all ${num(ranked.length)} classes` }}
@@ -1276,10 +1276,10 @@ const plotted = computed(() => {
                 v-for="k in testKpis"
                 :key="k.label"
                 v-tip="k.tip"
-                class="rounded-lg border bg-[var(--color-surface-2)] px-3 py-2"
-                :class="k.warn ? 'border-[var(--color-warning)]/40' : 'border-[var(--color-border)]'"
+                class="rounded-lg border bg-surface-2 px-3 py-2"
+                :class="k.warn ? 'border-warning/40' : 'border-line'"
               >
-                <p class="flex items-center gap-1.5 text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">
+                <p class="flex items-center gap-1.5 text-3xs uppercase tracking-wide text-muted">
                   <Icon :icon="k.icon" class="h-3 w-3" />
                   {{ k.label }}
                 </p>
@@ -1293,7 +1293,7 @@ const plotted = computed(() => {
             <!-- ⚠️ Drei Leerzustaende, und nur der letzte ist ein Lob. -->
             <p
               v-if="testsEmpty"
-              class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-8 text-center text-2xs leading-relaxed text-[var(--color-text-muted)]"
+              class="rounded-lg border border-line bg-surface-2 px-4 py-8 text-center text-2xs leading-relaxed text-muted"
             >
               <template v-if="testsEmpty === 'all-covered'">
                 Every class here has a test that names it. Nothing sits in the shadow.
@@ -1312,10 +1312,10 @@ const plotted = computed(() => {
             <template v-else-if="tests">
               <!-- Die Rangliste. Dieselbe Form wie die Brandherde, weil es dieselbe Frage in ihrer
                    Fortsetzung ist – nur steht hier statt „wie teile ich sie?" die Abdeckung. -->
-              <div class="overflow-x-auto rounded-lg border border-[var(--color-border)]">
+              <div class="overflow-x-auto rounded-lg border border-line">
                 <table class="w-full min-w-[42rem] border-collapse text-xs">
                   <thead>
-                    <tr class="border-b border-[var(--color-border)] bg-[var(--color-surface-offset)] text-left text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">
+                    <tr class="border-b border-line bg-surface-offset text-left text-3xs uppercase tracking-wide text-muted">
                       <th class="px-3 py-2 font-medium">Weight</th>
                       <th class="px-3 py-2 font-medium">Class</th>
                       <th class="px-3 py-2 font-medium">Coverage</th>
@@ -1328,14 +1328,14 @@ const plotted = computed(() => {
                     <tr
                       v-for="c in tests.shadow"
                       :key="c.id"
-                      class="border-b border-[var(--color-border)] transition last:border-0 hover:bg-[var(--color-surface-offset)]"
+                      class="border-b border-line transition last:border-0 hover:bg-surface-offset"
                     >
                       <td class="px-3 py-1.5">
                         <div class="flex items-center gap-2">
                           <span class="w-6 shrink-0 text-right font-mono text-2xs" :style="{ color: scoreColor(c.score) }">
                             {{ c.score }}
                           </span>
-                          <span class="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-[var(--color-surface-offset)]">
+                          <span class="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-surface-offset">
                             <span class="block h-full rounded-full" :style="{ width: `${c.score}%`, background: scoreColor(c.score) }" />
                           </span>
                         </div>
@@ -1344,17 +1344,17 @@ const plotted = computed(() => {
                         <button
                           v-tip="'Open this class in the code view'"
                           type="button"
-                          class="font-mono text-[var(--color-text)] underline-offset-2 transition hover:text-[var(--color-accent)] hover:underline"
+                          class="font-mono text-ink underline-offset-2 transition hover:text-accent hover:underline"
                           @click="openClass(c.id)"
                         >{{ c.className }}</button>
-                        <span class="ml-1.5 text-2xs text-[var(--color-text-muted)]">{{ c.package }}</span>
+                        <span class="ml-1.5 text-2xs text-muted">{{ c.package }}</span>
                         <!-- ⚠️ Der Zyklus-Hinweis gehoert genau hierher: eine Klasse in einer
                              Schleife laesst sich nicht allein testen, also ist er der Grund,
                              warum die Zeile ohne Test dasteht – und nicht nur eine Marke. -->
                         <span
                           v-if="c.cycle != null"
                           v-tip="'In a dependency cycle — no test can build this class on its own'"
-                          class="ml-1.5 inline-flex items-center gap-0.5 rounded bg-[var(--color-danger)]/15 px-1 text-3xs text-[var(--color-danger)]"
+                          class="ml-1.5 inline-flex items-center gap-0.5 rounded bg-danger/15 px-1 text-3xs text-danger"
                         >
                           <Icon icon="lucide:repeat" class="h-2.5 w-2.5" /> cycle
                         </span>
@@ -1369,15 +1369,15 @@ const plotted = computed(() => {
                         </span>
                         <!-- Wer sie beruehrt, ist die Anschlussfrage – und der Absprung dorthin. -->
                         <template v-if="c.by.length">
-                          <span class="ml-1 text-3xs text-[var(--color-text-muted)]">by</span>
+                          <span class="ml-1 text-3xs text-muted">by</span>
                           <button
                             v-for="t in c.by"
                             :key="t.id"
                             type="button"
-                            class="ml-1 rounded bg-[var(--color-surface-offset)] px-1 py-px font-mono text-3xs text-[var(--color-text-muted)] transition hover:text-[var(--color-accent)]"
+                            class="ml-1 rounded bg-surface-offset px-1 py-px font-mono text-3xs text-muted transition hover:text-accent"
                             @click="openClass(t.id)"
                           >{{ t.className }}</button>
-                          <span v-if="c.byCount > c.by.length" class="ml-1 text-3xs text-[var(--color-text-muted)]">
+                          <span v-if="c.byCount > c.by.length" class="ml-1 text-3xs text-muted">
                             and {{ c.byCount - c.by.length }} more
                           </span>
                         </template>
@@ -1386,17 +1386,17 @@ const plotted = computed(() => {
                         <span
                           v-if="DRIVER[c.driver]"
                           v-tip="DRIVER[c.driver].hint"
-                          class="rounded bg-[var(--color-surface-offset)] px-1.5 py-0.5 text-3xs text-[var(--color-text-muted)]"
+                          class="rounded bg-surface-offset px-1.5 py-0.5 text-3xs text-muted"
                         >{{ DRIVER[c.driver].label }}</span>
                       </td>
-                      <td class="px-3 py-1.5 text-right font-mono text-[var(--color-text-muted)]">{{ num(c.loc) }}</td>
-                      <td class="px-3 py-1.5 text-right font-mono text-[var(--color-text-muted)]">{{ num(c.complexity) }}</td>
+                      <td class="px-3 py-1.5 text-right font-mono text-muted">{{ num(c.loc) }}</td>
+                      <td class="px-3 py-1.5 text-right font-mono text-muted">{{ num(c.complexity) }}</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
 
-              <p v-if="tests.moreShadow" class="text-3xs text-[var(--color-text-muted)]">
+              <p v-if="tests.moreShadow" class="text-3xs text-muted">
                 … and {{ plural(tests.moreShadow, 'class') }} more without a test, each lighter than the ones above.
               </p>
 
@@ -1404,32 +1404,32 @@ const plotted = computed(() => {
                    Befund wie eine Luecke im Reiter „Outside", nur von der anderen Seite gesehen. -->
               <section v-if="tests.orphans.length" class="space-y-2">
                 <header class="flex flex-wrap items-baseline gap-x-2">
-                  <span class="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--color-warning)]">
+                  <span class="inline-flex items-center gap-1.5 text-xs font-semibold text-warning">
                     <Icon icon="lucide:puzzle" class="h-3.5 w-3.5" />
                     Tests whose subject is missing
                   </span>
-                  <p class="w-full text-3xs leading-relaxed text-[var(--color-text-muted)]">
+                  <p class="w-full text-3xs leading-relaxed text-muted">
                     The test is here, the class it is named after is not. Upload it and its coverage
                     appears in the list above.
                   </p>
                 </header>
-                <ul class="overflow-hidden rounded-lg border border-[var(--color-border)]">
+                <ul class="overflow-hidden rounded-lg border border-line">
                   <li
                     v-for="o in tests.orphans"
                     :key="o.id"
-                    class="flex flex-wrap items-baseline gap-x-2 border-b border-[var(--color-border)] px-3 py-1.5 last:border-0"
+                    class="flex flex-wrap items-baseline gap-x-2 border-b border-line px-3 py-1.5 last:border-0"
                   >
                     <button
                       type="button"
-                      class="font-mono text-xs text-[var(--color-text)] underline-offset-2 transition hover:text-[var(--color-accent)] hover:underline"
+                      class="font-mono text-xs text-ink underline-offset-2 transition hover:text-accent hover:underline"
                       @click="openClass(o.id)"
                     >{{ o.className }}</button>
-                    <span class="text-3xs text-[var(--color-text-muted)]">expects</span>
-                    <span class="font-mono text-2xs text-[var(--color-warning)]">{{ o.expected }}</span>
-                    <span class="text-3xs text-[var(--color-text-muted)]">{{ o.package }}</span>
+                    <span class="text-3xs text-muted">expects</span>
+                    <span class="font-mono text-2xs text-warning">{{ o.expected }}</span>
+                    <span class="text-3xs text-muted">{{ o.package }}</span>
                   </li>
                 </ul>
-                <p v-if="tests.moreOrphans" class="text-3xs text-[var(--color-text-muted)]">
+                <p v-if="tests.moreOrphans" class="text-3xs text-muted">
                   … and {{ plural(tests.moreOrphans, 'test') }} more.
                 </p>
               </section>
@@ -1441,33 +1441,33 @@ const plotted = computed(() => {
               <section class="space-y-2">
                 <button
                   type="button"
-                  class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-accent)] transition hover:underline"
+                  class="inline-flex items-center gap-1 text-xs font-medium text-accent transition hover:underline"
                   @click="showTestList = !showTestList"
                 >
                   <Icon :icon="showTestList ? 'lucide:chevron-down' : 'lucide:chevron-right'" class="h-3.5 w-3.5" />
                   What is tested — {{ plural(tests.totals.tests, 'test class') }}
                 </button>
-                <ul v-if="showTestList" class="overflow-hidden rounded-lg border border-[var(--color-border)]">
+                <ul v-if="showTestList" class="overflow-hidden rounded-lg border border-line">
                   <li
                     v-for="t in tests.tests"
                     :key="t.id"
-                    class="flex flex-wrap items-baseline gap-x-2 border-b border-[var(--color-border)] px-3 py-1.5 last:border-0"
+                    class="flex flex-wrap items-baseline gap-x-2 border-b border-line px-3 py-1.5 last:border-0"
                   >
                     <button
                       type="button"
-                      class="font-mono text-xs text-[var(--color-text)] underline-offset-2 transition hover:text-[var(--color-accent)] hover:underline"
+                      class="font-mono text-xs text-ink underline-offset-2 transition hover:text-accent hover:underline"
                       @click="openClass(t.id)"
                     >{{ t.className }}</button>
                     <template v-if="t.subject">
-                      <Icon icon="lucide:arrow-right" class="h-3 w-3 text-[var(--color-text-muted)]" />
+                      <Icon icon="lucide:arrow-right" class="h-3 w-3 text-muted" />
                       <button
                         type="button"
-                        class="font-mono text-2xs text-[var(--color-success)] underline-offset-2 transition hover:underline"
+                        class="font-mono text-2xs text-success underline-offset-2 transition hover:underline"
                         @click="openClass(t.subject.id)"
                       >{{ t.subject.className }}</button>
                     </template>
-                    <span v-else class="text-3xs text-[var(--color-text-muted)]">no named subject</span>
-                    <span class="text-3xs text-[var(--color-text-muted)]">
+                    <span v-else class="text-3xs text-muted">no named subject</span>
+                    <span class="text-3xs text-muted">
                       touches {{ plural(t.touches, 'class') }}
                     </span>
                     <!-- ⚠️ Woran erkannt wurde, gehoert an die Zeile: ein Befund, der auf einer
@@ -1476,11 +1476,11 @@ const plotted = computed(() => {
                       v-tip="t.evidence === 'imports'
                         ? 'Recognised by a test framework import — a hard match'
                         : 'Recognised by its name alone — no test framework import is stored for it'"
-                      class="ml-auto rounded bg-[var(--color-surface-offset)] px-1 py-px text-3xs text-[var(--color-text-muted)]"
+                      class="ml-auto rounded bg-surface-offset px-1 py-px text-3xs text-muted"
                     >by {{ t.evidence === 'imports' ? 'import' : 'name' }}</span>
                   </li>
                 </ul>
-                <p v-if="showTestList && tests.moreTests" class="text-3xs text-[var(--color-text-muted)]">
+                <p v-if="showTestList && tests.moreTests" class="text-3xs text-muted">
                   … and {{ plural(tests.moreTests, 'test class') }} more.
                 </p>
               </section>
@@ -1488,7 +1488,7 @@ const plotted = computed(() => {
               <!-- ⚠️ Die Grenze der Auskunft gehoert unter die Liste. Ohne sie liest sich
                    „no test" als „diese Klasse ist ungeprueft" – und das ist mehr, als hier
                    gemessen werden kann. -->
-              <p class="flex items-start gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2.5 text-3xs leading-relaxed text-[var(--color-text-muted)]">
+              <p class="flex items-start gap-2 rounded-lg border border-line bg-surface-2 px-4 py-2.5 text-3xs leading-relaxed text-muted">
                 <Icon icon="lucide:info" class="mt-0.5 h-3 w-3 shrink-0" />
                 <span>
                   This reads names and relations, never a test run. A test reaching its class through
@@ -1506,13 +1506,13 @@ const plotted = computed(() => {
 
           <!-- ==================== Packages ==================== -->
           <section v-else-if="tab === 'packages'" class="space-y-5">
-            <div v-if="!plotted.length" class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-8 text-center text-2xs text-[var(--color-text-muted)]">
+            <div v-if="!plotted.length" class="rounded-lg border border-line bg-surface-2 px-4 py-8 text-center text-2xs text-muted">
               Abstractness against instability needs relations between packages.
             </div>
 
             <div v-else class="grid gap-5 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
               <!-- Das Bild: eine Diagonale und zwei Ecken. -->
-              <figure class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
+              <figure class="rounded-lg border border-line bg-surface-2 p-4">
                 <svg viewBox="-14 -10 128 128" class="w-full" role="img" aria-label="Abstractness against instability">
                   <!-- Zonen zuerst, damit die Punkte darauf liegen -->
                   <rect x="0" y="70" width="30" height="30" fill="var(--color-danger)" opacity="0.09" />
@@ -1543,7 +1543,7 @@ const plotted = computed(() => {
                   <text x="50" y="112" text-anchor="middle" class="plot-axis">instability →</text>
                   <text x="-6" y="50" text-anchor="middle" class="plot-axis" transform="rotate(-90 -6 50)">abstractness →</text>
                 </svg>
-                <figcaption class="mt-2 text-3xs leading-relaxed text-[var(--color-text-muted)]">
+                <figcaption class="mt-2 text-3xs leading-relaxed text-muted">
                   On the dashed line a package is either abstract and widely used, or concrete and
                   used by nobody. Bottom left is rigid and concrete — everything depends on it and
                   it cannot be extended. Top right is abstract with nobody to serve.
@@ -1551,13 +1551,13 @@ const plotted = computed(() => {
               </figure>
 
               <!-- Die Tabelle: dieselben Zahlen, nur lesbar. -->
-              <div class="overflow-x-auto rounded-lg border border-[var(--color-border)]">
+              <div class="overflow-x-auto rounded-lg border border-line">
                 <table class="w-full min-w-[30rem] border-collapse text-xs">
                   <thead>
                     <!-- ⚠️ Klartext statt „I / A / D". Die Kürzel stehen klein daneben, damit sie
                          für alle, die sie kennen, noch auffindbar sind – aber niemand muss sie
                          kennen, um die Tabelle zu lesen. -->
-                    <tr class="border-b border-[var(--color-border)] bg-[var(--color-surface-offset)] text-left text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">
+                    <tr class="border-b border-line bg-surface-offset text-left text-3xs uppercase tracking-wide text-muted">
                       <th class="px-3 py-2 font-medium">Package</th>
                       <th class="px-3 py-2 text-right font-medium">Classes</th>
                       <th v-tip="'Classes outside that depend on this package / classes inside that depend outward'" class="px-3 py-2 text-right font-medium">
@@ -1578,29 +1578,29 @@ const plotted = computed(() => {
                     <tr
                       v-for="p in packages"
                       :key="p.path"
-                      class="cursor-pointer border-b border-[var(--color-border)] last:border-0 transition hover:bg-[var(--color-surface-offset)]"
+                      class="cursor-pointer border-b border-line last:border-0 transition hover:bg-surface-offset"
                       @click="openPackage(p.path)"
                     >
                       <td class="px-3 py-1.5">
-                        <span class="font-mono text-[var(--color-text)]">{{ p.path }}</span>
+                        <span class="font-mono text-ink">{{ p.path }}</span>
                         <span
                           v-if="p.cycle != null"
                           v-tip="'This package sits in a cycle'"
-                          class="ml-1.5 inline-flex items-center gap-0.5 rounded bg-[var(--color-danger)]/15 px-1 text-3xs text-[var(--color-danger)]"
+                          class="ml-1.5 inline-flex items-center gap-0.5 rounded bg-danger/15 px-1 text-3xs text-danger"
                         >
                           <Icon icon="lucide:repeat" class="h-2.5 w-2.5" /> cycle
                         </span>
-                        <span class="ml-1.5 text-3xs text-[var(--color-text-muted)]">{{ instabilityLabel(p.instability) }}</span>
+                        <span class="ml-1.5 text-3xs text-muted">{{ instabilityLabel(p.instability) }}</span>
                         <!-- Erst ab einer echten Abweichung: eine Empfehlung an jeder Zeile wäre
                              Rauschen, und die meisten Packages sind in Ordnung. -->
-                        <p v-if="p.distance != null && p.distance > 0.5" class="mt-0.5 text-3xs text-[var(--color-text-muted)]">
+                        <p v-if="p.distance != null && p.distance > 0.5" class="mt-0.5 text-3xs text-muted">
                           {{ packageAdvice(p) }}
                         </p>
                       </td>
-                      <td class="px-3 py-1.5 text-right font-mono text-[var(--color-text-muted)]">{{ num(p.classes) }}</td>
-                      <td class="px-3 py-1.5 text-right font-mono text-[var(--color-text-muted)]">{{ p.ca }} / {{ p.ce }}</td>
-                      <td class="px-3 py-1.5 text-right font-mono text-[var(--color-text-muted)]">{{ p.instability ?? '–' }}</td>
-                      <td class="px-3 py-1.5 text-right font-mono text-[var(--color-text-muted)]">{{ p.abstractness }}</td>
+                      <td class="px-3 py-1.5 text-right font-mono text-muted">{{ num(p.classes) }}</td>
+                      <td class="px-3 py-1.5 text-right font-mono text-muted">{{ p.ca }} / {{ p.ce }}</td>
+                      <td class="px-3 py-1.5 text-right font-mono text-muted">{{ p.instability ?? '–' }}</td>
+                      <td class="px-3 py-1.5 text-right font-mono text-muted">{{ p.abstractness }}</td>
                       <td
                         class="px-3 py-1.5 text-right font-mono"
                         :style="{ color: p.distance != null && p.distance > 0.6 ? 'var(--color-danger)' : 'var(--color-text-muted)' }"
@@ -1618,12 +1618,12 @@ const plotted = computed(() => {
           <section v-else-if="tab === 'path'" class="space-y-4">
             <!-- Zuschnitt + Mitnahme in EINER Zeile: „wodurch?" und „und dann?" gehoeren zusammen. -->
             <div class="flex flex-wrap items-center gap-2">
-              <label class="flex items-center gap-2 text-2xs text-[var(--color-text-muted)]">
+              <label class="flex items-center gap-2 text-2xs text-muted">
                 <Icon icon="lucide:route" class="h-3.5 w-3.5" />
                 Path through
                 <select
                   v-model="pathScope"
-                  class="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-2xs text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+                  class="rounded-md border border-line bg-surface-2 px-2 py-1 text-2xs text-ink outline-none focus:border-accent"
                 >
                   <option value="">the whole codebase ({{ num(classes.length) }} classes)</option>
                   <option v-for="p in pathPackages" :key="p.path" :value="p.path">
@@ -1632,17 +1632,17 @@ const plotted = computed(() => {
                 </select>
               </label>
 
-              <span v-if="readingPath.totals.classes" class="text-2xs text-[var(--color-text-muted)]">
-                <strong class="font-semibold text-[var(--color-text)]">{{ readingPath.totals.foundations }}</strong>
+              <span v-if="readingPath.totals.classes" class="text-2xs text-muted">
+                <strong class="font-semibold text-ink">{{ readingPath.totals.foundations }}</strong>
                 to start from ·
-                <strong class="font-semibold text-[var(--color-text)]">{{ readingPath.totals.depth }}</strong>
+                <strong class="font-semibold text-ink">{{ readingPath.totals.depth }}</strong>
                 {{ readingPath.totals.depth === 1 ? 'layer' : 'layers' }} deep
               </span>
 
               <button
                 v-if="readingPath.totals.classes"
                 type="button"
-                class="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-2xs font-medium text-[var(--color-text)] transition hover:border-[var(--color-accent)] disabled:opacity-60"
+                class="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-2xs font-medium text-ink transition hover:border-accent disabled:opacity-60"
                 :disabled="pathCopying"
                 title="Copy every class on this path as one text — in reading order, not alphabetical"
                 @click="copyPath"
@@ -1667,7 +1667,7 @@ const plotted = computed(() => {
 
             <p
               v-else-if="!readingPath.totals.classes"
-              class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-8 text-center text-2xs text-[var(--color-text-muted)]"
+              class="rounded-lg border border-line bg-surface-2 px-4 py-8 text-center text-2xs text-muted"
             >
               No classes in this scope.
             </p>
@@ -1678,7 +1678,7 @@ const plotted = computed(() => {
               <li
                 v-for="s in readingPath.stations"
                 :key="s.fileId"
-                class="group flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 transition hover:border-[var(--color-accent)]"
+                class="group flex cursor-pointer items-start gap-3 rounded-lg border border-line bg-surface-2 px-3 py-2 transition hover:border-accent"
                 @click="openClass(s.fileId)"
               >
                 <span
@@ -1691,8 +1691,8 @@ const plotted = computed(() => {
 
                 <div class="min-w-0 flex-1">
                   <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                    <span class="text-xs font-semibold text-[var(--color-text)]">{{ s.className }}</span>
-                    <span v-if="!pathScope && s.package" class="truncate font-mono text-3xs text-[var(--color-text-muted)]">{{ s.package }}</span>
+                    <span class="text-xs font-semibold text-ink">{{ s.className }}</span>
+                    <span v-if="!pathScope && s.package" class="truncate font-mono text-3xs text-muted">{{ s.package }}</span>
                     <span
                       class="inline-flex items-center gap-1 rounded px-1 py-px text-3xs font-medium"
                       :style="{
@@ -1712,12 +1712,12 @@ const plotted = computed(() => {
                       :style="{ color: scoreColor(s.score) }"
                     >{{ s.score }}</span>
                   </div>
-                  <p class="mt-0.5 text-3xs leading-relaxed text-[var(--color-text-muted)]">{{ stationWhy(s) }}</p>
+                  <p class="mt-0.5 text-3xs leading-relaxed text-muted">{{ stationWhy(s) }}</p>
                 </div>
 
                 <Icon
                   icon="lucide:arrow-up-right"
-                  class="mt-1 h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)] opacity-0 transition group-hover:opacity-100"
+                  class="mt-1 h-3.5 w-3.5 shrink-0 text-muted opacity-0 transition group-hover:opacity-100"
                 />
               </li>
             </ol>
@@ -1731,10 +1731,10 @@ const plotted = computed(() => {
               <div
                 v-for="k in outsideKpis"
                 :key="k.label"
-                class="rounded-lg border bg-[var(--color-surface-2)] px-3 py-2"
-                :class="k.warn ? 'border-[var(--color-warning)]/40' : 'border-[var(--color-border)]'"
+                class="rounded-lg border bg-surface-2 px-3 py-2"
+                :class="k.warn ? 'border-warning/40' : 'border-line'"
               >
-                <p class="flex items-center gap-1.5 text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">
+                <p class="flex items-center gap-1.5 text-3xs uppercase tracking-wide text-muted">
                   <Icon :icon="k.icon" class="h-3 w-3" />
                   {{ k.label }}
                 </p>
@@ -1748,7 +1748,7 @@ const plotted = computed(() => {
             <!-- ⚠️ Zwei Leerzustände, die das Gegenteil voneinander bedeuten. -->
             <p
               v-if="outsideEmpty"
-              class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-8 text-center text-2xs leading-relaxed text-[var(--color-text-muted)]"
+              class="rounded-lg border border-line bg-surface-2 px-4 py-8 text-center text-2xs leading-relaxed text-muted"
             >
               <template v-if="outsideEmpty === 'no-imports'">
                 No import lines stored for these classes. They were analysed before imports were
@@ -1767,68 +1767,68 @@ const plotted = computed(() => {
                       <Icon :icon="g.icon" class="h-3.5 w-3.5" />
                       {{ g.label }}
                     </span>
-                    <span class="font-mono text-3xs text-[var(--color-text-muted)]">
+                    <span class="font-mono text-3xs text-muted">
                       {{ plural(outside.totals[g.id].types, 'type') }} ·
                       {{ plural(outside.totals[g.id].packages, 'package') }}
                     </span>
-                    <p class="w-full text-3xs leading-relaxed text-[var(--color-text-muted)]">{{ g.hint }}</p>
+                    <p class="w-full text-3xs leading-relaxed text-muted">{{ g.hint }}</p>
                   </header>
 
-                  <ul class="overflow-hidden rounded-lg border border-[var(--color-border)]">
+                  <ul class="overflow-hidden rounded-lg border border-line">
                     <li
                       v-for="p in outside.groups[g.id]"
                       :key="p.path"
-                      class="border-b border-[var(--color-border)] last:border-0"
+                      class="border-b border-line last:border-0"
                     >
                       <button
                         type="button"
-                        class="flex w-full items-center gap-3 px-3 py-1.5 text-left transition hover:bg-[var(--color-surface-offset)]"
+                        class="flex w-full items-center gap-3 px-3 py-1.5 text-left transition hover:bg-surface-offset"
                         @click="toggleOutside(`${g.id}:${p.path}`)"
                       >
                         <Icon
                           :icon="openOutside === `${g.id}:${p.path}` ? 'lucide:chevron-down' : 'lucide:chevron-right'"
-                          class="h-3 w-3 shrink-0 text-[var(--color-text-muted)]"
+                          class="h-3 w-3 shrink-0 text-muted"
                         />
-                        <span class="min-w-0 flex-1 truncate font-mono text-xs text-[var(--color-text)]">{{ p.path }}</span>
-                        <span class="shrink-0 font-mono text-3xs text-[var(--color-text-muted)]">
+                        <span class="min-w-0 flex-1 truncate font-mono text-xs text-ink">{{ p.path }}</span>
+                        <span class="shrink-0 font-mono text-3xs text-muted">
                           {{ plural(p.typeCount, 'type') }}
                         </span>
                         <!-- Der Balken beantwortet „wie tief steckt das drin?" auf einen Blick –
                              die Zahl daneben sagt es genau. -->
-                        <span class="hidden h-1 w-24 shrink-0 overflow-hidden rounded-full bg-[var(--color-surface-offset)] sm:block">
+                        <span class="hidden h-1 w-24 shrink-0 overflow-hidden rounded-full bg-surface-offset sm:block">
                           <span class="block h-full rounded-full" :style="{ width: `${outsideBar(g.id, p.usedBy)}%`, background: g.color }" />
                         </span>
                         <span
                           v-tip="`${p.usedBy} of your classes import something from here`"
-                          class="w-24 shrink-0 text-right font-mono text-3xs text-[var(--color-text-muted)]"
+                          class="w-24 shrink-0 text-right font-mono text-3xs text-muted"
                         >used by {{ p.usedBy }}</span>
                       </button>
 
                       <!-- Aufgeklappt: die Typen mit ihren Nutzern. ⚠️ Die Nutzer sind der Absprung –
                            ohne sie endet der Reiter bei der Erkenntnis. -->
-                      <div v-if="openOutside === `${g.id}:${p.path}`" class="border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
+                      <div v-if="openOutside === `${g.id}:${p.path}`" class="border-t border-line bg-surface-2 px-3 py-2">
                         <ul class="space-y-1.5">
                           <li v-for="t in p.types" :key="t.fqcn" class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                            <span class="font-mono text-2xs font-medium text-[var(--color-text)]">{{ t.name }}</span>
-                            <span class="text-3xs text-[var(--color-text-muted)]">used by</span>
+                            <span class="font-mono text-2xs font-medium text-ink">{{ t.name }}</span>
+                            <span class="text-3xs text-muted">used by</span>
                             <button
                               v-for="u in t.users"
                               :key="u.id"
                               type="button"
-                              class="rounded bg-[var(--color-surface-offset)] px-1 py-px font-mono text-3xs text-[var(--color-text-muted)] transition hover:text-[var(--color-accent)]"
+                              class="rounded bg-surface-offset px-1 py-px font-mono text-3xs text-muted transition hover:text-accent"
                               @click="openClass(u.id)"
                             >{{ u.className }}</button>
-                            <span v-if="t.moreUsers" class="text-3xs text-[var(--color-text-muted)]">and {{ t.moreUsers }} more</span>
+                            <span v-if="t.moreUsers" class="text-3xs text-muted">and {{ t.moreUsers }} more</span>
                           </li>
                         </ul>
-                        <p v-if="p.moreTypes" class="mt-1.5 text-3xs text-[var(--color-text-muted)]">
+                        <p v-if="p.moreTypes" class="mt-1.5 text-3xs text-muted">
                           … and {{ plural(p.moreTypes, 'type') }} more from this package.
                         </p>
                       </div>
                     </li>
                   </ul>
 
-                  <p v-if="outside.more[g.id]" class="text-3xs text-[var(--color-text-muted)]">
+                  <p v-if="outside.more[g.id]" class="text-3xs text-muted">
                     … and {{ plural(outside.more[g.id], 'package') }} more, each used less than the ones above.
                   </p>
                 </section>
@@ -1836,7 +1836,7 @@ const plotted = computed(() => {
 
               <!-- ⚠️ Die Grenze der Auskunft gehört unter die Liste, nicht in einen Tooltip: ohne
                    sie liest sich „3 missing" als vollständige Antwort auf „was fehlt mir?". -->
-              <p class="flex items-start gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2.5 text-3xs leading-relaxed text-[var(--color-text-muted)]">
+              <p class="flex items-start gap-2 rounded-lg border border-line bg-surface-2 px-4 py-2.5 text-3xs leading-relaxed text-muted">
                 <Icon icon="lucide:info" class="mt-0.5 h-3 w-3 shrink-0" />
                 <span>
                   Only import lines can be counted. A class in the <em>same</em> package needs no

@@ -76,11 +76,11 @@ function addCode() {
          geometrischen – dort erwartet man sie. -->
     <div class="relative z-10 mx-auto flex w-full max-w-4xl flex-1 flex-col justify-center px-5 py-12 pb-24">
       <section class="reveal text-center">
-        <h1 class="flex items-center justify-center gap-3 font-mono text-4xl font-semibold tracking-tight text-[var(--color-text)] sm:text-5xl">
-          <Icon :icon="WIKI_ICON" class="shrink-0 text-[var(--color-accent)]" />
-          <span class="text-[var(--color-accent)]">{{ WIKI_TITLE }}</span><span class="blink font-normal text-[var(--color-accent)]">_</span>
+        <h1 class="flex items-center justify-center gap-3 font-mono text-4xl font-semibold tracking-tight text-ink sm:text-5xl">
+          <Icon :icon="WIKI_ICON" class="shrink-0 text-accent" />
+          <span class="text-accent">{{ WIKI_TITLE }}</span><span class="blink font-normal text-accent">_</span>
         </h1>
-        <p class="mt-2.5 text-sm text-[var(--color-text-muted)]">
+        <p class="mt-2.5 text-sm text-muted">
           Java class graph and Markdown notes — local, no cloud, no login.
         </p>
       </section>
@@ -95,11 +95,11 @@ function addCode() {
            die Startseite ueber den Bestand nicht behaupten. -->
       <p
         v-if="facts.length"
-        class="reveal reveal-delay mt-5 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center font-mono text-2xs text-[var(--color-text-muted)]"
+        class="reveal reveal-delay mt-5 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center font-mono text-2xs text-muted"
       >
         <template v-for="(f, i) in facts" :key="f.one">
           <span v-if="i" class="opacity-40">·</span>
-          <span><span class="font-semibold tabular-nums text-[var(--color-text)]">{{ f.n }}</span> {{ f.n === 1 ? f.one : f.many }}</span>
+          <span><span class="font-semibold tabular-nums text-ink">{{ f.n }}</span> {{ f.n === 1 ? f.one : f.many }}</span>
         </template>
       </p>
 
@@ -110,18 +110,18 @@ function addCode() {
           v-for="l in links"
           :key="l.to"
           :to="l.to"
-          class="group inline-flex items-center gap-1.5 font-medium text-[var(--color-text-muted)] transition hover:text-[var(--color-accent)]"
+          class="group inline-flex items-center gap-1.5 font-medium text-muted transition hover:text-accent"
         >
-          <Icon :icon="l.icon" class="h-4 w-4 text-[var(--color-accent)]" />
+          <Icon :icon="l.icon" class="h-4 w-4 text-accent" />
           {{ l.label }}
           <Icon icon="lucide:arrow-right" class="h-3.5 w-3.5 -translate-x-1 opacity-0 transition group-hover:translate-x-0 group-hover:opacity-100" />
         </RouterLink>
         <button
           type="button"
-          class="group inline-flex items-center gap-1.5 font-medium text-[var(--color-text-muted)] transition hover:text-[var(--color-accent)]"
+          class="group inline-flex items-center gap-1.5 font-medium text-muted transition hover:text-accent"
           @click="addCode"
         >
-          <Icon icon="lucide:upload" class="h-4 w-4 text-[var(--color-accent)]" />
+          <Icon icon="lucide:upload" class="h-4 w-4 text-accent" />
           Add code
           <Icon icon="lucide:arrow-right" class="h-3.5 w-3.5 -translate-x-1 opacity-0 transition group-hover:translate-x-0 group-hover:opacity-100" />
         </button>

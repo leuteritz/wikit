@@ -1180,16 +1180,16 @@ onUnmounted(() => {
 <template>
   <div class="flex h-full min-h-0 flex-col">
     <!-- ======================= Kopfzeile ======================= -->
-    <header class="sticky top-0 z-20 border-b border-[var(--color-border)] bg-[var(--color-surface)]/95 px-5 py-3 backdrop-blur">
+    <header class="sticky top-0 z-20 border-b border-line bg-surface/95 px-5 py-3 backdrop-blur">
       <div class="mx-auto flex w-full max-w-7xl flex-wrap items-center gap-x-4 gap-y-2">
-        <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+        <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
           <Icon icon="lucide:boxes" class="h-5 w-5" />
         </span>
         <div class="min-w-0">
-          <h1 class="text-base font-bold text-[var(--color-text)]">Topic bundle</h1>
+          <h1 class="text-base font-bold text-ink">Topic bundle</h1>
           <!-- „Was sehe ich hier?" steht immer sichtbar, nicht in einem Tooltip – gleiche Regel
                wie in den Insights: wer nicht weiss, was er sieht, sucht auch keine Erklaerung. -->
-          <p class="text-xs text-[var(--color-text-muted)]">
+          <p class="text-xs text-muted">
             Every class around one topic — collected, picked, and copied as one text.
           </p>
         </div>
@@ -1199,15 +1199,15 @@ onUnmounted(() => {
                sondern wie der Begriff gelesen wird – dieselbe Bauart und dieselben Icons wie in
                der Suchpalette, im Source-Tab und in der Bündelleiste weiter unten. -->
           <div
-            class="flex min-w-0 flex-1 items-center gap-1 rounded-lg border bg-[var(--color-surface-2)] pl-3 pr-1 transition"
+            class="flex min-w-0 flex-1 items-center gap-1 rounded-lg border bg-surface-2 pl-3 pr-1 transition"
             :class="patternError
-              ? 'border-[var(--color-danger)]'
-              : 'border-[var(--color-border)] focus-within:border-[var(--color-accent)]'"
+              ? 'border-danger'
+              : 'border-line focus-within:border-accent'"
           >
             <Icon
               icon="lucide:search"
               class="h-4 w-4 shrink-0"
-              :class="patternError ? 'text-[var(--color-danger)]' : 'text-[var(--color-accent)]'"
+              :class="patternError ? 'text-danger' : 'text-accent'"
             />
             <input
               ref="inputEl"
@@ -1216,7 +1216,7 @@ onUnmounted(() => {
               spellcheck="false"
               :aria-invalid="!!patternError"
               :placeholder="termOpts.regex ? 'A pattern — e.g. ^Jt.*(Repo|Dao)$' : 'A topic, a prefix, a name — e.g. jt'"
-              class="min-w-0 flex-1 bg-transparent py-2 text-sm text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
+              class="min-w-0 flex-1 bg-transparent py-2 text-sm text-ink outline-none placeholder:text-muted"
               @keydown.enter.prevent="applied = term.trim()"
             />
             <!-- Kurz im Feld, ausführlich am Zeiger und im leeren Ergebnis – dieselbe Staffelung
@@ -1224,19 +1224,19 @@ onUnmounted(() => {
             <span
               v-if="patternError"
               v-tip="patternError"
-              class="shrink-0 whitespace-nowrap px-0.5 font-mono text-3xs text-[var(--color-danger)]"
+              class="shrink-0 whitespace-nowrap px-0.5 font-mono text-3xs text-danger"
             >Invalid</span>
             <button
               v-if="term"
               type="button"
-              class="grid h-6 w-6 shrink-0 place-items-center rounded text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+              class="grid h-6 w-6 shrink-0 place-items-center rounded text-muted transition hover:bg-surface-offset hover:text-ink"
               title="Clear"
               aria-label="Clear"
               @click="term = ''"
             >
               <Icon icon="lucide:x" class="h-3.5 w-3.5" />
             </button>
-            <span class="mx-0.5 h-4 w-px shrink-0 bg-[var(--color-border)]" />
+            <span class="mx-0.5 h-4 w-px shrink-0 bg-line" />
             <button
               v-for="o in SEARCH_TOGGLES"
               :key="o.key"
@@ -1244,8 +1244,8 @@ onUnmounted(() => {
               type="button"
               class="grid h-6 w-6 shrink-0 place-items-center rounded transition"
               :class="termOpts[o.key]
-                ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)]'
-                : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]'"
+                ? 'bg-accent text-accent-contrast'
+                : 'text-muted hover:bg-surface-offset hover:text-ink'"
               :aria-label="o.label"
               :aria-pressed="termOpts[o.key]"
               @click="toggleTermOpt(o.key)"
@@ -1261,8 +1261,8 @@ onUnmounted(() => {
             type="button"
             class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-2xs font-semibold transition"
             :class="withNeighbours
-              ? 'border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]'
-              : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]'"
+              ? 'border-accent bg-accent-soft text-accent'
+              : 'border-line text-muted hover:bg-surface-offset hover:text-ink'"
             :aria-pressed="withNeighbours"
             @click="withNeighbours = !withNeighbours"
           >
@@ -1281,16 +1281,16 @@ onUnmounted(() => {
           <!-- Kein Bestand: dann ist das leere Ergebnis keine Aussage ueber das Thema. -->
           <div
             v-if="!files.length"
-            class="rounded-xl border border-dashed border-[var(--color-border)] px-4 py-10 text-center"
+            class="rounded-xl border border-dashed border-line px-4 py-10 text-center"
           >
-            <Icon icon="lucide:braces" class="mx-auto h-6 w-6 text-[var(--color-text-muted)]" />
-            <p class="mt-2 text-sm text-[var(--color-text)]">No classes yet.</p>
-            <p class="mt-1 text-2xs text-[var(--color-text-muted)]">
+            <Icon icon="lucide:braces" class="mx-auto h-6 w-6 text-muted" />
+            <p class="mt-2 text-sm text-ink">No classes yet.</p>
+            <p class="mt-1 text-2xs text-muted">
               Import some Java in the code view first — a topic is collected from what is stored.
             </p>
             <RouterLink
               to="/code"
-              class="mt-3 inline-flex h-8 items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 text-2xs font-semibold text-[var(--color-accent-contrast)]"
+              class="mt-3 inline-flex h-8 items-center gap-1.5 rounded-lg bg-accent px-3 text-2xs font-semibold text-accent-contrast"
             >
               <Icon icon="lucide:arrow-right" class="h-3.5 w-3.5" /> Go to code
             </RouterLink>
@@ -1298,9 +1298,9 @@ onUnmounted(() => {
 
           <!-- Ruhezustand: WAS eine Quelle beitraegt, steht hier einmal – danach sagt es der Chip
                an jedem Treffer. Ohne diese vier Zeilen ist „Named after it" nur eine Ueberschrift. -->
-          <div v-else-if="!applied" class="min-h-0 overflow-y-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-            <p class="text-sm text-[var(--color-text)]">Type a topic above.</p>
-            <p class="mt-1 text-2xs leading-relaxed text-[var(--color-text-muted)]">
+          <div v-else-if="!applied" class="min-h-0 overflow-y-auto rounded-xl border border-line bg-surface-2 p-4">
+            <p class="text-sm text-ink">Type a topic above.</p>
+            <p class="mt-1 text-2xs leading-relaxed text-muted">
               Four sources answer at once, and every hit says which one found it:
             </p>
             <ul class="mt-3 space-y-2">
@@ -1310,17 +1310,17 @@ onUnmounted(() => {
                 { icon: 'lucide:sparkles', label: 'About the topic', hint: 'the class is about this — without containing the word' },
                 { icon: 'lucide:share-2', label: 'Connected to those', hint: 'one relation away, only with Neighbours on' },
               ]" :key="s.label" class="flex gap-2.5">
-                <Icon :icon="s.icon" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
+                <Icon :icon="s.icon" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
                 <span class="min-w-0 text-2xs leading-relaxed">
-                  <span class="font-semibold text-[var(--color-text)]">{{ s.label }}</span>
-                  <span class="text-[var(--color-text-muted)]"> — {{ s.hint }}</span>
+                  <span class="font-semibold text-ink">{{ s.label }}</span>
+                  <span class="text-muted"> — {{ s.hint }}</span>
                 </span>
               </li>
             </ul>
 
             <!-- Die Schalter sind im Ruhezustand die einzige Stelle, an der jemand liest, was sie
                  tun – und vor allem, worauf sie NICHT wirken. -->
-            <p class="mt-3 flex gap-2 text-2xs leading-relaxed text-[var(--color-text-muted)]">
+            <p class="mt-3 flex gap-2 text-2xs leading-relaxed text-muted">
               <Icon icon="lucide:regex" class="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>
                 The three switches in the field decide how the term is read — case, whole word, and
@@ -1329,7 +1329,7 @@ onUnmounted(() => {
             </p>
 
             <template v-if="suggestions.length">
-              <p class="mt-4 font-mono text-3xs uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
+              <p class="mt-4 font-mono text-3xs uppercase tracking-[0.12em] text-muted">
                 Topics in this codebase
               </p>
               <div class="mt-1.5 flex flex-wrap gap-1.5">
@@ -1337,7 +1337,7 @@ onUnmounted(() => {
                   v-for="s in suggestions"
                   :key="s"
                   type="button"
-                  class="rounded-full border border-[var(--color-border)] px-2.5 py-1 font-mono text-2xs text-[var(--color-text-muted)] transition hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
+                  class="rounded-full border border-line px-2.5 py-1 font-mono text-2xs text-muted transition hover:border-accent hover:text-ink"
                   @click="useSuggestion(s)"
                 >{{ s }}</button>
               </div>
@@ -1347,7 +1347,7 @@ onUnmounted(() => {
           <template v-else>
             <!-- Auswahlleiste: die Zahl, die unten am Knopf steht, wird hier gemacht. -->
             <div class="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              <span class="font-mono text-2xs tabular-nums text-[var(--color-text)]">
+              <span class="font-mono text-2xs tabular-nums text-ink">
                 {{ selectedIds.length }} / {{ topic.hits.length }} selected
               </span>
               <div class="ml-auto flex items-center gap-1">
@@ -1359,13 +1359,13 @@ onUnmounted(() => {
                   ]"
                   :key="b.label"
                   type="button"
-                  class="rounded px-1.5 py-0.5 text-2xs text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+                  class="rounded px-1.5 py-0.5 text-2xs text-muted transition hover:bg-surface-offset hover:text-ink"
                   @click="b.fn()"
                 >{{ b.label }}</button>
               </div>
             </div>
 
-            <div class="min-h-0 flex-1 overflow-y-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]">
+            <div class="min-h-0 flex-1 overflow-y-auto rounded-xl border border-line bg-surface-2">
               <BusyState
                 v-if="searching && !topic.hits.length"
                 variant="panel"
@@ -1378,25 +1378,25 @@ onUnmounted(() => {
               <!-- Ein kaputtes Muster ist kein leeres Ergebnis: „nichts gefunden" wäre hier eine
                    Aussage über die Codebasis, und die ist nicht gedeckt. -->
               <div v-else-if="patternError" class="px-4 py-10 text-center">
-                <Icon icon="lucide:regex" class="mx-auto h-6 w-6 text-[var(--color-danger)]" />
-                <p class="mt-2 text-sm text-[var(--color-text)]">That pattern does not parse.</p>
-                <p class="mt-1 font-mono text-3xs leading-relaxed text-[var(--color-danger)]">{{ patternError }}</p>
-                <p class="mt-2 text-2xs text-[var(--color-text-muted)]">
+                <Icon icon="lucide:regex" class="mx-auto h-6 w-6 text-danger" />
+                <p class="mt-2 text-sm text-ink">That pattern does not parse.</p>
+                <p class="mt-1 font-mono text-3xs leading-relaxed text-danger">{{ patternError }}</p>
+                <p class="mt-2 text-2xs text-muted">
                   Fix it, or switch the regex button off to search for the text itself.
                 </p>
               </div>
 
               <div v-else-if="!topic.hits.length" class="px-4 py-10 text-center">
-                <Icon icon="lucide:boxes" class="mx-auto h-6 w-6 text-[var(--color-text-muted)]" />
-                <p class="mt-2 text-sm text-[var(--color-text)]">Nothing on “{{ applied }}”.</p>
-                <p class="mt-1 text-2xs text-[var(--color-text-muted)]">
+                <Icon icon="lucide:boxes" class="mx-auto h-6 w-6 text-muted" />
+                <p class="mt-2 text-sm text-ink">Nothing on “{{ applied }}”.</p>
+                <p class="mt-1 text-2xs text-muted">
                   No class carries the name, mentions it, or is about it. Try a shorter term, or turn
                   Neighbours on once you have a first hit.
                 </p>
                 <!-- Ein aktiver Schalter ist die häufigste Erklärung für ein leeres Ergebnis –
                      und der einzige Teil der Frage, den man beim Lesen der Liste nicht sieht. -->
-                <p v-if="activeToggles.length" class="mt-2 text-2xs text-[var(--color-text-muted)]">
-                  <span class="font-semibold text-[var(--color-text)]">
+                <p v-if="activeToggles.length" class="mt-2 text-2xs text-muted">
+                  <span class="font-semibold text-ink">
                     {{ activeToggles.map((o) => o.label).join(' · ') }}
                   </span>
                   {{ activeToggles.length === 1 ? 'is' : 'are' }} on — turning
@@ -1405,25 +1405,25 @@ onUnmounted(() => {
               </div>
 
               <template v-else>
-                <section v-for="g in groups" :key="g.kind" class="border-b border-[var(--color-border)] last:border-b-0">
+                <section v-for="g in groups" :key="g.kind" class="border-b border-line last:border-b-0">
                   <!-- Die Gruppenzeile ist zugleich der Schalter fuer die ganze Gruppe: „alle
                        Namenstreffer, keine Nachbarn" ist die haeufigste Auswahl ueberhaupt. -->
                   <button
                     v-tip="g.hint"
                     type="button"
-                    class="flex w-full items-center gap-2 bg-[var(--color-surface-offset)]/50 px-3 py-1.5 text-left transition hover:bg-[var(--color-surface-offset)]"
+                    class="flex w-full items-center gap-2 bg-surface-offset/50 px-3 py-1.5 text-left transition hover:bg-surface-offset"
                     @click="toggleGroup(g)"
                   >
                     <Icon
                       :icon="groupState(g) === 'all' ? 'lucide:check-square' : 'lucide:square'"
                       class="h-3.5 w-3.5 shrink-0"
-                      :class="groupState(g) === 'none' ? 'text-[var(--color-text-muted)]' : 'text-[var(--color-accent)]'"
+                      :class="groupState(g) === 'none' ? 'text-muted' : 'text-accent'"
                     />
-                    <Icon :icon="g.icon" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
-                    <span class="font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
+                    <Icon :icon="g.icon" class="h-3.5 w-3.5 shrink-0 text-muted" />
+                    <span class="font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-muted">
                       {{ g.label }}
                     </span>
-                    <span class="ml-auto font-mono text-3xs tabular-nums text-[var(--color-text-muted)]">
+                    <span class="ml-auto font-mono text-3xs tabular-nums text-muted">
                       {{ g.items.length }}
                     </span>
                   </button>
@@ -1436,12 +1436,12 @@ onUnmounted(() => {
                     <li
                       v-for="hit in g.items"
                       :key="hit.fileId"
-                      class="tp-row flex items-start gap-2 border-t border-[var(--color-border)]/50 py-2 pl-2.5 pr-3 transition"
+                      class="tp-row flex items-start gap-2 border-t border-line/50 py-2 pl-2.5 pr-3 transition"
                       :style="methodColorVars(colorByFile.get(hit.fileId))"
                       :class="[
                         selected.has(hit.fileId) ? '' : 'opacity-55',
                         colorByFile.has(hit.fileId) ? 'tp-row--c' : '',
-                        litId === hit.fileId ? 'tp-row--lit' : 'hover:bg-[var(--color-surface-offset)]/40',
+                        litId === hit.fileId ? 'tp-row--lit' : 'hover:bg-surface-offset/40',
                       ]"
                       @mouseenter="hoverHit(hit)"
                       @mouseleave="leaveHits()"
@@ -1456,15 +1456,15 @@ onUnmounted(() => {
                         <Icon
                           :icon="selected.has(hit.fileId) ? 'lucide:check-square' : 'lucide:square'"
                           class="h-4 w-4"
-                          :class="selected.has(hit.fileId) ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'"
+                          :class="selected.has(hit.fileId) ? 'text-accent' : 'text-muted'"
                         />
                       </button>
 
                       <button type="button" class="min-w-0 flex-1 text-left" @click="toggle(hit.fileId)">
-                        <span class="block truncate text-[0.8125rem] font-semibold text-[var(--color-text)]">
+                        <span class="block truncate text-[0.8125rem] font-semibold text-ink">
                           {{ hit.className }}
                         </span>
-                        <span class="block truncate font-mono text-3xs text-[var(--color-text-muted)]">
+                        <span class="block truncate font-mono text-3xs text-muted">
                           {{ hit.package || 'default package' }}
                         </span>
                         <!-- ⚠️ Der GRUND ist die halbe Ansicht: man entscheidet je Zeile, ob sie
@@ -1475,7 +1475,7 @@ onUnmounted(() => {
                           <span
                             v-for="r in hit.reasons"
                             :key="r.kind"
-                            class="inline-flex items-center gap-1 rounded border border-[var(--color-border)] px-1.5 py-px font-mono text-3xs text-[var(--color-text-muted)]"
+                            class="inline-flex items-center gap-1 rounded border border-line px-1.5 py-px font-mono text-3xs text-muted"
                           >
                             <Icon :icon="topicSource(r.kind).icon" class="h-2.5 w-2.5" />
                             {{ r.detail }}<template v-if="r.count > 1"> +{{ r.count - 1 }}</template>
@@ -1486,7 +1486,7 @@ onUnmounted(() => {
                              aus dem Export – eine Schätzung wäre hier wertlos. -->
                         <span
                           v-if="sizeById.get(hit.fileId)"
-                          class="mt-1 block font-mono text-3xs tabular-nums text-[var(--color-text-muted)] opacity-80"
+                          class="mt-1 block font-mono text-3xs tabular-nums text-muted opacity-80"
                         >
                           {{ sizeById.get(hit.fileId).lines }} lines ·
                           {{ formatBytes(sizeById.get(hit.fileId).bytes) }}
@@ -1498,10 +1498,10 @@ onUnmounted(() => {
                              ausgewählt ist – sie steht im Bündeltext nicht drin. -->
                         <button
                           type="button"
-                          class="grid h-5 w-5 place-items-center rounded transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-accent)]"
+                          class="grid h-5 w-5 place-items-center rounded transition hover:bg-surface-offset hover:text-accent"
                           :class="openClass?.fileId === hit.fileId && pane === 'class'
-                            ? 'text-[var(--color-accent)]'
-                            : 'text-[var(--color-text-muted)]'"
+                            ? 'text-accent'
+                            : 'text-muted'"
                           title="Show this class on its own"
                           aria-label="Show this class on its own"
                           @click="showClass(hit)"
@@ -1510,7 +1510,7 @@ onUnmounted(() => {
                         </button>
                         <button
                           type="button"
-                          class="grid h-5 w-5 place-items-center rounded text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-accent)]"
+                          class="grid h-5 w-5 place-items-center rounded text-muted transition hover:bg-surface-offset hover:text-accent"
                           title="Open this class in the code view"
                           aria-label="Open this class in the code view"
                           @click="openInCode(hit)"
@@ -1525,15 +1525,15 @@ onUnmounted(() => {
             </div>
 
             <!-- Was der Bericht NICHT gesehen hat, gehoert unter den Bericht. -->
-            <p v-if="topic.truncated" class="mt-1.5 flex gap-1.5 text-3xs text-[var(--color-text-muted)]">
+            <p v-if="topic.truncated" class="mt-1.5 flex gap-1.5 text-3xs text-muted">
               <Icon icon="lucide:info" class="mt-px h-3 w-3 shrink-0" />
               Showing the strongest {{ MAX_CANDIDATES }} — narrow the topic for the rest.
             </p>
-            <p v-if="codeNote" class="mt-1.5 flex gap-1.5 text-3xs text-[var(--color-text-muted)]">
+            <p v-if="codeNote" class="mt-1.5 flex gap-1.5 text-3xs text-muted">
               <Icon icon="lucide:info" class="mt-px h-3 w-3 shrink-0" />
               {{ codeNote }}
             </p>
-            <p v-if="meaningNote" class="mt-1.5 flex gap-1.5 text-3xs text-[var(--color-text-muted)]">
+            <p v-if="meaningNote" class="mt-1.5 flex gap-1.5 text-3xs text-muted">
               <Icon icon="lucide:sparkles" class="mt-px h-3 w-3 shrink-0" />
               {{ meaningNote }}
             </p>
@@ -1548,12 +1548,12 @@ onUnmounted(() => {
              von links unterwegs ist, wird hier eingefangen (`catchHover`) und damit gehalten.
              Wer über den Kopf oder die Suchleiste einfährt, meint dieselbe Klasse. -->
         <section
-          class="flex min-h-0 flex-1 flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]"
+          class="flex min-h-0 flex-1 flex-col rounded-xl border border-line bg-surface-2"
           @mouseenter="catchHover()"
         >
-          <header class="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--color-border)] px-4 py-2.5">
+          <header class="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-4 py-2.5">
             <template v-if="openClass">
-              <div class="flex shrink-0 items-center gap-0.5 rounded-lg border border-[var(--color-border)] p-0.5">
+              <div class="flex shrink-0 items-center gap-0.5 rounded-lg border border-line p-0.5">
                 <button
                   v-for="p in [
                     { id: 'bundle', label: 'Bundle', icon: 'lucide:clipboard-copy' },
@@ -1563,8 +1563,8 @@ onUnmounted(() => {
                   type="button"
                   class="inline-flex h-6 items-center gap-1 rounded px-2 text-2xs font-semibold transition"
                   :class="pane === p.id
-                    ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)]'
-                    : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]'"
+                    ? 'bg-accent text-accent-contrast'
+                    : 'text-muted hover:bg-surface-offset hover:text-ink'"
                   :aria-pressed="pane === p.id"
                   @click="pane = p.id"
                 >
@@ -1573,14 +1573,14 @@ onUnmounted(() => {
                 </button>
               </div>
             </template>
-            <Icon v-else icon="lucide:clipboard-copy" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+            <Icon v-else icon="lucide:clipboard-copy" class="h-4 w-4 shrink-0 text-accent" />
 
-            <h2 v-if="pane === 'bundle'" class="min-w-0 truncate text-[0.8125rem] font-semibold text-[var(--color-text)]">
+            <h2 v-if="pane === 'bundle'" class="min-w-0 truncate text-[0.8125rem] font-semibold text-ink">
               What lands in your clipboard
             </h2>
             <h2 v-else class="flex min-w-0 items-baseline gap-2">
-              <span class="truncate text-[0.8125rem] font-semibold text-[var(--color-text)]">{{ openClass?.className }}</span>
-              <span class="truncate font-mono text-3xs text-[var(--color-text-muted)]">
+              <span class="truncate text-[0.8125rem] font-semibold text-ink">{{ openClass?.className }}</span>
+              <span class="truncate font-mono text-3xs text-muted">
                 {{ openClass?.package || 'default package' }}
               </span>
             </h2>
@@ -1598,20 +1598,20 @@ onUnmounted(() => {
               @click="releaseHold()"
             >
               <span class="tp-held-dot h-1.5 w-1.5 shrink-0 rounded-full" />
-              <span class="min-w-0 truncate font-semibold text-[var(--color-text)]">{{ heldHit.className }}</span>
-              <Icon icon="lucide:x" class="h-3 w-3 shrink-0 text-[var(--color-text-muted)]" />
+              <span class="min-w-0 truncate font-semibold text-ink">{{ heldHit.className }}</span>
+              <Icon icon="lucide:x" class="h-3 w-3 shrink-0 text-muted" />
             </button>
 
             <span
               v-if="pane === 'bundle' && bundle?.classes"
               v-tip="'The token count is an estimate — roughly 3.5 characters per token.'"
-              class="ml-auto shrink-0 font-mono text-2xs tabular-nums text-[var(--color-text-muted)]"
+              class="ml-auto shrink-0 font-mono text-2xs tabular-nums text-muted"
             >
               {{ bundle.classes }} classes · {{ bundle.packages }} packages · {{ sizeLabel }} · {{ tokenLabel }}
             </span>
             <span
               v-else-if="pane === 'class' && openClass?.totalLines"
-              class="ml-auto shrink-0 font-mono text-2xs tabular-nums text-[var(--color-text-muted)]"
+              class="ml-auto shrink-0 font-mono text-2xs tabular-nums text-muted"
             >
               {{ openClass.totalLines }} lines
             </span>
@@ -1622,16 +1622,16 @@ onUnmounted(() => {
                sitzt sie hier und nicht dort. -->
           <div
             v-show="pane === 'bundle' && bundle?.text"
-            class="flex w-full min-w-0 flex-wrap items-center gap-0.5 border-b border-[var(--color-border)] px-4 py-1.5"
+            class="flex w-full min-w-0 flex-wrap items-center gap-0.5 border-b border-line px-4 py-1.5"
           >
             <div
-              class="flex w-full min-w-0 flex-wrap items-center gap-0.5 rounded-lg border bg-[var(--color-surface)] px-1.5 py-0.5 transition"
+              class="flex w-full min-w-0 flex-wrap items-center gap-0.5 rounded-lg border bg-surface px-1.5 py-0.5 transition"
               :class="[
-                bundleFailed ? 'border-[var(--color-danger)]' : 'border-[var(--color-border)] focus-within:border-[var(--color-accent)]',
+                bundleFailed ? 'border-danger' : 'border-line focus-within:border-accent',
                 { 'search-picked': bundlePicked },
               ]"
             >
-              <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
+              <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-muted" />
               <input
                 ref="bundleInput"
                 :value="bundleQuery"
@@ -1639,7 +1639,7 @@ onUnmounted(() => {
                 placeholder="Search across every selected class…"
                 aria-label="Search the bundle"
                 spellcheck="false"
-                class="min-w-[8rem] flex-1 bg-transparent py-0.5 text-xs text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
+                class="min-w-[8rem] flex-1 bg-transparent py-0.5 text-xs text-ink outline-none placeholder:text-muted"
                 @input="setBundleQuery($event.target.value)"
                 @keydown.enter.prevent="stepBundleMatch($event.shiftKey ? -1 : 1)"
                 @keydown.esc.prevent="setBundleQuery('')"
@@ -1648,7 +1648,7 @@ onUnmounted(() => {
                 v-if="bundleCounter"
                 :title="bundleCounterTitle"
                 class="shrink-0 whitespace-nowrap px-0.5 font-mono text-3xs tabular-nums"
-                :class="bundleFailed ? 'text-[var(--color-danger)]' : 'text-[var(--color-text-muted)]'"
+                :class="bundleFailed ? 'text-danger' : 'text-muted'"
               >{{ bundleCounter }}</span>
               <button
                 v-for="o in SEARCH_TOGGLES"
@@ -1656,15 +1656,15 @@ onUnmounted(() => {
                 type="button"
                 class="grid h-5 w-5 shrink-0 place-items-center rounded transition"
                 :class="bundleOpts[o.key]
-                  ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)]'
-                  : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]'"
+                  ? 'bg-accent text-accent-contrast'
+                  : 'text-muted hover:bg-surface-offset hover:text-ink'"
                 :title="o.title"
                 :aria-pressed="bundleOpts[o.key]"
                 @click="toggleBundleOpt(o.key)"
               >
                 <Icon :icon="o.icon" class="h-3 w-3" />
               </button>
-              <span class="mx-0.5 h-3.5 w-px shrink-0 bg-[var(--color-border)]" />
+              <span class="mx-0.5 h-3.5 w-px shrink-0 bg-line" />
               <button
                 v-for="n in [
                   { icon: 'lucide:chevron-up', delta: -1, title: 'Previous match (Shift+Enter)' },
@@ -1672,7 +1672,7 @@ onUnmounted(() => {
                 ]"
                 :key="n.delta"
                 type="button"
-                class="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-30"
+                class="grid h-5 w-5 shrink-0 place-items-center rounded text-muted transition hover:bg-surface-offset hover:text-ink disabled:opacity-30"
                 :disabled="!bundleMatches.length"
                 :title="n.title"
                 @click="stepBundleMatch(n.delta)"
@@ -1700,9 +1700,9 @@ onUnmounted(() => {
 
             <div v-else-if="!selectedIds.length" class="grid h-full place-items-center px-4 text-center">
               <div>
-                <Icon icon="lucide:clipboard-copy" class="mx-auto h-6 w-6 text-[var(--color-text-muted)]" />
-                <p class="mt-2 text-sm text-[var(--color-text)]">Nothing picked.</p>
-                <p class="mt-1 text-2xs text-[var(--color-text-muted)]">
+                <Icon icon="lucide:clipboard-copy" class="mx-auto h-6 w-6 text-muted" />
+                <p class="mt-2 text-sm text-ink">Nothing picked.</p>
+                <p class="mt-1 text-2xs text-muted">
                   Tick the classes on the left — their full source shows up here, exactly as it will
                   be copied. Hovering a class jumps to its part.
                 </p>
@@ -1716,7 +1716,7 @@ onUnmounted(() => {
               </p>
               <!-- Was oberhalb des Fensters liegt, wird angeschrieben – sonst liest sich der obere
                    Rand wie der Anfang des Textes. -->
-              <p v-if="hiddenBefore" class="mb-1 font-mono text-3xs text-[var(--color-text-muted)] opacity-70">
+              <p v-if="hiddenBefore" class="mb-1 font-mono text-3xs text-muted opacity-70">
                 ↑ {{ hiddenBefore.toLocaleString('en-US') }} lines above — all of them are copied.
               </p>
               <!-- Bewusst ohne Syntax-Highlighting: die Frage ist „was landet in der Ablage?",
@@ -1725,11 +1725,11 @@ onUnmounted(() => {
                    Source-Tab und im Kanten-Panel (`mouseup`, damit auch eine gezogene Auswahl
                    zählt und nicht nur der Doppelklick). -->
               <pre
-                class="topic-preview text-2xs leading-relaxed text-[var(--color-text-muted)]"
+                class="topic-preview text-2xs leading-relaxed text-muted"
                 v-html="windowHtml"
                 @mouseup="pickWordInBundle"
               />
-              <p v-if="hiddenAfter" class="mt-1 font-mono text-3xs text-[var(--color-text-muted)] opacity-70">
+              <p v-if="hiddenAfter" class="mt-1 font-mono text-3xs text-muted opacity-70">
                 ↓ {{ hiddenAfter.toLocaleString('en-US') }} lines below — all of them are copied.
               </p>
             </template>
@@ -1750,19 +1750,19 @@ onUnmounted(() => {
             </p>
             <template v-else-if="openClass?.html">
               <div class="topic-class edge-code" v-html="openClass.html" />
-              <p v-if="openClass.truncated" class="mt-2 font-mono text-3xs text-[var(--color-text-muted)]">
+              <p v-if="openClass.truncated" class="mt-2 font-mono text-3xs text-muted">
                 Shown up to the cap — open it in the code view for the rest.
               </p>
             </template>
           </div>
 
-          <footer class="flex flex-wrap items-center gap-2 border-t border-[var(--color-border)] px-4 py-3">
-            <p v-if="copyFailed" class="w-full text-2xs text-[var(--color-danger)]">
+          <footer class="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3">
+            <p v-if="copyFailed" class="w-full text-2xs text-danger">
               The clipboard refused the text — use Download instead.
             </p>
             <button
               type="button"
-              class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 text-[0.8125rem] font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-40"
+              class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-[0.8125rem] font-medium text-muted transition hover:bg-surface-offset hover:text-ink disabled:opacity-40"
               :disabled="!bundle?.text"
               title="Save the bundle as a .txt file"
               @click="downloadBundle"
@@ -1772,10 +1772,10 @@ onUnmounted(() => {
             </button>
             <button
               type="button"
-              class="ml-auto inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-[0.8125rem] font-semibold shadow-sm transition disabled:opacity-40"
+              class="ml-auto inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-[0.8125rem] font-semibold elev-1 transition disabled:opacity-40"
               :class="copied
-                ? 'bg-[var(--color-success)] text-[var(--color-accent-contrast)]'
-                : 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] hover:bg-[var(--color-accent-hover)]'"
+                ? 'bg-success text-accent-contrast'
+                : 'bg-accent text-accent-contrast hover:bg-accent-hover'"
               :disabled="!bundle?.text"
               @click="copyBundle"
             >

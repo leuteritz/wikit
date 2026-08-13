@@ -27,6 +27,8 @@ import JavaBundlePanel from '../components/java/JavaBundlePanel.vue'
 import JavaExportModal from '../components/java/JavaExportModal.vue'
 import JavaQueueModal from '../components/java/JavaQueueModal.vue'
 import JavaDetectedClasses from '../components/java/JavaDetectedClasses.vue'
+import ConfirmDialog from '../components/ui/ConfirmDialog.vue'
+import Modal from '../components/ui/Modal.vue'
 import { Icon } from '../lib/icons.js'
 import { detectJavaClasses } from '../lib/javaDetect.js'
 import { formatEta, formatDuration } from '../lib/format.js'
@@ -1247,7 +1249,7 @@ function onResetPanels() {
 
 <template>
   <div
-    class="relative flex h-full flex-col text-[var(--color-text)]"
+    class="relative flex h-full flex-col text-ink"
     @dragenter="onDragEnter"
     @dragover="onDragOver"
     @dragleave="onDragLeave"
@@ -1268,10 +1270,10 @@ function onResetPanels() {
     </Transition>
 
     <!-- ── Command-Bar: eine Zeile, damit die Arbeitsflaeche darunter den Raum bekommt ── -->
-    <header class="shrink-0 border-b border-[var(--color-border)] px-5 py-2.5">
+    <header class="shrink-0 border-b border-line px-5 py-2.5">
       <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div class="flex min-w-0 items-center gap-2.5">
-          <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+          <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
             <Icon icon="lucide:git-fork" class="h-[18px] w-[18px]" />
           </span>
           <h1 class="truncate font-mono text-[0.9375rem] font-semibold tracking-tight">Code Analysis</h1>
@@ -1288,18 +1290,18 @@ function onResetPanels() {
         -->
 
         <!-- Live-Metriken: monospace + gedaempft. Zahlen tragen die Information, nicht die Farbe. -->
-        <div v-if="files.length" class="hidden items-center gap-2.5 font-mono text-2xs text-[var(--color-text-muted)] md:flex">
+        <div v-if="files.length" class="hidden items-center gap-2.5 font-mono text-2xs text-muted md:flex">
           <span v-for="lang in LANGUAGES" :key="lang.id" class="inline-flex items-center gap-1.5">
-            <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />{{ lang.label }}
+            <span class="h-1.5 w-1.5 rounded-full bg-accent" />{{ lang.label }}
           </span>
           <span class="opacity-40">·</span>
-          <span><b class="font-semibold tabular-nums text-[var(--color-text)]">{{ classCount }}</b> classes</span>
+          <span><b class="font-semibold tabular-nums text-ink">{{ classCount }}</b> classes</span>
           <span class="opacity-40">·</span>
-          <span><b class="font-semibold tabular-nums text-[var(--color-text)]">{{ packageCount }}</b> packages</span>
+          <span><b class="font-semibold tabular-nums text-ink">{{ packageCount }}</b> packages</span>
           <span class="opacity-40">·</span>
           <span class="inline-flex items-center gap-1">
-            <Icon icon="lucide:sparkles" class="h-3 w-3 text-[var(--color-accent)]" />
-            <b class="font-semibold tabular-nums text-[var(--color-text)]">{{ analyzedCount }}</b>/{{ classCount }} analyzed
+            <Icon icon="lucide:sparkles" class="h-3 w-3 text-accent" />
+            <b class="font-semibold tabular-nums text-ink">{{ analyzedCount }}</b>/{{ classCount }} analyzed
           </span>
         </div>
 
@@ -1311,8 +1313,8 @@ function onResetPanels() {
             type="button"
             class="action-btn relative isolate inline-flex h-9 items-center gap-2 overflow-hidden rounded-lg border px-2.5 text-[0.8125rem] font-medium transition"
             :class="queueActive
-              ? 'border-[color-mix(in_srgb,var(--color-lavender)_40%,transparent)] bg-[var(--color-lavender-soft)] text-[var(--color-lavender)]'
-              : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]'"
+              ? 'border-[color-mix(in_srgb,var(--color-lavender)_40%,transparent)] bg-lavender-soft text-lavender'
+              : 'border-line text-muted hover:bg-surface-offset hover:text-ink'"
             v-tip="runningQueueJob
               ? { title: `Analyzing ${runningQueueJob.className}`, hint: `${finishedQueueCount} of ${queueSummary?.total ?? 0} classes done${queueEta ? ` · ${queueEta} remaining` : ''}` }
               : { title: 'AI queue', hint: 'What is queued, running or finished — cancel single jobs or all of them.' }"
@@ -1342,7 +1344,7 @@ function onResetPanels() {
           <button
             v-if="files.length"
             type="button"
-            class="action-btn inline-flex h-9 items-center gap-1.5 rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_35%,transparent)] bg-[var(--color-accent-soft)] px-2.5 text-[0.8125rem] font-semibold text-[var(--color-accent)] transition hover:bg-[color-mix(in_srgb,var(--color-accent)_22%,transparent)] disabled:cursor-not-allowed disabled:opacity-50"
+            class="action-btn inline-flex h-9 items-center gap-1.5 rounded-lg border border-[color-mix(in_srgb,var(--color-accent)_35%,transparent)] bg-accent-soft px-2.5 text-[0.8125rem] font-semibold text-accent transition hover:bg-[color-mix(in_srgb,var(--color-accent)_22%,transparent)] disabled:cursor-not-allowed disabled:opacity-50"
             :disabled="analyzingAll"
             v-tip="{ title: 'Run AI on everything new', hint: 'Queues every class and method that has no summary yet — runs in the background, you can keep working.' }"
             @click="analyzeAll"
@@ -1361,7 +1363,7 @@ function onResetPanels() {
                antwortet auf eine gezogene Datei, indem er aufleuchtet (`is-armed`). -->
           <button
             type="button"
-            class="add-btn action-btn inline-flex h-9 items-center gap-1.5 rounded-lg px-3.5 text-[0.8125rem] font-semibold text-[var(--color-accent-contrast)]"
+            class="add-btn action-btn inline-flex h-9 items-center gap-1.5 rounded-lg px-3.5 text-[0.8125rem] font-semibold text-accent-contrast"
             :class="{ 'is-armed': dropActive }"
             v-tip="{ title: 'Add code', hint: 'Paste sources — or drop .java files anywhere on this view. Several classes at once are split automatically.' }"
             @click="showNew = true"
@@ -1374,7 +1376,7 @@ function onResetPanels() {
                erst oeffnen musste, um zu sehen, was es ueberhaupt gibt. Sichtbar, aber als ein
                Element gesetzt (ein Rahmen, Haarlinien dazwischen) – drei einzelne Knoepfe neben
                „Run AI" und „Add code" haetten sechs gleichrangige Bedienelemente ergeben. -->
-          <div class="tool-group inline-flex h-9 items-stretch overflow-hidden rounded-lg border border-[var(--color-border)]">
+          <div class="tool-group inline-flex h-9 items-stretch overflow-hidden rounded-lg border border-line">
             <!-- Laeuft es, traegt der Knopf seinen Zustand als Text: der Lauf dauert bei grossen
                  Codebasen (erster Lauf, kalter Parse-Cache) deutlich laenger als ein Klick-Feedback. -->
             <button
@@ -1452,143 +1454,141 @@ function onResetPanels() {
     </header>
 
     <!-- Neu-Analyse als Modal (ausgeloest vom Primaerbutton der Command-Bar). -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div
-          v-if="showNew"
-          class="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 backdrop-blur-sm"
-          @click.self="showNew = false"
-        >
-          <!--
-            Feste Modalhoehe (Header / scrollender Body / verankerter Footer). Damit bleibt der
-            Analyze-Button auch bei 500 erkannten Klassen an derselben Stelle sichtbar – frueher
-            schob ihn die Chip-Liste aus dem Viewport.
-          -->
-          <section
-            class="flex max-h-[min(88vh,860px)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)] shadow-2xl"
+    <!--
+      Feste Modalhoehe (Header / scrollender Body / verankerter Footer). Damit bleibt der
+      Analyze-Button auch bei 500 erkannten Klassen an derselben Stelle sichtbar – frueher
+      schob ihn die Chip-Liste aus dem Viewport.
+
+      ⚠️ `close-on-escape` bleibt AUS: Escape hat in dieser Ansicht eine Vorrangordnung
+      (s. onKeydown) – dieses Modal schliesst nur, wenn kein Konflikt-Dialog darueber liegt.
+    -->
+    <Modal
+      :open="showNew"
+      size="wide"
+      max-height="max-h-[min(88vh,860px)]"
+      elevation="elev-4"
+      label="Add code"
+      @close="showNew = false"
+    >
+      <header class="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-3">
+        <h2 class="flex items-center gap-2 text-base font-bold text-ink">
+          <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
+            <Icon icon="lucide:sparkles" class="h-[18px] w-[18px]" />
+          </span>
+          Analyze code
+        </h2>
+        <!-- Eingabemodus: Code einfuegen vs. .java-Datei(en) hochladen (beide fuellen `source`). -->
+        <div class="ml-auto inline-flex rounded-lg border border-line bg-surface p-0.5 text-xs">
+          <button
+            type="button"
+            class="inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-medium transition"
+            :class="inputMode === 'paste' ? 'bg-accent text-accent-contrast elev-1' : 'text-muted hover:text-ink'"
+            @click="inputMode = 'paste'"
           >
-            <header class="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">
-              <h2 class="flex items-center gap-2 text-base font-bold text-[var(--color-text)]">
-                <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
-                  <Icon icon="lucide:sparkles" class="h-[18px] w-[18px]" />
-                </span>
-                Analyze code
-              </h2>
-              <!-- Eingabemodus: Code einfuegen vs. .java-Datei(en) hochladen (beide fuellen `source`). -->
-              <div class="ml-auto inline-flex rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-0.5 text-xs">
-                <button
-                  type="button"
-                  class="inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-medium transition"
-                  :class="inputMode === 'paste' ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] shadow-sm' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
-                  @click="inputMode = 'paste'"
-                >
-                  <Icon icon="lucide:code-2" class="h-3.5 w-3.5" />
-                  Paste code
-                </button>
-                <button
-                  type="button"
-                  class="inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-medium transition"
-                  :class="inputMode === 'file' ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] shadow-sm' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
-                  @click="inputMode = 'file'"
-                >
-                  <Icon icon="lucide:upload" class="h-3.5 w-3.5" />
-                  Upload file
-                </button>
-              </div>
-              <!-- Waehrend eines Laufs ist das kein Abbrechen, sondern ein Wegstellen: der Import
-                   laeuft weiter, die Sidebar-Karte traegt ihn sichtbar. Icon + Titel
-                   sagen das auch – ein "×" an dieser Stelle laese "abbrechen" erwarten. -->
-              <button
-                type="button"
-                class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
-                :title="analyzing ? 'Minimize – the run keeps going' : 'Close'"
-                :aria-label="analyzing ? 'Minimize' : 'Close'"
-                @click="showNew = false"
-              >
-                <Icon :icon="analyzing ? 'lucide:minimize-2' : 'lucide:x'" class="h-5 w-5" />
-              </button>
-            </header>
-
-            <!-- Laufender Durchgang: der Editor weicht der Fortschrittsanzeige. Bei 150.000 Zeilen
-                 laeuft dieser eine Request minutenlang – „wie weit" und „wie lange noch" sind dann
-                 die einzigen Fragen, die zaehlen. -->
-            <!-- Ring, Phasenkette und Zeiten stehen in `ActivityProgress` – derselben Komponente,
-                 die auch das Detailfenster der Sidebar-Karte zeigt. Zwei Abschriften waeren zwei
-                 Gelegenheiten, verschiedene Prozentzahlen ueber denselben Lauf zu behaupten. -->
-            <ActivityProgress v-if="analyzing && progress">
-              <template #note>You can close this – the run continues and stays visible in the sidebar.</template>
-            </ActivityProgress>
-
-            <!-- Arbeitsflaeche: ab lg zweispaltig und in sich scrollend, darunter gestapelt. -->
-            <div v-else class="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_300px] lg:overflow-hidden">
-              <div class="flex min-h-0 min-w-0 flex-col gap-2">
-                <label
-                  v-if="inputMode === 'file'"
-                  class="flex shrink-0 cursor-pointer items-center gap-2 rounded-xl border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 py-2 text-xs text-[var(--color-text-muted)] transition hover:border-[var(--color-accent)] hover:bg-[var(--color-surface-offset)]"
-                >
-                  <Icon icon="lucide:file-code" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
-                  <span v-if="filename" class="truncate font-mono text-[var(--color-text)]">{{ filename }}</span>
-                  <span v-else>Choose .java file(s) – multiple files are merged and split again by the parser.</span>
-                  <input type="file" accept=".java" multiple class="hidden" @change="onFile" />
-                </label>
-                <div class="h-56 shrink-0 lg:h-auto lg:min-h-0 lg:flex-1">
-                  <JavaCodeEditor v-model="source" />
-                </div>
-                <!-- Live-Vorschau der erkannten Klassen: eigener Scroller, feste Deckelung. -->
-                <JavaDetectedClasses :classes="detectedClasses" class="shrink-0" />
-              </div>
-
-              <aside class="flex min-h-0 min-w-0 flex-col gap-3">
-                <!-- Kacheln erst, wenn es etwas zu zaehlen gibt – vier Nullen sagen nichts. -->
-                <div v-if="sourceStats" class="grid shrink-0 grid-cols-2 gap-2">
-                  <div v-for="s in inputTiles" :key="s.label" class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-2">
-                    <div class="font-mono text-[1.0625rem] font-semibold leading-none tabular-nums text-[var(--color-text)]">{{ s.value }}</div>
-                    <div class="mt-1.5 text-3xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">{{ s.label }}</div>
-                  </div>
-                </div>
-                <label class="flex min-h-0 flex-1 flex-col">
-                  <span class="mb-1 block text-2xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Project context (optional)</span>
-                  <textarea
-                    v-model="userContext"
-                    spellcheck="false"
-                    placeholder="e.g. Windchill background, module purpose… – fed into every AI prompt."
-                    class="min-h-[6rem] w-full flex-1 resize-none rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2.5 text-xs text-[var(--color-text)] outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
-                  />
-                </label>
-              </aside>
-            </div>
-
-            <!-- Footer: verankert, traegt die Primaeraktion. Scrollt nie weg. -->
-            <footer class="flex shrink-0 flex-wrap items-center gap-3 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
-              <p v-if="error" class="min-w-0 flex-1 text-xs text-[var(--color-danger)]">{{ error }}</p>
-              <p v-else class="min-w-0 flex-1 font-mono text-2xs text-[var(--color-text-muted)]">
-                {{ sourceStats ? 'Parsed server-side – every type becomes its own class.' : 'Paste one or many Java types – they are split automatically.' }}
-              </p>
-              <span class="hidden shrink-0 items-center gap-1 text-2xs text-[var(--color-text-muted)] sm:inline-flex">
-                <kbd class="kbd">Ctrl</kbd><span class="opacity-50">+</span><kbd class="kbd">↵</kbd>
-              </span>
-              <button
-                type="button"
-                class="action-btn inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
-                @click="showNew = false"
-              >
-                <Icon v-if="analyzing" icon="lucide:minimize-2" class="h-4 w-4" />
-                {{ analyzing ? 'Run in background' : 'Cancel' }}
-              </button>
-              <button
-                type="button"
-                class="action-btn inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-[var(--color-accent)] px-6 text-sm font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
-                :disabled="analyzing || !source.trim()"
-                @click="analyze"
-              >
-                <Icon :icon="analyzing ? 'lucide:loader-2' : 'lucide:sparkles'" class="h-4 w-4" :class="analyzing ? 'animate-spin' : ''" />
-                {{ analyzing ? 'Analyzing…' : detectedClasses.length ? `Analyze ${detectedClasses.length} class(es)` : 'Analyze' }}
-              </button>
-            </footer>
-          </section>
+            <Icon icon="lucide:code-2" class="h-3.5 w-3.5" />
+            Paste code
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-medium transition"
+            :class="inputMode === 'file' ? 'bg-accent text-accent-contrast elev-1' : 'text-muted hover:text-ink'"
+            @click="inputMode = 'file'"
+          >
+            <Icon icon="lucide:upload" class="h-3.5 w-3.5" />
+            Upload file
+          </button>
         </div>
-      </Transition>
-    </Teleport>
+        <!-- Waehrend eines Laufs ist das kein Abbrechen, sondern ein Wegstellen: der Import
+             laeuft weiter, die Sidebar-Karte traegt ihn sichtbar. Icon + Titel
+             sagen das auch – ein "×" an dieser Stelle laese "abbrechen" erwarten. -->
+        <button
+          type="button"
+          class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-muted transition hover:bg-surface-offset hover:text-ink"
+          :title="analyzing ? 'Minimize – the run keeps going' : 'Close'"
+          :aria-label="analyzing ? 'Minimize' : 'Close'"
+          @click="showNew = false"
+        >
+          <Icon :icon="analyzing ? 'lucide:minimize-2' : 'lucide:x'" class="h-5 w-5" />
+        </button>
+      </header>
+
+      <!-- Laufender Durchgang: der Editor weicht der Fortschrittsanzeige. Bei 150.000 Zeilen
+           laeuft dieser eine Request minutenlang – „wie weit" und „wie lange noch" sind dann
+           die einzigen Fragen, die zaehlen. -->
+      <!-- Ring, Phasenkette und Zeiten stehen in `ActivityProgress` – derselben Komponente,
+           die auch das Detailfenster der Sidebar-Karte zeigt. Zwei Abschriften waeren zwei
+           Gelegenheiten, verschiedene Prozentzahlen ueber denselben Lauf zu behaupten. -->
+      <ActivityProgress v-if="analyzing && progress">
+        <template #note>You can close this – the run continues and stays visible in the sidebar.</template>
+      </ActivityProgress>
+
+      <!-- Arbeitsflaeche: ab lg zweispaltig und in sich scrollend, darunter gestapelt. -->
+      <div v-else class="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_300px] lg:overflow-hidden">
+        <div class="flex min-h-0 min-w-0 flex-col gap-2">
+          <label
+            v-if="inputMode === 'file'"
+            class="flex shrink-0 cursor-pointer items-center gap-2 rounded-xl border border-dashed border-line-strong bg-surface px-3 py-2 text-xs text-muted transition hover:border-accent hover:bg-surface-offset"
+          >
+            <Icon icon="lucide:file-code" class="h-4 w-4 shrink-0 text-accent" />
+            <span v-if="filename" class="truncate font-mono text-ink">{{ filename }}</span>
+            <span v-else>Choose .java file(s) – multiple files are merged and split again by the parser.</span>
+            <input type="file" accept=".java" multiple class="hidden" @change="onFile" />
+          </label>
+          <div class="h-56 shrink-0 lg:h-auto lg:min-h-0 lg:flex-1">
+            <JavaCodeEditor v-model="source" />
+          </div>
+          <!-- Live-Vorschau der erkannten Klassen: eigener Scroller, feste Deckelung. -->
+          <JavaDetectedClasses :classes="detectedClasses" class="shrink-0" />
+        </div>
+
+        <aside class="flex min-h-0 min-w-0 flex-col gap-3">
+          <!-- Kacheln erst, wenn es etwas zu zaehlen gibt – vier Nullen sagen nichts. -->
+          <div v-if="sourceStats" class="grid shrink-0 grid-cols-2 gap-2">
+            <div v-for="s in inputTiles" :key="s.label" class="rounded-xl border border-line bg-surface px-2.5 py-2">
+              <div class="font-mono text-[1.0625rem] font-semibold leading-none tabular-nums text-ink">{{ s.value }}</div>
+              <div class="mt-1.5 text-3xs font-medium uppercase tracking-wide text-muted">{{ s.label }}</div>
+            </div>
+          </div>
+          <label class="flex min-h-0 flex-1 flex-col">
+            <span class="mb-1 block text-2xs font-semibold uppercase tracking-wide text-muted">Project context (optional)</span>
+            <textarea
+              v-model="userContext"
+              spellcheck="false"
+              placeholder="e.g. Windchill background, module purpose… – fed into every AI prompt."
+              class="min-h-[6rem] w-full flex-1 resize-none rounded-xl border border-line bg-surface p-2.5 text-xs text-ink outline-none transition focus:border-accent focus:ring-2 focus:ring-accent-soft"
+            />
+          </label>
+        </aside>
+      </div>
+
+      <!-- Footer: verankert, traegt die Primaeraktion. Scrollt nie weg. -->
+      <footer class="flex shrink-0 flex-wrap items-center gap-3 border-t border-line bg-surface px-4 py-3">
+        <p v-if="error" class="min-w-0 flex-1 text-xs text-danger">{{ error }}</p>
+        <p v-else class="min-w-0 flex-1 font-mono text-2xs text-muted">
+          {{ sourceStats ? 'Parsed server-side – every type becomes its own class.' : 'Paste one or many Java types – they are split automatically.' }}
+        </p>
+        <span class="hidden shrink-0 items-center gap-1 text-2xs text-muted sm:inline-flex">
+          <kbd class="kbd">Ctrl</kbd><span class="opacity-50">+</span><kbd class="kbd">↵</kbd>
+        </span>
+        <button
+          type="button"
+          class="action-btn inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-muted transition hover:bg-surface-offset hover:text-ink"
+          @click="showNew = false"
+        >
+          <Icon v-if="analyzing" icon="lucide:minimize-2" class="h-4 w-4" />
+          {{ analyzing ? 'Run in background' : 'Cancel' }}
+        </button>
+        <button
+          type="button"
+          class="action-btn inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-accent px-6 text-sm font-semibold text-accent-contrast elev-1 transition hover:bg-accent-hover disabled:opacity-50"
+          :disabled="analyzing || !source.trim()"
+          @click="analyze"
+        >
+          <Icon :icon="analyzing ? 'lucide:loader-2' : 'lucide:sparkles'" class="h-4 w-4" :class="analyzing ? 'animate-spin' : ''" />
+          {{ analyzing ? 'Analyzing…' : detectedClasses.length ? `Analyze ${detectedClasses.length} class(es)` : 'Analyze' }}
+        </button>
+      </footer>
+    </Modal>
 
     <!-- 3-Spalten-Layout (ab lg per Drag verschiebbar; darunter einspaltig gestapelt). -->
     <!-- `panel-grid` animiert die Spaltenbreiten – aber NUR, wenn nicht gezogen wird: waehrend
@@ -1600,8 +1600,8 @@ function onResetPanels() {
       :style="isWide ? { gridTemplateColumns: gridTemplate } : null"
     >
       <!-- Spalte 1: Suche + Package-Tree -->
-      <section class="flex min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]">
-        <div class="relative z-20 shrink-0 border-b border-[var(--color-border)] p-2">
+      <section class="flex min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-surface-2">
+        <div class="relative z-20 shrink-0 border-b border-line p-2">
           <!-- DIE Suche der Ansicht: sie filtert diesen Baum, stellt den Graphen auf die Treffer
                und markiert sie dort. Im Graphen stand dafuer frueher ein zweites Feld – zwei
                Eingaben fuer dieselbe Frage, von denen man die richtige erst kennen musste.
@@ -1609,7 +1609,7 @@ function onResetPanels() {
                ihm ein Sechstel der Breite – ausgerechnet ein Knopf, der waehrend einer Suche
                deaktiviert ist. Gefaltet wird jetzt am Ordner selbst. -->
           <div class="relative">
-            <Icon icon="lucide:search" class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]" />
+            <Icon icon="lucide:search" class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
             <input
               ref="filterInput"
               v-model="search"
@@ -1617,7 +1617,7 @@ function onResetPanels() {
               spellcheck="false"
               placeholder="Search classes…  /"
               :title="GRAPH_QUERY_HELP"
-              class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pl-8 pr-7 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
+              class="w-full rounded-lg border border-line bg-surface py-2 pl-8 pr-7 text-sm text-ink outline-none transition focus:border-accent focus:ring-2 focus:ring-accent-soft"
               @focus="searchFocused = true"
               @blur="searchFocused = false"
               @keydown.enter.prevent="stepMatch($event.shiftKey ? -1 : 1)"
@@ -1626,7 +1626,7 @@ function onResetPanels() {
             <button
               v-if="search"
               type="button"
-              class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
+              class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted transition hover:text-ink"
               title="Clear search (Esc)"
               @click="search = ''"
             >
@@ -1638,23 +1638,23 @@ function onResetPanels() {
                Fluss darueber: sonst rutschte er bei jedem Klick ins Feld um ihre Hoehe nach unten. -->
           <div
             v-if="searchFocused && !search"
-            class="absolute left-2 right-2 top-full z-30 flex flex-wrap items-center gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1.5 shadow-lg"
+            class="absolute left-2 right-2 top-full z-30 flex flex-wrap items-center gap-1 rounded-lg border border-line bg-surface-2 p-1.5 elev-2"
           >
-            <span class="font-mono text-3xs uppercase tracking-[0.12em] text-[var(--color-text-muted)]">Narrow it down</span>
+            <span class="font-mono text-3xs uppercase tracking-[0.12em] text-muted">Narrow it down</span>
             <button
               v-for="f in QUERY_FACETS"
               :key="f.prefix"
               type="button"
-              class="flex items-center gap-1 rounded-full border border-[var(--color-border)] px-2 py-0.5 text-3xs text-[var(--color-text-muted)] transition hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
+              class="flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-3xs text-muted transition hover:border-accent hover:text-ink"
               @mousedown.prevent="applyFacet(f.prefix)"
             >
-              <code class="font-mono text-[var(--color-accent)]">{{ f.prefix }}</code>{{ f.label }}
+              <code class="font-mono text-accent">{{ f.prefix }}</code>{{ f.label }}
             </button>
           </div>
           <!-- Trefferbilanz. Ist die Liste gedeckelt, steht es DANEBEN – ein Baum, der nur einen
                Teil zeigt, darf nicht aussehen wie das vollstaendige Ergebnis. Kanten stehen dabei,
                wo sie die eigentliche Antwort sind (`m:`, `review:`, `manual:`). -->
-          <p v-if="searching" class="mt-1.5 flex items-center gap-1.5 px-1 font-mono text-3xs text-[var(--color-text-muted)]">
+          <p v-if="searching" class="mt-1.5 flex items-center gap-1.5 px-1 font-mono text-3xs text-muted">
             <!-- „classes" und „relations" ausschreiben: die Leiste im Graphen zaehlt daneben die
                  Beziehungen des AUSSCHNITTS. Zwei Zahlen unter demselben Wort waeren eine
                  Verwechslung, die niemand aufloest. -->
@@ -1665,7 +1665,7 @@ function onResetPanels() {
             >· {{ queryEdges }} relation{{ queryEdges === 1 ? '' : 's' }}</span>
             <span
               v-if="treeTruncated > 0"
-              class="rounded bg-[color-mix(in_srgb,var(--color-warning)_16%,transparent)] px-1 text-[var(--color-warning)]"
+              class="rounded bg-[color-mix(in_srgb,var(--color-warning)_16%,transparent)] px-1 text-warning"
               :title="`Only the first ${TREE_MATCH_LIMIT} are listed – keep typing to narrow it down`"
             >first {{ TREE_MATCH_LIMIT }}</span>
             <!-- Von Treffer zu Treffer faehrt der GRAPH. Die Knoepfe stehen in DIESER Zeile und
@@ -1674,7 +1674,7 @@ function onResetPanels() {
             <span class="ml-auto flex shrink-0 items-center gap-0.5">
               <button
                 type="button"
-                class="grid h-5 w-5 place-items-center rounded transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:pointer-events-none disabled:opacity-35"
+                class="grid h-5 w-5 place-items-center rounded transition hover:bg-surface-offset hover:text-ink disabled:pointer-events-none disabled:opacity-35"
                 title="Previous match (Shift+↵) — the graph moves to it"
                 :disabled="!hasMatches"
                 @click="stepMatch(-1)"
@@ -1683,7 +1683,7 @@ function onResetPanels() {
               </button>
               <button
                 type="button"
-                class="grid h-5 w-5 place-items-center rounded transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:pointer-events-none disabled:opacity-35"
+                class="grid h-5 w-5 place-items-center rounded transition hover:bg-surface-offset hover:text-ink disabled:pointer-events-none disabled:opacity-35"
                 title="Next match (↵) — the graph moves to it"
                 :disabled="!hasMatches"
                 @click="stepMatch(1)"
@@ -1698,11 +1698,11 @@ function onResetPanels() {
                nicht. Diese Zeile sagt, WAS gefunden wurde – und wenn nichts, warum nicht. -->
           <div
             v-if="queryDetail"
-            class="mt-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 text-3xs text-[var(--color-text-muted)]"
+            class="mt-1.5 rounded-md border border-line bg-surface-2 px-2 py-1.5 text-3xs text-muted"
           >
             <template v-if="queryDetail.state === 'incomplete'">
               <span v-if="queryDetail.kind === 'path'">
-                Type <code class="font-mono text-[var(--color-accent)]">path: Source &gt; Target</code> — two class names.
+                Type <code class="font-mono text-accent">path: Source &gt; Target</code> — two class names.
               </span>
               <span v-else>Type a class name — everything that would break if it changes.</span>
             </template>
@@ -1712,7 +1712,7 @@ function onResetPanels() {
             </template>
 
             <template v-else-if="queryDetail.state === 'ambiguous'">
-              <p class="text-[var(--color-text)]">
+              <p class="text-ink">
                 Several classes share that name{{ queryDetail.side ? ` (${queryDetail.side})` : '' }} — add the package:
               </p>
               <div class="mt-1 flex flex-wrap gap-1">
@@ -1724,7 +1724,7 @@ function onResetPanels() {
 
             <template v-else-if="queryDetail.kind === 'path'">
               <template v-if="queryDetail.state === 'none'">
-                <span class="text-[var(--color-warning)]">No route</span> from
+                <span class="text-warning">No route</span> from
                 <span class="font-mono">{{ queryDetail.from.class_name }}</span> to
                 <span class="font-mono">{{ queryDetail.to.class_name }}</span> — nothing it uses ever
                 reaches it. Both are in the picture.
@@ -1742,7 +1742,7 @@ function onResetPanels() {
                   <template v-for="(id, i) in queryDetail.paths[0]" :key="i">
                     <button
                       type="button"
-                      class="font-mono text-[var(--color-text)] underline-offset-2 hover:text-[var(--color-accent)] hover:underline"
+                      class="font-mono text-ink underline-offset-2 hover:text-accent hover:underline"
                       @click="selectFile(id)"
                     >{{ queryDetail.names[0][i] }}</button>
                     <Icon
@@ -1757,8 +1757,8 @@ function onResetPanels() {
 
             <template v-else>
               <p>
-                <span class="font-mono text-[var(--color-text)]">{{ queryDetail.target.class_name }}</span>
-                affects <span class="text-[var(--color-text)]">{{ queryDetail.total }}</span>
+                <span class="font-mono text-ink">{{ queryDetail.target.class_name }}</span>
+                affects <span class="text-ink">{{ queryDetail.total }}</span>
                 class{{ queryDetail.total === 1 ? '' : 'es' }}
                 <template v-if="queryDetail.total">
                   · {{ queryDetail.direct }} directly · up to {{ queryDetail.maxDepth }} hop{{ queryDetail.maxDepth === 1 ? '' : 's' }} away
@@ -1767,7 +1767,7 @@ function onResetPanels() {
               <p v-if="!queryDetail.total" class="mt-0.5">
                 Nothing uses it — changing it breaks nobody else.
               </p>
-              <p v-if="queryDetail.truncated" class="mt-0.5 text-[var(--color-warning)]">
+              <p v-if="queryDetail.truncated" class="mt-0.5 text-warning">
                 Stopped at {{ MAX_IMPACT }} — the real reach is larger.
               </p>
             </template>
@@ -1787,7 +1787,7 @@ function onResetPanels() {
             <button
               v-if="row.kind === 'folder'"
               type="button"
-              class="tree-row group/f flex w-full items-center gap-1.5 rounded-md py-1 pl-1 pr-2 text-left text-2xs font-semibold text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+              class="tree-row group/f flex w-full items-center gap-1.5 rounded-md py-1 pl-1 pr-2 text-left text-2xs font-semibold text-muted transition hover:bg-surface-offset hover:text-ink"
               :class="row.state === 'here' ? 'is-here' : row.state === 'trail' ? 'is-trail' : ''"
               :data-path="row.fullPath"
               @click="toggleFolder(row.fullPath, row.open)"
@@ -1808,18 +1808,18 @@ function onResetPanels() {
                 type="button"
                 class="tree-row flex w-full items-center gap-1.5 rounded-md py-1.5 pl-1 pr-8 text-left transition"
                 :class="selectedFileId === row.file.id
-                  ? 'is-selected bg-[var(--color-accent-soft)] text-[var(--color-accent)]'
-                  : 'hover:bg-[var(--color-surface-offset)]'"
+                  ? 'is-selected bg-accent-soft text-accent'
+                  : 'hover:bg-surface-offset'"
                 @click="selectFileFromTree(row.file)"
               >
                 <span v-for="d in row.depth" :key="d" class="tree-guide" />
                 <Icon
                   icon="lucide:braces"
                   class="h-3.5 w-3.5 shrink-0"
-                  :class="selectedFileId === row.file.id ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'"
+                  :class="selectedFileId === row.file.id ? 'text-accent' : 'text-muted'"
                 />
                 <span class="min-w-0 flex-1 truncate text-[0.8125rem]" :class="selectedFileId === row.file.id ? 'font-semibold' : ''">
-                  <template v-for="(p, i) in hl(row.file.class_name)" :key="i"><mark v-if="p.m" class="rounded-sm bg-transparent px-0 font-semibold text-[var(--color-accent)]">{{ p.t }}</mark><template v-else>{{ p.t }}</template></template>
+                  <template v-for="(p, i) in hl(row.file.class_name)" :key="i"><mark v-if="p.m" class="rounded-sm bg-transparent px-0 font-semibold text-accent">{{ p.t }}</mark><template v-else>{{ p.t }}</template></template>
                 </span>
                 <!-- Status rechts: laufende Queue schlaegt den ruhenden AI-Punkt. -->
                 <span
@@ -1832,19 +1832,19 @@ function onResetPanels() {
                 <Icon
                   v-else-if="row.file.description"
                   icon="lucide:sparkles"
-                  class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)] transition group-hover:opacity-0"
+                  class="h-3.5 w-3.5 shrink-0 text-accent transition group-hover:opacity-0"
                   title="AI-analyzed"
                 />
                 <span
                   v-if="row.file.method_count"
-                  class="shrink-0 font-mono text-3xs tabular-nums text-[var(--color-text-muted)] opacity-60 transition group-hover:opacity-0"
+                  class="shrink-0 font-mono text-3xs tabular-nums text-muted opacity-60 transition group-hover:opacity-0"
                 >
                   {{ row.file.method_count }}
                 </span>
               </button>
               <button
                 type="button"
-                class="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-[var(--color-danger)] opacity-0 transition hover:bg-[var(--color-surface-offset)] focus:opacity-100 group-hover:opacity-100"
+                class="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-danger opacity-0 transition hover:bg-surface-offset focus:opacity-100 group-hover:opacity-100"
                 title="Delete class"
                 :aria-label="`Delete class ${row.file.class_name}`"
                 @click.stop="askDelete(row.file)"
@@ -1871,11 +1871,11 @@ function onResetPanels() {
           <!-- Leerzustand: getrennt fuer "nichts geladen" und "Filter ohne Treffer". -->
           <li v-else-if="!rows.length" class="px-3 py-10 text-center">
             <template v-if="searching">
-              <Icon icon="lucide:search" class="mx-auto mb-2 h-6 w-6 text-[var(--color-text-muted)] opacity-40" />
-              <p class="text-xs text-[var(--color-text-muted)]">No class matches “{{ appliedSearch }}”.</p>
+              <Icon icon="lucide:search" class="mx-auto mb-2 h-6 w-6 text-muted opacity-40" />
+              <p class="text-xs text-muted">No class matches “{{ appliedSearch }}”.</p>
               <!-- `r:` fragt den gezeichneten Graphen. Zeigt der gerade Packages, gibt es dort keine
                    Rollen zu finden – ohne diesen Satz sieht das aus wie „es gibt keine Hubs". -->
-              <p v-if="queryResult.scope === 'picture'" class="mt-1.5 text-3xs text-[var(--color-text-muted)]">
+              <p v-if="queryResult.scope === 'picture'" class="mt-1.5 text-3xs text-muted">
                 A role belongs to a class in the drawn graph — open a package or switch to Classes.
               </p>
             </template>
@@ -2001,14 +2001,14 @@ function onResetPanels() {
           />
           <div
             v-else
-            class="grid h-full place-items-center rounded-xl border border-dashed border-[var(--color-border)] px-6 text-center"
+            class="grid h-full place-items-center rounded-xl border border-dashed border-line px-6 text-center"
           >
             <div class="max-w-[15rem]">
-              <span class="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-xl bg-[var(--color-surface-offset)] text-[var(--color-text-muted)]">
+              <span class="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-xl bg-surface-offset text-muted">
                 <Icon icon="lucide:mouse-pointer-click" class="h-5 w-5" />
               </span>
-              <p class="mb-1 text-sm font-semibold text-[var(--color-text)]">No class selected</p>
-              <p class="text-xs leading-relaxed text-[var(--color-text-muted)]">
+              <p class="mb-1 text-sm font-semibold text-ink">No class selected</p>
+              <p class="text-xs leading-relaxed text-muted">
                 Pick one from the list or click a node in the graph to see its methods, AI summaries and source.
               </p>
             </div>
@@ -2048,188 +2048,96 @@ function onResetPanels() {
     <div v-if="isDragging" class="fixed inset-0 z-[60] cursor-col-resize select-none" />
 
     <!-- Bestaetigungs-Dialog: Klasse loeschen -->
-    <Teleport to="body">
-      <div
-        v-if="pendingDelete"
-        class="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 backdrop-blur-sm"
-        @click.self="cancelDelete"
-      >
-        <div class="w-full max-w-sm rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-5 shadow-xl">
-          <div class="mb-3 flex items-center gap-3">
-            <span
-              class="grid h-10 w-10 shrink-0 place-items-center rounded-full text-[var(--color-danger)]"
-              style="background-color: color-mix(in srgb, var(--color-danger) 16%, transparent)"
-            >
-              <Icon icon="lucide:trash-2" class="h-5 w-5" />
-            </span>
-            <div class="min-w-0">
-              <h3 class="truncate font-semibold text-[var(--color-text)]">Delete class?</h3>
-              <p class="truncate font-mono text-xs text-[var(--color-text-muted)]">{{ pendingDelete.class_name }}</p>
-            </div>
-          </div>
-          <p class="mb-4 text-sm text-[var(--color-text-muted)]">
-            All graph connections will be removed. A linked wiki article (if any) is kept.
-          </p>
-          <div class="flex justify-end gap-2">
-            <button
-              type="button"
-              class="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] disabled:opacity-50"
-              :disabled="deleting"
-              @click="cancelDelete"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-danger)] px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 disabled:opacity-60"
-              :disabled="deleting"
-              @click="confirmDelete"
-            >
-              <Icon v-if="deleting" icon="lucide:loader-2" class="h-4 w-4 animate-spin" />
-              {{ deleting ? 'Deleting…' : 'Delete' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <ConfirmDialog
+      :open="!!pendingDelete"
+      tone="danger"
+      icon="lucide:trash-2"
+      title="Delete class?"
+      confirm-label="Delete"
+      :busy="deleting"
+      busy-label="Deleting…"
+      @cancel="cancelDelete"
+      @confirm="confirmDelete"
+    >
+      <template #subtitle><span class="font-mono">{{ pendingDelete?.class_name }}</span></template>
+      All graph connections will be removed. A linked wiki article (if any) is kept.
+    </ConfirmDialog>
 
     <!-- Bestaetigungs-Dialog: vorhandene Klassen ueberschreiben -->
-    <Teleport to="body">
-      <div
-        v-if="pendingConflicts"
-        class="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 backdrop-blur-sm"
-        @click.self="cancelOverwrite"
-      >
-        <div class="w-full max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-5 shadow-xl">
-          <div class="mb-3 flex items-center gap-3">
-            <span
-              class="grid h-10 w-10 shrink-0 place-items-center rounded-full text-[var(--color-warning)]"
-              style="background-color: color-mix(in srgb, var(--color-warning) 16%, transparent)"
-            >
-              <Icon icon="lucide:alert-triangle" class="h-5 w-5" />
-            </span>
-            <div class="min-w-0">
-              <h3 class="truncate font-semibold text-[var(--color-text)]">Overwrite class(es)?</h3>
-              <p class="text-xs text-[var(--color-text-muted)]">
-                {{ pendingConflicts.length }} class(es) already analyzed.
-              </p>
-            </div>
-          </div>
-          <ul class="mb-4 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
-            <li
-              v-for="fqcn in pendingConflicts"
-              :key="fqcn"
-              class="flex items-center gap-1.5 truncate font-mono text-xs text-[var(--color-text)]"
-            >
-              <Icon icon="lucide:box" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
-              {{ fqcn }}
-            </li>
-          </ul>
-          <p class="mb-4 text-sm text-[var(--color-text-muted)]">
-            Overwriting replaces the existing records (including AI descriptions).
-          </p>
-          <div class="flex justify-end gap-2">
-            <button
-              type="button"
-              class="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] disabled:opacity-50"
-              :disabled="confirming"
-              @click="cancelOverwrite"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 py-2 text-sm font-semibold text-[var(--color-accent-contrast)] shadow-sm transition hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
-              :disabled="confirming"
-              @click="confirmOverwrite"
-            >
-              <Icon v-if="confirming" icon="lucide:loader-2" class="h-4 w-4 animate-spin" />
-              {{ confirming ? 'Overwriting…' : 'Overwrite' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <ConfirmDialog
+      :open="!!pendingConflicts"
+      tone="warning"
+      size="md"
+      title="Overwrite class(es)?"
+      :subtitle="`${pendingConflicts?.length ?? 0} class(es) already analyzed.`"
+      confirm-label="Overwrite"
+      :busy="confirming"
+      busy-label="Overwriting…"
+      @cancel="cancelOverwrite"
+      @confirm="confirmOverwrite"
+    >
+      <ul class="mb-4 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-line bg-surface p-2">
+        <li
+          v-for="fqcn in pendingConflicts || []"
+          :key="fqcn"
+          class="flex items-center gap-1.5 truncate font-mono text-xs text-ink"
+        >
+          <Icon icon="lucide:box" class="h-3.5 w-3.5 shrink-0 text-muted" />
+          {{ fqcn }}
+        </li>
+      </ul>
+      Overwriting replaces the existing records (including AI descriptions).
+    </ConfirmDialog>
 
     <!-- Bestaetigungs-Dialog: alle Klassen zuruecksetzen (destruktiv) -->
-    <Teleport to="body">
-      <div
-        v-if="pendingReset"
-        class="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 backdrop-blur-sm"
-        @click.self="cancelReset"
-      >
-        <div class="w-full max-w-sm rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-5 shadow-xl">
-          <div class="mb-3 flex items-center gap-3">
-            <span
-              class="grid h-10 w-10 shrink-0 place-items-center rounded-full text-[var(--color-danger)]"
-              style="background-color: color-mix(in srgb, var(--color-danger) 16%, transparent)"
-            >
-              <Icon icon="lucide:alert-triangle" class="h-5 w-5" />
-            </span>
-            <div class="min-w-0">
-              <h3 class="truncate font-semibold text-[var(--color-text)]">Reset everything?</h3>
-              <p class="text-xs text-[var(--color-text-muted)]">{{ classCount }} class(es) affected</p>
-            </div>
-          </div>
-          <p v-if="!resetting" class="mb-4 text-sm text-[var(--color-text-muted)]">
-            All analyzed classes, edges and AI summaries will be
-            <span class="font-semibold text-[var(--color-text)]">permanently deleted</span>.
-            Linked wiki articles are kept.
-          </p>
+    <ConfirmDialog
+      :open="!!pendingReset"
+      tone="danger"
+      title="Reset everything?"
+      :subtitle="`${classCount} class(es) affected`"
+      confirm-label="Delete all"
+      :busy="resetting"
+      busy-label="Deleting…"
+      @cancel="cancelReset"
+      @confirm="confirmReset"
+    >
+      <template v-if="!resetting">
+        All analyzed classes, edges and AI summaries will be
+        <span class="font-semibold text-ink">permanently deleted</span>.
+        Linked wiki articles are kept.
+      </template>
 
-          <!-- Laufender Reset: derselbe Fortschritt wie beim Analysieren, nur kompakt – der
-               Dialog ist schmal, ein grosser Ring waere hier fehl am Platz. -->
-          <div v-else class="mb-4">
-            <div class="mb-1.5 flex items-baseline justify-between gap-2">
-              <!-- Vor dem eigentlichen Loeschen laeuft `cancelAllJobs()` – dort gibt es noch keinen
-                   Lauf, und `runPhaseLabel` faellt ohne ihn auf die Analyse-Phasen zurueck. Ein
-                   „Splitting sources" im Loesch-Dialog waere eine Falschauskunft. -->
-              <span class="text-sm font-semibold text-[var(--color-text)]">{{ progress ? runPhaseLabel : 'Stopping AI queue' }}</span>
-              <span v-if="progress" class="font-mono text-xs tabular-nums text-[var(--color-text-muted)]">{{ runPercent }}%</span>
-            </div>
-            <div class="h-2 w-full overflow-hidden rounded-full bg-[var(--color-surface-offset)]">
-              <div
-                class="h-full rounded-full bg-[var(--color-danger)] transition-[width] duration-300 ease-out"
-                :style="{ width: runPercent + '%' }"
-              />
-            </div>
-            <div class="mt-2 flex items-baseline justify-between gap-2 font-mono text-2xs tabular-nums text-[var(--color-text-muted)]">
-              <span v-if="progress?.total">
-                <b class="font-semibold text-[var(--color-text)]">{{ nf.format(progress.done || 0) }}</b>/{{ nf.format(progress.total) }} removed
-              </span>
-              <span v-else>working…</span>
-              <span>
-                {{ formatDuration(elapsedMs) }}
-                <span class="opacity-50">elapsed</span>
-                <template v-if="runRemainingMs != null">
-                  <span class="opacity-40"> · </span>{{ formatDuration(runRemainingMs) }}<span class="opacity-50"> left</span>
-                </template>
-              </span>
-            </div>
-          </div>
-
-          <div class="flex justify-end gap-2">
-            <button
-              type="button"
-              class="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] disabled:opacity-50"
-              :disabled="resetting"
-              @click="cancelReset"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-danger)] px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 disabled:opacity-60"
-              :disabled="resetting"
-              @click="confirmReset"
-            >
-              <Icon v-if="resetting" icon="lucide:loader-2" class="h-4 w-4 animate-spin" />
-              {{ resetting ? 'Deleting…' : 'Delete all' }}
-            </button>
-          </div>
+      <!-- Laufender Reset: derselbe Fortschritt wie beim Analysieren, nur kompakt – der
+           Dialog ist schmal, ein grosser Ring waere hier fehl am Platz. -->
+      <div v-else>
+        <div class="mb-1.5 flex items-baseline justify-between gap-2">
+          <!-- Vor dem eigentlichen Loeschen laeuft `cancelAllJobs()` – dort gibt es noch keinen
+               Lauf, und `runPhaseLabel` faellt ohne ihn auf die Analyse-Phasen zurueck. Ein
+               „Splitting sources" im Loesch-Dialog waere eine Falschauskunft. -->
+          <span class="text-sm font-semibold text-ink">{{ progress ? runPhaseLabel : 'Stopping AI queue' }}</span>
+          <span v-if="progress" class="font-mono text-xs tabular-nums text-muted">{{ runPercent }}%</span>
+        </div>
+        <div class="h-2 w-full overflow-hidden rounded-full bg-surface-offset">
+          <div
+            class="h-full rounded-full bg-danger transition-[width] duration-300 ease-out"
+            :style="{ width: runPercent + '%' }"
+          />
+        </div>
+        <div class="mt-2 flex items-baseline justify-between gap-2 font-mono text-2xs tabular-nums text-muted">
+          <span v-if="progress?.total">
+            <b class="font-semibold text-ink">{{ nf.format(progress.done || 0) }}</b>/{{ nf.format(progress.total) }} removed
+          </span>
+          <span v-else>working…</span>
+          <span>
+            {{ formatDuration(elapsedMs) }}
+            <span class="opacity-50">elapsed</span>
+            <template v-if="runRemainingMs != null">
+              <span class="opacity-40"> · </span>{{ formatDuration(runRemainingMs) }}<span class="opacity-50"> left</span>
+            </template>
+          </span>
         </div>
       </div>
-    </Teleport>
+    </ConfirmDialog>
 
     <!-- KI-Queue-Modal (breit/langgezogen): aus der Command-Bar geoeffnet. -->
     <JavaQueueModal :open="queueOpen" @close="queueOpen = false" @select="onQueueSelect" />
@@ -2240,24 +2148,7 @@ function onResetPanels() {
 <style scoped>
 @reference "../assets/style.css";
 
-/* Funktionale Transition fuers Neu-Analyse-Modal (kein dekoratives Spielwerk). */
-.modal-enter-active,
-.modal-leave-active {
-  transition: opacity 0.18s ease;
-}
-.modal-enter-active section,
-.modal-leave-active section {
-  transition: transform 0.18s ease, opacity 0.18s ease;
-}
-.modal-enter-from,
-.modal-leave-to {
-  opacity: 0;
-}
-.modal-enter-from section,
-.modal-leave-to section {
-  opacity: 0;
-  transform: translateY(-8px) scale(0.98);
-}
+/* Die eigene `modal`-Transition ist entfallen – sie steht jetzt in `ui/Modal.vue`. */
 
 /* Overflow-Menue: kurzes Aufklappen aus der Button-Kante. */
 .pop-enter-active,

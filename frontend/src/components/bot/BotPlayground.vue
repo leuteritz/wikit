@@ -203,14 +203,14 @@ defineExpose({ run })
     <!-- Eingabe --------------------------------------------------------------->
     <div class="flex min-w-0 flex-col">
       <div class="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <p class="font-mono text-2xs uppercase tracking-[0.14em] text-[var(--color-text-muted)]">Prompt</p>
+        <p class="font-mono text-2xs uppercase tracking-[0.14em] text-muted">Prompt</p>
         <span class="ml-auto flex flex-wrap items-center gap-1">
-          <span class="font-mono text-3xs text-[var(--color-text-muted)]">fill with:</span>
+          <span class="font-mono text-3xs text-muted">fill with:</span>
           <button
             v-for="k in ['method', 'class', 'diff']"
             :key="k"
             type="button"
-            class="rounded border border-dashed border-[var(--color-border)] px-1.5 py-0.5 font-mono text-3xs text-[var(--color-text-muted)] transition hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+            class="rounded border border-dashed border-line px-1.5 py-0.5 font-mono text-3xs text-muted transition hover:border-line-strong hover:text-ink"
             :title="`Render the ${k} template with a sample class — this is what the queue actually sends`"
             @click="loadTemplate(k)"
           >{{ k }} template</button>
@@ -219,7 +219,7 @@ defineExpose({ run })
 
       <textarea
         v-model="prompt"
-        class="min-h-[22rem] w-full flex-1 resize-y rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 font-mono text-xs leading-relaxed text-[var(--color-text)] transition focus:border-[var(--color-accent)] focus:outline-none"
+        class="min-h-[22rem] w-full flex-1 resize-y rounded-lg border border-line bg-surface px-3 py-2.5 font-mono text-xs leading-relaxed text-ink transition focus:border-accent focus:outline-none"
         spellcheck="false"
         placeholder="Ask the model something…"
         @keydown.ctrl.enter.prevent="run"
@@ -230,7 +230,7 @@ defineExpose({ run })
         <button
           v-if="!running"
           type="button"
-          class="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-accent)] px-3.5 py-2 text-xs font-semibold text-[var(--color-accent-contrast)] transition hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
+          class="inline-flex items-center gap-1.5 rounded-md bg-accent px-3.5 py-2 text-xs font-semibold text-accent-contrast transition hover:bg-accent-hover disabled:opacity-50"
           :disabled="!prompt.trim()"
           @click="run"
         >
@@ -240,19 +240,19 @@ defineExpose({ run })
         <button
           v-else
           type="button"
-          class="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-danger)]/50 px-3.5 py-2 text-xs font-semibold text-[var(--color-danger)] transition hover:bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)]"
+          class="inline-flex items-center gap-1.5 rounded-md border border-danger/50 px-3.5 py-2 text-xs font-semibold text-danger transition hover:bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)]"
           @click="cancel"
         >
           <Icon icon="lucide:square" class="h-3.5 w-3.5" />
           Stop
         </button>
 
-        <span class="font-mono text-3xs text-[var(--color-text-muted)]">
+        <span class="font-mono text-3xs text-muted">
           {{ draft?.model || '—' }} · {{ optionSummary }}
         </span>
       </div>
 
-      <p v-if="dirty" class="mt-2 font-mono text-3xs text-[var(--color-text-muted)]">
+      <p v-if="dirty" class="mt-2 font-mono text-3xs text-muted">
         Runs against the form, including changes that are not saved yet.
       </p>
     </div>
@@ -260,25 +260,25 @@ defineExpose({ run })
     <!-- Ausgabe --------------------------------------------------------------->
     <div class="flex min-w-0 flex-col">
       <div class="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <p class="font-mono text-2xs uppercase tracking-[0.14em] text-[var(--color-text-muted)]">Answer</p>
-        <span v-if="running || elapsed" class="ml-auto font-mono text-3xs tabular-nums text-[var(--color-text-muted)]">
+        <p class="font-mono text-2xs uppercase tracking-[0.14em] text-muted">Answer</p>
+        <span v-if="running || elapsed" class="ml-auto font-mono text-3xs tabular-nums text-muted">
           {{ ms(elapsed) }}<span v-if="tokenCount"> · {{ tokenCount }} chunks</span>
         </span>
       </div>
 
       <div
         ref="outputEl"
-        class="min-h-[22rem] flex-1 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 font-mono text-xs leading-relaxed text-[var(--color-text)]"
+        class="min-h-[22rem] flex-1 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-line bg-surface px-3 py-2.5 font-mono text-xs leading-relaxed text-ink"
       >
         <template v-if="output">{{ output }}</template>
-        <span v-else-if="running" class="text-[var(--color-text-muted)]">Waiting for the first token…</span>
-        <span v-else class="text-[var(--color-text-muted)]">Nothing yet. Run a prompt to see what the model returns.</span>
+        <span v-else-if="running" class="text-muted">Waiting for the first token…</span>
+        <span v-else class="text-muted">Nothing yet. Run a prompt to see what the model returns.</span>
         <span v-if="running" class="pg-caret">▍</span>
       </div>
 
       <p
         v-if="error"
-        class="mt-2 rounded-lg border border-[var(--color-danger)]/40 bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-3 py-2 text-2xs leading-relaxed text-[var(--color-text)]"
+        class="mt-2 rounded-lg border border-danger/40 bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-3 py-2 text-2xs leading-relaxed text-ink"
       >
         {{ error }}
       </p>
@@ -286,23 +286,23 @@ defineExpose({ run })
       <!-- Metriken erst NACH dem Lauf: waehrenddessen waeren es Zahlen ueber einen Vorgang, der
            noch nicht stattgefunden hat. -->
       <div v-if="stats" class="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-        <span class="inline-flex items-center gap-1.5 font-mono text-2xs text-[var(--color-text-muted)]">
+        <span class="inline-flex items-center gap-1.5 font-mono text-2xs text-muted">
           <Icon icon="lucide:zap" class="h-3.5 w-3.5 opacity-70" />
-          <span class="font-semibold tabular-nums text-[var(--color-text)]">{{ stats.tokensPerSecond }}</span> tok/s
+          <span class="font-semibold tabular-nums text-ink">{{ stats.tokensPerSecond }}</span> tok/s
         </span>
-        <span class="inline-flex items-center gap-1.5 font-mono text-2xs text-[var(--color-text-muted)]">
+        <span class="inline-flex items-center gap-1.5 font-mono text-2xs text-muted">
           <Icon icon="lucide:message-square" class="h-3.5 w-3.5 opacity-70" />
-          <span class="font-semibold tabular-nums text-[var(--color-text)]">{{ stats.evalCount }}</span> out
+          <span class="font-semibold tabular-nums text-ink">{{ stats.evalCount }}</span> out
           <span class="opacity-60">/</span>
-          <span class="font-semibold tabular-nums text-[var(--color-text)]">{{ stats.promptEvalCount }}</span> in
+          <span class="font-semibold tabular-nums text-ink">{{ stats.promptEvalCount }}</span> in
         </span>
         <span
           v-if="stats.loadDurationMs > 50"
-          class="inline-flex items-center gap-1.5 font-mono text-2xs text-[var(--color-text-muted)]"
+          class="inline-flex items-center gap-1.5 font-mono text-2xs text-muted"
           title="Time spent loading the model into memory — only the first run after a restart pays it"
         >
           <Icon icon="lucide:clock" class="h-3.5 w-3.5 opacity-70" />
-          <span class="font-semibold tabular-nums text-[var(--color-text)]">{{ ms(stats.loadDurationMs) }}</span> load
+          <span class="font-semibold tabular-nums text-ink">{{ ms(stats.loadDurationMs) }}</span> load
         </span>
       </div>
     </div>

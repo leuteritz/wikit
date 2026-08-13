@@ -72,26 +72,26 @@ function toggleAuto() {
 <template>
   <div class="bot-field">
     <div class="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-      <label class="text-sm font-medium text-[var(--color-text)]">{{ spec.label }}</label>
+      <label class="text-sm font-medium text-ink">{{ spec.label }}</label>
 
       <span
         v-if="overridden"
-        class="rounded border border-[var(--color-accent)]/40 bg-[var(--color-accent-soft)] px-1.5 py-px font-mono text-3xs uppercase tracking-wide text-[var(--color-accent)]"
+        class="rounded border border-accent/40 bg-accent-soft px-1.5 py-px font-mono text-3xs uppercase tracking-wide text-accent"
       >custom</span>
       <span
         v-else-if="envName"
-        class="rounded border border-[var(--color-border)] px-1.5 py-px font-mono text-3xs uppercase tracking-wide text-[var(--color-text-muted)]"
+        class="rounded border border-line px-1.5 py-px font-mono text-3xs uppercase tracking-wide text-muted"
         :title="`Default comes from the ${envName} environment variable`"
       >{{ envName }}</span>
       <span
         v-else
-        class="rounded border border-[var(--color-border)] px-1.5 py-px font-mono text-3xs uppercase tracking-wide text-[var(--color-text-muted)]"
+        class="rounded border border-line px-1.5 py-px font-mono text-3xs uppercase tracking-wide text-muted"
       >default</span>
 
       <button
         v-if="changed"
         type="button"
-        class="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-3xs text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+        class="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-3xs text-muted transition hover:bg-surface-offset hover:text-ink"
         :title="`Back to the default (${defaultValue == null ? 'auto' : defaultValue})`"
         @click="emit('update:modelValue', defaultValue ?? null)"
       >
@@ -109,8 +109,8 @@ function toggleAuto() {
         type="button"
         class="rounded-md border px-3 py-1.5 font-mono text-xs uppercase tracking-wide transition"
         :class="modelValue === v
-          ? 'border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]'
-          : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-border-strong)]'"
+          ? 'border-accent bg-accent-soft text-accent'
+          : 'border-line text-muted hover:border-line-strong'"
         @click="emit('update:modelValue', v)"
       >{{ v }}</button>
     </div>
@@ -124,8 +124,8 @@ function toggleAuto() {
         type="button"
         class="shrink-0 rounded-md border px-2 py-1.5 font-mono text-2xs uppercase tracking-wide transition"
         :class="isAuto
-          ? 'border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]'
-          : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-border-strong)]'"
+          ? 'border-accent bg-accent-soft text-accent'
+          : 'border-line text-muted hover:border-line-strong'"
         title="Leave it to the model — the option is not sent at all"
         @click="toggleAuto"
       >auto</button>
@@ -145,21 +145,21 @@ function toggleAuto() {
       <input
         v-if="!isAuto"
         type="number"
-        class="w-28 shrink-0 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-right font-mono text-sm tabular-nums text-[var(--color-text)] transition focus:border-[var(--color-accent)] focus:outline-none"
+        class="w-28 shrink-0 rounded-md border border-line bg-surface px-2.5 py-1.5 text-right font-mono text-sm tabular-nums text-ink transition focus:border-accent focus:outline-none"
         :min="spec.min"
         :max="spec.max"
         :step="spec.step || 1"
         :value="modelValue ?? ''"
         @input="onNumber($event.target.value)"
       />
-      <span v-else class="flex-1 text-sm text-[var(--color-text-muted)]">Left to the model</span>
-      <span v-if="asSeconds" class="w-12 shrink-0 font-mono text-2xs text-[var(--color-text-muted)]">{{ asSeconds }}</span>
+      <span v-else class="flex-1 text-sm text-muted">Left to the model</span>
+      <span v-if="asSeconds" class="w-12 shrink-0 font-mono text-2xs text-muted">{{ asSeconds }}</span>
     </div>
 
     <!-- Mehrzeiliger Freitext (Projekt-Kontext). Prompt-Vorlagen haben ihren eigenen Editor. -->
     <textarea
       v-else-if="spec.type === 'text'"
-      class="min-h-[7rem] w-full resize-y rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm leading-relaxed text-[var(--color-text)] transition focus:border-[var(--color-accent)] focus:outline-none"
+      class="min-h-[7rem] w-full resize-y rounded-md border border-line bg-surface px-3 py-2 text-sm leading-relaxed text-ink transition focus:border-accent focus:outline-none"
       spellcheck="false"
       :value="modelValue ?? ''"
       @input="emit('update:modelValue', $event.target.value)"
@@ -168,14 +168,14 @@ function toggleAuto() {
     <input
       v-else
       type="text"
-      class="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 font-mono text-sm text-[var(--color-text)] transition focus:border-[var(--color-accent)] focus:outline-none"
+      class="w-full rounded-md border border-line bg-surface px-3 py-2 font-mono text-sm text-ink transition focus:border-accent focus:outline-none"
       spellcheck="false"
       autocomplete="off"
       :value="modelValue ?? ''"
       @input="emit('update:modelValue', $event.target.value)"
     />
 
-    <p class="mt-1.5 text-2xs leading-relaxed text-[var(--color-text-muted)]">{{ spec.hint }}</p>
+    <p class="mt-1.5 text-2xs leading-relaxed text-muted">{{ spec.hint }}</p>
   </div>
 </template>
 

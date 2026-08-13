@@ -88,32 +88,32 @@ function toggleAll() {
 <template>
   <div
     v-if="classes.length"
-    class="flex min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]"
+    class="flex min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-surface"
   >
     <!-- Kopfzeile: Bilanz links, Werkzeuge rechts. Bleibt beim Scrollen stehen. -->
-    <div class="flex shrink-0 items-center gap-2 border-b border-[var(--color-border)] px-2.5 py-1.5">
-      <Icon icon="lucide:package" class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
-      <span class="shrink-0 font-mono text-2xs text-[var(--color-text-muted)]">
-        <b class="font-semibold tabular-nums text-[var(--color-text)]">{{ classes.length }}</b> detected
+    <div class="flex shrink-0 items-center gap-2 border-b border-line px-2.5 py-1.5">
+      <Icon icon="lucide:package" class="h-3.5 w-3.5 shrink-0 text-accent" />
+      <span class="shrink-0 font-mono text-2xs text-muted">
+        <b class="font-semibold tabular-nums text-ink">{{ classes.length }}</b> detected
         <span class="opacity-40">·</span>
-        <b class="font-semibold tabular-nums text-[var(--color-text)]">{{ packageCount }}</b> pkg
+        <b class="font-semibold tabular-nums text-ink">{{ packageCount }}</b> pkg
       </span>
 
       <div v-if="classes.length >= FILTER_FROM" class="relative ml-auto min-w-0 max-w-[13rem] flex-1">
         <Icon
           icon="lucide:search"
-          class="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-[var(--color-text-muted)]"
+          class="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted"
         />
         <input
           v-model="filter"
           type="text"
           placeholder="Filter detected…"
-          class="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] py-1 pl-7 pr-2 font-mono text-2xs text-[var(--color-text)] outline-none transition focus:border-[var(--color-accent)]"
+          class="w-full rounded-md border border-line bg-surface-2 py-1 pl-7 pr-2 font-mono text-2xs text-ink outline-none transition focus:border-accent"
         />
       </div>
       <button
         type="button"
-        class="shrink-0 rounded-md px-1.5 py-1 text-2xs font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-40"
+        class="shrink-0 rounded-md px-1.5 py-1 text-2xs font-medium text-muted transition hover:bg-surface-offset hover:text-ink disabled:opacity-40"
         :class="classes.length < FILTER_FROM ? 'ml-auto' : ''"
         :disabled="filtering"
         :title="allOpen ? 'Collapse all packages' : 'Expand all packages'"
@@ -126,33 +126,33 @@ function toggleAll() {
     <!-- Legende der Chip-Farben, nur bei gemischten Pastes. -->
     <div
       v-if="typeBreakdown.length > 1"
-      class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-0.5 border-b border-[var(--color-border)] px-2.5 py-1"
+      class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-0.5 border-b border-line px-2.5 py-1"
     >
-      <span v-for="t in typeBreakdown" :key="t.type" class="inline-flex items-center gap-1.5 font-mono text-3xs text-[var(--color-text-muted)]">
+      <span v-for="t in typeBreakdown" :key="t.type" class="inline-flex items-center gap-1.5 font-mono text-3xs text-muted">
         <span class="h-1.5 w-1.5 shrink-0 rounded-full" :style="{ background: t.tone }" />
-        <b class="font-semibold tabular-nums text-[var(--color-text)]">{{ t.n }}</b>{{ t.type }}
+        <b class="font-semibold tabular-nums text-ink">{{ t.n }}</b>{{ t.type }}
       </span>
     </div>
 
     <!-- Scroller: waechst mit dem Inhalt, deckelt aber bei ~11rem -> darunter bleibt Platz. -->
     <div class="min-h-0 max-h-44 overflow-y-auto overscroll-contain p-1.5">
-      <p v-if="!groups.length" class="px-1 py-2 text-center font-mono text-2xs text-[var(--color-text-muted)]">
+      <p v-if="!groups.length" class="px-1 py-2 text-center font-mono text-2xs text-muted">
         No class matches “{{ filter }}”.
       </p>
       <div v-for="g in groups" :key="g.pkg" class="mb-0.5 last:mb-0">
         <button
           type="button"
-          class="group flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition hover:bg-[var(--color-surface-offset)]"
+          class="group flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition hover:bg-surface-offset"
           @click="toggle(g.pkg)"
         >
           <Icon
             icon="lucide:chevron-right"
-            class="h-3 w-3 shrink-0 text-[var(--color-text-muted)] transition-transform duration-150"
+            class="h-3 w-3 shrink-0 text-muted transition-transform duration-150"
             :class="isOpen(g.pkg) ? 'rotate-90' : ''"
           />
-          <span class="truncate font-mono text-2xs text-[var(--color-text-muted)]">{{ g.pkg }}</span>
+          <span class="truncate font-mono text-2xs text-muted">{{ g.pkg }}</span>
           <span
-            class="ml-auto shrink-0 rounded-full bg-[var(--color-surface-offset)] px-1.5 font-mono text-3xs tabular-nums text-[var(--color-text-muted)]"
+            class="ml-auto shrink-0 rounded-full bg-surface-offset px-1.5 font-mono text-3xs tabular-nums text-muted"
           >
             {{ g.items.length }}
           </span>
@@ -175,7 +175,7 @@ function toggleAll() {
     <!-- Fusszeile nur im Filtermodus: sagt, wie viel gerade ausgeblendet ist. -->
     <div
       v-if="filtering"
-      class="shrink-0 border-t border-[var(--color-border)] px-2.5 py-1 font-mono text-3xs text-[var(--color-text-muted)]"
+      class="shrink-0 border-t border-line px-2.5 py-1 font-mono text-3xs text-muted"
     >
       {{ matchCount }} of {{ classes.length }} shown
     </div>

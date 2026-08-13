@@ -265,7 +265,7 @@ async function onEdgeClick(edge) {
 </script>
 
 <template>
-  <div class="relative h-full w-full overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]">
+  <div class="relative h-full w-full overflow-hidden rounded-xl border border-line bg-surface-2">
     <BusyState
       v-if="loading"
       variant="overlay"
@@ -274,7 +274,7 @@ async function onEdgeClick(edge) {
       :since="startedAt"
     />
 
-    <p v-else-if="error" class="p-4 text-sm text-[var(--color-danger)]">{{ error }}</p>
+    <p v-else-if="error" class="p-4 text-sm text-danger">{{ error }}</p>
 
     <!-- Leerzustand mit Grund: „keine Beziehungen" ist eine andere Auskunft als „keine Artikel",
          und nur die erste hat einen naechsten Schritt. -->
@@ -283,11 +283,11 @@ async function onEdgeClick(edge) {
       class="grid h-full place-items-center px-8 text-center"
     >
       <div>
-        <Icon icon="lucide:network" class="mx-auto h-7 w-7 text-[var(--color-text-muted)]" />
-        <p class="mt-2 text-sm font-semibold text-[var(--color-text)]">
+        <Icon icon="lucide:network" class="mx-auto h-7 w-7 text-muted" />
+        <p class="mt-2 text-sm font-semibold text-ink">
           {{ graph.totals.articles ? 'No relations yet' : 'No articles yet' }}
         </p>
-        <p class="mx-auto mt-1 max-w-sm text-xs text-[var(--color-text-muted)]">
+        <p class="mx-auto mt-1 max-w-sm text-xs text-muted">
           {{
             graph.totals.articles
               ? 'Link two articles from the editor and the net starts here — the list can group them, only this shows what points where.'
@@ -408,7 +408,7 @@ async function onEdgeClick(edge) {
 @reference "../assets/style.css";
 
 .wg-card {
-  @apply relative flex w-[13rem] flex-col justify-center gap-0.5 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pl-3.5 pr-2.5 transition;
+  @apply relative flex w-[13rem] flex-col justify-center gap-0.5 overflow-hidden rounded-lg border border-line bg-surface py-2 pl-3.5 pr-2.5 transition;
   height: 3.875rem;
   cursor: pointer;
 }
@@ -423,10 +423,10 @@ async function onEdgeClick(edge) {
 }
 
 .wg-title {
-  @apply truncate text-xs font-semibold leading-tight text-[var(--color-text)];
+  @apply truncate text-xs font-semibold leading-tight text-ink;
 }
 .wg-meta {
-  @apply flex items-center gap-1.5 truncate text-3xs text-[var(--color-text-muted)];
+  @apply flex items-center gap-1.5 truncate text-3xs text-muted;
 }
 
 /* Verwaist: gestrichelter Rahmen statt einer Warnfarbe. Ein Artikel ohne Beziehung ist kein
@@ -463,10 +463,10 @@ async function onEdgeClick(edge) {
 }
 
 .wg-stats {
-  @apply pointer-events-auto absolute left-3 top-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-3xs text-[var(--color-text-muted)] shadow-sm;
+  @apply pointer-events-auto absolute left-3 top-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-3xs text-muted elev-1;
 }
 .wg-stats strong {
-  @apply font-semibold tabular-nums text-[var(--color-text)];
+  @apply font-semibold tabular-nums text-ink;
 }
 .wg-toggle {
   @apply inline-flex items-center gap-1 rounded px-1 py-0.5 transition;
@@ -485,7 +485,7 @@ async function onEdgeClick(edge) {
 }
 
 .wg-hint {
-  @apply pointer-events-none absolute left-3 right-3 top-[3.4rem] flex items-center gap-1.5 text-3xs text-[var(--color-text-muted)];
+  @apply pointer-events-none absolute left-3 right-3 top-[3.4rem] flex items-center gap-1.5 text-3xs text-muted;
 }
 
 /* Die gestrichelte Linie ist die einzige, die eine Handlung anbietet – der Zeiger sagt es, und die

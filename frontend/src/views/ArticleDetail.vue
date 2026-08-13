@@ -70,7 +70,7 @@ async function onDelete(a) {
       :rows="4"
     />
     <div v-else-if="error" class="mx-auto max-w-3xl">
-      <p class="rounded-xl p-4 text-[var(--color-danger)]" style="background-color: color-mix(in srgb, var(--color-danger) 12%, transparent)">
+      <p class="rounded-xl p-4 text-danger" style="background-color: color-mix(in srgb, var(--color-danger) 12%, transparent)">
         {{ error }}
       </p>
     </div>

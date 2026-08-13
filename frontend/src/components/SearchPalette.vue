@@ -900,25 +900,25 @@ const shortPackage = (pkg) => pkg || 'default package'
       @click.self="isModal && emit('close')"
     >
       <div
-        class="sp-card flex w-full flex-col overflow-hidden border bg-[var(--color-surface-2)]"
+        class="sp-card flex w-full flex-col overflow-hidden border bg-surface-2"
         :class="isModal
-          ? 'max-h-[76vh] max-w-5xl rounded-2xl border-[var(--color-border-strong)] shadow-2xl'
-          : 'sp-inline max-h-[62vh] rounded-2xl border-[var(--color-border)] shadow-xl'"
+          ? 'max-h-[76vh] max-w-5xl rounded-2xl border-line-strong elev-4'
+          : 'sp-inline max-h-[62vh] rounded-2xl border-line elev-2'"
       >
         <!-- Facettenleiste (nur mit `facet-bar`): WELCHE QUELLE gefragt wird, als Klick statt als
              Tippwissen. Sie steht UEBER dem Feld, weil sie den Gegenstand der Eingabe bestimmt –
              darunter laese sie sich wie ein Filter des Ergebnisses. Der aktive Chip kommt aus
              `parsed.scope`, nicht aus einem eigenen Ref: sonst haette die Leiste einen Zustand,
              den ein von Hand getippter Praefix (`s: foo`) still widerlegt. -->
-        <div v-if="facetBar" class="flex flex-wrap items-center gap-1 border-b border-[var(--color-border)] bg-[var(--color-surface-offset)]/40 px-2.5 py-2">
+        <div v-if="facetBar" class="flex flex-wrap items-center gap-1 border-b border-line bg-surface-offset/40 px-2.5 py-2">
           <button
             v-for="f in scopeChips"
             :key="f.scope"
             type="button"
             class="sp-chip flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-2xs font-semibold transition"
             :class="parsed.scope === f.scope
-              ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] shadow-sm'
-              : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]'"
+              ? 'bg-accent text-accent-contrast elev-1'
+              : 'text-muted hover:bg-surface-2 hover:text-ink'"
             :title="f.hint"
             :aria-pressed="parsed.scope === f.scope"
             @mousedown.prevent
@@ -938,16 +938,16 @@ const shortPackage = (pkg) => pkg || 'default package'
              Zeilensuche im Code, Namen und Artikel bleiben unberuehrt. -->
         <div
           class="flex items-center gap-2 border-b px-4"
-          :class="patternError ? 'border-[var(--color-danger)]' : 'border-[var(--color-border)]'"
+          :class="patternError ? 'border-danger' : 'border-line'"
         >
-          <Icon icon="lucide:search" class="h-5 w-5 shrink-0 text-[var(--color-accent)]" />
+          <Icon icon="lucide:search" class="h-5 w-5 shrink-0 text-accent" />
           <input
             ref="inputEl"
             v-model="query"
             type="text"
             spellcheck="false"
             placeholder="Search articles, classes and source code…"
-            class="min-w-0 flex-1 bg-transparent py-3.5 text-sm text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
+            class="min-w-0 flex-1 bg-transparent py-3.5 text-sm text-ink outline-none placeholder:text-muted"
             @keydown="onKeydown"
             @focus="focused = true"
             @blur="focused = false"
@@ -956,26 +956,26 @@ const shortPackage = (pkg) => pkg || 'default package'
                drehender Kreis. Ist alles da, treten die Zaehler an dieselbe Stelle. -->
           <span
             v-if="showBusy"
-            class="hidden shrink-0 items-center gap-1.5 whitespace-nowrap font-mono text-3xs text-[var(--color-text-muted)] sm:flex"
+            class="hidden shrink-0 items-center gap-1.5 whitespace-nowrap font-mono text-3xs text-muted sm:flex"
           >
-            <Icon icon="lucide:loader-2" class="h-3.5 w-3.5 shrink-0 animate-spin text-[var(--color-accent)]" />
+            <Icon icon="lucide:loader-2" class="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
             {{ busyLabel }}
             <span v-if="elapsedLabel" class="tabular-nums opacity-70">{{ elapsedLabel }}</span>
           </span>
           <span
             v-else-if="counter"
             class="hidden shrink-0 whitespace-nowrap font-mono text-3xs tabular-nums sm:block"
-            :class="patternError ? 'text-[var(--color-danger)]' : 'text-[var(--color-text-muted)]'"
+            :class="patternError ? 'text-danger' : 'text-muted'"
           >{{ counter }}</span>
-          <span class="mx-0.5 h-4 w-px shrink-0 bg-[var(--color-border)]" />
+          <span class="mx-0.5 h-4 w-px shrink-0 bg-line" />
           <button
             v-for="o in SEARCH_TOGGLES"
             :key="o.key"
             type="button"
             class="grid h-6 w-6 shrink-0 place-items-center rounded transition"
             :class="opts[o.key]
-              ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)]'
-              : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]'"
+              ? 'bg-accent text-accent-contrast'
+              : 'text-muted hover:bg-surface-offset hover:text-ink'"
             :title="o.title"
             :aria-pressed="opts[o.key]"
             @mousedown.prevent
@@ -985,26 +985,26 @@ const shortPackage = (pkg) => pkg || 'default package'
           </button>
           <!-- Im Modal schliesst ESC, eingebettet leert es nur – dort steht deshalb das Kuerzel,
                das dorthin FUEHRT (Strg K), nicht das, was hier passiert. -->
-          <kbd v-if="isModal" class="ml-1 hidden shrink-0 rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-3xs text-[var(--color-text-muted)] sm:block">ESC</kbd>
+          <kbd v-if="isModal" class="ml-1 hidden shrink-0 rounded border border-line px-1.5 py-0.5 font-mono text-3xs text-muted sm:block">ESC</kbd>
           <span v-else class="ml-1 hidden shrink-0 items-center gap-1 sm:flex">
-            <kbd class="rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-3xs text-[var(--color-text-muted)]">Ctrl</kbd>
-            <kbd class="rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-3xs text-[var(--color-text-muted)]">K</kbd>
+            <kbd class="rounded border border-line px-1.5 py-0.5 font-mono text-3xs text-muted">Ctrl</kbd>
+            <kbd class="rounded border border-line px-1.5 py-0.5 font-mono text-3xs text-muted">K</kbd>
           </span>
         </div>
 
         <!-- Facetten: stehen nicht in einem Tooltip, den niemand oeffnet, sondern erscheinen im
              leeren Feld und tragen sich per Klick selbst ein (wie im Graph-Suchfeld). -->
-        <div v-if="!facetBar && !query && focused" class="flex flex-wrap items-center gap-1.5 border-b border-[var(--color-border)] px-4 py-2">
-          <span class="font-mono text-3xs uppercase tracking-[0.12em] text-[var(--color-text-muted)]">Narrow it down</span>
+        <div v-if="!facetBar && !query && focused" class="flex flex-wrap items-center gap-1.5 border-b border-line px-4 py-2">
+          <span class="font-mono text-3xs uppercase tracking-[0.12em] text-muted">Narrow it down</span>
           <button
             v-for="f in SEARCH_FACETS"
             :key="f.prefix"
             type="button"
-            class="flex items-center gap-1 rounded-full border border-[var(--color-border)] px-2 py-0.5 text-2xs text-[var(--color-text-muted)] transition hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
+            class="flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-2xs text-muted transition hover:border-accent hover:text-ink"
             :title="f.hint"
             @mousedown.prevent="applyFacet(f.prefix)"
           >
-            <code class="font-mono text-[var(--color-accent)]">{{ f.prefix }}</code>{{ f.label }}
+            <code class="font-mono text-accent">{{ f.prefix }}</code>{{ f.label }}
           </button>
         </div>
 
@@ -1012,7 +1012,7 @@ const shortPackage = (pkg) => pkg || 'default package'
           <!-- Ergebnisliste -->
           <div
             class="sp-list min-h-0 w-full shrink-0 overflow-y-auto py-2"
-            :class="isModal ? 'lg:w-[24rem] lg:border-r lg:border-[var(--color-border)]' : ''"
+            :class="isModal ? 'lg:w-[24rem] lg:border-r lg:border-line' : ''"
             @mouseenter="previewPinned = false"
             @mouseleave="cancelHover"
           >
@@ -1021,13 +1021,13 @@ const shortPackage = (pkg) => pkg || 'default package'
                  liest sich wie „im Code kommt es nicht vor". -->
             <p
               v-if="patternError || codeError"
-              class="mx-4 mb-1 mt-1 rounded-lg border border-[var(--color-danger)] px-3 py-1.5 text-2xs text-[var(--color-danger)]"
+              class="mx-4 mb-1 mt-1 rounded-lg border border-danger px-3 py-1.5 text-2xs text-danger"
             >{{ patternError ? `No code search: ${patternError}` : codeError }}</p>
 
             <!-- Klassen zuerst: der Namenstreffer steht ohne Request sofort da (die Klassenliste
                  liegt im Store), waehrend Namens- und Quelltextsuche noch unterwegs sind. -->
             <template v-if="results.classes.length || results.serverClasses.length">
-              <div class="flex items-center gap-1.5 px-4 pb-1 pt-2 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
+              <div class="flex items-center gap-1.5 px-4 pb-1 pt-2 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-muted">
                 <Icon icon="lucide:braces" class="h-3 w-3" /> Classes
               </div>
               <button
@@ -1036,24 +1036,24 @@ const shortPackage = (pkg) => pkg || 'default package'
                 type="button"
                 :data-sp-active="entry.idx === active ? '1' : null"
                 class="flex w-full items-center gap-3 px-4 py-1.5 text-left transition"
-                :class="entry.idx === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-surface-offset)]'"
+                :class="entry.idx === active ? 'bg-accent-soft' : 'hover:bg-surface-offset'"
                 @mouseenter="hoverItem(entry.idx)"
                 @click="go(entry)"
               >
-                <Icon icon="lucide:braces" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+                <Icon icon="lucide:braces" class="h-4 w-4 shrink-0 text-accent" />
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center gap-1.5">
-                    <span class="truncate text-sm font-medium text-[var(--color-text)]">{{ entry.name }}</span>
+                    <span class="truncate text-sm font-medium text-ink">{{ entry.name }}</span>
                     <!-- „Genau so heisst sie" ist die Antwort auf die haeufigste Frage an diese
                          Palette – sie gehoert an den Treffer, nicht nur in die Sortierung. -->
                     <span
                       v-if="entry.exact"
-                      class="shrink-0 rounded bg-[var(--color-accent-soft)] px-1.5 font-mono text-3xs font-semibold text-[var(--color-accent)]"
+                      class="shrink-0 rounded bg-accent-soft px-1.5 font-mono text-3xs font-semibold text-accent"
                     >exact</span>
                   </div>
-                  <div class="truncate font-mono text-3xs text-[var(--color-text-muted)]">{{ shortPackage(entry.package) }}</div>
+                  <div class="truncate font-mono text-3xs text-muted">{{ shortPackage(entry.package) }}</div>
                 </div>
-                <span class="shrink-0 font-mono text-3xs text-[var(--color-text-muted)]">
+                <span class="shrink-0 font-mono text-3xs text-muted">
                   {{ entry.classType }}<template v-if="entry.methodCount"> · {{ entry.methodCount }}m</template>
                 </span>
               </button>
@@ -1065,16 +1065,16 @@ const shortPackage = (pkg) => pkg || 'default package'
                 type="button"
                 :data-sp-active="entry.idx === active ? '1' : null"
                 class="flex w-full items-center gap-3 px-4 py-1.5 text-left transition"
-                :class="entry.idx === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-surface-offset)]'"
+                :class="entry.idx === active ? 'bg-accent-soft' : 'hover:bg-surface-offset'"
                 @mouseenter="hoverItem(entry.idx)"
                 @click="go(entry)"
               >
-                <Icon icon="lucide:braces" class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
+                <Icon icon="lucide:braces" class="h-4 w-4 shrink-0 text-muted" />
                 <div class="min-w-0 flex-1">
-                  <span class="truncate text-sm text-[var(--color-text)]">{{ entry.name }}</span>
-                  <div class="truncate font-mono text-3xs text-[var(--color-text-muted)]">{{ shortPackage(entry.package) }}</div>
+                  <span class="truncate text-sm text-ink">{{ entry.name }}</span>
+                  <div class="truncate font-mono text-3xs text-muted">{{ shortPackage(entry.package) }}</div>
                 </div>
-                <span class="shrink-0 font-mono text-3xs text-[var(--color-text-muted)] opacity-70">in source</span>
+                <span class="shrink-0 font-mono text-3xs text-muted opacity-70">in source</span>
               </button>
             </template>
 
@@ -1083,35 +1083,35 @@ const shortPackage = (pkg) => pkg || 'default package'
                  Namenstreffern gemischt saehe jeder Eintrag hier wie ein Fehler der Suche aus,
                  weil das gesuchte Wort in ihm nicht vorkommt. -->
             <template v-if="results.meaningItems.length || meaningNote">
-              <div class="flex items-center gap-1.5 px-4 pb-1 pt-2 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
+              <div class="flex items-center gap-1.5 px-4 pb-1 pt-2 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-muted">
                 <Icon icon="lucide:sparkles" class="h-3 w-3" /> By meaning
                 <span v-if="meaningLoading" class="normal-case tracking-normal opacity-70">· looking…</span>
               </div>
-              <p v-if="meaningNote" class="px-4 pb-1 text-3xs text-[var(--color-text-muted)]">{{ meaningNote }}</p>
+              <p v-if="meaningNote" class="px-4 pb-1 text-3xs text-muted">{{ meaningNote }}</p>
               <button
                 v-for="entry in results.meaningItems"
                 :key="`me-${entry.idx}`"
                 type="button"
                 :data-sp-active="entry.idx === active ? '1' : null"
                 class="flex w-full items-center gap-3 px-4 py-1.5 text-left transition"
-                :class="entry.idx === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-surface-offset)]'"
+                :class="entry.idx === active ? 'bg-accent-soft' : 'hover:bg-surface-offset'"
                 @mouseenter="hoverItem(entry.idx)"
                 @click="go(entry)"
               >
-                <Icon icon="lucide:sparkles" class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
+                <Icon icon="lucide:sparkles" class="h-4 w-4 shrink-0 text-muted" />
                 <div class="min-w-0 flex-1">
-                  <span class="truncate text-sm text-[var(--color-text)]">{{ entry.name }}</span>
-                  <div class="truncate font-mono text-3xs text-[var(--color-text-muted)]">{{ shortPackage(entry.package) }}</div>
+                  <span class="truncate text-sm text-ink">{{ entry.name }}</span>
+                  <div class="truncate font-mono text-3xs text-muted">{{ shortPackage(entry.package) }}</div>
                 </div>
                 <!-- Der Abstandswert steht dran: eine Bedeutungssuche hat kein „passt nicht", nur
                      ein „passt weniger" – und das darf man dem Treffer ansehen. -->
-                <span class="shrink-0 font-mono text-3xs text-[var(--color-text-muted)]">{{ entry.score.toFixed(2) }}</span>
+                <span class="shrink-0 font-mono text-3xs text-muted">{{ entry.score.toFixed(2) }}</span>
               </button>
             </template>
 
             <!-- Artikel -->
             <template v-if="results.articleItems.length">
-              <div class="flex items-center gap-1.5 px-4 pb-1 pt-2 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
+              <div class="flex items-center gap-1.5 px-4 pb-1 pt-2 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-muted">
                 <Icon icon="lucide:file-text" class="h-3 w-3" /> Articles
               </div>
               <button
@@ -1120,16 +1120,16 @@ const shortPackage = (pkg) => pkg || 'default package'
                 type="button"
                 :data-sp-active="entry.idx === active ? '1' : null"
                 class="flex w-full items-center gap-3 px-4 py-2 text-left transition"
-                :class="entry.idx === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-surface-offset)]'"
+                :class="entry.idx === active ? 'bg-accent-soft' : 'hover:bg-surface-offset'"
                 @mouseenter="hoverItem(entry.idx)"
                 @click="go(entry)"
               >
-                <span class="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+                <span class="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-accent-soft text-accent">
                   <Icon icon="lucide:file-text" class="h-4 w-4" />
                 </span>
                 <div class="min-w-0 flex-1">
-                  <div class="truncate text-sm font-medium text-[var(--color-text)]">{{ entry.article.title }}</div>
-                  <div class="truncate text-xs text-[var(--color-text-muted)]">{{ entry.article.summary }}</div>
+                  <div class="truncate text-sm font-medium text-ink">{{ entry.article.title }}</div>
+                  <div class="truncate text-xs text-muted">{{ entry.article.summary }}</div>
                 </div>
                 <CategoryBadge :category="entry.article.category" size="xs" />
               </button>
@@ -1138,7 +1138,7 @@ const shortPackage = (pkg) => pkg || 'default package'
             <!-- Laeuft noch etwas, steht das DORT, wo die Treffer erscheinen werden – sonst wirkt
                  die Liste fertig, obwohl der teuerste Teil noch unterwegs ist. -->
             <template v-if="codeLoading && showBusy">
-              <div class="flex items-center gap-1.5 px-4 pb-1 pt-3 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
+              <div class="flex items-center gap-1.5 px-4 pb-1 pt-3 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-muted">
                 <Icon icon="lucide:code-2" class="h-3 w-3" /> Code
               </div>
               <BusyState
@@ -1152,14 +1152,14 @@ const shortPackage = (pkg) => pkg || 'default package'
 
             <!-- Code: je Klasse eine Kopfzeile, darunter die einzelnen Fundstellen -->
             <template v-if="results.codeFiles.length">
-              <div class="flex items-center gap-1.5 px-4 pb-1 pt-3 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
+              <div class="flex items-center gap-1.5 px-4 pb-1 pt-3 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-muted">
                 <Icon icon="lucide:code-2" class="h-3 w-3" /> Code
               </div>
               <div v-for="file in results.codeFiles" :key="`f-${file.fileId}`" class="mb-1">
                 <div class="flex items-baseline gap-2 px-4 py-1">
-                  <span class="truncate text-xs font-semibold text-[var(--color-text)]">{{ file.className }}</span>
-                  <span class="truncate font-mono text-3xs text-[var(--color-text-muted)]">{{ shortPackage(file.package) }}</span>
-                  <span class="ml-auto shrink-0 rounded bg-[var(--color-surface-offset)] px-1.5 font-mono text-3xs text-[var(--color-text-muted)]">{{ file.matchCount }}</span>
+                  <span class="truncate text-xs font-semibold text-ink">{{ file.className }}</span>
+                  <span class="truncate font-mono text-3xs text-muted">{{ shortPackage(file.package) }}</span>
+                  <span class="ml-auto shrink-0 rounded bg-surface-offset px-1.5 font-mono text-3xs text-muted">{{ file.matchCount }}</span>
                 </div>
                 <button
                   v-for="entry in file.items"
@@ -1167,13 +1167,13 @@ const shortPackage = (pkg) => pkg || 'default package'
                   type="button"
                   :data-sp-active="entry.idx === active ? '1' : null"
                   class="flex w-full items-center gap-2 px-4 py-1 text-left transition"
-                  :class="entry.idx === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-surface-offset)]'"
+                  :class="entry.idx === active ? 'bg-accent-soft' : 'hover:bg-surface-offset'"
                   @mouseenter="hoverItem(entry.idx)"
                   @click="go(entry)"
                 >
-                  <span class="w-9 shrink-0 text-right font-mono text-3xs tabular-nums text-[var(--color-text-muted)]">{{ entry.line }}</span>
+                  <span class="w-9 shrink-0 text-right font-mono text-3xs tabular-nums text-muted">{{ entry.line }}</span>
                   <code
-                    class="search-code min-w-0 flex-1 truncate font-mono text-2xs text-[var(--color-text-muted)]"
+                    class="search-code min-w-0 flex-1 truncate font-mono text-2xs text-muted"
                     v-html="markRanges(hitLine(entry)?.text, hitLine(entry)?.ranges)"
                   />
                 </button>
@@ -1181,11 +1181,11 @@ const shortPackage = (pkg) => pkg || 'default package'
             </template>
             <!-- Steht auch OHNE Codetreffer da: „nichts im Code" ist eine Aussage ueber den Lauf,
                  und die gehoert mit dem Umfang zusammen, in dem gesucht wurde. -->
-            <p v-if="scanNote && !codeLoading" class="px-4 pb-1 pt-1 font-mono text-3xs text-[var(--color-text-muted)] opacity-80">{{ scanNote }}</p>
+            <p v-if="scanNote && !codeLoading" class="px-4 pb-1 pt-1 font-mono text-3xs text-muted opacity-80">{{ scanNote }}</p>
 
             <!-- Methoden (zeilengenauer Sprung) -->
             <template v-if="results.methods.length">
-              <div class="flex items-center gap-1.5 px-4 pb-1 pt-3 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
+              <div class="flex items-center gap-1.5 px-4 pb-1 pt-3 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-muted">
                 <Icon icon="lucide:file-code" class="h-3 w-3" /> Methods
               </div>
               <button
@@ -1194,14 +1194,14 @@ const shortPackage = (pkg) => pkg || 'default package'
                 type="button"
                 :data-sp-active="entry.idx === active ? '1' : null"
                 class="flex w-full items-start gap-3 px-4 py-1.5 text-left transition"
-                :class="entry.idx === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-surface-offset)]'"
+                :class="entry.idx === active ? 'bg-accent-soft' : 'hover:bg-surface-offset'"
                 @mouseenter="hoverItem(entry.idx)"
                 @click="go(entry)"
               >
-                <Icon icon="lucide:file-code" class="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+                <Icon icon="lucide:file-code" class="mt-0.5 h-4 w-4 shrink-0 text-accent" />
                 <div class="min-w-0 flex-1">
-                  <div class="truncate font-mono text-sm text-[var(--color-text)]">{{ entry.item.name }}()</div>
-                  <div class="truncate text-xs text-[var(--color-text-muted)]">{{ entry.item.className }}</div>
+                  <div class="truncate font-mono text-sm text-ink">{{ entry.item.name }}()</div>
+                  <div class="truncate text-xs text-muted">{{ entry.item.className }}</div>
                 </div>
               </button>
             </template>
@@ -1213,21 +1213,21 @@ const shortPackage = (pkg) => pkg || 'default package'
               :key="`t-${entry.idx}`"
               type="button"
               :data-sp-active="entry.idx === active ? '1' : null"
-              class="mt-2 flex w-full items-center gap-3 border-t border-[var(--color-border)] px-4 py-2.5 text-left transition"
-              :class="entry.idx === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-surface-offset)]'"
+              class="mt-2 flex w-full items-center gap-3 border-t border-line px-4 py-2.5 text-left transition"
+              :class="entry.idx === active ? 'bg-accent-soft' : 'hover:bg-surface-offset'"
               @mouseenter="hoverItem(entry.idx)"
               @click="go(entry)"
             >
-              <Icon icon="lucide:boxes" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+              <Icon icon="lucide:boxes" class="h-4 w-4 shrink-0 text-accent" />
               <div class="min-w-0 flex-1">
-                <div class="truncate text-sm text-[var(--color-text)]">
+                <div class="truncate text-sm text-ink">
                   Collect everything about “{{ entry.term }}”
                 </div>
-                <div class="truncate text-xs text-[var(--color-text-muted)]">
+                <div class="truncate text-xs text-muted">
                   Every class around it, picked and copied as one text
                 </div>
               </div>
-              <Icon icon="lucide:arrow-up-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
+              <Icon icon="lucide:arrow-up-right" class="h-3.5 w-3.5 shrink-0 text-muted" />
             </button>
 
             <!-- Die andere Richtung: nicht einsammeln, sondern erklaeren lassen. Ohne eigene
@@ -1239,20 +1239,20 @@ const shortPackage = (pkg) => pkg || 'default package'
               type="button"
               :data-sp-active="entry.idx === active ? '1' : null"
               class="flex w-full items-center gap-3 px-4 py-2.5 text-left transition"
-              :class="entry.idx === active ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-surface-offset)]'"
+              :class="entry.idx === active ? 'bg-accent-soft' : 'hover:bg-surface-offset'"
               @mouseenter="hoverItem(entry.idx)"
               @click="go(entry)"
             >
-              <Icon icon="lucide:help-circle" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+              <Icon icon="lucide:help-circle" class="h-4 w-4 shrink-0 text-accent" />
               <div class="min-w-0 flex-1">
-                <div class="truncate text-sm text-[var(--color-text)]">
+                <div class="truncate text-sm text-ink">
                   Ask about “{{ entry.term }}”
                 </div>
-                <div class="truncate text-xs text-[var(--color-text-muted)]">
+                <div class="truncate text-xs text-muted">
                   An answer built from the matching classes, each claim linked back
                 </div>
               </div>
-              <Icon icon="lucide:arrow-up-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
+              <Icon icon="lucide:arrow-up-right" class="h-3.5 w-3.5 shrink-0 text-muted" />
             </button>
           </div>
 
@@ -1273,17 +1273,17 @@ const shortPackage = (pkg) => pkg || 'default package'
               <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
                 <div class="flex items-center gap-2">
                   <CategoryBadge :category="activeItem.article.category" size="xs" />
-                  <span class="font-mono text-3xs text-[var(--color-text-muted)]">/{{ activeItem.article.slug }}</span>
+                  <span class="font-mono text-3xs text-muted">/{{ activeItem.article.slug }}</span>
                 </div>
-                <h3 class="mt-2 text-base font-semibold text-[var(--color-text)]">{{ activeItem.article.title }}</h3>
-                <p class="mt-1 text-sm text-[var(--color-text-muted)]">{{ activeItem.article.summary }}</p>
+                <h3 class="mt-2 text-base font-semibold text-ink">{{ activeItem.article.title }}</h3>
+                <p class="mt-1 text-sm text-muted">{{ activeItem.article.summary }}</p>
                 <p
                   v-if="activeItem.article.snippet"
-                  class="search-snippet mt-3 rounded-lg bg-[var(--color-surface-offset)] px-3 py-2 text-xs leading-relaxed text-[var(--color-text-muted)]"
+                  class="search-snippet mt-3 rounded-lg bg-surface-offset px-3 py-2 text-xs leading-relaxed text-muted"
                   v-html="renderSnippet(activeItem.article.snippet)"
                 />
                 <div v-if="activeItem.article.tags?.length" class="mt-3 flex flex-wrap gap-1">
-                  <span v-for="t in activeItem.article.tags" :key="t" class="rounded-full bg-[var(--color-surface-offset)] px-2 py-0.5 text-3xs text-[var(--color-text-muted)]">#{{ t }}</span>
+                  <span v-for="t in activeItem.article.tags" :key="t" class="rounded-full bg-surface-offset px-2 py-0.5 text-3xs text-muted">#{{ t }}</span>
                 </div>
               </div>
             </template>
@@ -1294,9 +1294,9 @@ const shortPackage = (pkg) => pkg || 'default package'
             <template v-else-if="activeItem?.kind === 'topic'">
               <div class="grid h-full place-items-center px-8 text-center">
                 <div>
-                  <Icon icon="lucide:boxes" class="mx-auto h-7 w-7 text-[var(--color-accent)]" />
-                  <h3 class="mt-2 text-sm font-semibold text-[var(--color-text)]">Topic bundle</h3>
-                  <p class="mt-1.5 text-xs leading-relaxed text-[var(--color-text-muted)]">
+                  <Icon icon="lucide:boxes" class="mx-auto h-7 w-7 text-accent" />
+                  <h3 class="mt-2 text-sm font-semibold text-ink">Topic bundle</h3>
+                  <p class="mt-1.5 text-xs leading-relaxed text-muted">
                     Four sources answer at once — the name, the source lines, the meaning, and
                     everything one relation away. Pick what belongs and take the code with you as
                     one text.
@@ -1308,9 +1308,9 @@ const shortPackage = (pkg) => pkg || 'default package'
             <template v-else-if="activeItem?.kind === 'ask'">
               <div class="grid h-full place-items-center px-8 text-center">
                 <div>
-                  <Icon icon="lucide:help-circle" class="mx-auto h-7 w-7 text-[var(--color-accent)]" />
-                  <h3 class="mt-2 text-sm font-semibold text-[var(--color-text)]">Ask your project</h3>
-                  <p class="mt-1.5 text-xs leading-relaxed text-[var(--color-text-muted)]">
+                  <Icon icon="lucide:help-circle" class="mx-auto h-7 w-7 text-accent" />
+                  <h3 class="mt-2 text-sm font-semibold text-ink">Ask your project</h3>
+                  <p class="mt-1.5 text-xs leading-relaxed text-muted">
                     The meaning index picks the classes and wiki articles that fit, and the answer is
                     built from those alone. Every claim carries the source it came from — one click
                     opens it.
@@ -1320,18 +1320,18 @@ const shortPackage = (pkg) => pkg || 'default package'
             </template>
 
             <template v-else-if="activeItem">
-              <div class="flex items-baseline gap-2 border-b border-[var(--color-border)] px-5 py-2.5">
+              <div class="flex items-baseline gap-2 border-b border-line px-5 py-2.5">
                 <!-- Kopf der Vorschau aus EINEM Zugriff: Code- und Klassentreffer tragen ihre
                      Felder direkt, Methodentreffer stecken in `item`. -->
-                <span class="truncate text-sm font-semibold text-[var(--color-text)]">
+                <span class="truncate text-sm font-semibold text-ink">
                   {{ activeItem.className || activeItem.name || activeItem.item?.className || activeItem.item?.name }}
                 </span>
-                <span class="truncate font-mono text-3xs text-[var(--color-text-muted)]">
+                <span class="truncate font-mono text-3xs text-muted">
                   {{ shortPackage(activeItem.package ?? activeItem.item?.package) }}
                 </span>
                 <!-- Bei der ganzen Klasse ist der Umfang die Auskunft (und die markierte Zeile die
                      Deklaration); beim Fenster ist es die Fundzeile. -->
-                <span v-if="previewKey(activeItem)" class="ml-auto shrink-0 font-mono text-3xs text-[var(--color-text-muted)]">
+                <span v-if="previewKey(activeItem)" class="ml-auto shrink-0 font-mono text-3xs text-muted">
                   L{{ activeItem.line ?? activeItem.item?.lineNumber }}<template v-if="preview?.full"> · {{ preview.totalLines }} lines</template>
                 </span>
               </div>
@@ -1343,13 +1343,13 @@ const shortPackage = (pkg) => pkg || 'default package'
                    draengen sich neben einem Klassennamen auf jeder Spaltenbreite. -->
               <div
                 v-if="classSearchable"
-                class="flex w-full min-w-0 flex-wrap items-center gap-0.5 border-b border-[var(--color-border)] px-5 py-1.5"
+                class="flex w-full min-w-0 flex-wrap items-center gap-0.5 border-b border-line px-5 py-1.5"
               >
                 <div
-                  class="flex w-full min-w-0 flex-wrap items-center gap-0.5 rounded-lg border bg-[var(--color-surface)] px-1.5 py-0.5 transition"
-                  :class="classFailed ? 'border-[var(--color-danger)]' : 'border-[var(--color-border)] focus-within:border-[var(--color-accent)]'"
+                  class="flex w-full min-w-0 flex-wrap items-center gap-0.5 rounded-lg border bg-surface px-1.5 py-0.5 transition"
+                  :class="classFailed ? 'border-danger' : 'border-line focus-within:border-accent'"
                 >
-                  <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
+                  <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-muted" />
                   <input
                     ref="classInput"
                     :value="classQuery"
@@ -1357,7 +1357,7 @@ const shortPackage = (pkg) => pkg || 'default package'
                     placeholder="Search in this class…"
                     aria-label="Search in this class"
                     spellcheck="false"
-                    class="min-w-[6rem] flex-1 bg-transparent py-0.5 text-xs text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
+                    class="min-w-[6rem] flex-1 bg-transparent py-0.5 text-xs text-ink outline-none placeholder:text-muted"
                     @input="setClassQuery($event.target.value)"
                     @keydown.enter.prevent.stop="stepClassMatch($event.shiftKey ? -1 : 1)"
                     @keydown.esc.prevent.stop="onClassSearchEsc"
@@ -1367,7 +1367,7 @@ const shortPackage = (pkg) => pkg || 'default package'
                   <span
                     v-if="classQuery"
                     class="shrink-0 whitespace-nowrap px-0.5 text-3xs tabular-nums"
-                    :class="classFailed ? 'text-[var(--color-danger)]' : 'text-[var(--color-text-muted)]'"
+                    :class="classFailed ? 'text-danger' : 'text-muted'"
                     :title="classCounterTitle"
                   >{{ classCounter }}</span>
 
@@ -1377,8 +1377,8 @@ const shortPackage = (pkg) => pkg || 'default package'
                     type="button"
                     class="grid h-5 w-5 shrink-0 place-items-center rounded transition"
                     :class="classOpts[o.key]
-                      ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)]'
-                      : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]'"
+                      ? 'bg-accent text-accent-contrast'
+                      : 'text-muted hover:bg-surface-offset hover:text-ink'"
                     :title="o.title.replace('(code search)', '(in this class)')"
                     :aria-pressed="classOpts[o.key]"
                     @mousedown.prevent
@@ -1388,10 +1388,10 @@ const shortPackage = (pkg) => pkg || 'default package'
                   </button>
 
                   <div class="ml-auto flex shrink-0 items-center gap-0.5">
-                    <span class="mx-0.5 h-4 w-px shrink-0 bg-[var(--color-border)]" />
+                    <span class="mx-0.5 h-4 w-px shrink-0 bg-line" />
                     <button
                       type="button"
-                      class="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-40 disabled:hover:bg-transparent"
+                      class="grid h-5 w-5 shrink-0 place-items-center rounded text-muted transition hover:bg-surface-offset hover:text-ink disabled:opacity-40 disabled:hover:bg-transparent"
                       title="Previous match (Shift+Enter)"
                       :disabled="!classMatches.length"
                       @mousedown.prevent
@@ -1401,7 +1401,7 @@ const shortPackage = (pkg) => pkg || 'default package'
                     </button>
                     <button
                       type="button"
-                      class="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)] disabled:opacity-40 disabled:hover:bg-transparent"
+                      class="grid h-5 w-5 shrink-0 place-items-center rounded text-muted transition hover:bg-surface-offset hover:text-ink disabled:opacity-40 disabled:hover:bg-transparent"
                       title="Next match (Enter)"
                       :disabled="!classMatches.length"
                       @mousedown.prevent
@@ -1412,7 +1412,7 @@ const shortPackage = (pkg) => pkg || 'default package'
                     <button
                       v-if="classQuery"
                       type="button"
-                      class="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-offset)] hover:text-[var(--color-text)]"
+                      class="grid h-5 w-5 shrink-0 place-items-center rounded text-muted transition hover:bg-surface-offset hover:text-ink"
                       title="Clear search (Esc)"
                       @mousedown.prevent
                       @click="clearClassSearch"
@@ -1430,13 +1430,13 @@ const shortPackage = (pkg) => pkg || 'default package'
                      Kein Ladezustand, der den Blick anhaelt: derselbe Code, nur ohne Farben. -->
                 <pre
                   v-else-if="activeItem.kind === 'code'"
-                  class="search-fallback overflow-x-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-offset)] p-3 font-mono text-2xs leading-relaxed"
+                  class="search-fallback overflow-x-auto rounded-lg border border-line bg-surface-offset p-3 font-mono text-2xs leading-relaxed"
                 ><span
                   v-for="l in activeItem.lines"
                   :key="l.line"
                   class="block"
-                  :class="l.isHit ? 'text-[var(--color-text)]' : 'text-[var(--color-text-muted)]'"
-                ><span class="mr-3 inline-block w-8 select-none text-right text-[var(--color-text-muted)]">{{ l.line }}</span><span v-html="markRanges(l.text, l.ranges)" /></span></pre>
+                  :class="l.isHit ? 'text-ink' : 'text-muted'"
+                ><span class="mr-3 inline-block w-8 select-none text-right text-muted">{{ l.line }}</span><span v-html="markRanges(l.text, l.ranges)" /></span></pre>
                 <!-- Ein Klassentreffer bringt keinen Ausschnitt mit (er kommt aus der Klassenliste,
                      nicht aus der Quelltextsuche) – hier steht deshalb die Wartemeldung der App,
                      mitsamt dem, worauf gewartet wird. -->
@@ -1451,14 +1451,14 @@ const shortPackage = (pkg) => pkg || 'default package'
                      „so kurz ist die Klasse". -->
                 <p
                   v-if="preview?.truncated"
-                  class="mt-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-offset)] px-3 py-1.5 font-mono text-3xs text-[var(--color-text-muted)]"
+                  class="mt-2 rounded-lg border border-line bg-surface-offset px-3 py-1.5 font-mono text-3xs text-muted"
                 >Showing the first {{ preview.endLine }} of {{ preview.totalLines }} lines — press ↵ to open the full class in Code.</p>
               </div>
             </template>
 
-            <div class="flex items-center gap-3 border-t border-[var(--color-border)] px-5 py-2 text-3xs text-[var(--color-text-muted)]">
-              <span><kbd class="rounded border border-[var(--color-border)] px-1">↑</kbd><kbd class="ml-0.5 rounded border border-[var(--color-border)] px-1">↓</kbd> navigate</span>
-              <span><kbd class="rounded border border-[var(--color-border)] px-1">↵</kbd> open in Code — the search comes along</span>
+            <div class="flex items-center gap-3 border-t border-line px-5 py-2 text-3xs text-muted">
+              <span><kbd class="rounded border border-line px-1">↑</kbd><kbd class="ml-0.5 rounded border border-line px-1">↓</kbd> navigate</span>
+              <span><kbd class="rounded border border-line px-1">↵</kbd> open in Code — the search comes along</span>
             </div>
           </div>
         </div>
@@ -1467,20 +1467,20 @@ const shortPackage = (pkg) => pkg || 'default package'
              Karte Teil der Seite und darf im Ruhezustand nicht die Hoehe von acht Treffern haben. -->
         <div
           v-else-if="showEmptyNote"
-          class="text-center text-[var(--color-text-muted)]"
+          class="text-center text-muted"
           :class="isModal ? 'px-4 py-10 text-sm' : 'px-4 py-4 text-xs'"
         >
           <template v-if="patternError">
-            <span class="text-[var(--color-danger)]">Invalid regular expression</span>
+            <span class="text-danger">Invalid regular expression</span>
             <p class="mt-1 font-mono text-2xs">{{ patternError }}</p>
           </template>
           <template v-else-if="codeError">
-            <span class="text-[var(--color-danger)]">Code search failed</span>
+            <span class="text-danger">Code search failed</span>
             <p class="mt-1 font-mono text-2xs">{{ codeError }}</p>
           </template>
           <template v-else-if="busy">
             <span class="inline-flex items-center gap-2">
-              <Icon icon="lucide:loader-2" class="h-4 w-4 animate-spin text-[var(--color-accent)]" />
+              <Icon icon="lucide:loader-2" class="h-4 w-4 animate-spin text-accent" />
               {{ busyLabel || 'Searching…' }}
             </span>
             <p v-if="elapsedLabel" class="mt-1 font-mono text-2xs tabular-nums opacity-70">{{ elapsedLabel }}</p>
@@ -1503,21 +1503,21 @@ const shortPackage = (pkg) => pkg || 'default package'
               v-for="entry in results.topic"
               :key="`te-${entry.idx}`"
               type="button"
-              class="mt-3 inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text-muted)] transition hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
+              class="mt-3 inline-flex items-center gap-2 rounded-lg border border-line px-3 py-1.5 text-xs text-muted transition hover:border-accent hover:text-ink"
               @click="go(entry)"
             >
-              <Icon icon="lucide:boxes" class="h-3.5 w-3.5 text-[var(--color-accent)]" />
+              <Icon icon="lucide:boxes" class="h-3.5 w-3.5 text-accent" />
               Collect everything about “{{ entry.term }}”
-              <kbd class="rounded border border-[var(--color-border)] px-1 font-mono text-3xs">↵</kbd>
+              <kbd class="rounded border border-line px-1 font-mono text-3xs">↵</kbd>
             </button>
             <button
               v-for="entry in results.ask"
               :key="`ae-${entry.idx}`"
               type="button"
-              class="mt-2 inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text-muted)] transition hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
+              class="mt-2 inline-flex items-center gap-2 rounded-lg border border-line px-3 py-1.5 text-xs text-muted transition hover:border-accent hover:text-ink"
               @click="go(entry)"
             >
-              <Icon icon="lucide:help-circle" class="h-3.5 w-3.5 text-[var(--color-accent)]" />
+              <Icon icon="lucide:help-circle" class="h-3.5 w-3.5 text-accent" />
               Ask about “{{ entry.term }}”
             </button>
           </template>

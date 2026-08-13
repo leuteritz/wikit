@@ -197,104 +197,104 @@ const steps = computed(() => {
          Aufsätze übereinander. -->
     <button
       type="button"
-      class="mt-2 inline-flex items-center gap-1 text-2xs font-medium text-[var(--color-accent)] transition hover:underline"
+      class="mt-2 inline-flex items-center gap-1 text-2xs font-medium text-accent transition hover:underline"
       @click="emit('toggle')"
     >
       <Icon :icon="open ? 'lucide:chevron-down' : 'lucide:chevron-right'" class="h-3 w-3" />
       {{ open ? 'Hide the plan' : 'What should I change here?' }}
     </button>
 
-    <div v-if="open" class="mt-2 space-y-3 rounded-md bg-[var(--color-surface-offset)] p-3">
+    <div v-if="open" class="mt-2 space-y-3 rounded-md bg-surface-offset p-3">
       <template v-if="summary">
         <!-- ⚠️ Die beiden Richtungen UNTEREINANDER und in einem Raster: nebeneinander liest man
              zwei Zeilen, untereinander SIEHT man den Pfeil sich umdrehen. -->
         <div class="grid items-center gap-x-2 gap-y-1 font-mono text-2xs" style="grid-template-columns: max-content max-content max-content max-content 1fr">
-          <span class="text-3xs uppercase text-[var(--color-text-muted)]">now</span>
-          <span class="justify-self-end text-[var(--color-text)]">{{ summary.beforeFrom }}</span>
-          <Icon icon="lucide:arrow-right" class="h-3 w-3 text-[var(--color-danger)]" />
-          <span class="text-[var(--color-text)]">{{ summary.beforeTo }}</span>
-          <span class="text-3xs text-[var(--color-danger)]">closes the loop</span>
+          <span class="text-3xs uppercase text-muted">now</span>
+          <span class="justify-self-end text-ink">{{ summary.beforeFrom }}</span>
+          <Icon icon="lucide:arrow-right" class="h-3 w-3 text-danger" />
+          <span class="text-ink">{{ summary.beforeTo }}</span>
+          <span class="text-3xs text-danger">closes the loop</span>
 
-          <span class="text-3xs uppercase text-[var(--color-text-muted)]">after</span>
-          <span class="justify-self-end text-[var(--color-text)]">{{ summary.afterFrom }}</span>
-          <Icon icon="lucide:arrow-right" class="h-3 w-3 text-[var(--color-success)]" />
-          <span class="text-[var(--color-text)]">
+          <span class="text-3xs uppercase text-muted">after</span>
+          <span class="justify-self-end text-ink">{{ summary.afterFrom }}</span>
+          <Icon icon="lucide:arrow-right" class="h-3 w-3 text-success" />
+          <span class="text-ink">
             {{ summary.afterTo }}
             <template v-if="summary.afterVia"> ← {{ summary.afterVia }}</template>
           </span>
-          <span class="text-3xs text-[var(--color-success)]">no loop</span>
+          <span class="text-3xs text-success">no loop</span>
         </div>
 
         <dl class="grid gap-x-3 gap-y-1 text-2xs" style="grid-template-columns: max-content 1fr">
-          <dt class="text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">Change</dt>
-          <dd class="text-[var(--color-text)]">{{ summary.difference }}</dd>
-          <dt class="text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">Gain</dt>
-          <dd class="text-[var(--color-text)]">{{ summary.gain }}</dd>
-          <dt class="text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">Why here</dt>
-          <dd class="text-[var(--color-text-muted)]">{{ summary.why }}</dd>
+          <dt class="text-3xs uppercase tracking-wide text-muted">Change</dt>
+          <dd class="text-ink">{{ summary.difference }}</dd>
+          <dt class="text-3xs uppercase tracking-wide text-muted">Gain</dt>
+          <dd class="text-ink">{{ summary.gain }}</dd>
+          <dt class="text-3xs uppercase tracking-wide text-muted">Why here</dt>
+          <dd class="text-muted">{{ summary.why }}</dd>
         </dl>
       </template>
 
       <!-- Was die Richtung hält – mit Namen, sonst bleibt es eine Aussage über zwei Ordner. Auf
            Klassenebene sagt das schon die „Easiest cut"-Zeile darüber. -->
       <div v-if="level === 'package' && cycle.weakest?.links?.length">
-        <p class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+        <p class="text-3xs font-semibold uppercase tracking-wide text-muted">
           The relation to remove
         </p>
         <ul class="mt-1 space-y-0.5">
           <li v-for="l in cycle.weakest.links" :key="`${l.fromId}-${l.toId}`" class="text-2xs">
             <button
               type="button"
-              class="font-mono text-[var(--color-text)] underline-offset-2 hover:text-[var(--color-accent)] hover:underline"
+              class="font-mono text-ink underline-offset-2 hover:text-accent hover:underline"
               @click="emit('open-class', l.fromId)"
             >{{ l.from }}</button>
-            <span class="text-[var(--color-text-muted)]"> → </span>
+            <span class="text-muted"> → </span>
             <button
               type="button"
-              class="font-mono text-[var(--color-text)] underline-offset-2 hover:text-[var(--color-accent)] hover:underline"
+              class="font-mono text-ink underline-offset-2 hover:text-accent hover:underline"
               @click="emit('open-class', l.toId)"
             >{{ l.to }}</button>
-            <span class="text-[var(--color-text-muted)]">
+            <span class="text-muted">
               ({{ l.kind }}<template v-if="l.members?.length">, {{ l.members.join(', ') }}</template>)
             </span>
           </li>
         </ul>
-        <p v-if="cycle.weakest.more" class="mt-0.5 text-3xs text-[var(--color-text-muted)]">
+        <p v-if="cycle.weakest.more" class="mt-0.5 text-3xs text-muted">
           … and {{ cycle.weakest.more }} more.
         </p>
       </div>
 
       <!-- Je Schritt: Begründung, dann zwei Fenster. -->
       <div v-if="steps.length">
-        <p class="text-3xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+        <p class="text-3xs font-semibold uppercase tracking-wide text-muted">
           Step by step
         </p>
         <div class="mt-1 space-y-3">
           <div v-for="(step, si) in steps" :key="si">
-            <p class="text-2xs font-medium text-[var(--color-text)]">{{ si + 1 }}. {{ step.title }}</p>
-            <p class="mt-0.5 text-2xs text-[var(--color-text-muted)]">{{ step.why }}</p>
-            <p class="mt-0.5 truncate font-mono text-3xs text-[var(--color-text-muted)]">{{ step.file }}</p>
+            <p class="text-2xs font-medium text-ink">{{ si + 1 }}. {{ step.title }}</p>
+            <p class="mt-0.5 text-2xs text-muted">{{ step.why }}</p>
+            <p class="mt-0.5 truncate font-mono text-3xs text-muted">{{ step.file }}</p>
             <div class="mt-1 grid gap-2 lg:grid-cols-2">
-              <figure class="min-w-0 overflow-hidden rounded border border-[var(--color-border)] bg-[var(--color-surface)]">
-                <figcaption class="border-b border-[var(--color-border)] px-2 py-0.5 text-3xs uppercase tracking-wide text-[var(--color-danger)]">
+              <figure class="min-w-0 overflow-hidden rounded border border-line bg-surface">
+                <figcaption class="border-b border-line px-2 py-0.5 text-3xs uppercase tracking-wide text-danger">
                   before — how it looks today
                 </figcaption>
                 <pre class="overflow-x-auto py-1 font-mono text-3xs leading-relaxed"><span
                   v-for="(l, li) in step.before"
                   :key="li"
                   class="block border-l-2 pr-2 pl-1.5"
-                  :class="l.hit ? 'border-[var(--color-danger)] bg-[var(--color-danger)]/10 text-[var(--color-text)]' : 'border-transparent text-[var(--color-text-muted)]'"
+                  :class="l.hit ? 'border-danger bg-danger/10 text-ink' : 'border-transparent text-muted'"
                 >{{ l.text || ' ' }}</span></pre>
               </figure>
-              <figure class="min-w-0 overflow-hidden rounded border border-[var(--color-border)] bg-[var(--color-surface)]">
-                <figcaption class="border-b border-[var(--color-border)] px-2 py-0.5 text-3xs uppercase tracking-wide text-[var(--color-success)]">
+              <figure class="min-w-0 overflow-hidden rounded border border-line bg-surface">
+                <figcaption class="border-b border-line px-2 py-0.5 text-3xs uppercase tracking-wide text-success">
                   after — how it should look
                 </figcaption>
                 <pre class="overflow-x-auto py-1 font-mono text-3xs leading-relaxed"><span
                   v-for="(l, li) in step.after"
                   :key="li"
                   class="block border-l-2 pr-2 pl-1.5"
-                  :class="l.hit ? 'border-[var(--color-success)] bg-[var(--color-success)]/10 text-[var(--color-text)]' : 'border-transparent text-[var(--color-text-muted)]'"
+                  :class="l.hit ? 'border-success bg-success/10 text-ink' : 'border-transparent text-muted'"
                 >{{ l.text || ' ' }}</span></pre>
               </figure>
             </div>

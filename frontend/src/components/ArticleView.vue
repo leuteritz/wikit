@@ -81,19 +81,19 @@ watch(() => props.article?.id, () => nextTick(enhanceCodeBlocks))
 
 <template>
   <article>
-    <header class="mb-6 border-b border-[var(--color-border)] pb-6">
+    <header class="mb-6 border-b border-line pb-6">
       <div class="mb-3 flex flex-wrap items-center gap-2">
         <CategoryBadge :category="article.category" />
-        <span class="text-xs text-[var(--color-text-muted)]">Updated {{ fmtDate(article.updated_at) }}</span>
+        <span class="text-xs text-muted">Updated {{ fmtDate(article.updated_at) }}</span>
       </div>
-      <h1 class="text-3xl font-bold tracking-tight text-[var(--color-text)]">{{ article.title }}</h1>
-      <p v-if="article.summary" class="mt-2 text-lg text-[var(--color-text-muted)]">{{ article.summary }}</p>
+      <h1 class="text-3xl font-bold tracking-tight text-ink">{{ article.title }}</h1>
+      <p v-if="article.summary" class="mt-2 text-lg text-muted">{{ article.summary }}</p>
 
       <div class="mt-4 flex flex-wrap items-center gap-2">
         <span
           v-for="tag in article.tags"
           :key="tag"
-          class="rounded-md bg-[var(--color-accent-soft)] px-2 py-0.5 font-mono text-xs text-[var(--color-accent)]"
+          class="rounded-md bg-accent-soft px-2 py-0.5 font-mono text-xs text-accent"
         >#{{ tag }}</span>
       </div>
 
@@ -102,14 +102,14 @@ watch(() => props.article?.id, () => nextTick(enhanceCodeBlocks))
              man beim Lesen, nicht in einer Übersicht. -->
         <RouterLink
           :to="`/article/${article.slug}/history`"
-          class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-ink transition hover:border-accent hover:text-accent"
         >
           <Icon icon="lucide:history" class="h-4 w-4" />
           History
         </RouterLink>
         <button
           type="button"
-          class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-danger)] transition hover:bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)]"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-danger transition hover:bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)]"
           @click="$emit('delete', article)"
         >
           <Icon icon="lucide:trash-2" class="h-4 w-4" />
@@ -120,26 +120,26 @@ watch(() => props.article?.id, () => nextTick(enhanceCodeBlocks))
 
     <div
       ref="bodyEl"
-      class="article-body prose max-w-none dark:prose-invert prose-headings:scroll-mt-20 prose-a:text-[var(--color-accent)]"
+      class="article-body prose max-w-none dark:prose-invert prose-headings:scroll-mt-20 prose-a:text-accent"
       v-html="article.content_html"
     />
 
     <!-- Zusammenhänge -->
     <section
       v-if="article.relations && (article.relations.outgoing.length || article.relations.incoming.length)"
-      class="mt-10 border-t border-[var(--color-border)] pt-6"
+      class="mt-10 border-t border-line pt-6"
     >
-      <h2 class="mb-4 font-mono text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">Relations</h2>
+      <h2 class="mb-4 font-mono text-xs font-semibold uppercase tracking-[0.12em] text-muted">Relations</h2>
       <div class="grid gap-3 sm:grid-cols-2">
         <RouterLink
           v-for="rel in [...article.relations.outgoing, ...article.relations.incoming]"
           :key="rel.id"
           :to="`/article/${rel.slug}`"
-          class="group flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 transition hover:border-[var(--color-accent)]"
+          class="group flex items-center gap-3 rounded-xl border border-line bg-surface-2 p-3 transition hover:border-accent"
         >
-          <span class="rounded-md bg-[var(--color-accent-soft)] px-2 py-1 text-2xs font-medium text-[var(--color-accent)]">{{ rel.relation_type }}</span>
-          <span class="min-w-0 flex-1 truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-accent)]">{{ rel.title }}</span>
-          <Icon icon="lucide:arrow-right" class="h-4 w-4 text-[var(--color-text-muted)] transition group-hover:translate-x-0.5 group-hover:text-[var(--color-accent)]" />
+          <span class="rounded-md bg-accent-soft px-2 py-1 text-2xs font-medium text-accent">{{ rel.relation_type }}</span>
+          <span class="min-w-0 flex-1 truncate text-sm font-medium text-ink group-hover:text-accent">{{ rel.title }}</span>
+          <Icon icon="lucide:arrow-right" class="h-4 w-4 text-muted transition group-hover:translate-x-0.5 group-hover:text-accent" />
         </RouterLink>
       </div>
     </section>

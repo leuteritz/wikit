@@ -105,29 +105,29 @@ const usedFields = computed(() => {
       <!-- Bilanz. Bei 0 Befunden steht hier die gute Nachricht und keine Reihe von Nullen:
            „nichts zu tun" ist ein Ergebnis und verdient einen Satz. -->
       <section
-        class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-5 py-4"
+        class="rounded-xl border border-line bg-surface-2 px-5 py-4"
       >
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div class="flex items-center gap-3">
             <Icon
               :icon="clean ? 'lucide:check-circle' : 'lucide:activity'"
               class="h-5 w-5 shrink-0"
-              :class="clean ? 'text-[var(--color-success)]' : 'text-[var(--color-accent)]'"
+              :class="clean ? 'text-success' : 'text-accent'"
             />
             <div>
-              <p class="text-base font-semibold text-[var(--color-text)]">
+              <p class="text-base font-semibold text-ink">
                 {{ clean ? 'Nothing to fix' : `${totals.findings} ${totals.findings === 1 ? 'finding' : 'findings'}` }}
               </p>
-              <p class="mt-0.5 text-xs text-[var(--color-text-muted)]">
+              <p class="mt-0.5 text-xs text-muted">
                 Checked
-                <span class="font-mono font-semibold text-[var(--color-text)]">{{ totals.articles }}</span>
+                <span class="font-mono font-semibold text-ink">{{ totals.articles }}</span>
                 {{ totals.articles === 1 ? 'article' : 'articles' }} — nothing left this machine.
               </p>
             </div>
           </div>
           <button
             type="button"
-            class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 font-mono text-3xs font-semibold text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 font-mono text-3xs font-semibold text-muted transition hover:text-ink"
             :disabled="loading"
             @click="load"
           >
@@ -139,13 +139,13 @@ const usedFields = computed(() => {
         <!-- ⚠️ Der bekannteste Wiki-Befund steht bewusst woanders – und das gehoert dazugesagt,
              sonst liest sich seine Abwesenheit als „gibt es hier nicht". -->
         <p
-          class="mt-3.5 flex flex-wrap items-center gap-1.5 border-t border-[var(--color-border)] pt-3 text-xs text-[var(--color-text-muted)]"
+          class="mt-3.5 flex flex-wrap items-center gap-1.5 border-t border-line pt-3 text-xs text-muted"
         >
           <Icon icon="lucide:info" class="h-3.5 w-3.5 shrink-0" />
           Articles nothing links to are a finding of the relation graph, counted there.
           <button
             type="button"
-            class="inline-flex items-center gap-1 font-semibold text-[var(--color-accent)] transition hover:underline"
+            class="inline-flex items-center gap-1 font-semibold text-accent transition hover:underline"
             @click="emit('show-graph')"
           >
             Open the graph
@@ -158,8 +158,8 @@ const usedFields = computed(() => {
       <section>
         <header class="mb-3">
           <h2 class="flex items-center gap-2.5">
-            <Icon icon="lucide:clock" class="h-4.5 w-4.5 shrink-0 text-[var(--color-text-muted)]" />
-            <span class="text-xl font-semibold tracking-tight text-[var(--color-text)]">
+            <Icon icon="lucide:clock" class="h-4.5 w-4.5 shrink-0 text-muted" />
+            <span class="text-xl font-semibold tracking-tight text-ink">
               Articles that describe code that moved on
             </span>
             <span
@@ -167,7 +167,7 @@ const usedFields = computed(() => {
               class="count-badge"
             >{{ data.outdated.total }}</span>
           </h2>
-          <p class="mt-1.5 text-[0.8125rem] text-[var(--color-text-muted)]">
+          <p class="mt-1.5 text-[0.8125rem] text-muted">
             The class was uploaded again after the article was last touched — so what it says about
             it is at least one version behind.
           </p>
@@ -175,9 +175,9 @@ const usedFields = computed(() => {
 
         <p
           v-if="!data.outdated.total"
-          class="flex items-center gap-2 rounded-lg border border-dashed border-[var(--color-border)] px-4 py-4 text-[0.8125rem] text-[var(--color-text-muted)]"
+          class="flex items-center gap-2 rounded-lg border border-dashed border-line px-4 py-4 text-[0.8125rem] text-muted"
         >
-          <Icon icon="lucide:check" class="h-4 w-4 text-[var(--color-success)]" />
+          <Icon icon="lucide:check" class="h-4 w-4 text-success" />
           Every class article is as new as its class.
         </p>
 
@@ -185,12 +185,12 @@ const usedFields = computed(() => {
           <li
             v-for="a in data.outdated.items"
             :key="a.id"
-            class="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]"
+            class="overflow-hidden rounded-lg border border-line bg-surface-2"
           >
             <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
               <button
                 type="button"
-                class="shrink-0 text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
+                class="shrink-0 text-muted transition hover:text-ink"
                 :aria-expanded="openId === a.id"
                 :title="openId === a.id ? 'Hide what changed' : 'Show what changed'"
                 @click="toggle(a.id)"
@@ -202,7 +202,7 @@ const usedFields = computed(() => {
               </button>
               <RouterLink
                 :to="`/article/${a.slug}`"
-                class="text-sm font-semibold text-[var(--color-text)] transition hover:text-[var(--color-accent)]"
+                class="text-sm font-semibold text-ink transition hover:text-accent"
               >{{ a.title }}</RouterLink>
               <span
                 class="count-badge"
@@ -210,14 +210,14 @@ const usedFields = computed(() => {
               <span class="flex-1" />
               <button
                 type="button"
-                class="inline-flex items-center gap-1.5 rounded border border-[var(--color-border)] px-2 py-1 font-mono text-3xs text-[var(--color-text-muted)] transition hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+                class="inline-flex items-center gap-1.5 rounded border border-line px-2 py-1 font-mono text-3xs text-muted transition hover:border-accent hover:text-accent"
                 v-tip="a.class.package ? `${a.class.package}.${a.class.name}` : a.class.name"
                 @click="openClass(a.class.fileId)"
               >
                 <Icon icon="lucide:file-code" class="h-3.5 w-3.5" />
                 {{ a.class.name }}
               </button>
-              <span class="font-mono text-3xs text-[var(--color-text-muted)]">
+              <span class="font-mono text-3xs text-muted">
                 changed {{ formatRelative(a.latestAt) }}
               </span>
             </div>
@@ -227,24 +227,24 @@ const usedFields = computed(() => {
                  „das steht jetzt anders drin". -->
             <div
               v-if="openId === a.id"
-              class="border-t border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3"
+              class="border-t border-line bg-surface px-4 py-3"
             >
               <div v-for="n in a.notes" :key="n.version" class="mb-3 last:mb-0">
-                <p class="mb-1 font-mono text-3xs font-semibold uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
+                <p class="mb-1 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-muted">
                   Version {{ n.version }} · {{ formatRelative(n.at) }}
                 </p>
                 <blockquote
                   v-if="n.summaryHtml"
-                  class="prose prose-sm max-w-none border-l-2 border-[var(--color-accent)] pl-3 dark:prose-invert"
+                  class="prose prose-sm max-w-none border-l-2 border-accent pl-3 dark:prose-invert"
                   v-html="n.summaryHtml"
                 />
-                <p v-else class="text-xs italic text-[var(--color-text-muted)]">
+                <p v-else class="text-xs italic text-muted">
                   No change summary — Ollama was not available when this version arrived.
                 </p>
               </div>
               <p
                 v-if="a.notesTotal > a.notes.length"
-                class="font-mono text-3xs text-[var(--color-text-muted)]"
+                class="font-mono text-3xs text-muted"
               >
                 + {{ a.notesTotal - a.notes.length }} older
                 {{ a.notesTotal - a.notes.length === 1 ? 'change' : 'changes' }} — the full history is
@@ -254,12 +254,12 @@ const usedFields = computed(() => {
           </li>
         </ul>
 
-        <p v-if="hidden(data.outdated)" class="mt-2 font-mono text-3xs text-[var(--color-text-muted)]">
+        <p v-if="hidden(data.outdated)" class="mt-2 font-mono text-3xs text-muted">
           + {{ hidden(data.outdated) }} more, not shown.
         </p>
         <!-- ⚠️ Die Grenze der Auskunft steht unter der Liste, nicht in einem Tooltip: ohne sie liest
              sich ein leerer Abschnitt als Garantie. -->
-        <p v-if="data.outdated.total" class="mt-2 text-xs leading-relaxed text-[var(--color-text-muted)]">
+        <p v-if="data.outdated.total" class="mt-2 text-xs leading-relaxed text-muted">
           Compared by date, not by meaning: if you edited the article after the class came in — even
           just a typo — it counts as current here.
         </p>
@@ -269,8 +269,8 @@ const usedFields = computed(() => {
       <section>
         <header class="mb-3">
           <h2 class="flex items-center gap-2.5">
-            <Icon icon="lucide:unlink" class="h-4.5 w-4.5 shrink-0 text-[var(--color-text-muted)]" />
-            <span class="text-xl font-semibold tracking-tight text-[var(--color-text)]">
+            <Icon icon="lucide:unlink" class="h-4.5 w-4.5 shrink-0 text-muted" />
+            <span class="text-xl font-semibold tracking-tight text-ink">
               Links that go nowhere
             </span>
             <span
@@ -278,7 +278,7 @@ const usedFields = computed(() => {
               class="count-badge"
             >{{ data.broken.total }}</span>
           </h2>
-          <p class="mt-1.5 text-[0.8125rem] text-[var(--color-text-muted)]">
+          <p class="mt-1.5 text-[0.8125rem] text-muted">
             A link inside the text is just characters — it survives renaming the article it points
             at, and deleting it, without a word.
           </p>
@@ -286,9 +286,9 @@ const usedFields = computed(() => {
 
         <p
           v-if="!data.broken.total"
-          class="flex items-center gap-2 rounded-lg border border-dashed border-[var(--color-border)] px-4 py-4 text-[0.8125rem] text-[var(--color-text-muted)]"
+          class="flex items-center gap-2 rounded-lg border border-dashed border-line px-4 py-4 text-[0.8125rem] text-muted"
         >
-          <Icon icon="lucide:check" class="h-4 w-4 text-[var(--color-success)]" />
+          <Icon icon="lucide:check" class="h-4 w-4 text-success" />
           Every link between your articles lands somewhere.
         </p>
 
@@ -296,16 +296,16 @@ const usedFields = computed(() => {
           <li
             v-for="a in data.broken.items"
             :key="a.id"
-            class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3"
+            class="rounded-lg border border-line bg-surface-2 px-4 py-3"
           >
             <div class="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
               <RouterLink
                 :to="`/article/${a.slug}`"
-                class="text-sm font-semibold text-[var(--color-text)] transition hover:text-[var(--color-accent)]"
+                class="text-sm font-semibold text-ink transition hover:text-accent"
               >{{ a.title }}</RouterLink>
               <RouterLink
                 :to="`/edit/${a.slug}`"
-                class="inline-flex items-center gap-1 font-mono text-3xs text-[var(--color-text-muted)] transition hover:text-[var(--color-accent)]"
+                class="inline-flex items-center gap-1 font-mono text-3xs text-muted transition hover:text-accent"
               >
                 <Icon icon="lucide:pencil" class="h-3 w-3" />
                 fix
@@ -315,7 +315,7 @@ const usedFields = computed(() => {
               <li
                 v-for="(l, i) in a.links"
                 :key="i"
-                class="inline-flex items-center gap-1.5 rounded border border-dashed border-[var(--color-border)] px-2 py-1 font-mono text-3xs text-[var(--color-text-muted)]"
+                class="inline-flex items-center gap-1.5 rounded border border-dashed border-line px-2 py-1 font-mono text-3xs text-muted"
                 v-tip="`“${l.label || l.slug}” points at ${l.href}`"
               >
                 <Icon icon="lucide:unlink" class="h-3 w-3" />
@@ -325,10 +325,10 @@ const usedFields = computed(() => {
           </li>
         </ul>
 
-        <p v-if="hidden(data.broken)" class="mt-2 font-mono text-3xs text-[var(--color-text-muted)]">
+        <p v-if="hidden(data.broken)" class="mt-2 font-mono text-3xs text-muted">
           + {{ hidden(data.broken) }} more, not shown.
         </p>
-        <p class="mt-2 text-xs leading-relaxed text-[var(--color-text-muted)]">
+        <p class="mt-2 text-xs leading-relaxed text-muted">
           Only links between articles are checked. An external link can be dead too — but finding
           that out means going online, and Wikit never does.
         </p>
@@ -338,8 +338,8 @@ const usedFields = computed(() => {
       <section>
         <header class="mb-3">
           <h2 class="flex items-center gap-2.5">
-            <Icon icon="lucide:copy" class="h-4.5 w-4.5 shrink-0 text-[var(--color-text-muted)]" />
-            <span class="text-xl font-semibold tracking-tight text-[var(--color-text)]">
+            <Icon icon="lucide:copy" class="h-4.5 w-4.5 shrink-0 text-muted" />
+            <span class="text-xl font-semibold tracking-tight text-ink">
               Two articles, one subject
             </span>
             <span
@@ -347,7 +347,7 @@ const usedFields = computed(() => {
               class="count-badge"
             >{{ data.duplicates.total }}</span>
           </h2>
-          <p class="mt-1.5 text-[0.8125rem] text-[var(--color-text-muted)]">
+          <p class="mt-1.5 text-[0.8125rem] text-muted">
             Pairs that are far more alike than any two articles here usually are — you probably
             wrote the same thing twice, months apart.
           </p>
@@ -358,16 +358,16 @@ const usedFields = computed(() => {
              fehlt, und nicht „nichts gefunden". -->
         <p
           v-if="data.duplicates.reason"
-          class="flex items-start gap-2 rounded-lg border border-dashed border-[var(--color-border)] px-4 py-4 text-[0.8125rem] text-[var(--color-text-muted)]"
+          class="flex items-start gap-2 rounded-lg border border-dashed border-line px-4 py-4 text-[0.8125rem] text-muted"
         >
           <Icon icon="lucide:info" class="mt-0.5 h-4 w-4 shrink-0" />
           {{ data.duplicates.reason }}.
         </p>
         <p
           v-else-if="!data.duplicates.total"
-          class="flex items-center gap-2 rounded-lg border border-dashed border-[var(--color-border)] px-4 py-4 text-[0.8125rem] text-[var(--color-text-muted)]"
+          class="flex items-center gap-2 rounded-lg border border-dashed border-line px-4 py-4 text-[0.8125rem] text-muted"
         >
-          <Icon icon="lucide:check" class="h-4 w-4 text-[var(--color-success)]" />
+          <Icon icon="lucide:check" class="h-4 w-4 text-success" />
           No two articles stand out as saying the same thing.
         </p>
 
@@ -375,31 +375,31 @@ const usedFields = computed(() => {
           <li
             v-for="(p, i) in data.duplicates.items"
             :key="i"
-            class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3"
+            class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-line bg-surface-2 px-4 py-3"
           >
             <RouterLink
               :to="`/article/${p.a.slug}`"
-              class="text-sm font-semibold text-[var(--color-text)] transition hover:text-[var(--color-accent)]"
+              class="text-sm font-semibold text-ink transition hover:text-accent"
             >{{ p.a.title }}</RouterLink>
-            <Icon icon="lucide:arrow-left-right" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
+            <Icon icon="lucide:arrow-left-right" class="h-3.5 w-3.5 shrink-0 text-muted" />
             <RouterLink
               :to="`/article/${p.b.slug}`"
-              class="text-sm font-semibold text-[var(--color-text)] transition hover:text-[var(--color-accent)]"
+              class="text-sm font-semibold text-ink transition hover:text-accent"
             >{{ p.b.title }}</RouterLink>
             <span class="flex-1" />
             <span
               v-if="p.linked"
-              class="rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-3xs text-[var(--color-text-muted)]"
+              class="rounded border border-line px-1.5 py-0.5 font-mono text-3xs text-muted"
               v-tip="'These two are already related — that says they belong together, not that both are needed.'"
             >already linked</span>
-            <span class="font-mono text-3xs font-semibold text-[var(--color-accent)]">{{ alike(p.score) }}</span>
+            <span class="font-mono text-3xs font-semibold text-accent">{{ alike(p.score) }}</span>
           </li>
         </ul>
 
-        <p v-if="hidden(data.duplicates)" class="mt-2 font-mono text-3xs text-[var(--color-text-muted)]">
+        <p v-if="hidden(data.duplicates)" class="mt-2 font-mono text-3xs text-muted">
           + {{ hidden(data.duplicates) }} more, not shown.
         </p>
-        <p v-if="data.duplicates.total" class="mt-2 text-xs leading-relaxed text-[var(--color-text-muted)]">
+        <p v-if="data.duplicates.total" class="mt-2 text-xs leading-relaxed text-muted">
           Read by meaning, not by wording — two texts can share a subject without sharing a
           sentence. Whether one of them should go is your call.
         </p>
@@ -409,8 +409,8 @@ const usedFields = computed(() => {
       <section>
         <header class="mb-3">
           <h2 class="flex items-center gap-2.5">
-            <Icon icon="lucide:file-edit" class="h-4.5 w-4.5 shrink-0 text-[var(--color-text-muted)]" />
-            <span class="text-xl font-semibold tracking-tight text-[var(--color-text)]">
+            <Icon icon="lucide:file-edit" class="h-4.5 w-4.5 shrink-0 text-muted" />
+            <span class="text-xl font-semibold tracking-tight text-ink">
               Started, not written
             </span>
             <span
@@ -418,7 +418,7 @@ const usedFields = computed(() => {
               class="count-badge"
             >{{ data.incomplete.total }}</span>
           </h2>
-          <p class="mt-1.5 text-[0.8125rem] text-[var(--color-text-muted)]">
+          <p class="mt-1.5 text-[0.8125rem] text-muted">
             Barely any text, or missing something the rest of your wiki carries
             <template v-if="usedFields.length">— here that means {{ usedFields.join(', ') }}</template>.
           </p>
@@ -426,9 +426,9 @@ const usedFields = computed(() => {
 
         <p
           v-if="!data.incomplete.total"
-          class="flex items-center gap-2 rounded-lg border border-dashed border-[var(--color-border)] px-4 py-4 text-[0.8125rem] text-[var(--color-text-muted)]"
+          class="flex items-center gap-2 rounded-lg border border-dashed border-line px-4 py-4 text-[0.8125rem] text-muted"
         >
-          <Icon icon="lucide:check" class="h-4 w-4 text-[var(--color-success)]" />
+          <Icon icon="lucide:check" class="h-4 w-4 text-success" />
           Every article is written and filled in.
         </p>
 
@@ -436,33 +436,33 @@ const usedFields = computed(() => {
           <li
             v-for="a in data.incomplete.items"
             :key="a.id"
-            class="flex items-center gap-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2"
+            class="flex items-center gap-2.5 rounded-lg border border-line bg-surface-2 px-3 py-2"
           >
             <RouterLink
               :to="`/edit/${a.slug}`"
-              class="text-[0.8125rem] font-semibold text-[var(--color-text)] transition hover:text-[var(--color-accent)]"
+              class="text-[0.8125rem] font-semibold text-ink transition hover:text-accent"
             >{{ a.title }}</RouterLink>
             <span
               v-if="a.is_class"
-              class="rounded border border-[var(--color-border)] px-1 py-0.5 font-mono text-3xs text-[var(--color-text-muted)]"
+              class="rounded border border-line px-1 py-0.5 font-mono text-3xs text-muted"
             >class</span>
             <span
               v-if="a.stub"
-              class="rounded bg-[var(--color-accent-soft)] px-1.5 py-0.5 font-mono text-3xs text-[var(--color-accent)]"
+              class="rounded bg-accent-soft px-1.5 py-0.5 font-mono text-3xs text-accent"
               v-tip="`${a.words} words of prose`"
             >stub</span>
             <span
               v-for="m in a.missing"
               :key="m"
-              class="rounded border border-dashed border-[var(--color-border)] px-1.5 py-0.5 font-mono text-3xs text-[var(--color-text-muted)]"
+              class="rounded border border-dashed border-line px-1.5 py-0.5 font-mono text-3xs text-muted"
             >no {{ m }}</span>
           </li>
         </ul>
 
-        <p v-if="hidden(data.incomplete)" class="mt-2 font-mono text-3xs text-[var(--color-text-muted)]">
+        <p v-if="hidden(data.incomplete)" class="mt-2 font-mono text-3xs text-muted">
           + {{ hidden(data.incomplete) }} more, not shown.
         </p>
-        <p v-if="data.incomplete.total" class="mt-2 text-xs leading-relaxed text-[var(--color-text-muted)]">
+        <p v-if="data.incomplete.total" class="mt-2 text-xs leading-relaxed text-muted">
           A short note can be a finished note — this is a list to glance at, not to empty. Class
           articles are never called stubs: their content is the code, and that is not counted as
           prose.

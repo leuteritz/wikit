@@ -34,12 +34,12 @@ function isActive(name, active) {
 <template>
   <div>
     <div class="mb-2.5 flex flex-wrap items-center justify-between gap-2">
-      <p class="font-mono text-2xs uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
+      <p class="font-mono text-2xs uppercase tracking-[0.14em] text-muted">
         Installed on {{ host || 'the server' }}
       </p>
       <button
         type="button"
-        class="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2.5 py-1 text-2xs font-medium text-[var(--color-text-muted)] transition hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)] disabled:opacity-50"
+        class="inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 text-2xs font-medium text-muted transition hover:border-line-strong hover:text-ink disabled:opacity-50"
         :disabled="loading"
         @click="$emit('refresh')"
       >
@@ -50,17 +50,17 @@ function isActive(name, active) {
 
     <p
       v-if="error"
-      class="rounded-lg border border-[var(--color-danger)]/40 bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-3 py-2.5 text-2xs leading-relaxed text-[var(--color-text)]"
+      class="rounded-lg border border-danger/40 bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-3 py-2.5 text-2xs leading-relaxed text-ink"
     >
       {{ error }}
     </p>
 
     <p
       v-else-if="!models.length && !loading"
-      class="rounded-lg border border-dashed border-[var(--color-border)] px-3 py-4 text-center text-2xs text-[var(--color-text-muted)]"
+      class="rounded-lg border border-dashed border-line px-3 py-4 text-center text-2xs text-muted"
     >
       No models installed. Pull one on the server, e.g.
-      <code class="rounded bg-[var(--color-surface-offset)] px-1.5 py-0.5 font-mono text-[var(--color-text)]">ollama pull qwen2.5-coder:3b</code>
+      <code class="rounded bg-surface-offset px-1.5 py-0.5 font-mono text-ink">ollama pull qwen2.5-coder:3b</code>
     </p>
 
     <div v-else class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
@@ -70,38 +70,38 @@ function isActive(name, active) {
         type="button"
         class="group rounded-lg border px-3 py-2.5 text-left transition"
         :class="isActive(m.name, active)
-          ? 'border-[var(--color-accent)] bg-[var(--color-accent-soft)]'
-          : 'border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)]'"
+          ? 'border-accent bg-accent-soft'
+          : 'border-line bg-surface hover:border-line-strong'"
         @click="$emit('select', m.name)"
       >
         <span class="flex items-center gap-2">
           <Icon
             :icon="isActive(m.name, active) ? 'lucide:check-circle' : 'lucide:cpu'"
             class="h-4 w-4 shrink-0"
-            :class="isActive(m.name, active) ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'"
+            :class="isActive(m.name, active) ? 'text-accent' : 'text-muted'"
           />
           <span
             class="min-w-0 flex-1 truncate font-mono text-xs font-semibold"
-            :class="isActive(m.name, active) ? 'text-[var(--color-accent)]' : 'text-[var(--color-text)]'"
+            :class="isActive(m.name, active) ? 'text-accent' : 'text-ink'"
           >{{ m.name }}</span>
         </span>
 
         <span class="mt-2 flex flex-wrap items-center gap-1">
           <span
             v-if="m.parameterSize"
-            class="rounded border border-[var(--color-border)] px-1.5 py-px font-mono text-3xs text-[var(--color-text-muted)]"
+            class="rounded border border-line px-1.5 py-px font-mono text-3xs text-muted"
           >{{ m.parameterSize }}</span>
           <span
             v-if="m.quantization"
-            class="rounded border border-[var(--color-border)] px-1.5 py-px font-mono text-3xs text-[var(--color-text-muted)]"
+            class="rounded border border-line px-1.5 py-px font-mono text-3xs text-muted"
           >{{ m.quantization }}</span>
-          <span v-if="gb(m.size)" class="inline-flex items-center gap-1 font-mono text-3xs text-[var(--color-text-muted)]">
+          <span v-if="gb(m.size)" class="inline-flex items-center gap-1 font-mono text-3xs text-muted">
             <Icon icon="lucide:hard-drive" class="h-3 w-3 opacity-70" />
             {{ gb(m.size) }}
           </span>
         </span>
 
-        <span v-if="m.modifiedAt" class="mt-1.5 block font-mono text-3xs text-[var(--color-text-muted)]">
+        <span v-if="m.modifiedAt" class="mt-1.5 block font-mono text-3xs text-muted">
           pulled {{ formatRelative(m.modifiedAt) }}
         </span>
       </button>

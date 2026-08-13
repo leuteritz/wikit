@@ -153,15 +153,15 @@ watch(
   <div class="flex h-full min-h-0 flex-col">
     <!-- ======================= Kopfzeile ======================= -->
     <header
-      class="sticky top-0 z-20 border-b border-[var(--color-border)] bg-[var(--color-surface)]/95 px-5 py-3 backdrop-blur"
+      class="sticky top-0 z-20 border-b border-line bg-surface/95 px-5 py-3 backdrop-blur"
     >
       <div class="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-4 gap-y-2">
-        <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+        <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
           <Icon icon="lucide:bot" class="h-5 w-5" />
         </span>
         <div class="min-w-0">
-          <h1 class="font-mono text-base font-semibold tracking-tight text-[var(--color-text)]">Bot</h1>
-          <p class="flex items-center gap-1.5 text-2xs text-[var(--color-text-muted)]">
+          <h1 class="font-mono text-base font-semibold tracking-tight text-ink">Bot</h1>
+          <p class="flex items-center gap-1.5 text-2xs text-muted">
             <span class="h-1.5 w-1.5 shrink-0 rounded-full" :style="{ background: DOT[status] }" />
             <span class="truncate">{{ statusLabel }}</span>
           </p>
@@ -169,20 +169,20 @@ watch(
 
         <div class="ml-auto flex flex-wrap items-center gap-2">
           <!-- Der Zaehler ist die Auskunft: „3 unsaved" sagt, dass etwas aussteht UND wieviel. -->
-          <span v-if="dirty" class="font-mono text-2xs text-[var(--color-warning)]">
+          <span v-if="dirty" class="font-mono text-2xs text-warning">
             {{ dirtyPaths.length }} unsaved
           </span>
           <button
             v-if="dirty"
             type="button"
-            class="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-muted)] transition hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+            class="rounded-md border border-line px-3 py-1.5 text-xs font-medium text-muted transition hover:border-line-strong hover:text-ink"
             @click="revert"
           >
             Discard
           </button>
           <button
             type="button"
-            class="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-accent)] px-3.5 py-1.5 text-xs font-semibold text-[var(--color-accent-contrast)] transition hover:bg-[var(--color-accent-hover)] disabled:opacity-40"
+            class="inline-flex items-center gap-1.5 rounded-md bg-accent px-3.5 py-1.5 text-xs font-semibold text-accent-contrast transition hover:bg-accent-hover disabled:opacity-40"
             :disabled="!dirty || state.saving"
             title="Save changed settings (Ctrl+S)"
             @click="doSave"
@@ -201,8 +201,8 @@ watch(
           type="button"
           class="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition"
           :class="tab === t.id
-            ? 'border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]'
-            : 'border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-surface-offset)]'"
+            ? 'border-accent bg-accent-soft text-accent'
+            : 'border-transparent text-muted hover:bg-surface-offset'"
           :title="t.hint"
           @click="tab = t.id"
         >
@@ -236,8 +236,8 @@ watch(
               @check="checkHealth({ useDraft: true })"
             />
 
-            <section class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-              <h2 class="mb-3 font-mono text-2xs uppercase tracking-[0.14em] text-[var(--color-text-muted)]">Server</h2>
+            <section class="rounded-xl border border-line bg-surface-2 p-4">
+              <h2 class="mb-3 font-mono text-2xs uppercase tracking-[0.14em] text-muted">Server</h2>
               <div class="space-y-4">
                 <BotField
                   v-for="f in fieldsOf('connection')"
@@ -252,8 +252,8 @@ watch(
               </div>
             </section>
 
-            <section class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-              <h2 class="mb-3 font-mono text-2xs uppercase tracking-[0.14em] text-[var(--color-text-muted)]">Model catalog</h2>
+            <section class="rounded-xl border border-line bg-surface-2 p-4">
+              <h2 class="mb-3 font-mono text-2xs uppercase tracking-[0.14em] text-muted">Model catalog</h2>
               <BotModelPicker
                 :models="state.models"
                 :active="draft.model"
@@ -273,9 +273,9 @@ watch(
 
           <!-- ---------------- Generation ---------------- -->
           <div v-show="tab === 'generation'" class="space-y-5">
-            <section class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-              <h2 class="mb-1 font-mono text-2xs uppercase tracking-[0.14em] text-[var(--color-text-muted)]">Sampling</h2>
-              <p class="mb-3.5 text-2xs text-[var(--color-text-muted)]">
+            <section class="rounded-xl border border-line bg-surface-2 p-4">
+              <h2 class="mb-1 font-mono text-2xs uppercase tracking-[0.14em] text-muted">Sampling</h2>
+              <p class="mb-3.5 text-2xs text-muted">
                 Everything on <span class="font-mono">auto</span> is left to the model — that option is not sent at all.
               </p>
               <div class="grid gap-4 lg:grid-cols-2 lg:gap-x-8">
@@ -291,9 +291,9 @@ watch(
               </div>
             </section>
 
-            <section class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-              <h2 class="mb-1 font-mono text-2xs uppercase tracking-[0.14em] text-[var(--color-text-muted)]">Queue</h2>
-              <p class="mb-3.5 text-2xs text-[var(--color-text-muted)]">
+            <section class="rounded-xl border border-line bg-surface-2 p-4">
+              <h2 class="mb-1 font-mono text-2xs uppercase tracking-[0.14em] text-muted">Queue</h2>
+              <p class="mb-3.5 text-2xs text-muted">
                 How the background analysis works through classes. Applies to a running queue as well.
               </p>
               <div class="grid gap-4 lg:grid-cols-2 lg:gap-x-8">
@@ -312,8 +312,8 @@ watch(
 
           <!-- ---------------- Prompts ---------------- -->
           <div v-show="tab === 'prompts'" class="space-y-5">
-            <section class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-              <h2 class="mb-3 font-mono text-2xs uppercase tracking-[0.14em] text-[var(--color-text-muted)]">Project context</h2>
+            <section class="rounded-xl border border-line bg-surface-2 p-4">
+              <h2 class="mb-3 font-mono text-2xs uppercase tracking-[0.14em] text-muted">Project context</h2>
               <BotField
                 v-for="f in fieldsOf('context')"
                 :key="f.path"
@@ -325,9 +325,9 @@ watch(
               />
             </section>
 
-            <section class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-              <h2 class="mb-1 font-mono text-2xs uppercase tracking-[0.14em] text-[var(--color-text-muted)]">Templates</h2>
-              <p class="mb-3.5 text-2xs text-[var(--color-text-muted)]">
+            <section class="rounded-xl border border-line bg-surface-2 p-4">
+              <h2 class="mb-1 font-mono text-2xs uppercase tracking-[0.14em] text-muted">Templates</h2>
+              <p class="mb-3.5 text-2xs text-muted">
                 What Wikit actually sends. Placeholders in braces are replaced before the request — the
                 <span class="font-mono">Playground</span> tab renders them with a sample class.
               </p>
@@ -346,9 +346,9 @@ watch(
 
           <!-- ---------------- Wiki ---------------- -->
           <div v-show="tab === 'wiki'" class="space-y-5">
-            <section class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-              <h2 class="mb-1 font-mono text-2xs uppercase tracking-[0.14em] text-[var(--color-text-muted)]">Version history</h2>
-              <p class="mb-3.5 text-2xs text-[var(--color-text-muted)]">
+            <section class="rounded-xl border border-line bg-surface-2 p-4">
+              <h2 class="mb-1 font-mono text-2xs uppercase tracking-[0.14em] text-muted">Version history</h2>
+              <p class="mb-3.5 text-2xs text-muted">
                 Every article keeps its earlier text. Nothing here reaches Ollama — the status dot above
                 does not apply.
               </p>
@@ -366,7 +366,7 @@ watch(
               </div>
               <!-- Eine gesenkte Grenze wirft beim naechsten Speichern weg, was darueber liegt –
                    das gehoert VOR den Klick, nicht in die Fehlermeldung danach. -->
-              <p class="mt-3 text-2xs leading-relaxed text-[var(--color-text-muted)]">
+              <p class="mt-3 text-2xs leading-relaxed text-muted">
                 Lowering this drops the surplus versions the next time an article is saved — oldest
                 first, and it cannot be undone.
               </p>
@@ -375,7 +375,7 @@ watch(
 
           <!-- ---------------- Playground ---------------- -->
           <div v-show="tab === 'playground'">
-            <section class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
+            <section class="rounded-xl border border-line bg-surface-2 p-4">
               <BotPlayground ref="playground" :draft="draft" :prompts="draft.prompts" :dirty="dirty" />
             </section>
           </div>
@@ -383,15 +383,15 @@ watch(
           <!-- Der Weg zurueck auf Werkseinstellung steht unten, nicht in der Kopfzeile: er ist
                selten und folgenreich, und rot in der Kopfzeile ist eine Warnung, die nach zwei
                Minuten niemanden mehr erreicht. -->
-          <div class="mt-6 flex flex-wrap items-center gap-3 border-t border-[var(--color-border)] pt-4">
+          <div class="mt-6 flex flex-wrap items-center gap-3 border-t border-line pt-4">
             <button
               type="button"
-              class="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-2xs font-medium text-[var(--color-text-muted)] transition hover:border-[var(--color-danger)]/50 hover:text-[var(--color-danger)]"
+              class="rounded-md border border-line px-3 py-1.5 text-2xs font-medium text-muted transition hover:border-danger/50 hover:text-danger"
               @click="resetAll"
             >
               Reset everything to defaults
             </button>
-            <p class="text-3xs text-[var(--color-text-muted)]">
+            <p class="text-3xs text-muted">
               <!-- „Everything" heißt seit dem Wiki-Reiter mehr als die Ollama-Werte. Die Zeile
                    nennt sie, also muss sie vollständig sein – sonst verspricht der Knopf weniger,
                    als er tut. -->

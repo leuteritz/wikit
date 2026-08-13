@@ -124,7 +124,7 @@ async function copyFile(file) {
 </script>
 
 <template>
-  <div class="border-t border-[var(--color-border)] bg-[var(--color-surface-offset)] px-3 py-3">
+  <div class="border-t border-line bg-surface-offset px-3 py-3">
     <BusyState
       v-if="loading"
       variant="inline"
@@ -133,7 +133,7 @@ async function copyFile(file) {
       :since="startedAt"
     />
 
-    <div v-else-if="!plan" class="text-2xs text-[var(--color-text-muted)]">
+    <div v-else-if="!plan" class="text-2xs text-muted">
       The split plan could not be computed for this class.
     </div>
 
@@ -143,10 +143,10 @@ async function copyFile(file) {
            Satz sähen drei leere Schnitte darunter wie ein Fehler der Rechnung aus. -->
       <div
         v-if="plan.summary"
-        class="mb-3 flex items-start gap-2 rounded-md border border-[var(--color-success)]/30 bg-[var(--color-success)]/5 px-3 py-2"
+        class="mb-3 flex items-start gap-2 rounded-md border border-success/30 bg-success/5 px-3 py-2"
       >
-        <Icon icon="lucide:check-circle" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-success)]" />
-        <p class="max-w-3xl text-2xs leading-relaxed text-[var(--color-text)]">{{ plan.summary }}</p>
+        <Icon icon="lucide:check-circle" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
+        <p class="max-w-3xl text-2xs leading-relaxed text-ink">{{ plan.summary }}</p>
       </div>
 
       <!-- ⚠️ Die Bilanz ZUERST: „was wird daraus?" beantwortet man an zwei Zeilen. Untereinander
@@ -157,33 +157,33 @@ async function copyFile(file) {
         class="grid items-baseline gap-x-3 gap-y-1 font-mono text-2xs"
         style="grid-template-columns: max-content 1fr"
       >
-        <span class="text-3xs uppercase text-[var(--color-text-muted)]">now</span>
-        <span class="text-[var(--color-text)]">
+        <span class="text-3xs uppercase text-muted">now</span>
+        <span class="text-ink">
           {{ plan.class.className }}
-          <span class="text-[var(--color-text-muted)]">
+          <span class="text-muted">
             · {{ num(plan.class.loc) }} lines · {{ num(plan.class.methods) }} methods ·
             {{ num(plan.class.fields) }} fields<template v-if="plan.class.callers">
               · {{ num(plan.class.callers) }} callers</template>
           </span>
         </span>
 
-        <span class="text-3xs uppercase text-[var(--color-text-muted)]">after</span>
+        <span class="text-3xs uppercase text-muted">after</span>
         <span class="min-w-0">
-          <span v-for="p in active.parts" :key="p.name" class="block text-[var(--color-text)]">
-            <Icon icon="lucide:corner-down-right" class="mr-1 inline h-3 w-3 text-[var(--color-success)]" />
+          <span v-for="p in active.parts" :key="p.name" class="block text-ink">
+            <Icon icon="lucide:corner-down-right" class="mr-1 inline h-3 w-3 text-success" />
             {{ p.name }}
-            <span class="text-[var(--color-text-muted)]">· {{ partMeta(p, active.id) }}</span>
+            <span class="text-muted">· {{ partMeta(p, active.id) }}</span>
             <!-- ⚠️ Ein geratener Name wird ANGESCHRIEBEN. Er ist das einzige am Vorschlag, das
                  nicht im Code steht – ihn stillschweigend hinzuschreiben hiesse behaupten, die
                  Rechnung habe ihn gefunden. -->
             <span
               v-if="p.nameGuessed"
               v-tip="'No word in these members carries the group — pick a name that fits, this one is only a placeholder.'"
-              class="ml-1 rounded bg-[var(--color-surface)] px-1 text-3xs text-[var(--color-text-muted)]"
+              class="ml-1 rounded bg-surface px-1 text-3xs text-muted"
               >name is a placeholder</span
             >
           </span>
-          <span v-if="active.shared.length" class="mt-0.5 block text-[var(--color-text-muted)]">
+          <span v-if="active.shared.length" class="mt-0.5 block text-muted">
             shared: {{ active.shared.slice(0, 4).map((s) => s.name).join(', ')
             }}<template v-if="active.shared.length > 4"> and {{ active.shared.length - 4 }} more</template>
           </span>
@@ -200,23 +200,23 @@ async function copyFile(file) {
           type="button"
           class="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-2xs font-medium transition"
           :class="active && active.id === s.id
-            ? 'border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]'
-            : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]'"
+            ? 'border-accent bg-accent-soft text-accent'
+            : 'border-line text-muted hover:border-line-strong hover:text-ink'"
           @click="picked = s.id"
         >
           <Icon :icon="STRATEGY[s.id].icon" class="h-3 w-3" />
           {{ STRATEGY[s.id].short }}
-          <span v-if="s.verdict === 'none'" class="rounded bg-[var(--color-surface)] px-1 text-3xs opacity-70">—</span>
+          <span v-if="s.verdict === 'none'" class="rounded bg-surface px-1 text-3xs opacity-70">—</span>
           <span
             v-else-if="s.id === plan.lead"
-            class="rounded bg-[var(--color-success)]/15 px-1 text-3xs text-[var(--color-success)]"
+            class="rounded bg-success/15 px-1 text-3xs text-success"
           >best fit</span>
         </button>
       </div>
 
       <template v-if="active">
-        <p class="mt-2.5 text-sm font-medium leading-snug text-[var(--color-text)]">{{ active.headline }}</p>
-        <p class="mt-0.5 max-w-3xl text-2xs leading-relaxed text-[var(--color-text-muted)]">{{ active.why }}</p>
+        <p class="mt-2.5 text-sm font-medium leading-snug text-ink">{{ active.headline }}</p>
+        <p class="mt-0.5 max-w-3xl text-2xs leading-relaxed text-muted">{{ active.why }}</p>
 
         <!-- ⚠️ Der Vorschlag SIND die Dateien. Über jeder steht in einem Satz, warum es sie gibt
              (`caption`) und was sie ist (neu · umgeschrieben · so wie heute) – ohne diese Marke
@@ -225,27 +225,27 @@ async function copyFile(file) {
           <figure
             v-for="f in active.files"
             :key="f.path"
-            class="min-w-0 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]"
+            class="min-w-0 overflow-hidden rounded-md border border-line bg-surface"
           >
-            <figcaption class="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-[var(--color-border)] px-2.5 py-1.5">
+            <figcaption class="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line px-2.5 py-1.5">
               <Icon :icon="FILE_KIND[f.kind].icon" class="h-3.5 w-3.5 shrink-0" :style="{ color: FILE_KIND[f.kind].color }" />
-              <span class="font-mono text-xs font-semibold text-[var(--color-text)]">{{ f.name }}</span>
+              <span class="font-mono text-xs font-semibold text-ink">{{ f.name }}</span>
               <span
                 class="rounded px-1 text-3xs"
                 :style="{ color: FILE_KIND[f.kind].color, background: 'var(--color-surface-offset)' }"
                 >{{ FILE_KIND[f.kind].label }}</span
               >
-              <span class="font-mono text-3xs text-[var(--color-text-muted)]">{{ plural(f.lines, 'line') }}</span>
+              <span class="font-mono text-3xs text-muted">{{ plural(f.lines, 'line') }}</span>
               <button
                 type="button"
-                class="ml-auto inline-flex items-center gap-1 rounded border border-[var(--color-border)] px-1.5 py-0.5 text-3xs text-[var(--color-text-muted)] transition hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+                class="ml-auto inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-3xs text-muted transition hover:border-line-strong hover:text-ink"
                 @click="copyFile(f)"
               >
                 <Icon :icon="copied === f.path ? 'lucide:check' : 'lucide:copy'" class="h-3 w-3" />
                 {{ copied === f.path ? 'Copied' : 'Copy' }}
               </button>
             </figcaption>
-            <p class="border-b border-[var(--color-border)] px-2.5 py-1.5 text-2xs leading-relaxed text-[var(--color-text-muted)]">
+            <p class="border-b border-line px-2.5 py-1.5 text-2xs leading-relaxed text-muted">
               {{ f.caption }}
             </p>
             <!-- Shiki-HTML vom Server – kein zweiter Highlighter im Client, und `split-code` teilt
@@ -262,12 +262,12 @@ async function copyFile(file) {
           style="grid-template-columns: max-content 1fr"
         >
           <template v-if="active.gain">
-            <dt class="text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">Gain</dt>
-            <dd class="text-[var(--color-text)]">{{ active.gain }}</dd>
+            <dt class="text-3xs uppercase tracking-wide text-muted">Gain</dt>
+            <dd class="text-ink">{{ active.gain }}</dd>
           </template>
           <template v-if="active.cost">
-            <dt class="text-3xs uppercase tracking-wide text-[var(--color-text-muted)]">Cost</dt>
-            <dd class="text-[var(--color-text-muted)]">{{ active.cost }}</dd>
+            <dt class="text-3xs uppercase tracking-wide text-muted">Cost</dt>
+            <dd class="text-muted">{{ active.cost }}</dd>
           </template>
         </dl>
       </template>
@@ -275,8 +275,8 @@ async function copyFile(file) {
       <!-- ⚠️ Die Grenze der Auskunft steht UNTER dem Vorschlag, nicht in einem Tooltip: die
            Zuordnung „Methode benutzt Feld" ist eine Textsuche, und wer das nicht weiß, liest die
            Gruppen als Messung. Gleiche Regel wie der Satz unter der Outside-Liste. -->
-      <ul v-if="plan.limits?.length" class="mt-3 space-y-0.5 border-t border-[var(--color-border)] pt-2">
-        <li v-for="l in plan.limits" :key="l" class="flex items-start gap-1.5 text-3xs text-[var(--color-text-muted)]">
+      <ul v-if="plan.limits?.length" class="mt-3 space-y-0.5 border-t border-line pt-2">
+        <li v-for="l in plan.limits" :key="l" class="flex items-start gap-1.5 text-3xs text-muted">
           <Icon icon="lucide:info" class="mt-0.5 h-2.5 w-2.5 shrink-0" />
           <span>{{ l }}</span>
         </li>
@@ -284,7 +284,7 @@ async function copyFile(file) {
 
       <button
         type="button"
-        class="mt-2 inline-flex items-center gap-1 text-2xs font-medium text-[var(--color-accent)] transition hover:underline"
+        class="mt-2 inline-flex items-center gap-1 text-2xs font-medium text-accent transition hover:underline"
         @click="emit('open-class', plan.class.id)"
       >
         <Icon icon="lucide:arrow-right" class="h-3 w-3" />

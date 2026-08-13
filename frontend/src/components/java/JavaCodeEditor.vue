@@ -423,7 +423,7 @@ onBeforeUnmount(() => {
 <template>
   <div
     ref="editorParent"
-    class="h-full min-h-0 overflow-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3"
+    class="h-full min-h-0 overflow-auto rounded-xl border border-line bg-surface px-3"
   />
 </template>
 

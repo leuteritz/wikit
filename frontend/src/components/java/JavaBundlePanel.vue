@@ -318,16 +318,16 @@ watch(
        dem Bild statt darueber. Hoehe vom Elternteil, gescrollt wird nur die Liste. -->
   <div
     v-if="visible && bundle"
-    class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]"
+    class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-surface-2"
     aria-label="Bundled class relations"
   >
-          <header class="shrink-0 border-b border-[var(--color-border)] px-3 py-2.5">
+          <header class="shrink-0 border-b border-line px-3 py-2.5">
             <!-- Kein ×: geschlossen wird ueber den Umschalter direkt darueber (bzw. ESC). Zwei
                  Schliessen-Knoepfe im selben Blickfeld lassen offen, ob sie dasselbe tun. -->
-            <h2 class="flex min-w-0 items-center gap-2 text-sm font-bold text-[var(--color-text)]">
+            <h2 class="flex min-w-0 items-center gap-2 text-sm font-bold text-ink">
               <Icon
                 :icon="isConnection ? 'lucide:share-2' : 'lucide:git-fork'"
-                class="h-4 w-4 shrink-0 text-[var(--color-thistle)]"
+                class="h-4 w-4 shrink-0 text-thistle"
               />
               <span class="truncate">{{ isConnection ? 'Connection' : 'Bundled relations' }}</span>
             </h2>
@@ -341,7 +341,7 @@ watch(
               </span>
               <Icon
                 :icon="isConnection ? 'lucide:arrow-left-right' : 'lucide:arrow-right'"
-                class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]"
+                class="h-4 w-4 shrink-0 text-muted"
               />
               <span class="bundle-end">
                 <Icon :icon="bundle.toIsClass ? 'lucide:box' : 'lucide:folder'" class="h-3.5 w-3.5 shrink-0" />
@@ -371,19 +371,19 @@ watch(
               Open a row to see the exact lines of code.
             </p>
 
-            <label v-if="relations.length > 8" class="mt-2 flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5">
-              <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
+            <label v-if="relations.length > 8" class="mt-2 flex items-center gap-2 rounded-lg border border-line bg-surface px-2 py-1.5">
+              <Icon icon="lucide:search" class="h-3.5 w-3.5 shrink-0 text-muted" />
               <input
                 v-model="query"
                 type="text"
                 placeholder="Filter by class or method…"
-                class="min-w-0 flex-1 bg-transparent text-xs text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
+                class="min-w-0 flex-1 bg-transparent text-xs text-ink outline-none placeholder:text-muted"
               />
             </label>
           </header>
 
           <div class="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-            <p v-if="!filtered.length" class="px-1 py-6 text-center text-xs text-[var(--color-text-muted)]">
+            <p v-if="!filtered.length" class="px-1 py-6 text-center text-xs text-muted">
               Nothing matches “{{ query }}”.
             </p>
 
@@ -615,7 +615,7 @@ watch(
             </ul>
           </div>
 
-          <footer class="shrink-0 border-t border-[var(--color-border)] px-3 py-2 text-2xs text-[var(--color-text-muted)]">
+          <footer class="shrink-0 border-t border-line px-3 py-2 text-2xs text-muted">
             Arrows read “defines → uses”. Open a row for the code, “Full details” for every call site.
           </footer>
   </div>

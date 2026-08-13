@@ -84,17 +84,17 @@ const groups = computed(() => {
     <!-- Kopf -->
     <div class="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <p class="mb-2 font-mono text-3xs font-semibold tracking-[0.16em] text-[var(--color-text-muted)]">KNOWLEDGE BASE</p>
-        <h1 class="font-mono text-3xl font-semibold tracking-tight text-[var(--color-text)]">Wiki</h1>
-        <p class="mt-2 text-[0.8125rem] text-[var(--color-text-muted)]">
-          <span class="font-mono font-semibold text-[var(--color-text)]">{{ articles.length }}</span> articles ·
-          <span class="font-mono font-semibold text-[var(--color-text)]">{{ categories.length }}</span> categories
+        <p class="mb-2 font-mono text-3xs font-semibold tracking-[0.16em] text-muted">KNOWLEDGE BASE</p>
+        <h1 class="font-mono text-3xl font-semibold tracking-tight text-ink">Wiki</h1>
+        <p class="mt-2 text-[0.8125rem] text-muted">
+          <span class="font-mono font-semibold text-ink">{{ articles.length }}</span> articles ·
+          <span class="font-mono font-semibold text-ink">{{ categories.length }}</span> categories
         </p>
       </div>
       <div class="flex items-center gap-2">
         <!-- Umschalter: drei Fragen an denselben Bestand. Die Liste sagt „was gibt es?",
              der Graph „was haengt woran?", der Bericht „woran muss ich ran?". -->
-        <div class="flex items-center rounded-lg border border-[var(--color-border)] p-0.5">
+        <div class="flex items-center rounded-lg border border-line p-0.5">
           <button
             v-for="m in [
               { key: 'list', icon: 'lucide:list', label: 'List' },
@@ -105,8 +105,8 @@ const groups = computed(() => {
             type="button"
             class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 font-mono text-3xs font-semibold transition"
             :class="view === m.key
-              ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]'
-              : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
+              ? 'bg-accent-soft text-accent'
+              : 'text-muted hover:text-ink'"
             :aria-pressed="view === m.key"
             @click="setView(m.key)"
           >
@@ -116,7 +116,7 @@ const groups = computed(() => {
         </div>
         <RouterLink
           to="/new"
-          class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-4 py-2.5 text-[0.78125rem] font-semibold text-[var(--color-accent-contrast)] transition hover:bg-[var(--color-accent-hover)]"
+          class="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2.5 text-[0.78125rem] font-semibold text-accent-contrast transition hover:bg-accent-hover"
         >
           <Icon icon="lucide:plus" class="h-4 w-4" />
           New article
@@ -129,16 +129,16 @@ const groups = computed(() => {
          ist Ballast (gleiche Begruendung, aus der das Beziehungsnetz keine Kontextstufen hat). -->
     <div
       v-show="view !== 'health'"
-      class="mb-7 flex items-center gap-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3.5"
+      class="mb-7 flex items-center gap-2.5 rounded-lg border border-line bg-surface-2 px-3.5"
     >
-      <Icon icon="lucide:search" class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
+      <Icon icon="lucide:search" class="h-4 w-4 shrink-0 text-muted" />
       <input
         v-model="filter"
         type="text"
         placeholder="filter articles, tags…"
-        class="w-full bg-transparent py-2.5 font-mono text-[0.8125rem] text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
+        class="w-full bg-transparent py-2.5 font-mono text-[0.8125rem] text-ink outline-none placeholder:text-muted"
       />
-      <span class="shrink-0 font-mono text-3xs text-[var(--color-text-muted)]">{{ filtered.length }} results</span>
+      <span class="shrink-0 font-mono text-3xs text-muted">{{ filtered.length }} results</span>
     </div>
 
     <!-- Gleiche Wartemeldung wie im Analyzer (components/BusyState.vue). -->
@@ -162,24 +162,24 @@ const groups = computed(() => {
       <section v-for="group in groups" :key="group.category.id">
         <h2 class="mb-3.5 flex items-center gap-2.5">
           <span class="h-2 w-2 rounded-[2px]" :style="{ background: group.color }" />
-          <span class="font-mono text-xs font-semibold uppercase tracking-[0.1em] text-[var(--color-text)]">{{ group.category.name }}</span>
-          <span class="rounded-full border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-3xs text-[var(--color-text-muted)]">{{ group.items.length }}</span>
-          <span class="h-px flex-1 bg-[var(--color-border)]" />
+          <span class="font-mono text-xs font-semibold uppercase tracking-[0.1em] text-ink">{{ group.category.name }}</span>
+          <span class="rounded-full border border-line px-1.5 py-0.5 font-mono text-3xs text-muted">{{ group.items.length }}</span>
+          <span class="h-px flex-1 bg-line" />
         </h2>
         <div class="grid gap-3" style="grid-template-columns: repeat(auto-fill, minmax(258px, 1fr))">
           <RouterLink
             v-for="a in group.items"
             :key="a.id"
             :to="`/article/${a.slug}`"
-            class="group flex flex-col gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 transition hover:-translate-y-0.5 hover:border-[var(--color-accent)]"
+            class="group flex flex-col gap-2 rounded-lg border border-line bg-surface-2 p-4 transition hover:-translate-y-0.5 hover:border-accent"
           >
-            <span class="text-sm font-semibold leading-snug text-[var(--color-text)]">{{ a.title }}</span>
-            <span v-if="a.summary" class="line-clamp-2 text-xs leading-relaxed text-[var(--color-text-muted)]">{{ a.summary }}</span>
+            <span class="text-sm font-semibold leading-snug text-ink">{{ a.title }}</span>
+            <span v-if="a.summary" class="line-clamp-2 text-xs leading-relaxed text-muted">{{ a.summary }}</span>
             <span v-if="a.tags?.length" class="mt-0.5 flex flex-wrap gap-1.5">
               <span
                 v-for="t in a.tags.slice(0, 4)"
                 :key="t"
-                class="rounded bg-[var(--color-accent-soft)] px-1.5 py-0.5 font-mono text-3xs text-[var(--color-accent)]"
+                class="rounded bg-accent-soft px-1.5 py-0.5 font-mono text-3xs text-accent"
               >#{{ t }}</span>
             </span>
           </RouterLink>
@@ -188,7 +188,7 @@ const groups = computed(() => {
 
       <p
         v-if="!groups.length"
-        class="rounded-lg border border-dashed border-[var(--color-border)] px-4 py-11 text-center font-mono text-[0.8125rem] text-[var(--color-text-muted)]"
+        class="rounded-lg border border-dashed border-line px-4 py-11 text-center font-mono text-[0.8125rem] text-muted"
       >
         no articles match “{{ filter }}”.
       </p>
