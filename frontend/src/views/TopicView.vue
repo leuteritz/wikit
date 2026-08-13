@@ -1786,10 +1786,18 @@ onUnmounted(() => {
 @reference "../assets/style.css";
 
 /* Der Ausschnitt behaelt seine Einrueckung – Umbruch waere hier eine Falschaussage ueber den Text,
-   der so und nicht anders in der Ablage landet. */
+   der so und nicht anders in der Ablage landet.
+   Er ist ein Code-Fenster und traegt deshalb das Code-Material, auch wenn er (bewusst) kein
+   `.shiki`-Block ist: die Frage lautet „was landet in der Ablage?", und die Antwort steht auf
+   demselben Grund wie jeder andere Quelltext der App. */
 .topic-preview {
   white-space: pre;
   font-family: var(--font-mono, ui-monospace, monospace);
+  background: var(--color-code);
+  color: var(--color-code-ink);
+  border: 1px solid var(--color-code-line);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0;
 }
 /* Jede Zeile ist ein eigenes Element – die Bezugsgroesse fuer `paintMatches` und die einzige
    Moeglichkeit, den Abschnitt EINER Klasse zu markieren. `min-height` ist Pflicht: ein leeres
@@ -1802,15 +1810,16 @@ onUnmounted(() => {
   padding-left: 0.4rem;
 }
 /* --- Identitaetsfarbe je Klasse -------------------------------------------------------------
-   Dieselben Tokens wie die Methodenfarben im Kanten-Panel (`--mc-0..5`), also keine zweite
-   Farbsprache. Die sechs Regeln setzen nur die Variable; Balken und Grund erben sie – so steht
-   jeder Ton genau einmal im Projekt. */
-.topic-preview :deep(.tp-c0) { --mc: var(--mc-0); }
-.topic-preview :deep(.tp-c1) { --mc: var(--mc-1); }
-.topic-preview :deep(.tp-c2) { --mc: var(--mc-2); }
-.topic-preview :deep(.tp-c3) { --mc: var(--mc-3); }
-.topic-preview :deep(.tp-c4) { --mc: var(--mc-4); }
-.topic-preview :deep(.tp-c5) { --mc: var(--mc-5); }
+   Dieselben Tokens wie die Methodenfarben im Kanten-Panel, also keine zweite Farbsprache – hier
+   der Code-Satz `--mc-0c..5c`, weil die Vorschau auf dem dunklen Code-Material liegt (die Liste
+   links nimmt ueber `methodColorVars()` den helleren UI-Satz `--mc-0..5`). Die sechs Regeln setzen
+   nur die Variable; Balken und Grund erben sie – so steht jeder Ton genau einmal im Projekt. */
+.topic-preview :deep(.tp-c0) { --mc: var(--mc-0c); }
+.topic-preview :deep(.tp-c1) { --mc: var(--mc-1c); }
+.topic-preview :deep(.tp-c2) { --mc: var(--mc-2c); }
+.topic-preview :deep(.tp-c3) { --mc: var(--mc-3c); }
+.topic-preview :deep(.tp-c4) { --mc: var(--mc-4c); }
+.topic-preview :deep(.tp-c5) { --mc: var(--mc-5c); }
 /* Ruhezustand: der Text ist gegliedert, ohne laut zu werden. Kopf, Package-Trenner und die
    Leerzeilen zwischen zwei Klassen tragen KEINE Farbe – sonst waere alles gefaerbt und damit
    nichts unterschieden.
@@ -1840,13 +1849,9 @@ onUnmounted(() => {
    (`--shiki-light` / `--shiki-dark`, `defaultColor: false`). Die globale Regel dafuer haengt an
    einem `.shiki`-Vorfahren, den dieser Block bewusst NICHT hat: so bleibt der uebrige Text
    einfarbig und ruhig, und die Farbe ist selbst die Fokus-Anzeige.
-   ⚠️ Gesetzt wird ausschliesslich `color` – kein `background-color` wie in der globalen
-   Shiki-Regel. Sonst uebermalte der Token-Hintergrund genau den Klassenton, um dessentwillen der
-   Abschnitt hervorgehoben ist. */
+   Gelesen wird der Dark-Satz, wie ueberall auf dem Code-Material – ein zweiter, heller Satz
+   waere ein zweiter Grund, den es hier nicht mehr gibt. */
 .topic-preview :deep(.tp-lit span) {
-  color: var(--shiki-light);
-}
-html.dark .topic-preview :deep(.tp-lit span) {
   color: var(--shiki-dark);
 }
 

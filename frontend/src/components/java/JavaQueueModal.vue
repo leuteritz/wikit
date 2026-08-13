@@ -6,7 +6,7 @@
 //
 // Layout: langgezogenes Querformat. Links die sortierte Jobliste (abgeschlossen -> aktiv ->
 // wartend), rechts grossflaechig das Live-Terminal des laufenden Jobs.
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useJavaQueue, isFinishedStatus as isFinished } from '../../composables/useJavaQueue.js'
 import { Icon } from '../../lib/icons.js'
 import { formatEta } from '../../lib/format.js'
@@ -373,16 +373,13 @@ async function onMarkAllRead() {
 @reference "../../assets/style.css";
 /* Die eigene `queue-modal`-Transition ist entfallen – sie steht jetzt in `ui/Modal.vue`. */
 
-/* Abgedunkelter Terminal-/Log-Bereich: scrollbar, monospace. Auch im Light-Mode ein Terminal. */
+/* Terminal-/Log-Bereich: scrollbar, monospace, in beiden Themes dunkel. Das war er schon immer –
+   nur mit zwei eigenen Slate-Toenen (#0f172a/#0b1220) statt mit dem Code-Material der App. */
 .queue-log {
   @apply overflow-y-auto whitespace-pre-wrap break-words rounded-lg p-3 font-mono text-2xs leading-relaxed;
-  background-color: #0f172a; /* slate-900 */
-  color: #cbd5e1; /* slate-300 */
-  border: 1px solid rgba(148, 163, 184, 0.18);
-}
-html.dark .queue-log {
-  background-color: #0b1220;
-  color: #d4dbe5;
+  background-color: var(--color-code);
+  color: var(--color-code-ink);
+  border: 1px solid var(--color-code-line);
 }
 
 /* Indeterminierte Progress-Bar: laeuft endlos hin und her (kein numerischer Fortschritt). */

@@ -885,7 +885,7 @@ watch(
                     </p>
                     <div
                       v-else-if="snippets[c.name]?.html"
-                      class="edge-code code-dark"
+                      class="edge-code"
                       v-html="snippets[c.name].html"
                       @click="onParamClick"
                       @mouseup="onPickWord"
@@ -976,7 +976,7 @@ watch(
                           </button>
                         </div>
                       </div>
-                      <div class="edge-usage-code code-dark" v-html="site.html" @click="onParamClick" @mouseup="onPickWord" />
+                      <div class="edge-usage-code" v-html="site.html" @click="onParamClick" @mouseup="onPickWord" />
                     </div>
                   </div>
                 </div>
@@ -1075,7 +1075,7 @@ watch(
    Suchtreffer in Wikit (Quelltext-Suche, Graph-Suche, Suchpalette). Aktiv vs. passiv unterscheiden
    Deckkraft und Ring, NICHT die Farbe: eine zweite Hue waere eine zweite Bedeutung.
    `color: inherit` ist Pflicht, sonst zieht der Browser-Default fuer `mark` (schwarz auf gelb) die
-   Shiki-Farbe des umgebenden Tokens weg – und die Bloecke hier sind durchgehend `code-dark`. */
+   Shiki-Farbe des umgebenden Tokens weg – und die Bloecke hier stehen auf dem dunklen Code-Grund. */
 .edge-code :deep(mark.cs-hit),
 .edge-usage-code :deep(mark.cs-hit) {
   background: color-mix(in srgb, var(--color-warning) 32%, transparent);

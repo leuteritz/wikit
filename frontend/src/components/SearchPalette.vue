@@ -1523,18 +1523,18 @@ const shortPackage = (pkg) => pkg || 'default package'
               <div ref="previewBody" class="min-h-0 flex-1 overflow-auto px-5 py-4">
                 <!-- Server-gehighlighteter Ausschnitt: ganze Klasse beim Klassentreffer, sonst das
                      Fenster um die Fundstelle. -->
-                <div v-if="preview" class="edge-code code-dark" v-html="preview.html" />
+                <div v-if="preview" class="edge-code" v-html="preview.html" />
                 <!-- … bis dahin der Ausschnitt, der mit dem Suchergebnis ohnehin schon da ist.
                      Kein Ladezustand, der den Blick anhaelt: derselbe Code, nur ohne Farben. -->
                 <pre
                   v-else-if="activeItem.kind === 'code'"
-                  class="search-fallback overflow-x-auto rounded-lg border border-line bg-surface-offset p-3 font-mono text-2xs leading-relaxed"
+                  class="search-fallback overflow-x-auto rounded-lg border border-code-line bg-code p-3 font-mono text-2xs leading-relaxed"
                 ><span
                   v-for="l in activeItem.lines"
                   :key="l.line"
                   class="block"
-                  :class="l.isHit ? 'text-ink' : 'text-muted'"
-                ><span class="mr-3 inline-block w-8 select-none text-right text-muted">{{ l.line }}</span><span v-html="markRanges(l.text, l.ranges)" /></span></pre>
+                  :class="l.isHit ? 'text-code-ink' : 'text-code-muted'"
+                ><span class="mr-3 inline-block w-8 select-none text-right text-code-muted">{{ l.line }}</span><span v-html="markRanges(l.text, l.ranges)" /></span></pre>
                 <!-- Ein Klassentreffer bringt keinen Ausschnitt mit (er kommt aus der Klassenliste,
                      nicht aus der Quelltextsuche) – hier steht deshalb die Wartemeldung der App,
                      mitsamt dem, worauf gewartet wird. -->

@@ -13,7 +13,7 @@ const props = defineProps({
   diff: { type: String, default: '' },
 })
 
-// Dark/Light-Umschaltung zentral (identisch in JavaCodeEditor/MarkdownEditor).
+// Code-Flaeche: dasselbe Material wie jeder Shiki-Block, deshalb themenunabhaengig dunkel.
 const { themeComp, themeExtension, bindTheme } = useCodeMirrorTheme()
 const editorParent = ref(null)
 let view = null
@@ -96,6 +96,6 @@ onBeforeUnmount(() => {
 <template>
   <div
     ref="editorParent"
-    class="h-full min-h-0 overflow-auto rounded-xl border border-line bg-surface"
+    class="h-full min-h-0 overflow-auto rounded-xl border border-code-line bg-code"
   />
 </template>

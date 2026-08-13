@@ -115,8 +115,9 @@ export function buildCallWindow(html, bodyStartLine, siteLine) {
     // ohne `\n`-Textnodes angehaengt werden und per `.line { display:block }` umbrechen.
     const shell = doc.createElement('pre')
     shell.className = 'shiki'
-    // Shiki-Inline-Style (--shiki-*-Variablen, insb. --shiki-dark-bg) vom Original-Root uebernehmen,
-    // sonst fehlt dem neuen Wrapper der Hintergrund und der blaue Eltern-BG scheint durch.
+    // Shiki-Inline-Style (die --shiki-*-Variablen) vom Original-Root uebernehmen: die Token-Spans
+    // darunter lesen `--shiki-dark`, das an DIESEM Element haengt. Ohne den Uebertrag bliebe der
+    // Ausschnitt einfarbig. (Den Grund liefert die `.shiki`-Klasse selbst.)
     shell.setAttribute('style', root.getAttribute('style') || '')
     shell.appendChild(code)
     return shell.outerHTML

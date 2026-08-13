@@ -858,13 +858,13 @@ async function removeFile() {
               </button>
 
               <div v-show="openMethod === m.id" class="border-t border-line px-3 py-2">
-                <!-- 1) Java-Code-Block: Signatur als erste Zeile + deklarationsfreier Rumpf, immer
-                        dunkel (Editor-Optik), Leerzeilen (fuehrend/abschliessend + intern) entfernt.
+                <!-- 1) Java-Code-Block: Signatur als erste Zeile + deklarationsfreier Rumpf,
+                        Leerzeilen (fuehrend/abschliessend + intern) entfernt.
                         Parameter sind farbig (eigene Schriftfarbe); Klick auf eine Variable markiert
                         alle ihre Vorkommen (onParamClick, wie im Edge-Panel). -->
                 <div
                   v-if="m.body_html"
-                  class="method-code code-dark mb-2"
+                  class="method-code mb-2"
                   v-html="displayMethodBlock(m)"
                   @click="onParamClick"
                 />

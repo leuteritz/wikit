@@ -17,7 +17,16 @@ defineEmits(['delete', 'linked'])
 
 const bodyEl = ref(null)
 
-// Copy-Buttons + Variablen-Highlighting an die (serverseitig gerenderten) Code-Bloecke haengen.
+// Sprache eines Blocks aus der Shiki-Klasse am <code> (`language-java`). `text` ist der
+// Fallback-Sprachname des Renderers und benennt nichts – ein Label dafuer waere Zierrat.
+function langOf(pre) {
+  const cls = pre.querySelector('code')?.className || ''
+  const lang = /(?:^|\s)language-([\w+-]+)/.exec(cls)?.[1] || ''
+  return lang && lang !== 'text' ? lang : ''
+}
+
+// Kopfzeile (Sprache + Copy) + Variablen-Highlighting an die (serverseitig gerenderten)
+// Code-Bloecke haengen.
 function enhanceCodeBlocks() {
   const root = bodyEl.value
   if (!root) return
@@ -27,6 +36,15 @@ function enhanceCodeBlocks() {
       wrap.className = 'code-wrap'
       pre.parentNode.insertBefore(wrap, pre)
       wrap.appendChild(pre)
+      // Sagt, WAS der Block ist – das gilt immer, steht also dauerhaft da (der Copy-Knopf ist
+      // ein Angebot und meldet sich erst beim Hover).
+      const lang = langOf(pre)
+      if (lang) {
+        const tag = document.createElement('span')
+        tag.className = 'code-lang'
+        tag.textContent = lang
+        wrap.appendChild(tag)
+      }
       const btn = document.createElement('button')
       btn.type = 'button'
       btn.className = 'code-copy'

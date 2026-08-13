@@ -43,6 +43,21 @@
   --color-surface-2: #fbfaf6;       /* hellere Card-Flaeche */
   --color-surface-offset: #e6e3d6;  /* Wells/Inputs (dritte Tiefenstufe) */
 
+  /* --- Code-Material -------------------------------------------------------------------------
+     Quelltext ist KEINE weitere Tiefenstufe der Oberflaeche, sondern ein eigenes Material: EIN
+     Grund, in BEIDEN Themes derselbe Wert. Dass hier kein `html.dark`-Override folgt, IST die
+     Aussage – vorher lagen neun verschiedene Code-Hintergruende in der App (github-light #fff,
+     github-dark #24292e, transparent, oneDark #282c34, prose #1e293b, zwei Palette-Toene, zwei
+     hart kodierte). Der Grund liegt unter jeder Karte, auf der Code sitzt (surface-2 #211f16,
+     surface-offset #302c20) -> der Block liest sich als Senke; im Hell-Modus ist er ein warmes
+     Fast-Schwarz auf Creme. Weil Code damit IMMER dunkel ist, gilt in Code-Bloecken durchgaengig
+     der Dark-Satz: `--shiki-dark`, `--mc-Nc`, der dunkle `--vh-*`-Satz. */
+  --color-code: #1a1812;            /* Grund (zwischen Seite #17160f und Karte #211f16) */
+  --color-code-2: #232016;          /* Gutter, Kopfleiste, Kopier-Knopf */
+  --color-code-line: #332f22;       /* Rahmen + Gutter-Trennlinie (eine Stufe heller = Innenkante) */
+  --color-code-ink: #e1e4e8;        /* Text OHNE Highlighting (= github-dark Grundfarbe) */
+  --color-code-muted: #8d8574;      /* Zeilennummern, Sprach-Label, Kopier-Knopf */
+
   /* Vier Tokens tragen hier einen ANDEREN Namen als frueher, damit die Utility lesbar wird:
      `text-muted` statt `text-text-muted`, `border-line` statt `border-border`. Die alten Namen
      leben unten in `:root` als reaktive Aliase weiter – deshalb laufen die rohen
@@ -144,8 +159,8 @@
      Eine Kante traegt oft mehrere Methoden: oben ihre Definition, unten ihre Aufrufstellen.
      Jede Methode bekommt EINE Farbe und traegt sie ueberall (Karte, Chip, Aufrufzeile, Token im
      Code) – so ist die Zuordnung sichtbar statt lesbar. Zuteilung in `lib/javaMethodColors.js`.
-     Zwei Saetze, weil zwei Untergruende: `--mc-N` sitzt auf dem Panel (hier hell), `--mc-Nc` im
-     IMMER dunklen Code-Block (`.code-dark`). Gleiche Hue, unterschiedliche Helligkeit. */
+     Zwei Saetze, weil zwei Untergruende: `--mc-N` sitzt auf dem Panel (folgt dem Theme), `--mc-Nc`
+     im Code-Block (`--color-code`, immer dunkel). Gleiche Hue, unterschiedliche Helligkeit. */
   --mc-0: #2f7ea8;  /* blau     */
   --mc-1: #a06a24;  /* amber    */
   --mc-2: #3c8459;  /* gruen    */
@@ -294,44 +309,40 @@ body {
   outline: none;
 }
 
-/* --- Shiki: zwei Themes ueber CSS-Variablen (defaultColor: false) ---------- */
+/* --- Shiki auf dem Code-Material ------------------------------------------- *
+ * Der Renderer laeuft mit `defaultColor: false` (markdown.service.ts) und schreibt beide
+ * Theme-Farben als Inline-Variablen an jedes Token: `--shiki-light` UND `--shiki-dark`.
+ * Weil Code hier IMMER dunkel ist, wird nur der Dark-Satz gelesen; `--shiki-light` bleibt
+ * ungenutzt am Element liegen. Das ist der Grund, warum diese Umstellung KEIN Neu-Rendern
+ * braucht: `articles.content_html` liegt gecacht in der DB und traegt beide Saetze bereits.
+ *
+ * Die Spans bekommen KEINEN eigenen Grund. Vorher malte `background-color: var(--shiki-*-bg)`
+ * auf jedem einzelnen Span – deshalb brauchte jede Markierung darunter (`.line-highlight`,
+ * `.vh-token`, `.java-call`) ein `!important`, um ueberhaupt sichtbar zu werden. Transparente
+ * Spans loesen diese Kette auf: gemalt wird genau einmal, vom Block. */
 .shiki,
 .shiki span {
-  color: var(--shiki-light);
-  background-color: var(--shiki-light-bg);
-}
-html.dark .shiki,
-html.dark .shiki span {
-  color: var(--shiki-dark) !important;
-  background-color: var(--shiki-dark-bg) !important;
+  color: var(--shiki-dark);
+  background-color: transparent;
 }
 .shiki {
   @apply rounded-xl p-4 text-sm leading-relaxed overflow-x-auto border;
-  border-color: var(--color-border);
+  background-color: var(--color-code);
+  border-color: var(--color-code-line);
+  /* Materialkante statt Schatten – im Graphen waere `filter` verboten, und ein Schatten auf
+     dunklem Grund saehe man ohnehin nicht. Eine Lichtkante oben genuegt. */
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
 }
 
-/* --- Always-Dark Code-Block (Java-Methodenrumpf) -------------------------- *
- * Unabhaengig vom App-Theme IMMER dunkel (Editor-Optik). Wir erzwingen die
- * Shiki-Dark-Variablen auch im Light-Mode; `!important` schlaegt die globale
- * `.shiki span`-Regel oben sowie die nicht-!important Edge-Usage-Regeln unten,
- * sodass die Aufrufzeilen-Markierung auf dem dunklen Grund sichtbar bleibt. */
-.code-dark .shiki,
-.code-dark .shiki span {
-  color: var(--shiki-dark) !important;
-  background-color: var(--shiki-dark-bg) !important;
-}
-.code-dark .shiki {
-  border-color: rgba(127, 180, 208, 0.20);
-}
 /* `--mc-code` setzt die Karte der jeweiligen Methode (s. lib/javaMethodColors.js) -> die
    markierte Aufrufzeile traegt die Farbe GENAU der Methode, um die es in diesem Block geht.
    Ohne gesetzte Variable bleibt es beim Akzent (alle uebrigen Code-Bloecke der App). */
-.code-dark .line-highlight,
-.code-dark span.line-highlight {
-  background-color: color-mix(in srgb, var(--mc-code, var(--color-accent)) 30%, transparent) !important;
+.shiki .line-highlight,
+.shiki span.line-highlight {
+  background-color: color-mix(in srgb, var(--mc-code, var(--color-accent)) 30%, transparent);
   border-left: 3px solid var(--mc-code, var(--color-accent));
 }
-.code-dark .line-highlight::before {
+.shiki .line-highlight::before {
   color: var(--mc-code, var(--color-accent));
   font-weight: 700;
 }
@@ -412,9 +423,7 @@ html.dark .shiki span {
 .edge-usage-code .shiki,
 .edge-code .shiki,
 /* Der Aufteilungsvorschlag in /insights erzeugt ganze Java-Dateien und zeigt sie als Code – exakt
-   dieselbe Aufgabe wie hier. Ein eigener Regelblock waere dieselbe Aussage ein zweites Mal; anders
-   als die Edge-Bloecke bleibt er aber THEMENABHAENGIG (kein `.code-dark`), weil er nicht in einem
-   dunklen Panel steht, sondern in der Berichtsflaeche. */
+   dieselbe Aufgabe wie hier. Ein eigener Regelblock waere dieselbe Aussage ein zweites Mal. */
 .split-code .shiki {
   margin: 0;
   /* Waagerecht scrollt der BLOCK, nicht die Spalte. Frueher stand hier `overflow: visible`: das
@@ -426,68 +435,58 @@ html.dark .shiki span {
   overflow-y: hidden;
   border: 0;
   border-radius: 0;
+  box-shadow: none;
   padding: 0.5rem 0;
   font-size: 0.75rem;
 }
-/* Parametervariablen im Edge-Panel (Quelle + Anwender): farbig + klickbar. Die Bloecke sind
-   via .code-dark immer dunkel -> feste, themenunabhaengige Palette. Jede Variable bekommt per
-   `java-param-c{0..5}` (gesetzt in lib/javaParams.js) eine eigene, klar unterscheidbare Farbe,
-   damit sich `String a, int b, List<String> c` optisch trennen. Hoehere Spezifitaet als die
-   `.code-dark .shiki span { … !important }`-Regel noetig -> ebenfalls !important. */
-.code-dark .shiki .java-param {
+/* Parametervariablen im Edge-Panel (Quelle + Anwender): farbig + klickbar. Jede Variable bekommt
+   per `java-param-c{0..5}` (gesetzt in lib/javaParams.js) eine eigene, klar unterscheidbare Farbe,
+   damit sich `String a, int b, List<String> c` optisch trennen. Der Code-Grund ist ueberall
+   derselbe, deshalb genuegt EIN Satz – die `--mc-Nc`-Toene, die es fuer genau diesen Grund schon
+   gibt. Frueher standen hier dieselben sechs Hex-Werte ein zweites Mal. */
+.shiki .java-param {
   cursor: pointer;
   border-radius: 2px;
   font-weight: 500;
 }
-.code-dark .shiki .java-param:hover {
+.shiki .java-param:hover {
   text-decoration: underline;
 }
 /* Aktiv-Markierung (Klick): Hintergrund aus currentColor -> passt automatisch zur jeweiligen
    Variablenfarbe. */
-.code-dark .shiki .java-param-active {
-  background-color: color-mix(in srgb, currentColor 24%, transparent) !important;
+.shiki .java-param-active {
+  background-color: color-mix(in srgb, currentColor 24%, transparent);
 }
-/* Distinkte, auf github-dark-BG gut lesbare Hues. c0 = vertrauter Akzent-Blau. */
-.code-dark .shiki .java-param-c0 { color: #7fb4d0 !important; } /* blau     */
-.code-dark .shiki .java-param-c1 { color: #e0a45e !important; } /* amber    */
-.code-dark .shiki .java-param-c2 { color: #8fce8f !important; } /* gruen    */
-.code-dark .shiki .java-param-c3 { color: #d894c4 !important; } /* magenta  */
-.code-dark .shiki .java-param-c4 { color: #b6a4e8 !important; } /* lavendel */
-.code-dark .shiki .java-param-c5 { color: #6fcfc6 !important; } /* teal     */
+.shiki .java-param-c0 { color: var(--mc-0c); } /* blau     */
+.shiki .java-param-c1 { color: var(--mc-1c); } /* amber    */
+.shiki .java-param-c2 { color: var(--mc-2c); } /* gruen    */
+.shiki .java-param-c3 { color: var(--mc-3c); } /* magenta  */
+.shiki .java-param-c4 { color: var(--mc-4c); } /* lavendel */
+.shiki .java-param-c5 { color: var(--mc-5c); } /* teal     */
 
 /* Methoden-Token im Code (`foo(`): traegt die Identitaetsfarbe SEINER Methode. Bewusst anders
    gebaut als die Parameterfarben oben – dieselben Hues bedienen zwei Achsen, also muss die FORM
    unterscheiden: Parameter faerben nur den Text, Methoden bekommen zusaetzlich eine Unterlage und
-   einen Unterstrich, lesen sich also als Marke statt als Syntaxfarbe. */
-/* Die FORM gilt ueberall gleich; nur die Farbe haengt am Untergrund (s. Zuweisung darunter).
-   Drei Selektoren, weil zwei fremde Regeln mit `!important` dagegenhalten: `html.dark .shiki span`
-   und `.code-dark .shiki span` (beide 0,2,1). Ein blosses `.shiki .java-call` (0,2,0) verliert
-   dagegen – der Token behielte dann die Shiki-Syntaxfarbe und nur der Unterstrich bliebe uebrig. */
-.shiki .java-call,
-html.dark .shiki span.java-call,
-.code-dark .shiki span.java-call {
+   einen Unterstrich, lesen sich also als Marke statt als Syntaxfarbe.
+   `!important` nur noch auf `color`: die Shiki-Syntaxfarbe kommt aus derselben `.shiki span`-Regel
+   (0,2,0) und wuerde bei gleicher Spezifitaet nach Quellreihenfolge gewinnen. */
+.shiki .java-call {
   color: var(--jc) !important;
-  background-color: color-mix(in srgb, var(--jc) 18%, transparent) !important;
+  background-color: color-mix(in srgb, var(--jc) 18%, transparent);
   box-shadow: inset 0 -2px 0 var(--jc);
   border-radius: 3px;
   padding: 0 1px;
   font-weight: 600;
 }
-/* Zwei Untergruende, zwei Saetze: das Edge-Modal rendert Code IMMER dunkel (`.code-dark`), das
-   Bundle-Panel im Light-Mode auf hellem Grund. Dort waeren die fuer github-dark gedachten
-   `--mc-*c`-Toene zu blass, deshalb greift die theme-abhaengige UI-Variante `--mc-*`. */
-.java-call-c0 { --jc: var(--mc-0); }
-.java-call-c1 { --jc: var(--mc-1); }
-.java-call-c2 { --jc: var(--mc-2); }
-.java-call-c3 { --jc: var(--mc-3); }
-.java-call-c4 { --jc: var(--mc-4); }
-.java-call-c5 { --jc: var(--mc-5); }
-.code-dark .java-call-c0 { --jc: var(--mc-0c); }
-.code-dark .java-call-c1 { --jc: var(--mc-1c); }
-.code-dark .java-call-c2 { --jc: var(--mc-2c); }
-.code-dark .java-call-c3 { --jc: var(--mc-3c); }
-.code-dark .java-call-c4 { --jc: var(--mc-4c); }
-.code-dark .java-call-c5 { --jc: var(--mc-5c); }
+/* Ein Untergrund, ein Satz: Code ist ueberall `--color-code`, also greifen ueberall die fuer
+   diesen Grund gedachten `--mc-*c`-Toene. Die theme-abhaengige UI-Variante `--mc-*` bleibt dem
+   Panel drumherum (Karte, Chip) vorbehalten. */
+.java-call-c0 { --jc: var(--mc-0c); }
+.java-call-c1 { --jc: var(--mc-1c); }
+.java-call-c2 { --jc: var(--mc-2c); }
+.java-call-c3 { --jc: var(--mc-3c); }
+.java-call-c4 { --jc: var(--mc-4c); }
+.java-call-c5 { --jc: var(--mc-5c); }
 .edge-usage-code .shiki code,
 .edge-code .shiki code {
   display: block;
@@ -507,14 +506,18 @@ html.dark .shiki span.java-call,
   margin-right: 0.85rem;
   padding-right: 0.6rem;
   text-align: right;
-  color: var(--color-text-muted);
-  border-right: 1px solid var(--color-border);
+  /* Code-eigene Toene, nicht die der Oberflaeche: der Gutter sitzt AUF dem Code-Material. Mit
+     `--color-text-muted`/`--color-border` standen im Hell-Modus dunkelgraue Ziffern und eine
+     cremeweisse Trennlinie auf schwarzem Grund. */
+  color: var(--color-code-muted);
+  border-right: 1px solid var(--color-code-line);
   user-select: none;
 }
-/* Hervorgehobene Aufrufzeile (Light-Mode): kraeftiger Akzent-Hintergrund + deutlicher
-   linker Balken, damit die Quellzeile im Snippet sofort ins Auge faellt. */
+/* Hervorgehobene Aufrufzeile: Akzent-Hintergrund + deutlicher linker Balken, damit die Quellzeile
+   im Snippet sofort ins Auge faellt. Ein Satz fuer beide Themes – der Grund darunter wechselt ja
+   nicht mehr mit. */
 .edge-usage-code .line-highlight {
-  background-color: color-mix(in srgb, var(--mc-code, var(--color-accent)) 16%, transparent);
+  background-color: color-mix(in srgb, var(--mc-code, var(--color-accent)) 30%, transparent);
   border-left-color: var(--mc-code, var(--color-accent));
   border-left-width: 3px;
 }
@@ -522,20 +525,46 @@ html.dark .shiki span.java-call,
   color: var(--mc-code, var(--color-accent));
   font-weight: 700;
 }
-/* Dark-Mode: die globale `html.dark .shiki span { ... !important }`-Regel oben wuerde
-   die Markierung sonst plattmachen -> mit hoeherer Spezifitaet + !important kontern. */
-html.dark .edge-usage-code .line-highlight,
-html.dark .edge-usage-code span.line-highlight {
-  background-color: color-mix(in srgb, var(--mc-code, var(--color-accent)) 30%, transparent) !important;
+
+/* --- Code in `prose`-Containern ---------------------------------------------------------------
+ * Tailwind Typography malt `pre` aus `--tw-prose-pre-bg` (Slate #1e293b) – ein Ton, den es in
+ * dieser Palette nicht gibt. Getroffen sind ALLE prose-Flaechen, und zwei davon rendern ihr
+ * Markdown ueber `lib/clientMarkdown.js` ganz OHNE Shiki (`/ask`-Antwort, Editor-Vorschau); dort
+ * gibt es also keinen `.shiki`-Block, den man stattdessen faerben koennte. Deshalb wird die
+ * Variable selbst umgehaengt statt einer Regel hinterhergeschrieben – so folgt alles, was
+ * Typography aus ihr ableitet, von allein.
+ *
+ * Vorher stand hier `.article-body :where(pre) { background: transparent !important }`. Das war
+ * der Notausgang aus demselben Problem, nahm dem Artikel-Codeblock aber auch sein Padding
+ * (`padding: 0 !important` schlug das `p-4` der `.shiki`-Regel) – Artikel-Code sass ohne Grund
+ * und ohne Innenabstand im Fliesstext. */
+.prose {
+  --tw-prose-pre-bg: var(--color-code);
+  --tw-prose-pre-code: var(--color-code-ink);
+  --tw-prose-invert-pre-bg: var(--color-code);
+  --tw-prose-invert-pre-code: var(--color-code-ink);
+}
+.prose :where(pre) {
+  border: 1px solid var(--color-code-line);
+}
+/* Inline-Code bleibt bewusst THEMENABHAENGIG: er sitzt in einer Textzeile, ein schwarzer Chip
+   mitten im Fliesstext waere ein Fremdkoerper. Nur BLOECKE sind das dunkle Material.
+   Die Regel galt vorher nur unter `.article-body`; ueberall sonst (`/ask`, Editor-Vorschau,
+   JavaAnalysisPanel, JavaClassDetail, WikiHealth) griff der Typography-Default – samt dessen
+   `code::before { content: "`" }`, das die Backticks als ZEICHEN mitrenderte. */
+.prose :where(code):not(:where(pre code, .shiki code)) {
+  @apply rounded px-1.5 py-0.5 text-[0.85em] font-medium;
+  background-color: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  color: var(--color-ink);
+}
+.prose :where(code)::before,
+.prose :where(code)::after {
+  content: none;
 }
 
 /* --- Prose-Feinschliff fuer gerenderte Artikel ---------------------------- */
 .article-body :where(h2, h3) {
   scroll-margin-top: 5rem;
-}
-.article-body :where(pre) {
-  background: transparent !important;
-  padding: 0 !important;
 }
 /* Anker-Permalinks (markdown-it-anchor) dezent, erst beim Hover sichtbar */
 .article-body .header-anchor {
@@ -544,11 +573,6 @@ html.dark .edge-usage-code span.line-highlight {
 }
 .article-body :where(h1, h2, h3):hover .header-anchor {
   @apply opacity-100;
-}
-.article-body :where(code):not(.shiki code) {
-  @apply rounded px-1.5 py-0.5 text-[0.85em] font-medium;
-  background-color: var(--color-surface-offset);
-  color: var(--color-danger);
 }
 .article-body table {
   @apply block w-full overflow-x-auto;
@@ -581,19 +605,36 @@ mark {
   color: var(--color-text);
 }
 
-/* Copy-Button an Code-Bloecken */
+/* --- Kopfzeile am Artikel-Codeblock (s. ArticleView.vue) -------------------------------------- *
+ * Sprach-Label und Kopier-Knopf sitzen AUF dem Code-Material, tragen also dessen Toene und nicht
+ * die der Oberflaeche. Unterschiedliche Sichtbarkeit mit Absicht: das Label sagt, WAS der Block
+ * ist – das gilt immer und steht deshalb dauerhaft da. Der Knopf ist ein Angebot und meldet sich
+ * erst, wenn der Zeiger im Block ist. */
 .code-wrap {
   @apply relative;
 }
+.code-lang {
+  @apply pointer-events-none absolute left-3 top-2 text-3xs font-medium uppercase tracking-wider
+         select-none;
+  color: var(--color-code-muted);
+}
 .code-copy {
   @apply absolute right-2 top-2 rounded-md border px-2 py-1 text-xs font-medium
-         opacity-0 backdrop-blur transition;
-  border-color: var(--color-border);
-  background-color: color-mix(in srgb, var(--color-surface-2) 80%, transparent);
-  color: var(--color-text-muted);
+         opacity-0 transition;
+  border-color: var(--color-code-line);
+  background-color: var(--color-code-2);
+  color: var(--color-code-muted);
+}
+.code-copy:hover {
+  color: var(--color-code-ink);
 }
 .code-wrap:hover .code-copy {
   @apply opacity-100;
+}
+/* Der Block braucht oben Luft fuer die Kopfzeile – sonst liegt das Label auf der ersten
+   Codezeile. Nur dort, wo die Kopfzeile auch existiert. */
+.code-wrap > .shiki {
+  padding-top: 1.85rem;
 }
 
 /* --- Vorschlagsliste im Markdown-Editor (`[[`) ------------------------------------------------ *
@@ -629,22 +670,9 @@ mark {
  * Klickbare Variablen-Tokens (vh-token) + deterministische Palette (vh-0..11).
  * Klick faerbt alle Vorkommen einer Variable im Block ein (vh-active + vh-N).
  * Die Hintergruende sind absichtlich halbtransparent, damit die Shiki-Syntaxfarbe
- * lesbar bleibt; eigene Palette je Theme (kein prefers-color-scheme). */
+ * lesbar bleibt. EIN Satz, weil der Grund darunter nicht mehr wechselt: der zweite (helle)
+ * existierte nur, solange Artikel-Code im Light-Mode hell war. */
 :root {
-  --vh-0:  hsl(0   80% 80% / 0.62);
-  --vh-1:  hsl(30  82% 78% / 0.62);
-  --vh-2:  hsl(60  78% 72% / 0.62);
-  --vh-3:  hsl(95  62% 74% / 0.62);
-  --vh-4:  hsl(135 58% 76% / 0.62);
-  --vh-5:  hsl(170 60% 74% / 0.62);
-  --vh-6:  hsl(195 72% 76% / 0.62);
-  --vh-7:  hsl(220 85% 84% / 0.62);
-  --vh-8:  hsl(250 78% 86% / 0.62);
-  --vh-9:  hsl(280 70% 84% / 0.62);
-  --vh-10: hsl(312 72% 84% / 0.62);
-  --vh-11: hsl(340 80% 84% / 0.62);
-}
-html.dark {
   --vh-0:  hsl(0   62% 46% / 0.50);
   --vh-1:  hsl(30  66% 44% / 0.50);
   --vh-2:  hsl(52  60% 40% / 0.52);
@@ -667,20 +695,20 @@ html.dark {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-/* Aktiv-Hintergrund: hohe Spezifitaet + !important, um die globale
-   `html.dark .shiki span { background-color: … !important }`-Regel zu schlagen. */
-.shiki .vh-token.vh-active.vh-0  { background-color: var(--vh-0)  !important; }
-.shiki .vh-token.vh-active.vh-1  { background-color: var(--vh-1)  !important; }
-.shiki .vh-token.vh-active.vh-2  { background-color: var(--vh-2)  !important; }
-.shiki .vh-token.vh-active.vh-3  { background-color: var(--vh-3)  !important; }
-.shiki .vh-token.vh-active.vh-4  { background-color: var(--vh-4)  !important; }
-.shiki .vh-token.vh-active.vh-5  { background-color: var(--vh-5)  !important; }
-.shiki .vh-token.vh-active.vh-6  { background-color: var(--vh-6)  !important; }
-.shiki .vh-token.vh-active.vh-7  { background-color: var(--vh-7)  !important; }
-.shiki .vh-token.vh-active.vh-8  { background-color: var(--vh-8)  !important; }
-.shiki .vh-token.vh-active.vh-9  { background-color: var(--vh-9)  !important; }
-.shiki .vh-token.vh-active.vh-10 { background-color: var(--vh-10) !important; }
-.shiki .vh-token.vh-active.vh-11 { background-color: var(--vh-11) !important; }
+/* Aktiv-Hintergrund. Ohne `!important`, seit die Spans keinen eigenen Grund mehr tragen –
+   frueher malte `.shiki span { background-color: … !important }` diese Markierung platt. */
+.shiki .vh-token.vh-active.vh-0  { background-color: var(--vh-0); }
+.shiki .vh-token.vh-active.vh-1  { background-color: var(--vh-1); }
+.shiki .vh-token.vh-active.vh-2  { background-color: var(--vh-2); }
+.shiki .vh-token.vh-active.vh-3  { background-color: var(--vh-3); }
+.shiki .vh-token.vh-active.vh-4  { background-color: var(--vh-4); }
+.shiki .vh-token.vh-active.vh-5  { background-color: var(--vh-5); }
+.shiki .vh-token.vh-active.vh-6  { background-color: var(--vh-6); }
+.shiki .vh-token.vh-active.vh-7  { background-color: var(--vh-7); }
+.shiki .vh-token.vh-active.vh-8  { background-color: var(--vh-8); }
+.shiki .vh-token.vh-active.vh-9  { background-color: var(--vh-9); }
+.shiki .vh-token.vh-active.vh-10 { background-color: var(--vh-10); }
+.shiki .vh-token.vh-active.vh-11 { background-color: var(--vh-11); }
 
 /* --- Wiederverwendbare Status-Badges (global; harmonisiert mit der Palette) -------------- *
  * Nur Hintergrund-Tint + Textfarbe; Layout (Padding/Radius/Font) kommt aus den Utilities am
@@ -752,22 +780,16 @@ html.dark {
    ManagedEdge.vue) und pulsiert ueber die Deckkraft. Die Klasse bleibt als Zustandsmarker im DOM. */
 
 /* Diff-Viewer (JavaDiffViewer): zeilenweise Einfaerbung nach Unified-Diff-Praefix. CodeMirror
-   erzeugt das Zeilen-DOM ohne data-v-Attribut -> globale Regeln. Farben wie gefordert:
-   hinzugefuegt = green-500/20 (dark green-400/15), entfernt = red-500/20 (dark red-400/15).
-   Header/Hunk-Zeilen (@@, ---, +++) gedaempft. */
+   erzeugt das Zeilen-DOM ohne data-v-Attribut -> globale Regeln. EIN Satz je Aussage: der Viewer
+   steht auf dem Code-Material und ist damit in beiden Themes gleich dunkel – die frueheren
+   Light-Varianten (green-500/20, red-500/20) waeren dort nur zu kraeftig. */
 .cm-diff-added {
-  background-color: rgb(34 197 94 / 0.2); /* green-500/20 */
-}
-html.dark .cm-diff-added {
   background-color: rgb(74 222 128 / 0.15); /* green-400/15 */
 }
 .cm-diff-removed {
-  background-color: rgb(239 68 68 / 0.2); /* red-500/20 */
-}
-html.dark .cm-diff-removed {
   background-color: rgb(248 113 113 / 0.15); /* red-400/15 */
 }
 .cm-diff-meta {
-  color: var(--color-text-muted);
-  background-color: color-mix(in srgb, var(--color-text-muted) 8%, transparent);
+  color: var(--color-code-muted);
+  background-color: color-mix(in srgb, var(--color-code-muted) 10%, transparent);
 }

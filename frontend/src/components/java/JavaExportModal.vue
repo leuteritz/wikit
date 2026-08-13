@@ -15,6 +15,7 @@ import { BIG_CLIPBOARD_BYTES, copyToClipboard, downloadText } from '../../lib/cl
 import { formatBytes } from '../../lib/format.js'
 import { Icon } from '../../lib/icons.js'
 import BusyState from '../BusyState.vue'
+import Modal from '../ui/Modal.vue'
 
 const props = defineProps({ open: { type: Boolean, default: false } })
 const emit = defineEmits(['close'])
@@ -181,7 +182,7 @@ function downloadAll() {
 
         <!-- Vorschau: der Kopf des Exports, damit sichtbar ist, was in der Ablage landet. -->
         <p class="mt-4 mb-1 font-mono text-3xs uppercase tracking-[0.12em] text-muted">First lines</p>
-        <pre class="export-preview overflow-x-auto rounded-lg border border-line bg-surface p-3 font-mono text-2xs leading-relaxed text-muted">{{ preview }}</pre>
+        <pre class="export-preview overflow-x-auto rounded-lg border border-code-line bg-code p-3 font-mono text-2xs leading-relaxed text-code-ink">{{ preview }}</pre>
       </template>
     </div>
 

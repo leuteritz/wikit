@@ -249,8 +249,11 @@ async function copyFile(file) {
               {{ f.caption }}
             </p>
             <!-- Shiki-HTML vom Server – kein zweiter Highlighter im Client, und `split-code` teilt
-                 sich die Regel mit den Code-Blöcken des Edge-Panels. -->
-            <div class="split-code overflow-x-auto px-2.5" v-html="f.html" />
+                 sich die Regel mit den Code-Blöcken des Edge-Panels.
+                 `bg-code` gehört an den Wrapper, nicht nur an den Block darin: der Block bringt
+                 seinen Grund selbst mit, das seitliche Padding hier wäre sonst ein heller Streifen
+                 links und rechts vom Code. -->
+            <div class="split-code overflow-x-auto bg-code px-2.5" v-html="f.html" />
           </figure>
         </div>
 

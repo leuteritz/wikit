@@ -17,7 +17,7 @@
 //
 // Farbwerte stehen als Tokens in `assets/style.css`:
 //   `--mc-{0..5}`  – fuer UI auf Panel-Grund (theme-abhaengig, Light kraeftiger)
-//   `--mc-{0..5}c` – fuer den IMMER dunklen Code-Block (`.code-dark`, github-dark-Grund)
+//   `--mc-{0..5}c` – fuer den Code-Block (`--color-code`, in beiden Themes dunkel)
 // `methodColorVars` liefert beide als Inline-Vars (`--mc` / `--mc-code`), die restliche Faerbung
 // laeuft ueber Vererbung – so kennt das Template keine einzige Farbe.
 

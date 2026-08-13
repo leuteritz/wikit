@@ -807,14 +807,11 @@ watch(
 .rel-mc-name {
   color: var(--mc, inherit);
 }
-/* Die Code-Bloecke hier sind – anders als im Edge-Modal – NICHT immer dunkel: im Light-Mode
-   sitzen sie auf hellem Grund. `--mc-code` ist fuer github-dark gedacht und dort zu blass, also
-   die markierte Aufrufzeile auf die kraeftige UI-Farbe umbiegen. Eine Zeile statt einer zweiten
-   Regelmenge in style.css – die Container sind Template-Elemente, scoped greift. */
-.rel-site--mc .edge-usage-code,
-.rel-block--mc .edge-code {
-  --mc-code: var(--mc);
-}
+/* Hier stand eine Ausnahme: die Code-Bloecke dieses Panels waren – anders als im Edge-Modal –
+   themenabhaengig, also im Light-Mode hell, und die markierte Aufrufzeile musste von `--mc-code`
+   (fuer dunklen Grund gedacht) auf die kraeftige UI-Farbe `--mc` umgebogen werden. Seit Code
+   ueberall dasselbe dunkle Material ist, gilt wieder der Wert, den `methodColorVars()` ohnehin
+   am Element setzt – die Ausnahme ist ersatzlos entfallen. */
 /* Methodenname in der Bildunterschrift: bei mehreren Aufrufen in einer Zeile ist DAS die
    Zuordnung – der Streifen bleibt dort bewusst neutral. */
 .rel-mc-code {

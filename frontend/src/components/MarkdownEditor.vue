@@ -39,8 +39,9 @@ function wikiLinkSource(ctx) {
   return { from: before.from + 2, options }
 }
 
-// Dark/Light-Umschaltung zentral (identisch in JavaCodeEditor/JavaDiffViewer).
-const { themeComp, themeExtension, bindTheme } = useCodeMirrorTheme()
+// Schreibflaeche, nicht Code-Flaeche: hier steht Fliesstext, und die Vorschau daneben ist Prosa.
+// Deshalb `'prose'` – als einziger der drei Editoren folgt dieser dem Theme (s. Composable).
+const { themeComp, themeExtension, bindTheme } = useCodeMirrorTheme('prose')
 const editorParent = ref(null)
 let view = null
 

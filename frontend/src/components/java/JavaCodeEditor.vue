@@ -35,7 +35,7 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue', 'method-click', 'clear-call', 'def-click', 'clear-def', 'select-word'])
 
-// Dark/Light-Umschaltung zentral (identisch in JavaDiffViewer/MarkdownEditor).
+// Code-Flaeche: dasselbe Material wie jeder Shiki-Block, deshalb themenunabhaengig dunkel.
 const { themeComp, themeExtension, bindTheme } = useCodeMirrorTheme()
 const editorParent = ref(null)
 let view = null
