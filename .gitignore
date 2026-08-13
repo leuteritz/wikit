@@ -21,5 +21,7 @@ Thumbs.db
 CLAUDE.md
 # Lokale Sicherheits-Doku (akzeptierte Rest-Lücken + multer-Override-Begründung) — nicht auf GitHub
 SECURITY-NOTES.md
+# Ausgelagerte Design-Begründungen (Archiv zu CLAUDE.md) — nicht auf GitHub
+DECISIONS.md
 # .github/ MUSS getrackt werden — sonst landet der Deploy-Workflow nie auf GitHub
 # und die CI/CD-Pipeline (Self-Hosted Runner) feuert nie.
