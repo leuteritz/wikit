@@ -71,11 +71,17 @@ export class SeedService implements OnApplicationBootstrap {
     const { categories, articles, relations, articlesDir } = await this.loadManifest();
 
     // Markdown vorab rendern (async), damit der DB-Insert in einer Transaktion buendelbar bleibt.
+    //
+    // ⚠️ Erst ALLE Slugs sammeln, dann rendern: der Wikilink-Ruler entscheidet beim Rendern, ob ein
+    // `[[Link]]` ein Ziel hat. Waehrend des Seeds existiert noch kein einziger Artikel in der DB –
+    // ohne diese Menge waere jeder Verweis zwischen zwei Seed-Artikeln als „fehlt" gerendert.
+    const withSlugs = articles.map((a: any) => ({ ...a, slug: a.slug || this.markdown.slugify(a.title) }));
+    const knownSlugs = new Set<string>(withSlugs.map((a: any) => a.slug));
     const prepared: any[] = [];
-    for (const a of articles) {
+    for (const a of withSlugs) {
       const content = fs.readFileSync(path.join(this.seedDir, articlesDir, a.file), 'utf8');
-      const { html, toc } = await this.markdown.renderMarkdown(content);
-      prepared.push({ ...a, content, html, toc, slug: a.slug || this.markdown.slugify(a.title) });
+      const { html, toc } = await this.markdown.renderMarkdown(content, { knownSlugs });
+      prepared.push({ ...a, content, html, toc });
     }
 
     await this.ds.transaction(async (manager) => {

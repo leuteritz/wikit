@@ -554,6 +554,26 @@ html.dark .edge-usage-code span.line-highlight {
   @apply block w-full overflow-x-auto;
 }
 
+/* --- [[Wikilinks]] ---------------------------------------------------------------------------- *
+ * Ein aufgeloester Wikilink sieht aus wie jeder andere interne Link (die Prose-Regel faerbt ihn
+ * bereits im Akzent) – er bekommt hier nur die gepunktete Unterlage, damit man ihm ansieht, dass
+ * er aus der doppelten Klammer stammt und nicht aus einer getippten URL.
+ *
+ * Ein FEHLENDER wird bewusst NICHT zum Link: ein Klick, der auf nichts fuehrt, ist keine
+ * Navigation. Er bleibt sichtbar als das, was er ist – eine offene Stelle, mit gestricheltem
+ * Unterstrich statt Farbe. Kein Rot: es ist kein Fehler, sondern ein Artikel, den es noch nicht
+ * gibt (gleiche Regel wie bei den verwaisten Knoten im Beziehungsnetz).
+ * Wo sie stehen, sagt der Wiki-Health-Bericht. */
+.article-body a.wikilink {
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+.article-body .wikilink--missing {
+  color: var(--color-text-muted);
+  border-bottom: 1px dashed var(--color-border-strong);
+  cursor: help;
+}
+
 /* Suchtreffer-Hervorhebung (FTS-Snippets) – Gold-Ton aus soft-fawn */
 mark {
   @apply rounded px-0.5;
@@ -574,6 +594,35 @@ mark {
 }
 .code-wrap:hover .code-copy {
   @apply opacity-100;
+}
+
+/* --- Vorschlagsliste im Markdown-Editor (`[[`) ------------------------------------------------ *
+ * Global, weil CodeMirror den Tooltip ausserhalb des Komponenten-Scopes einhaengt – ein scoped
+ * Block traefe ihn nicht. Der Light-Mode braucht es zwingend: `defaultHighlightStyle` bringt
+ * keinerlei Tooltip-Farben mit, und CodeMirrors Grundton (weiss auf weiss) verschwindet auf der
+ * warmen Flaeche. */
+.cm-tooltip.cm-tooltip-autocomplete {
+  border: 1px solid var(--color-border-strong);
+  border-radius: 0.5rem;
+  background: var(--color-surface-2);
+  box-shadow: var(--elev-3);
+  overflow: hidden;
+}
+.cm-tooltip-autocomplete > ul > li {
+  padding: 0.25rem 0.6rem;
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+  color: var(--color-text);
+}
+.cm-tooltip-autocomplete > ul > li[aria-selected] {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+.cm-completionDetail {
+  margin-left: 0.5rem;
+  font-style: normal;
+  font-size: 0.6875rem;
+  color: var(--color-text-muted);
 }
 
 /* --- Variablen-Highlighting in Java-Code-Bloecken (Artikel) ----------------- *

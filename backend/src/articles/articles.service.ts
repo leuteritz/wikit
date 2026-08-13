@@ -7,6 +7,7 @@ import { SerializerService } from '../common/serializer.service';
 import { TagsService } from '../common/tags.service';
 import { Article } from '../entities/article.entity';
 import { ArticleVersionsService } from './article-versions.service';
+import { ArticleLinksService } from './article-links.service';
 
 @Injectable()
 export class ArticlesService {
@@ -17,6 +18,7 @@ export class ArticlesService {
     private readonly tags: TagsService,
     private readonly fts: FtsService,
     private readonly versions: ArticleVersionsService,
+    private readonly links: ArticleLinksService,
   ) {}
 
   // Liste fuer Sidebar + Fuse.js-Index (ohne grossen content-Body).
@@ -40,7 +42,11 @@ export class ArticlesService {
 
     const slug = await this.uniqueSlug(b.slug || title);
     // Muster: erst async rendern, DANN Transaktion (innerhalb nur awaited DB-Calls).
-    const { html, toc } = await this.markdown.renderMarkdown(content);
+    // `knownSlugs` faellt hier an, weil der Renderer entscheiden muss, welcher `[[Link]]` schon ein
+    // Ziel hat – der eigene Slug gehoert dazu, sonst zeigte ein Selbstverweis ins Leere.
+    const known = await this.links.knownSlugs();
+    known.add(slug);
+    const { html, toc, links } = await this.markdown.renderMarkdown(content, { knownSlugs: known });
 
     let id!: number;
     await this.ds.transaction(async (manager) => {
@@ -56,6 +62,10 @@ export class ArticlesService {
       id = res.identifiers[0].id as number;
       await this.tags.setArticleTags(manager, id, this.normalizeTags(tags));
       await this.fts.indexArticle(manager, id);
+      await this.links.reindex(manager, id, links);
+      // Andere Artikel koennen laengst auf diesen Slug zeigen – der Backlink erscheint sofort,
+      // ohne dass jemand sie anfassen muss.
+      await this.links.slugAppeared(manager, id, slug);
       // Der Anlagestand IST Fassung 1 – sonst waere er der einzige, den man nie zurueckholen kann.
       await this.versions.initial(manager, id, { title: title.trim(), summary, content });
     });
@@ -81,7 +91,9 @@ export class ArticlesService {
     const summary = b.summary ?? existing.summary;
     const category_id = b.category_id ?? existing.category_id;
     const slug = b.slug && b.slug !== existing.slug ? await this.uniqueSlug(b.slug, id) : existing.slug;
-    const { html, toc } = await this.markdown.renderMarkdown(content);
+    const known = await this.links.knownSlugs();
+    known.add(slug);
+    const { html, toc, links } = await this.markdown.renderMarkdown(content, { knownSlugs: known });
 
     // Der Auftrag für die Zusammenfassung faellt IN der Transaktion an (nur dort steht fest, ob
     // eine Fassung entstanden ist) und wird von ihr herausgereicht – die KI-Arbeit selbst gehoert
@@ -105,6 +117,10 @@ export class ArticlesService {
         .execute();
       if (Array.isArray(b.tags)) await this.tags.setArticleTags(manager, id, this.normalizeTags(b.tags));
       await this.fts.indexArticle(manager, id);
+      await this.links.reindex(manager, id, links);
+      // ⚠️ Nur der Zwischenspeicher folgt dem neuen Slug – der Text der anderen Artikel bleibt,
+      // wie er ist, und ihre Links auf den ALTEN Slug sind ab jetzt zu Recht kaputt.
+      await this.links.slugChanged(manager, id, existing.slug, slug);
       return this.versions.record(
         manager,
         id,

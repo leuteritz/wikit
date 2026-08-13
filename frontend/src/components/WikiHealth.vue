@@ -312,14 +312,19 @@ const usedFields = computed(() => {
               </RouterLink>
             </div>
             <ul class="flex flex-wrap gap-1.5">
+              <!-- Zwei Formen desselben Befunds – und zwei verschiedene Handgriffe: bei einem
+                   Wikilink korrigiert man die doppelte Klammer (oder legt den Artikel an), bei
+                   einem Markdown-Link die URL. Deshalb steht die Form an der Zeile. -->
               <li
                 v-for="(l, i) in a.links"
                 :key="i"
                 class="inline-flex items-center gap-1.5 rounded border border-dashed border-line px-2 py-1 font-mono text-3xs text-muted"
-                v-tip="`“${l.label || l.slug}” points at ${l.href}`"
+                v-tip="l.kind === 'wikilink'
+                  ? `[[${l.slug}]] — no article with this slug`
+                  : `“${l.label || l.slug}” points at ${l.href}`"
               >
                 <Icon icon="lucide:unlink" class="h-3 w-3" />
-                {{ l.slug || l.href }}
+                <span v-if="l.kind === 'wikilink'" class="opacity-60">[[</span>{{ l.slug || l.href }}<span v-if="l.kind === 'wikilink'" class="opacity-60">]]</span>
               </li>
             </ul>
           </li>

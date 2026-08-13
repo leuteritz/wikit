@@ -4,11 +4,40 @@ import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirro
 import { EditorState } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { markdown } from '@codemirror/lang-markdown'
+import { autocompletion, completionKeymap } from '@codemirror/autocomplete'
 import { renderClientMarkdown } from '../lib/clientMarkdown.js'
 import { useCodeMirrorTheme } from '../composables/useCodeMirrorTheme.js'
 
-const props = defineProps({ modelValue: { type: String, default: '' } })
+const props = defineProps({
+  modelValue: { type: String, default: '' },
+  // Für die `[[`-Vervollständigung. Kommt als Prop und NICHT aus einem eigenen Endpunkt: die Liste
+  // liegt im Artikel-Store, den jede Wiki-Ansicht ohnehin lädt – ein `?q=`-Endpunkt wäre Maschinerie
+  // für ein paar Dutzend Titel im Speicher.
+  articles: { type: Array, default: () => [] },
+})
 const emit = defineEmits(['update:modelValue'])
+
+// --- `[[` schlägt Artikel vor -------------------------------------------------------------------
+// Ohne das ist ein Wikilink eine Gedächtnisleistung: man müsste den Slug kennen, den der Server
+// beim Anlegen gebildet hat. Eingesetzt wird deshalb der SLUG, angezeigt der Titel – genau die
+// Zuordnung, die man sich sonst merken müsste.
+function wikiLinkSource(ctx) {
+  const before = ctx.matchBefore(/\[\[([^\]|\n]*)$/)
+  if (!before) return null
+  const typed = before.text.slice(2).toLowerCase()
+  const options = props.articles
+    .filter((a) => !typed || a.title.toLowerCase().includes(typed) || a.slug.includes(typed))
+    .slice(0, 20)
+    .map((a) => ({
+      label: a.title,
+      // `apply` schreibt die schließenden Klammern gleich mit – eine offene `[[` ist kein Link.
+      apply: `${a.slug}|${a.title}]]`,
+      detail: a.category?.name || '',
+      type: 'text',
+    }))
+  if (!options.length) return null
+  return { from: before.from + 2, options }
+}
 
 // Dark/Light-Umschaltung zentral (identisch in JavaCodeEditor/JavaDiffViewer).
 const { themeComp, themeExtension, bindTheme } = useCodeMirrorTheme()
@@ -25,7 +54,11 @@ onMounted(() => {
       lineNumbers(),
       history(),
       highlightActiveLine(),
-      keymap.of([...defaultKeymap, ...historyKeymap]),
+      // ⚠️ `completionKeymap` VOR `defaultKeymap`: sonst schluckt dessen `Escape`-Eintrag das
+      // Schliessen der Vorschlagsliste, und `Enter` bestaetigt keinen Vorschlag, sondern bricht
+      // die Zeile um.
+      keymap.of([...completionKeymap, ...defaultKeymap, ...historyKeymap]),
+      autocompletion({ override: [wikiLinkSource], icons: false }),
       markdown(),
       EditorView.lineWrapping,
       themeComp.of(themeExtension()),

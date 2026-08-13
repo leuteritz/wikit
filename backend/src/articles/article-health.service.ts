@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { ArticleEmbeddingsService } from './article-embeddings.service';
+import { ArticleLinksService } from './article-links.service';
 
 /**
  * Was man dem Wiki nicht ansieht – das Gegenstück zu `/insights`, nur über den anderen Bestand.
@@ -73,6 +74,7 @@ export class ArticleHealthService {
   constructor(
     @InjectDataSource() private readonly ds: DataSource,
     private readonly embeddings: ArticleEmbeddingsService,
+    private readonly links: ArticleLinksService,
   ) {}
 
   async report(): Promise<any> {
@@ -96,7 +98,16 @@ export class ArticleHealthService {
 
     const fields = this.usedFields(articles, tagged);
     const outdated = await this.outdated();
-    const broken = this.brokenLinks(articles);
+    // Die kaputten Wikilinks kommen aus dem Index – EINE Quelle mit dem Panel am Artikel und mit
+    // dem, was der Renderer als Link behandelt hat. Nach Artikel gebuendelt, damit der Bericht
+    // weiter je Artikel EINE Zeile zeigt.
+    const brokenWiki = new Map<number, string[]>();
+    for (const w of await this.links.brokenLinks()) {
+      const list = brokenWiki.get(w.id) || [];
+      list.push(w.target);
+      brokenWiki.set(w.id, list);
+    }
+    const broken = this.brokenLinks(articles, brokenWiki);
     const incomplete = this.incomplete(articles, tagged, classArticles, fields);
     const duplicates = await this.embeddings.duplicatePairs();
 
@@ -242,7 +253,7 @@ export class ArticleHealthService {
    * versteht. Ein externer Link kann ebenso tot sein – aber ihn zu prüfen hieße, ins Netz zu gehen,
    * und das tut Wikit nirgends.
    */
-  private brokenLinks(articles: ArticleRow[]): { items: any[]; total: number } {
+  private brokenLinks(articles: ArticleRow[], brokenWiki: Map<number, string[]>): { items: any[]; total: number } {
     const slugs = new Set(articles.map((a) => a.slug));
     const items: any[] = [];
 
@@ -262,8 +273,22 @@ export class ArticleHealthService {
         const key = `${target}|${m[1]}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        links.push({ label: (m[1] || '').trim(), slug: target, href: m[2] });
+        links.push({ kind: 'markdown', label: (m[1] || '').trim(), slug: target, href: m[2] });
       }
+
+      // ⚠️ Zweite FORM desselben Befunds, aber KEINE zweite Regel: die Wikilinks kommen aus dem
+      // INDEX (`article_links`), und der entstand beim Rendern desselben Textes. Hier ein zweites
+      // Mal im Rohtext zu suchen war der erste Entwurf – er fand in einem eingerueckten Codeblock
+      // `new int[[3]][3]` als Verweis auf einen Artikel namens „3" und meldete ihn als toten Link.
+      // `kind` an der Zeile, weil die HANDLUNG sich unterscheidet: die Klammern korrigieren (oder
+      // den Artikel anlegen) ist etwas anderes, als eine URL zu korrigieren.
+      for (const w of brokenWiki.get(a.id) || []) {
+        const key = `wiki|${w}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        links.push({ kind: 'wikilink', label: w, slug: w, href: `/article/${w}` });
+      }
+
       if (links.length) items.push({ id: a.id, slug: a.slug, title: a.title, links });
     }
 

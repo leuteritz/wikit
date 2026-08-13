@@ -3,6 +3,7 @@ import { ref, watch, nextTick, onMounted } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import CategoryBadge from './CategoryBadge.vue'
 import RelatedArticles from './RelatedArticles.vue'
+import ArticleBacklinks from './ArticleBacklinks.vue'
 import { Icon } from '../lib/icons.js'
 import { formatDateTime as fmtDate } from '../lib/format.js'
 import { isHighlightableVar, varColorClass } from '../lib/varHighlight.js'
@@ -181,8 +182,11 @@ watch(() => props.article?.id, () => nextTick(enhanceCodeBlocks))
       </div>
     </section>
 
-    <!-- Was noch dazugehören könnte. Steht UNTER den echten Beziehungen: eine Vermutung gehört
-         hinter das, was schon entschieden ist. -->
+    <!-- Drei Abschnitte, drei Verbindlichkeiten – in abnehmender Ordnung:
+         Relations (oben, von Hand eingetragen) -> Linked mentions (steht so im Text)
+         -> Related (Vermutung aus dem Bedeutungsindex). Ein leerer Abschnitt erscheint nicht. -->
+    <ArticleBacklinks :article="article" />
+
     <RelatedArticles :article="article" @linked="$emit('linked')" />
   </article>
 </template>

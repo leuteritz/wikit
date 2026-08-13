@@ -4,6 +4,7 @@ import { ArticlesService } from './articles.service';
 import { ArticleEmbeddingsService } from './article-embeddings.service';
 import { ArticleHealthService } from './article-health.service';
 import { ArticleVersionsService } from './article-versions.service';
+import { ArticleLinksService } from './article-links.service';
 
 // `ArticleEmbeddingsService` wird exportiert, weil `/ask` ihn braucht: dort werden Artikel- und
 // Klassentreffer zu einer Rangliste gemischt. Der Vektor-Cache lebt im Service, also gibt es ihn
@@ -18,7 +19,7 @@ import { ArticleVersionsService } from './article-versions.service';
 // Wiederherstellen-Pfad frei von einer Rückwärts-Abhängigkeit.
 @Module({
   controllers: [ArticlesController],
-  providers: [ArticlesService, ArticleEmbeddingsService, ArticleHealthService, ArticleVersionsService],
+  providers: [ArticlesService, ArticleEmbeddingsService, ArticleHealthService, ArticleVersionsService, ArticleLinksService],
   exports: [ArticleEmbeddingsService],
 })
 export class ArticlesModule {}

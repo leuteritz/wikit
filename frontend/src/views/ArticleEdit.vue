@@ -250,7 +250,7 @@ async function removeRelation(id) {
 
     <!-- Editor -->
     <div class="min-h-0 flex-1">
-      <MarkdownEditor v-model="form.content" />
+      <MarkdownEditor v-model="form.content" :articles="otherArticles" />
     </div>
 
     <!-- Relationen (nur bei vorhandenem Artikel) -->

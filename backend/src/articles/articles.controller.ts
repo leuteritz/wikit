@@ -3,6 +3,7 @@ import { ArticlesService } from './articles.service';
 import { ArticleEmbeddingsService } from './article-embeddings.service';
 import { ArticleHealthService } from './article-health.service';
 import { ArticleVersionsService } from './article-versions.service';
+import { ArticleLinksService } from './article-links.service';
 
 @Controller('articles')
 export class ArticlesController {
@@ -11,6 +12,7 @@ export class ArticlesController {
     private readonly embeddings: ArticleEmbeddingsService,
     private readonly health: ArticleHealthService,
     private readonly versions: ArticleVersionsService,
+    private readonly links: ArticleLinksService,
   ) {}
 
   @Get()
@@ -72,6 +74,14 @@ export class ArticlesController {
   @Get(':id/related')
   related(@Param('id') id: string) {
     return this.embeddings.suggestFor(Number(id));
+  }
+
+  // Wer verlinkt hierher – aus `[[Wikilinks]]` im Text anderer Artikel. Dritte Art von Zusammenhang
+  // neben `relations` (von Hand eingetragen) und `:id/related` (Vermutung aus Vektoren): abgeleitet,
+  // aber Tatsache. Ebenfalls zweisegmentig und über die Id.
+  @Get(':id/backlinks')
+  backlinks(@Param('id') id: string) {
+    return this.links.backlinks(Number(id));
   }
 
   // --- Fassungsverlauf -----------------------------------------------------

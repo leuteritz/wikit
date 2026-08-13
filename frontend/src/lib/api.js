@@ -99,6 +99,11 @@ export const api = {
 
   // Fassungsverlauf eines Artikels. Über die Id, nicht den Slug: eine Fassung hängt am Artikel,
   // und der Slug kann sich ändern, ohne dass sich am Text etwas tut.
+  // Wer verlinkt hierher (aus `[[Wikilinks]]` im Text anderer Artikel). `silent`, weil das Panel
+  // wie `RelatedArticles` einfach entfällt, wenn es nichts liefert – ein Toast über eine
+  // Zusatzangabe hilft beim Lesen eines Artikels niemandem.
+  getBacklinks: (id) => http('GET', `/articles/${id}/backlinks`, null, { silent: true }),
+
   listArticleVersions: (id) => http('GET', `/articles/${id}/versions`),
   getArticleVersion: (id, version) => http('GET', `/articles/${id}/versions/${version}`),
   // `from = 0` heißt „gegen nichts" – so lässt sich auch die älteste Fassung ansehen.

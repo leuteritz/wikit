@@ -49,6 +49,27 @@ CREATE TABLE IF NOT EXISTS relations (
 CREATE INDEX IF NOT EXISTS idx_relations_source ON relations(source_id);
 CREATE INDEX IF NOT EXISTS idx_relations_target ON relations(target_id);
 
+-- [[Wikilinks]] -- ABGELEITET aus dem Text, nicht von Hand gepflegt.
+--
+-- Bewusst NICHT in relations: dort steht, was jemand ENTSCHIEDEN hat, hier, was im Text STEHT.
+-- Drei Gruende, die das erzwingen: relations.target_id ist NOT NULL (ein unaufgeloester Wikilink
+-- hat kein Ziel), eine Relation ueberlebt eine Slug-Aenderung (ein Wikilink nicht, er ist Text),
+-- und beides in einer Tabelle braeuchte eine Herkunftsspalte plus Tombstones -- die Bauart der
+-- Java-Kanten in einer Tabelle, die dafuer nicht gemacht ist.
+--
+-- target_slug ist die FUEHRENDE Angabe, target_id nur ihr Zwischenspeicher (gleiche Bauart wie
+-- java_edges.source_class gegen java_files.id). Ein leeres target_id IST damit der Zustand
+-- "verweist ins Leere" -- ableitbar statt gemerkt.
+CREATE TABLE IF NOT EXISTS article_links (
+  source_id   INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  target_slug TEXT    NOT NULL,
+  target_id   INTEGER REFERENCES articles(id) ON DELETE SET NULL,
+  label       TEXT,
+  PRIMARY KEY (source_id, target_slug)
+);
+CREATE INDEX IF NOT EXISTS idx_article_links_target ON article_links(target_id);
+CREATE INDEX IF NOT EXISTS idx_article_links_slug ON article_links(target_slug);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS articles_fts USING fts5(
   title, summary, content, tags,
   tokenize = 'unicode61 remove_diacritics 2'

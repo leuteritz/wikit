@@ -19,8 +19,10 @@ copying one file.
 ## Features
 
 - **Markdown editor** — split view (CodeMirror), `Ctrl/Cmd + S` to save; HTML is rendered once on
-  save, server-side, with Shiki highlighting. Unsaved work survives a reload or a closed tab: the
-  draft is kept in the browser and offered back the next time you open that article.
+  save, server-side, with Shiki highlighting. Type `[[` to link another article — it completes as
+  you type, and the target grows a **“Linked mentions”** list without you maintaining one. A link
+  to an article that does not exist stays visible as an open end, not a dead link. Unsaved work
+  survives a reload or a closed tab: the draft is kept in the browser and offered back.
 - **Article history** — compare any two versions of an article word by word, and put an older one
   back. Edits made in one sitting stay one version.
 - **Instant search — and actions** — `Ctrl/Cmd + K` over articles, classes, methods and raw source,
