@@ -11,7 +11,7 @@
 // zweiten Request).
 import { ref, computed, watch } from 'vue'
 import { api } from '../../lib/api.js'
-import { BIG_CLIPBOARD_BYTES, copyToClipboard } from '../../lib/clipboard.js'
+import { BIG_CLIPBOARD_BYTES, copyToClipboard, downloadText } from '../../lib/clipboard.js'
 import { formatBytes } from '../../lib/format.js'
 import { Icon } from '../../lib/icons.js'
 import BusyState from '../BusyState.vue'
@@ -68,18 +68,10 @@ async function copyAll() {
   if (ok) setTimeout(() => (copied.value = false), 2500)
 }
 
-// Download ohne Server: der Text liegt bereits im Speicher.
+// Download ohne Server (der Text liegt bereits im Speicher) – die Mechanik steht in
+// `lib/clipboard.js` neben der Grenze, ab der sie den Vorrang bekommt.
 function downloadAll() {
-  if (!data.value?.text) return
-  const url = URL.createObjectURL(new Blob([data.value.text], { type: 'text/plain;charset=utf-8' }))
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename.value
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  // Erst nach dem Klick freigeben – sonst ist der Blob weg, bevor der Browser ihn liest.
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  downloadText(data.value?.text, filename.value)
 }
 </script>
 

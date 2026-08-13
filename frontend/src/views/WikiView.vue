@@ -7,6 +7,7 @@ import { useArticles } from '../composables/useArticles.js'
 import BusyState from '../components/BusyState.vue'
 import WikiRelationGraph from '../components/WikiRelationGraph.vue'
 import WikiHealth from '../components/WikiHealth.vue'
+import WikiData from '../components/WikiData.vue'
 import SectionLabel from '../components/ui/SectionLabel.vue'
 import { categoryColors, colorFor } from '../lib/wikiGraph.js'
 import { api } from '../lib/api.js'
@@ -23,9 +24,10 @@ const TAG_PREVIEW = 16
 const tags = ref([])
 const allTags = ref(false)
 const shownTags = computed(() => (allTags.value ? tags.value : tags.value.slice(0, TAG_PREVIEW)))
-// DREI Modi derselben Ansicht (gleiche Bauart wie „Class · Relation" in /code): die Liste
-// beantwortet „was gibt es?", der Graph „was haengt woran?", der Bericht „woran muss ich ran?".
-// Derselbe Bestand, drei Fragen – deshalb ein Umschalter und kein dritter Sidebar-Eintrag.
+// VIER Modi derselben Ansicht (gleiche Bauart wie „Class · Relation" in /code): die Liste
+// beantwortet „was gibt es?", der Graph „was haengt woran?", der Bericht „woran muss ich ran?",
+// und „Data" als einziger keine Frage, sondern „wie komme ich hier raus und wieder rein?".
+// Derselbe Bestand – deshalb ein Umschalter und kein weiterer Sidebar-Eintrag.
 //
 // ⚠️ **Gemountet wird beim ERSTEN Umschalten, danach nur noch versteckt** (`v-if` + `v-show`).
 // Beides ist noetig und keins reicht allein: ein von Anfang an gemounteter Graph laege in einem
@@ -36,13 +38,17 @@ const shownTags = computed(() => (allTags.value ? tags.value : tags.value.slice(
 // Fuer den Bericht gilt dieselbe Regel aus einem zweiten Grund: er kostet einen Request, und wer
 // nur die Liste ansieht, hat danach nicht gefragt (gleiche Begruendung wie bei den
 // Link-Vorschlaegen im Graphen). Einmal geholt, ueberlebt er das Hin- und Herschalten.
-const view = ref('list') // 'list' | 'graph' | 'health'
+// „Data" steht hier und nicht unter /bot: dort geht es um die lokale KI, ein Wiki-Backup hat
+// damit nichts zu tun.
+const view = ref('list') // 'list' | 'graph' | 'health' | 'data'
 const graphMounted = ref(false)
 const healthMounted = ref(false)
+const dataMounted = ref(false)
 
 function setView(next) {
   if (next === 'graph') graphMounted.value = true
   if (next === 'health') healthMounted.value = true
+  if (next === 'data') dataMounted.value = true
   view.value = next
 }
 
@@ -111,14 +117,15 @@ const groups = computed(() => {
         </p>
       </div>
       <div class="flex items-center gap-2">
-        <!-- Umschalter: drei Fragen an denselben Bestand. Die Liste sagt „was gibt es?",
-             der Graph „was haengt woran?", der Bericht „woran muss ich ran?". -->
+        <!-- Umschalter: derselbe Bestand, vier Blickwinkel – „was gibt es?", „was haengt woran?",
+             „woran muss ich ran?" und „wie sichere ich das?". -->
         <div class="flex items-center rounded-lg border border-line p-0.5">
           <button
             v-for="m in [
               { key: 'list', icon: 'lucide:list', label: 'List' },
               { key: 'graph', icon: 'lucide:network', label: 'Graph' },
               { key: 'health', icon: 'lucide:activity', label: 'Health' },
+              { key: 'data', icon: 'lucide:download', label: 'Data' },
             ]"
             :key="m.key"
             type="button"
@@ -147,7 +154,7 @@ const groups = computed(() => {
          einer Befundliste haette er gar keine Bedeutung – ein Bedienelement, das nichts entscheidet,
          ist Ballast (gleiche Begruendung, aus der das Beziehungsnetz keine Kontextstufen hat). -->
     <div
-      v-show="view !== 'health'"
+      v-show="view === 'list' || view === 'graph'"
       class="mb-7 flex items-center gap-2.5 rounded-lg border border-line bg-surface-2 px-3.5"
     >
       <Icon icon="lucide:search" class="h-4 w-4 shrink-0 text-muted" />
@@ -174,6 +181,12 @@ const groups = computed(() => {
          steht dort, also fuehrt der Satz auch dorthin, statt ihn nur zu erwaehnen. -->
     <div v-if="healthMounted" v-show="view === 'health'">
       <WikiHealth @show-graph="setView('graph')" />
+    </div>
+
+    <!-- Ebenfalls erst beim Umschalten gemountet: der Export kostet einen Request über den
+         gesamten Bestand, und wer die Liste ansieht, hat danach nicht gefragt. -->
+    <div v-if="dataMounted" v-show="view === 'data'">
+      <WikiData />
     </div>
 
     <!-- Schlagwörter: die Achse QUER zur Kategorie. Die Liste darunter ist nach Kategorie geordnet

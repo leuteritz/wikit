@@ -4,6 +4,7 @@ import { ArticleEmbeddingsService } from './article-embeddings.service';
 import { ArticleHealthService } from './article-health.service';
 import { ArticleVersionsService } from './article-versions.service';
 import { ArticleLinksService } from './article-links.service';
+import { ArticleExportService } from './article-export.service';
 
 @Controller('articles')
 export class ArticlesController {
@@ -13,6 +14,7 @@ export class ArticlesController {
     private readonly health: ArticleHealthService,
     private readonly versions: ArticleVersionsService,
     private readonly links: ArticleLinksService,
+    private readonly exporter: ArticleExportService,
   ) {}
 
   @Get()
@@ -69,11 +71,29 @@ export class ArticlesController {
     return this.embeddings.suggestAll();
   }
 
+  // --- Das Wiki als Text ----------------------------------------------------
+  // Das Gegenstück zu `GET /api/java/export`: alle Artikel als EIN Text, jeder mit seinem
+  // Frontmatter. Antwortform absichtlich dieselbe (`text` + `files`-Landkarte), damit Vorschau
+  // und die zwei Wege hinaus dieselbe Komponente sind.
+  //
+  // ⚠️ Einsegmentig, also zwingend VOR `:slug` – sonst sucht die Anwendung einen Artikel namens
+  // „export".
+  @Get('export')
+  exportAll() {
+    return this.exporter.all();
+  }
+
   // Zweisegmentig, kollidiert also nicht mit `:slug`. Über die **Id**, nicht den Slug: der Aufrufer
   // hat den Artikel bereits geladen und kennt beide – und die Vorschläge sind über Ids geschlüsselt.
   @Get(':id/related')
   related(@Param('id') id: string) {
     return this.embeddings.suggestFor(Number(id));
+  }
+
+  // Ein einzelner Artikel als Markdown-Datei (Frontmatter + Text). Zweisegmentig, über die Id.
+  @Get(':id/export')
+  exportOne(@Param('id') id: string) {
+    return this.exporter.one(Number(id));
   }
 
   // Wer verlinkt hierher – aus `[[Wikilinks]]` im Text anderer Artikel. Dritte Art von Zusammenhang

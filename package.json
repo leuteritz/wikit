@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.39.0",
-  "whatsNew": "Link articles with [[…]] and see who links back",
+  "version": "4.40.0",
+  "whatsNew": "Export the wiki, and back it up in one file",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

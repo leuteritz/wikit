@@ -32,7 +32,7 @@ import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { useJavaGraph } from '../composables/useJavaGraph.js'
 import { useTopic } from '../composables/useTopic.js'
 import { api } from '../lib/api.js'
-import { BIG_CLIPBOARD_BYTES, copyToClipboard } from '../lib/clipboard.js'
+import { BIG_CLIPBOARD_BYTES, copyToClipboard, downloadText } from '../lib/clipboard.js'
 import {
   buildSearchRegex,
   findMatches,
@@ -1112,14 +1112,7 @@ async function copyBundle() {
 function downloadBundle() {
   if (!bundle.value?.text) return
   const slug = applied.value.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase()
-  const url = URL.createObjectURL(new Blob([bundle.value.text], { type: 'text/plain;charset=utf-8' }))
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `wikit-topic-${slug || 'bundle'}.txt`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  downloadText(bundle.value.text, `wikit-topic-${slug || 'bundle'}.txt`)
 }
 
 // --- Absprung -------------------------------------------------------------------------------

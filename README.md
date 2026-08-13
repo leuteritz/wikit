@@ -53,7 +53,11 @@ copying one file.
   relation) and copy their whole source as one text, ready to paste into a chat.
 - **AI summaries** — optional, per method and per class, via [Ollama](https://ollama.com)
   (local, no API key), configurable at runtime under `/bot`.
-- **Dark mode** and **backup = copy one file**.
+- **Take it with you** — every article as one Markdown text (with a small header, readable
+  anywhere), or the whole thing as one JSON backup: articles, categories, tags, typed relations,
+  architecture rules and every setting you changed. Restoring reads it back through the normal save
+  path, so an overwritten article keeps its old state in its own history. Under `Wiki → Data`.
+- **Dark mode**, and the database is still a single file you can copy.
 
 ## Tech stack
 

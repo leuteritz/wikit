@@ -113,6 +113,15 @@ export const api = {
   listCategories: () => http('GET', '/categories'),
   createCategory: (data) => http('POST', '/categories', data),
 
+  // --- Das Wiki hinaus und wieder herein ---
+  // Antwortform wie `exportJavaAll()`: `{ text, articles, bytes, lines, files[] }`.
+  exportArticles: () => http('GET', '/articles/export'),
+  exportArticle: (id) => http('GET', `/articles/${id}/export`),
+  // Voll-Backup als JSON. `versions=1` nimmt den Fassungsverlauf mit (Default aus – er ist ein
+  // Vielfaches der Nutzdaten).
+  getBackup: (withVersions) => http('GET', `/backup${withVersions ? '?versions=1' : ''}`),
+  restoreBackup: (data, mode) => http('POST', '/backup/restore', { data, mode }),
+
   // Alle Schlagwörter mit ihrer Häufigkeit, absteigend – der Server sortiert bereits.
   // Die Zuordnung Artikel→Tag steht schon in `listArticles()`; dieser Endpunkt liefert die
   // Gegenrichtung (welche Schlagwörter GIBT es überhaupt, und wie schwer wiegen sie).

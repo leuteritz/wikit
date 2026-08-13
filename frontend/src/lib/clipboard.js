@@ -43,3 +43,26 @@ export async function copyToClipboard(text) {
     return false
   }
 }
+
+/**
+ * Der andere Weg aus der Anwendung heraus: als Datei.
+ *
+ * Er stand als Kopie in `JavaExportModal` und gehoert hierher, neben `BIG_CLIPBOARD_BYTES` – die
+ * Grenze und der Ausweg, den sie meint, sind eine Sache. Ab dem dritten Aufrufer (Klassenexport,
+ * Wiki-Export, Backup) waere jede Kopie eine Stelle, an der jemand das `revokeObjectURL` vergisst.
+ *
+ * Rein clientseitig: der Text liegt bereits im Speicher, ein zweiter Request dafuer waere
+ * derselbe Inhalt ein zweites Mal.
+ */
+export function downloadText(text, filename, type = 'text/plain;charset=utf-8') {
+  if (!text) return
+  const url = URL.createObjectURL(new Blob([text], { type }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  // Erst nach dem Klick freigeben – sonst ist der Blob weg, bevor der Browser ihn liest.
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}

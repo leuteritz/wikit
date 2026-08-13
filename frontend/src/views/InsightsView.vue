@@ -29,7 +29,7 @@ import { Icon } from '../lib/icons.js'
 import { vTip } from '../lib/tooltip.js'
 import { api } from '../lib/api.js'
 import { buildReadingPath, STATION_KIND } from '../lib/readingPath.js'
-import { copyToClipboard, BIG_CLIPBOARD_BYTES } from '../lib/clipboard.js'
+import { copyToClipboard, downloadText, BIG_CLIPBOARD_BYTES } from '../lib/clipboard.js'
 import { formatBytes } from '../lib/format.js'
 
 const router = useRouter()
@@ -369,12 +369,7 @@ async function copyPath() {
     if (!text) return
     // Oberhalb der Grenze fuehrt der Download – dieselbe Regel wie im Themen-Buendel.
     if (new Blob([text]).size > BIG_CLIPBOARD_BYTES) {
-      const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }))
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `reading-path${pathScope.value ? `-${pathScope.value.replace(/\W+/g, '-')}` : ''}.txt`
-      a.click()
-      URL.revokeObjectURL(url)
+      downloadText(text, `reading-path${pathScope.value ? `-${pathScope.value.replace(/\W+/g, '-')}` : ''}.txt`)
     } else {
       await copyToClipboard(text)
     }

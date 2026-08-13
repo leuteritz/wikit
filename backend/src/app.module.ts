@@ -11,6 +11,7 @@ import { ALL_ENTITIES } from './entities';
 import { AnalysisModule } from './analysis/analysis.module';
 import { ArticlesModule } from './articles/articles.module';
 import { AskModule } from './ask/ask.module';
+import { BackupModule } from './backup/backup.module';
 import { BotModule } from './bot/bot.module';
 import { CategoriesModule } from './categories/categories.module';
 import { InsightsModule } from './insights/insights.module';
@@ -64,6 +65,7 @@ const staticImports = fs.existsSync(FRONTEND_DIST)
     AnalysisModule,
     BotModule,
     AskModule,
+    BackupModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_FILTER, useClass: AllExceptionsFilter }],
