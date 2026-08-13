@@ -370,6 +370,12 @@ onMounted(() => {
       '&': { height: '100%' },
       '.cm-scroller': { fontFamily: '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '0.8125rem', lineHeight: '1.6' },
       '.cm-content': { padding: '12px 0' },
+      // Haengender Einzug fuer umbrochene Zeilen (`lineWrapping` oben): die Fortsetzung sitzt
+      // eingerueckt unter dem Zeilenanfang und liest sich damit nicht wie eine neue Anweisung.
+      // 6px ist CodeMirrors eigenes `.cm-line`-Padding links – ohne den Zuschlag verschoebe sich
+      // die erste Zeile gegen den Gutter. Gleiche Aussage wie `.code-soft-wrap .shiki .line`
+      // (style.css) fuer die Shiki-Bloecke daneben.
+      '.cm-line': { paddingLeft: 'calc(6px + 3ch)', textIndent: '-3ch' },
     }),
   ]
   if (props.readonly) {

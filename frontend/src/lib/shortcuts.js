@@ -56,6 +56,7 @@ export const SHORTCUTS = [
   },
   { id: 'find-graph', keys: ['mod+shift+f'], scope: 'code', label: 'Jump to search', hint: 'the search on the left, whatever is open' },
   { id: 'step', keys: ['enter'], scope: 'code', label: 'Next match', hint: 'in the search — the graph moves to it, Shift+↵ goes back' },
+  { id: 'wide', keys: ['alt+w'], scope: 'code', label: 'Wide code panel', hint: 'the detail column takes the graph’s width — press again to go back' },
   { id: 'analyze', keys: ['mod+enter'], scope: 'code', label: 'Run analysis', hint: 'inside “Add code”' },
 
   // --- Wiki ---

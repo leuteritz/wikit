@@ -244,11 +244,14 @@ export function processMethodBody(html, { collapseBlank = false, signatureHtml =
     // Weder Rumpf noch Signatur -> nichts zu tun.
     if (!kept.length && !sigLines.length) return html
 
-    // Frisches <code> mit Signaturzeile(n) + gehaltenen Rumpfzeilen (durch `\n`-Textnodes getrennt).
+    // Frisches <code> mit Signaturzeile(n) + gehaltenen Rumpfzeilen – OHNE `\n`-Textnodes, genau
+    // wie in `addLineNumbers`/`buildCallWindow` oben. Der Zeilenumbruch kommt aus
+    // `.method-code .line { display: block }` (JavaClassDetail). Das ist die Voraussetzung dafuer,
+    // dass eine zu lange Zeile mit haengendem Einzug umbrechen kann: mit `\n` dazwischen ergaebe
+    // derselbe `display:block` doppelte Zeilenabstaende.
     // Kein `{` anhaengen: der Rumpf kann bereits Klammern enthalten (s. DECL_RE-Strip oben).
     const code = doc.createElement('code')
-    ;[...sigLines, ...kept].forEach((el, i) => {
-      if (i > 0) code.appendChild(doc.createTextNode('\n'))
+    ;[...sigLines, ...kept].forEach((el) => {
       code.appendChild(el)
     })
     const oldCode = pre.querySelector('code')

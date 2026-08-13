@@ -5,6 +5,10 @@
 // Die zwei `{R}px`-Tracks sind die Divider; fr verteilt den Restplatz proportional, die
 // Mindestbreite (MIN) bleibt sauber erhalten.
 //
+// Drei Wege, die Breiten zu aendern, und sie unterscheiden sich in ihrer Verbindlichkeit:
+// Ziehen (Einstellung, bleibt) · `toggleWide` (Entscheidung, bleibt, mit Rueckweg) ·
+// `focusRight` (geliehen, wird beim naechsten Klick zurueckgegeben).
+//
 // View-lokaler State (frische Instanz pro Aufruf, KEIN Modul-Singleton) – kein Pinia/Vuex.
 // Drag-Listener haengen am `window`, damit das Ziehen nicht abbricht, wenn die Maus den
 // schmalen Divider (oder den Graphen) verlaesst. Eingestellte Breiten ueberleben einen
@@ -35,17 +39,6 @@ function isValidTriple(v) {
 export function usePanelResize() {
   const widths = reactive({ ...DEFAULTS })
 
-  // Persistierte Aufteilung wiederherstellen (best effort).
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      if (isValidTriple(parsed)) Object.assign(widths, parsed)
-    }
-  } catch {
-    /* localStorage nicht verfuegbar -> Defaults */
-  }
-
   const isDragging = ref(false)
   const activeKey = ref(null) // 'left' | 'right' | null -> hebt den gezogenen Divider hervor
 
@@ -59,6 +52,36 @@ export function usePanelResize() {
   // gut ein Drittel und bleibt damit lesbar – auf 52 % schrumpfte er auf einen Streifen.
   const FOCUS_RIGHT = 44
   const isFocused = computed(() => borrowed.value !== null)
+
+  // --- Breit lesen -------------------------------------------------------------------------
+  // Anders als die geliehene Breite ist das eine ENTSCHEIDUNG: sie bleibt, bis man sie zuruecknimmt,
+  // und ueberlebt deshalb auch den Reload. Der Platz kommt aus der MITTE – den Graphen liest
+  // niemand, waehrend er eine Klasse liest. Links bleibt stehen, was es ist: die Navigation, mit der
+  // man zur naechsten Klasse kommt. `stash` haelt die Aufteilung von vorher.
+  const wide = ref(false)
+  let stash = null
+
+  // Persistierte Aufteilung wiederherstellen (best effort). Steht hinter den Deklarationen, weil der
+  // gemerkte Stand auch den Breit-Modus umfasst.
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (isValidTriple(parsed)) {
+        widths.left = parsed.left
+        widths.center = parsed.center
+        widths.right = parsed.right
+        // Der Breit-Modus gilt nur mit gemerkter Ruecksprung-Aufteilung – ohne sie waere „zurueck"
+        // ein Knopf ohne Ziel.
+        if (parsed.wide && isValidTriple(parsed.stash)) {
+          wide.value = true
+          stash = { left: parsed.stash.left, center: parsed.stash.center, right: parsed.stash.right }
+        }
+      }
+    }
+  } catch {
+    /* localStorage nicht verfuegbar -> Defaults */
+  }
 
   const isDirty = computed(
     () =>
@@ -83,7 +106,7 @@ export function usePanelResize() {
 
   function persist() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...widths }))
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...widths, wide: wide.value, stash }))
     } catch {
       /* ignore */
     }
@@ -123,7 +146,11 @@ export function usePanelResize() {
     e.preventDefault() // verhindert Textselektion waehrend des Ziehens
     // Wer selbst zieht, uebernimmt: die geliehene Breite wird zu SEINER Breite (inkl. persist beim
     // Loslassen). Ein spaeteres Zurueckspringen waere hier ein Zustand, den niemand mehr erwartet.
+    // Dasselbe gilt fuer den Breit-Modus: sein Knopf zeigt „an", und die Breite ist bereits eine
+    // andere – das waere eine Anzeige, die luegt.
     borrowed.value = null
+    wide.value = false
+    stash = null
     const gridEl = e.currentTarget.parentElement
     const rect = gridEl.getBoundingClientRect()
     const availablePx = Math.max(1, rect.width - 2 * RESIZER_PX) // px-Raum fuer die 100 fr
@@ -168,8 +195,28 @@ export function usePanelResize() {
     borrowed.value = null
   }
 
+  // Detail-Panel dauerhaft breit machen (und wieder zurueck). Kein Effekt im gestapelten Layout –
+  // dort gibt es keine Spalten, zwischen denen sich Platz verschieben liesse.
+  function toggleWide() {
+    if (!isWide.value) return
+    if (wide.value) {
+      if (stash) Object.assign(widths, stash)
+      stash = null
+      wide.value = false
+    } else {
+      stash = { ...widths }
+      borrowed.value = null // eine geliehene Breite waere hier nur noch ein Ruecksprung ins Nichts
+      widths.center = MIN
+      widths.right = 100 - widths.left - MIN
+      wide.value = true
+    }
+    persist()
+  }
+
   function reset() {
     borrowed.value = null
+    wide.value = false
+    stash = null
     Object.assign(widths, DEFAULTS)
     persist()
   }
@@ -188,9 +235,11 @@ export function usePanelResize() {
     activeKey,
     isDirty,
     isFocused,
+    wide,
     startDrag,
     focusRight,
     releaseFocus,
+    toggleWide,
     reset,
   }
 }

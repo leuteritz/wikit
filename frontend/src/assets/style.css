@@ -526,6 +526,40 @@ body {
   font-weight: 700;
 }
 
+/* --- Code in der Detailspalte bricht um (`/code`, Spalte 3) ------------------------------------
+ * Dort wird gelesen, und zwar in einer Spalte, deren Breite von der Fensterbreite abhaengt und
+ * nicht von der laengsten Zeile der Klasse. Eine Zeile, die nicht passt, bricht deshalb UM statt
+ * die Flaeche waagerecht wegzuschieben: senkrecht scrollen ist ein Bedienweg, waagerecht scrollen
+ * in einer schmalen Spalte ist keiner.
+ *
+ * Der haengende Einzug ist der eigentliche Punkt: ohne ihn beginnt die Fortsetzung am linken Rand
+ * und liest sich wie eine neue Anweisung. Mit ihm sagt der Einzug „das gehoert noch zur Zeile
+ * darueber" – dieselbe Aussage, die CodeMirror-Zeilen im Source-Tab tragen (JavaCodeEditor.vue).
+ *
+ * Gilt bewusst nur unter dieser Klasse: Artikel-Codebloecke und die Bloecke in /insights sind
+ * ganze Dateien in voller Breite, dort ist der waagerechte Scroll richtig. */
+.code-soft-wrap .shiki {
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  /* Ein einzelner uebermaessig langer Bezeichner (FQCN, String-Literal, base64) hat keine
+     Umbruchstelle – `break-word` gibt ihm eine, statt ihn doch wieder hinauslaufen zu lassen. */
+  overflow-wrap: break-word;
+}
+/* Der Einzug setzt voraus, dass die Zeile ein BLOCK ist – das bringt jeder dieser Bloecke selbst
+   mit (`.edge-code`/`.edge-usage-code` hier, `.method-code` in JavaClassDetail), weil es davon
+   abhaengt, wie sein HTML gebaut wurde (mit oder ohne `\n` zwischen den Zeilen, s. lib/javaCode.js). */
+.code-soft-wrap .shiki .line {
+  padding-left: 3ch;
+  text-indent: -3ch;
+}
+/* Bloecke mit Gutter (Kanten- und Buendel-Panel): der negative Einzug muss die Zeilennummer MIT
+   aufnehmen (`::before` ist 3rem breit, dazu 0.85rem Abstand), sonst rutschte sie in den Text. */
+.code-soft-wrap .edge-code .line,
+.code-soft-wrap .edge-usage-code .line {
+  padding-left: calc(3.85rem + 3ch);
+  text-indent: calc(-3.85rem - 3ch);
+}
+
 /* --- Code in `prose`-Containern ---------------------------------------------------------------
  * Tailwind Typography malt `pre` aus `--tw-prose-pre-bg` (Slate #1e293b) – ein Ton, den es in
  * dieser Palette nicht gibt. Getroffen sind ALLE prose-Flaechen, und zwei davon rendern ihr

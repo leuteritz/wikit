@@ -72,6 +72,9 @@ onMounted(() => {
       '&': { height: '100%' },
       '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '0.8125rem', lineHeight: '1.6' },
       '.cm-content': { padding: '8px 0' },
+      // Haengender Einzug wie im Quellcode-Tab (JavaCodeEditor) – Diff und Quelltext liegen im
+      // selben Panel uebereinander und duerfen nicht unterschiedlich umbrechen.
+      '.cm-line': { paddingLeft: 'calc(6px + 3ch)', textIndent: '-3ch' },
     }),
   ]
   const state = EditorState.create({ doc: props.diff || '', extensions })

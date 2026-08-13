@@ -59,9 +59,11 @@ const {
   activeKey,
   isDirty: panelsDirty,
   isFocused: panelsFocused,
+  wide: panelsWide,
   startDrag,
   focusRight,
   releaseFocus,
+  toggleWide,
   reset: resetPanels,
 } = usePanelResize()
 
@@ -439,6 +441,13 @@ function onKeydown(e) {
     if (!typing && e.altKey && !mod && e.key === 'ArrowLeft') {
       e.preventDefault()
       graphRef.value?.drillUp?.()
+    }
+    // Alt+W macht die Detailspalte breit (und wieder schmal). Bewusst mit Alt: Ctrl+Shift+W
+    // schliesst im Browser das Fenster, und ein blosses `w` verschluckte die Folge „g, w".
+    // `e.code` statt `e.key`, weil Alt auf dem Mac Sonderzeichen erzeugt.
+    if (!typing && e.altKey && !mod && e.code === 'KeyW') {
+      e.preventDefault()
+      toggleWide()
     }
     return
   }
@@ -1426,6 +1435,22 @@ function onResetPanels() {
             >
               <Icon icon="lucide:clipboard-copy" class="h-4 w-4 shrink-0" />
             </button>
+            <!-- Breit lesen. Steht direkt vor „Reset layout", weil beide dieselbe Sache regeln –
+                 wie viel Platz welche Spalte bekommt. -->
+            <button
+              type="button"
+              class="tool-btn"
+              :class="{ 'is-on': panelsWide }"
+              :disabled="!isWide"
+              :aria-pressed="panelsWide"
+              v-tip="panelsWide
+                ? { title: 'Back to the normal layout', hint: 'Gives the graph its width back (Alt+W).' }
+                : { title: 'Wide code panel', hint: 'Puts the space into the detail column — the graph steps aside (Alt+W).' }"
+              aria-label="Wide code panel"
+              @click="toggleWide"
+            >
+              <Icon :icon="panelsWide ? 'lucide:minimize-2' : 'lucide:maximize-2'" class="h-4 w-4 shrink-0" />
+            </button>
             <button
               type="button"
               class="tool-btn"
@@ -1945,8 +1970,11 @@ function onResetPanels() {
         <span class="panel-resizer__grip" />
       </div>
 
-      <!-- Spalte 3: Detail – wahlweise die geoeffnete Klasse oder die angeklickte Beziehung. -->
-      <div class="flex min-h-0 flex-col gap-2">
+      <!-- Spalte 3: Detail – wahlweise die geoeffnete Klasse oder die angeklickte Beziehung.
+           `code-soft-wrap` gilt fuer die ganze Spalte und damit fuer alle drei Panels auf einmal:
+           hier wird Code GELESEN, also bricht er um, statt sich waagerecht wegzuschieben (s.
+           style.css). Eine Klasse an einer Stelle – kein Schalter, kein Zustand. -->
+      <div class="code-soft-wrap flex min-h-0 flex-col gap-2">
         <!-- Umschalter, nur solange eine Beziehung offen ist. Ohne sie gibt es nichts zu waehlen,
              und eine Leiste mit einem einzigen, immer aktiven Knopf waere blosse Dekoration. -->
         <Transition name="pop">
@@ -2270,6 +2298,16 @@ function onResetPanels() {
   color: var(--color-accent);
   opacity: 1;
   cursor: progress;
+}
+/* Eingeschaltet (Breit-Modus): derselbe Akzent wie beim laufenden Vorgang, aber ohne dessen
+   Cursor – das hier ist kein Zustand, der von selbst endet, sondern einer, den man zuruecknimmt.
+   Der Hover-Fall steht ausdruecklich dabei: `.tool-btn:hover:not(:disabled)` hat die hoehere
+   Spezifitaet und faerbte den eingeschalteten Knopf ausgerechnet dann zurueck, wenn der Zeiger
+   darauf steht – also genau im Moment des Umschaltens. */
+.tool-btn.is-on,
+.tool-btn.is-on:hover:not(:disabled) {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
 }
 /* Destruktiv erst beim Hover: in Ruhe ist sie so gedaempft wie ihre Nachbarn, weil Rot als
    Dauerzustand in der Kopfzeile eine Warnung waere, die niemanden mehr erreicht. */

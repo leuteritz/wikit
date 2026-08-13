@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.41.0",
-  "whatsNew": "One warm code surface across every view",
+  "version": "4.42.0",
+  "whatsNew": "Code panel wraps long lines and can go wide",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

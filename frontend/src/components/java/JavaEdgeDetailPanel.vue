@@ -773,7 +773,12 @@ watch(
                        Kopier-Button. Der Kopier-Button sitzt bewusst hier (nicht schwebend ueber dem
                        Code), damit er die Signatur-Zeile nicht ueberdeckt und die Parameter-Variablen
                        klickbar bleiben. -->
-                  <div class="flex items-center gap-2 px-3 py-2">
+                  <!-- `flex-wrap` + umbrechender Name: ein Methodenname kann laenger sein als die
+                       Spalte breit ist. Ohne beides schob er die Werkzeuge rechts (Sprung, Kopieren)
+                       aus der Karte, und `overflow-hidden` schnitt sie ersatzlos ab – der Name war
+                       dann unvollstaendig UND die Knoepfe weg. Gleiche Regel wie beim Code darunter:
+                       umbrechen statt hinauslaufen. -->
+                  <div class="flex flex-wrap items-center gap-2 px-3 py-2">
                     <!-- Farb-Badge = Identitaet dieser Methode; dasselbe Zeichen steht unten an
                          jeder Aufrufstelle, die sie ruft. -->
                     <span class="mc-badge">
@@ -781,7 +786,7 @@ watch(
                            Methode, das Variablenzeichen fuer ein Feld. -->
                       <Icon :icon="isField ? 'lucide:variable' : 'lucide:braces'" class="h-3.5 w-3.5" />
                     </span>
-                    <code class="mc-name font-mono text-sm font-semibold">{{ memberName(c.name) }}</code>
+                    <code class="mc-name min-w-0 break-all font-mono text-sm font-semibold">{{ memberName(c.name) }}</code>
                     <span v-if="c.needsReview" class="review-badge shrink-0">
                       <Icon icon="lucide:alert-triangle" class="h-3 w-3 shrink-0" />
                       Please review
@@ -940,13 +945,15 @@ watch(
                            getrennt (kein Aneinanderreihen). Der Callee traegt die Farbe seiner
                            Definitionskarte oben – Streifen, Badge, Aufrufzeile und Code-Token ziehen
                            dieselbe Variable. -->
-                      <div class="flex items-center gap-2 border-b border-line px-3 py-2">
+                      <!-- Umbrechend wie der Quelle-Header oben: die Aufruf-Kette traegt ZWEI
+                           Methodennamen und laeuft noch schneller aus der Karte. -->
+                      <div class="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
                         <span class="mc-badge">
                           <Icon icon="lucide:corner-down-right" class="h-3.5 w-3.5" />
                         </span>
-                        <code class="font-mono text-sm font-semibold text-ink">{{ callerName(grp.callerMethod, grp.callerIsField) }}</code>
+                        <code class="min-w-0 break-all font-mono text-sm font-semibold text-ink">{{ callerName(grp.callerMethod, grp.callerIsField) }}</code>
                         <Icon icon="lucide:arrow-right" class="h-3.5 w-3.5 shrink-0 text-muted" />
-                        <code class="mc-name font-mono text-sm font-semibold">{{ memberName(site.calleeMethod) }}</code>
+                        <code class="mc-name min-w-0 break-all font-mono text-sm font-semibold">{{ memberName(site.calleeMethod) }}</code>
                         <!-- Genau diese Zeile ist die geratene Stelle -> das Badge gehoert hierher,
                              nicht nur an die Definition oben. -->
                         <span

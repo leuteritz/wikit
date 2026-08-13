@@ -53,6 +53,11 @@ const loading = ref(true)
 const error = ref('')
 const tab = ref('doc') // 'doc' | 'source' | 'history'
 const sourceEditor = ref(null) // JavaCodeEditor im Quellcode-Tab (fuer highlightLine)
+// Der Quellcode-Tab bekommt die Resthoehe des Panels statt eines festen Fensters: sonst scrollt man
+// einen 60vh-Editor INNERHALB eines zweiten Scrollcontainers – zwei Balken fuer eine Bewegung, und
+// auf einem hohen Monitor bleibt die untere Haelfte des Panels leer. Nur dieser eine Tab; Doku und
+// History sind Fliesstext und brauchen den gewoehnlichen Scroll des Rumpfes.
+const sourceFills = computed(() => tab.value === 'source' && !!file.value && !loading.value && !error.value)
 const openMethod = ref(null)
 const fullBusy = ref(false) // waehrend des Einreihens der Voll-Analyse
 const notice = ref('')
@@ -781,7 +786,10 @@ async function removeFile() {
       </div>
     </div>
 
-    <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+    <div
+      class="min-h-0 flex-1 px-4 py-3"
+      :class="sourceFills ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'"
+    >
       <!-- Ladezustand: sagt WAS geladen wird (aus der Klassenliste ist es bereits bekannt), WIE
            LANGE schon, und zeigt die Form der kommenden Ansicht als Skelett. Ein blosses
            „Loading…" liess das Panel bei einer grossen Klasse sekundenlang leer wirken. -->
@@ -879,7 +887,7 @@ async function removeFile() {
 
         <!-- QUELLCODE-TAB: read-only CodeMirror (Java-Syntax-Highlighting) -->
         <template v-else-if="tab === 'source'">
-          <div class="code-wrap h-[60vh] min-h-[20rem]">
+          <div class="code-wrap min-h-0 flex-1">
             <button
               type="button"
               class="code-copy z-10 opacity-100"
@@ -1040,6 +1048,13 @@ async function removeFile() {
    globale .shiki-Default; Dual-Theme-Farben kommen weiterhin aus den inline --shiki-*-Variablen. */
 .method-code :deep(.shiki) {
   @apply p-3 text-xs leading-relaxed;
+}
+
+/* Die Zeilen kommen aus `processMethodBody` OHNE `\n` zwischen sich – der Umbruch ist genau diese
+   Regel (dieselbe Bauart wie `.edge-code .line` in style.css). Sie steht hier, weil sie zu dem
+   HTML gehoert, das diese Komponente sich bauen laesst, und nicht zur Spalte, in der es haengt. */
+.method-code :deep(.line) {
+  display: block;
 }
 
 /* Vorangestellte Signaturzeile (server-gerendertes Shiki-HTML, inkl. Modifier): nur fett als
