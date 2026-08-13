@@ -23,6 +23,8 @@ import { api } from '../lib/api.js'
 import { buildSearchRegex, findMatches, MATCH_LIMIT } from '../lib/codeSearch.js'
 import { addLineNumbers, buildCallWindow, paintMatches, clearMatches, shikiText } from '../lib/javaCode.js'
 import { parseSearchQuery, wantsArticles, wantsCode, wantsSymbols, wantsMeaning, SEARCH_FACETS, SEARCH_SCOPE_ALL } from '../lib/searchQuery.js'
+import { matchCommands } from '../lib/commands.js'
+import { recentQueries, rememberQuery as storeQuery, clearRecentQueries } from '../lib/searchRecent.js'
 import BusyState from './BusyState.vue'
 import CategoryBadge from './CategoryBadge.vue'
 import { Icon } from '../lib/icons.js'
@@ -326,6 +328,16 @@ const results = computed(() => {
   const scope = parsed.value.scope
   const t = term.value.toLowerCase()
 
+  // 0. Befehle. Sie stehen GANZ OBEN und in genau zwei Faellen:
+  //    * `>` – dann sind sie das Einzige, was hier steht (keine andere Quelle wird gefragt),
+  //    * leeres Feld im Modal – dann ist die Palette ein Verzeichnis dessen, was man tun kann.
+  //    Waehrend einer gewoehnlichen Suche NICHT: wer einen Namen tippt, sucht ein Ding. Ein
+  //    „Go to Wiki" zwischen den Klassentreffern waere Rauschen in der haeufigsten Bedienung.
+  const commandItems =
+    scope === 'command' || (isModal.value && !query.value.trim())
+      ? matchCommands(scope === 'command' ? term.value : '').map((c) => add({ kind: 'command', command: c }))
+      : []
+
   // 1. Klassennamen – ZUERST und ohne Request. Wer einen Klassennamen tippt, meint fast immer
   //    diese Klasse; sie unter Artikeln und Codezeilen zu begraben (und dafuer auf zwei
   //    Server-Antworten zu warten) war die eigentliche Beschwerde.
@@ -420,7 +432,7 @@ const results = computed(() => {
   // Index – sonst waere sie mit der Tastatur nicht erreichbar.
   // Bei `a:` entfaellt sie: ein Buendel sammelt Quelltext, und danach ist dort nicht gefragt.
   const topic =
-    term.value && files.value.length && scope !== 'article'
+    term.value && files.value.length && scope !== 'article' && scope !== 'command'
       ? [add({ kind: 'topic', term: term.value })]
       : []
 
@@ -429,11 +441,11 @@ const results = computed(() => {
   // hier entstehen: man tippt einen Begriff, sieht acht Klassen – und will mal das eine, mal das
   // andere. Er steht NACH dem Buendel, weil eine Antwort ein Modell kostet und das Einsammeln nicht.
   const ask =
-    term.value && files.value.length && scope !== 'article'
+    term.value && files.value.length && scope !== 'article' && scope !== 'command'
       ? [add({ kind: 'ask', term: term.value })]
       : []
 
-  return { flat, classes, serverClasses, meaningItems, articleItems, codeFiles, methods, topic, ask }
+  return { flat, commandItems, classes, serverClasses, meaningItems, articleItems, codeFiles, methods, topic, ask }
 })
 
 const flatItems = computed(() => results.value.flat)
@@ -731,10 +743,37 @@ onUnmounted(() => {
   clearTimeout(hoverTimer)
 })
 
+// --- Zuletzt gesucht -------------------------------------------------------------------------
+// Eine eigene Referenz, damit die Chips nach dem Merken sofort stimmen: `recentQueries()` liest
+// aus dem Modul, und ein reiner Funktionsaufruf im Template löst keine Neuberechnung aus.
+const recent = ref(recentQueries())
+function rememberQuery() {
+  storeQuery(query.value)
+  recent.value = recentQueries()
+}
+function forgetQueries() {
+  clearRecentQueries()
+  recent.value = []
+}
+function useRecent(q) {
+  query.value = q
+  active.value = 0
+  inputEl.value?.focus()
+}
+
 // --- Navigation ----------------------------------------------------------------------------
 function go(entry) {
   if (!entry) return
+  // Gemerkt wird HIER, nicht beim Tippen: eine Eingabe, die zu nichts fuehrte, ist keine Suche,
+  // die man wiederholen will – und jede Zwischenstufe stuende sonst in der Liste.
+  rememberQuery()
   emit('close')
+  // Ein Befehl fuehrt sich selbst aus – er weiss, was er tut (`lib/commands.js`). Er laeuft NACH
+  // dem Schliessen: „Switch to dark mode" soll die Seite umfaerben, nicht die Palette.
+  if (entry.kind === 'command') {
+    entry.command.run()
+    return
+  }
   if (entry.kind === 'article') {
     router.push(`/article/${entry.article.slug}`)
     return
@@ -1024,6 +1063,50 @@ const shortPackage = (pkg) => pkg || 'default package'
               class="mx-4 mb-1 mt-1 rounded-lg border border-danger px-3 py-1.5 text-2xs text-danger"
             >{{ patternError ? `No code search: ${patternError}` : codeError }}</p>
 
+            <!-- Zuletzt gesucht: nur im leeren Feld, als Zeile Chips statt als vierte Trefferliste.
+                 Es sind keine Treffer, sondern Einstiege – sie duerfen ↑/↓ nicht verlaengern. -->
+            <div v-if="isModal && !query.trim() && recent.length" class="flex flex-wrap items-center gap-1.5 px-4 pb-1 pt-2">
+              <span class="font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-muted">Recent</span>
+              <button
+                v-for="q in recent"
+                :key="q"
+                type="button"
+                class="max-w-[14rem] truncate rounded border border-line px-1.5 py-0.5 font-mono text-3xs text-muted transition hover:border-accent hover:text-accent"
+                @click="useRecent(q)"
+              >{{ q }}</button>
+              <button
+                type="button"
+                class="ml-auto font-mono text-3xs text-muted transition hover:text-danger"
+                title="Forget these"
+                @click="forgetQueries"
+              >clear</button>
+            </div>
+
+            <!-- Befehle. Ganz oben, weil sie im leeren Feld das Verzeichnis dessen sind, was man
+                 tun kann – und bei `>` das Einzige, was hier steht. -->
+            <template v-if="results.commandItems.length">
+              <div class="flex items-center gap-1.5 px-4 pb-1 pt-2 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-muted">
+                <Icon icon="lucide:terminal" class="h-3 w-3" /> Actions
+                <span class="normal-case tracking-normal opacity-70">· type &gt; to see only these</span>
+              </div>
+              <button
+                v-for="entry in results.commandItems"
+                :key="`cmd-${entry.idx}`"
+                type="button"
+                :data-sp-active="entry.idx === active ? '1' : null"
+                class="flex w-full items-center gap-3 px-4 py-1.5 text-left transition"
+                :class="entry.idx === active ? 'bg-accent-soft' : 'hover:bg-surface-offset'"
+                @mouseenter="hoverItem(entry.idx)"
+                @click="go(entry)"
+              >
+                <Icon :icon="entry.command.icon" class="h-4 w-4 shrink-0 text-accent" />
+                <div class="min-w-0 flex-1">
+                  <span class="truncate text-sm text-ink">{{ entry.command.label }}</span>
+                  <div v-if="entry.command.hint" class="truncate text-3xs text-muted">{{ entry.command.hint }}</div>
+                </div>
+              </button>
+            </template>
+
             <!-- Klassen zuerst: der Namenstreffer steht ohne Request sofort da (die Klassenliste
                  liegt im Store), waehrend Namens- und Quelltextsuche noch unterwegs sind. -->
             <template v-if="results.classes.length || results.serverClasses.length">
@@ -1291,6 +1374,21 @@ const shortPackage = (pkg) => pkg || 'default package'
             <!-- Der Uebergang hat keine Fundstelle, also auch keine Code-Vorschau. Statt eines
                  leeren Kopfes steht hier, was auf der anderen Seite passiert – sonst sieht die
                  letzte Zeile der Liste aus, als sei sie kaputt. -->
+            <!-- Ein Befehl hat keinen Ort, den man vorzeigen koennte – also sagt die Vorschau, was
+                 er tut, statt einen leeren Kopf zu zeigen (gleiche Bauart wie bei Topic und Ask). -->
+            <template v-else-if="activeItem?.kind === 'command'">
+              <div class="grid h-full place-items-center px-8 text-center">
+                <div>
+                  <Icon :icon="activeItem.command.icon" class="mx-auto h-7 w-7 text-accent" />
+                  <h3 class="mt-2 text-sm font-semibold text-ink">{{ activeItem.command.label }}</h3>
+                  <p v-if="activeItem.command.hint" class="mt-1.5 text-xs leading-relaxed text-muted">
+                    {{ activeItem.command.hint }}
+                  </p>
+                  <p class="mt-3 font-mono text-3xs text-muted">↵ runs it</p>
+                </div>
+              </div>
+            </template>
+
             <template v-else-if="activeItem?.kind === 'topic'">
               <div class="grid h-full place-items-center px-8 text-center">
                 <div>

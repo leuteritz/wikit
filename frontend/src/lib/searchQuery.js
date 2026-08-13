@@ -37,6 +37,9 @@ export const SEARCH_FACETS = [
   { prefix: 'p:', scope: 'package', short: 'Packages', label: 'package', hint: 'package paths', icon: 'lucide:package' },
   { prefix: 'a:', scope: 'article', short: 'Articles', label: 'article', hint: 'wiki articles', icon: 'lucide:file-text' },
   { prefix: '~:', scope: 'meaning', short: 'Meaning', label: 'meaning', hint: 'classes about a topic, by what they do', icon: 'lucide:sparkles' },
+  // Steht bewusst am ENDE: die Palette ist zuerst eine Suche. Befehle stehen im leeren Feld
+  // ohnehin schon da – dieser Chip ist der Weg, sie ALLEIN zu sehen.
+  { prefix: '>', scope: 'command', short: 'Actions', label: 'action', hint: 'do something instead of finding it', icon: 'lucide:terminal' },
 ]
 
 // „Alles" ist keine Facette (es gibt keinen Praefix dafuer), aber in einer dauerhaften Leiste ist es
@@ -51,14 +54,21 @@ export const SEARCH_SCOPE_ALL = {
   icon: 'lucide:layout-grid',
 }
 
+// ⚠️ `>` ist der EINZIGE Praefix ohne Doppelpunkt – und das ist Absicht. Alle anderen schraenken
+// ein, WELCHE QUELLE die Frage „wo steckt das?" beantwortet; `>` wechselt die Frage selbst, von
+// „finde etwas" zu „tu etwas". Ein anderer Modus verdient ein anderes Zeichen, und `>` ist das,
+// was Finger aus jeder anderen Befehlspalette schon koennen.
+export const COMMAND_PREFIX = '>'
+
 /**
  * Eingabe -> { scope, term }.
  * Ein Praefix ohne Begriff (`s:`) ist eine angefangene Eingabe, keine Suche -> leerer `term`.
- * @returns {{ scope: 'all'|'article'|'class'|'method'|'package'|'source', term: string }}
+ * @returns {{ scope: 'all'|'article'|'class'|'method'|'package'|'source'|'meaning'|'command', term: string }}
  */
 export function parseSearchQuery(input) {
   const raw = (input || '').trim()
   if (!raw) return { scope: 'all', term: '' }
+  if (raw.startsWith(COMMAND_PREFIX)) return { scope: 'command', term: raw.slice(1).trim() }
   const prefixed = /^([a-zA-Z~]):\s*(.*)$/.exec(raw)
   if (prefixed) {
     const scope = SCOPE_BY_PREFIX[prefixed[1].toLowerCase()]
@@ -70,7 +80,8 @@ export function parseSearchQuery(input) {
 // Welche Quelle beantwortet diesen Scope? Damit entscheidet die Palette, welche Requests ueberhaupt
 // rausgehen – und ob die (teure) Zeilensuche im Quelltext dran ist.
 export const wantsArticles = (scope) => scope === 'all' || scope === 'article'
-export const wantsSymbols = (scope) => scope !== 'article' && scope !== 'source' && scope !== 'meaning'
+export const wantsSymbols = (scope) =>
+  scope !== 'article' && scope !== 'source' && scope !== 'meaning' && scope !== 'command'
 export const wantsCode = (scope) => scope === 'all' || scope === 'source'
 // Die Bedeutungssuche kostet einen Ollama-Aufruf JE ANFRAGE – sie laeuft deshalb nur mit, wo nichts
 // anderes ausdruecklich gemeint ist, und antwortet auf `~:` allein.

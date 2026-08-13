@@ -23,10 +23,11 @@ copying one file.
   draft is kept in the browser and offered back the next time you open that article.
 - **Article history** — compare any two versions of an article word by word, and put an older one
   back. Edits made in one sitting stay one version.
-- **Instant search** — `Ctrl/Cmd + K` over articles, classes, methods and raw source, backed by
-  SQLite **FTS5** (a trigram index answers substrings and punctuation without reading any file).
-  With Ollama it also finds classes **by meaning** — the ones that do the thing, whatever they
-  call it.
+- **Instant search — and actions** — `Ctrl/Cmd + K` over articles, classes, methods and raw source,
+  backed by SQLite **FTS5** (a trigram index answers substrings and punctuation without reading any
+  file). With Ollama it also finds classes **by meaning** — the ones that do the thing, whatever
+  they call it. Type `>` and the same box *does* things instead: new article, add code, run the AI
+  queue, recompute relations, switch theme, jump anywhere.
 - **Ask your project** — a question in plain words, answered only from the classes *and wiki
   articles* that match: the code says what happens, an article says why. Every claim carries the
   source it came from; one click opens it.
