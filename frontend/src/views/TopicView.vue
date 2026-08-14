@@ -45,18 +45,24 @@ import { addLineNumbers, clearMatches, paintMatches } from '../lib/javaCode.js'
 import { buildMethodColorMap, methodColorVars } from '../lib/javaMethodColors.js'
 import { formatBytes } from '../lib/format.js'
 import {
+  CONTEXT_WINDOWS,
   MAX_CANDIDATES,
+  USABLE_SHARE,
+  budgetFill,
   collectTopic,
   defaultSelection,
   estimateTokens,
   groupByReason,
   topicSource,
+  trimToBudget,
 } from '../lib/topicBundle.js'
 import BusyState from '../components/BusyState.vue'
 import { Icon } from '../lib/icons.js'
 import Button from '../components/ui/Button.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
+import Meter from '../components/ui/Meter.vue'
 import PageHeader from '../components/ui/PageHeader.vue'
+import SectionLabel from '../components/ui/SectionLabel.vue'
 import { vTip } from '../lib/tooltip.js'
 
 const route = useRoute()
@@ -456,6 +462,64 @@ const tokenLabel = computed(() => {
   return t >= 1000 ? `~${Math.round(t / 1000)}k tokens` : `~${t} tokens`
 })
 const isBig = computed(() => bundleBytes.value > BIG_CLIPBOARD_BYTES)
+
+// --- Das Kontext-Budget ----------------------------------------------------------------------
+// ⚠️ Die Frage dieser Ansicht ist nicht „wie gross ist der Text?", sondern „passt er in das
+// Fenster, in das ich ihn gleich einfuege?". Die Groesse allein beantwortet sie nicht: 400 KB
+// klingen nach nichts und sind ~114k Tokens.
+//
+// Das gewaehlte Fenster ueberlebt den Reload – es haengt am Arbeitsgeraet des Nutzers, nicht am
+// Thema, und wer mit einem 32k-Modell arbeitet, tut das auch beim naechsten Buendel.
+const BUDGET_KEY = 'wikit:topic-budget:v1'
+const budgetId = ref(
+  CONTEXT_WINDOWS.some((w) => w.id === localStorage.getItem(BUDGET_KEY))
+    ? localStorage.getItem(BUDGET_KEY)
+    : '128k',
+)
+watch(budgetId, (id) => {
+  try {
+    localStorage.setItem(BUDGET_KEY, id)
+  } catch {
+    /* Privatmodus: die Wahl gilt fuer diese Sitzung */
+  }
+})
+
+const budget = computed(() => CONTEXT_WINDOWS.find((w) => w.id === budgetId.value) || CONTEXT_WINDOWS[2])
+const usableTokens = computed(() => Math.round(budget.value.tokens * USABLE_SHARE))
+const budgetFilled = computed(() => budgetFill(bundleBytes.value, budget.value.tokens))
+const overBudget = computed(() => budgetFilled.value > 1)
+// Drei Stufen, weil es drei Lagen gibt: passt · wird eng · passt nicht. Die mittlere ist die
+// wichtigste – dort kann man noch entscheiden, statt es hinterher zu merken.
+const budgetColor = computed(() =>
+  budgetFilled.value > 1
+    ? 'var(--color-danger)'
+    : budgetFilled.value > 0.8
+      ? 'var(--color-warning)'
+      : 'var(--color-success)',
+)
+
+// Was das Buendel schwer macht: die groessten Klassen darin, mit ihrem Anteil. Erst diese Liste
+// macht aus „zu gross" eine Handlung – die Frage lautet „wen werfe ich raus?", und sie liess sich
+// bisher nur durch Kopfrechnen ueber eine 26-rem-Spalte beantworten.
+const heaviest = computed(() => {
+  const total = bundleBytes.value
+  if (!total) return []
+  return topic.value.hits
+    .filter((h) => selected.value.has(h.fileId))
+    .map((h) => ({ hit: h, bytes: sizeById.value.get(h.fileId)?.bytes || 0 }))
+    .filter((r) => r.bytes > 0)
+    .sort((a, b) => b.bytes - a.bytes)
+    .slice(0, 5)
+    .map((r) => ({ ...r, share: (r.bytes / total) * 100 }))
+})
+
+function trimBundle() {
+  const drop = trimToBudget(topic.value.hits, selected.value, sizeById.value, usableTokens.value)
+  if (!drop.length) return
+  const next = new Set(selected.value)
+  for (const id of drop) next.delete(id)
+  selected.value = next
+}
 
 // Wo im Text welche Klasse steht (vom Server, s. `exportAll`). Ohne diese Landkarte koennte der
 // Hover nirgends hinspringen, und die Liste wuesste nicht, wie schwer eine Klasse wiegt.
@@ -1604,6 +1668,89 @@ onUnmounted(() => {
               {{ openClass.totalLines }} lines
             </span>
           </header>
+
+          <!-- ================= Das Kontext-Budget =================
+               ⚠️ Diese Ansicht existiert, um Quelltext in ein Chatfenster zu KOPIEREN – und sagte
+               bis hierher nicht, ob er hineinpasst. Die Größe stand als kleinste Schrift des
+               Systems am rechten Rand des Kopfes, und gewarnt wurde erst, wenn die
+               ZWISCHENABLAGE eng wurde: eine ganz andere Grenze (2 MB passen bequem hinein und
+               in kein einziges Modell).
+
+               Der Balken misst gegen zwei Drittel des Fensters, nicht gegen das ganze: die Frage
+               lautet „passt es hinein UND bleibt Platz für eine Antwort?". -->
+          <div
+            v-if="pane === 'bundle' && bundle?.classes"
+            class="shrink-0 border-b border-line px-4 py-2.5"
+          >
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <SectionLabel class="shrink-0">Context budget</SectionLabel>
+
+              <!-- Die Fenstergrößen als Umschalter. Keine Modellnamen: die wären in einem halben
+                   Jahr falsch, „128k" bleibt richtig. -->
+              <div class="flex shrink-0 items-center rounded-lg border border-line p-0.5">
+                <button
+                  v-for="w in CONTEXT_WINDOWS"
+                  :key="w.id"
+                  v-tip="`${w.label} context window — about ${Math.round(w.tokens * 0.66 / 1000)}k usable once the answer needs room too`"
+                  type="button"
+                  class="rounded-md px-2 py-0.5 font-mono text-3xs font-semibold transition"
+                  :class="budgetId === w.id ? 'bg-accent-soft text-accent' : 'text-muted hover:text-ink'"
+                  :aria-pressed="budgetId === w.id"
+                  @click="budgetId = w.id"
+                >
+                  {{ w.label }}
+                </button>
+              </div>
+
+              <Meter
+                class="min-w-[8rem] flex-1"
+                size="md"
+                :value="Math.min(budgetFilled * 100, 100)"
+                :color="budgetColor"
+                :label="`${Math.round(budgetFilled * 100)} percent of the usable context`"
+              />
+
+              <span
+                class="shrink-0 font-mono text-2xs tabular-nums"
+                :style="{ color: overBudget ? 'var(--color-danger)' : 'var(--color-text-muted)' }"
+              >
+                {{ Math.round(budgetFilled * 100) }}% of ~{{ Math.round(usableTokens / 1000) }}k
+              </span>
+
+              <!-- Erscheint nur, wenn es etwas zu tun gibt. Ein Knopf, der immer dasteht und
+                   meistens nichts bewirkt, wird nicht mehr gelesen. -->
+              <Button
+                v-if="overBudget"
+                v-tip="'Drops classes from the weakest reason first — neighbours before exact name matches, biggest first within a reason. The last one always stays.'"
+                size="xs"
+                icon="lucide:scissors"
+                class="shrink-0"
+                @click="trimBundle"
+              >
+                Trim to fit
+              </Button>
+            </div>
+
+            <!-- Woraus das Gewicht besteht. „Zu groß" ist eine Lage, „diese drei sind 60 %" ist
+                 eine Handlung – und genau die Frage, mit der man die Auswahl durchgeht. -->
+            <p
+              v-if="heaviest.length > 1"
+              class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-3xs text-muted"
+            >
+              <span class="opacity-70">heaviest:</span>
+              <button
+                v-for="h in heaviest"
+                :key="h.hit.fileId"
+                v-tip="`${formatBytes(h.bytes)} — click to drop it from the bundle`"
+                type="button"
+                class="inline-flex items-center gap-1 transition hover:text-danger"
+                @click="toggle(h.hit.fileId)"
+              >
+                <span class="text-ink">{{ h.hit.className }}</span>
+                <span class="tabular-nums opacity-70">{{ Math.round(h.share) }}%</span>
+              </button>
+            </p>
+          </div>
 
           <!-- Suchleiste des Bündels: gleiche Bauart wie im Source-Tab, aber sie durchsucht ALLE
                ausgewählten Klassen auf einmal. Genau das kann die Einzelansicht nicht, und deshalb

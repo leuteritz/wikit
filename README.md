@@ -50,7 +50,8 @@ copying one file.
   depend on what (`web -/-> repo`, `only service -> repo`, `layers: web > service > repo`) and
   every relation is checked against it. Wikit suggests the rules your code already keeps today.
 - **Topic bundles** — collect every class around one term (by name, by source, by meaning, by
-  relation) and copy their whole source as one text, ready to paste into a chat.
+  relation) and copy their whole source as one text. A budget bar says whether it still fits an
+  8k/32k/128k/200k context window, names the classes that weigh most, and trims to fit.
 - **AI summaries** — optional, per method and per class, via [Ollama](https://ollama.com)
   (local, no API key), configurable at runtime under `/bot`.
 - **Take it with you** — every article as one Markdown text (with a small header, readable

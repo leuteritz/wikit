@@ -25,8 +25,10 @@ import { buildCiteIndex, CITE_CLASS, paintCitations } from '../lib/askCitations.
 import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { useEmbeddings } from '../composables/useEmbeddings.js'
 import { isTypingTarget } from '../lib/shortcuts.js'
+import { clearRecentQuestions, recentQuestions, rememberQuestion } from '../lib/askRecent.js'
 import BusyState from '../components/BusyState.vue'
 import Button from '../components/ui/Button.vue'
+import SectionLabel from '../components/ui/SectionLabel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -44,6 +46,33 @@ const error = ref('')
 const startedAt = ref(0)
 const elapsed = ref(0)
 const citeCount = ref(0)
+
+// Die letzten Fragen. Als eigener Ref statt direkt aus dem Modul gelesen, weil die Liste sich
+// beim Stellen aendert und das Template davon erfahren muss.
+const recent = ref(recentQuestions())
+// Der Erklaerabsatz kostet vier Zeilen ueber dem Feld – beim ersten Mal richtig, danach schiebt er
+// bei JEDEM Besuch Frage, Quellen und Antwort nach unten. Also einklappbar, und die Wahl bleibt.
+const HELP_KEY = 'wikit:ask-help:v1'
+const showHelp = ref(localStorage.getItem(HELP_KEY) !== '0')
+function toggleHelp() {
+  showHelp.value = !showHelp.value
+  try {
+    localStorage.setItem(HELP_KEY, showHelp.value ? '1' : '0')
+  } catch {
+    /* Privatmodus: die Wahl gilt fuer diese Sitzung */
+  }
+}
+
+function askAgain(q) {
+  if (asking.value) return
+  question.value = q
+  ask()
+}
+
+function forgetRecent() {
+  clearRecentQuestions()
+  recent.value = []
+}
 
 const inputEl = ref(null)
 const answerEl = ref(null)
@@ -132,6 +161,10 @@ async function ask() {
   const q = question.value.trim()
   if (!q || asking.value) return
   lastAsked = q
+  // Gemerkt wird beim Stellen, nicht beim Tippen: eine Frage ist ein bewusster Klick, keine
+  // Zwischenstufe (anders als bei der Suche, s. lib/askRecent.js).
+  rememberQuestion(q)
+  recent.value = recentQuestions()
   answer.value = ''
   sources.value = []
   emptyReason.value = ''
@@ -310,14 +343,30 @@ const seconds = computed(() => (elapsed.value / 1000).toFixed(1))
     <!-- Kopf: was diese Ansicht beantwortet. Steht IMMER sichtbar da (gleiche Regel wie in
          /insights): wer nicht weiss, was er sieht, sucht auch keine Erklaerung dazu. -->
     <header>
-      <h1 class="flex items-center gap-2 text-2xl font-semibold tracking-tight text-ink">
-        <Icon icon="lucide:help-circle" class="h-6 w-6 text-accent" />
-        <!-- ⚠️ Nicht mehr „Ask the codebase": seit auch die Artikel gelesen werden, waere der
-             Titel eine Aussage ueber die Quellen, die nicht mehr stimmt – und ausgerechnet in
-             einer Ansicht, deren ganzer Wert an der Nachpruefbarkeit ihrer Quellen haengt. -->
-        Ask your project
-      </h1>
-      <p class="mt-1 text-sm text-muted">
+      <div class="flex items-start gap-2">
+        <h1 class="flex min-w-0 flex-1 items-center gap-2 text-2xl font-semibold tracking-tight text-ink">
+          <Icon icon="lucide:help-circle" class="h-6 w-6 shrink-0 text-accent" />
+          <!-- ⚠️ Nicht mehr „Ask the codebase": seit auch die Artikel gelesen werden, waere der
+               Titel eine Aussage ueber die Quellen, die nicht mehr stimmt – und ausgerechnet in
+               einer Ansicht, deren ganzer Wert an der Nachpruefbarkeit ihrer Quellen haengt. -->
+          Ask your project
+        </h1>
+        <!-- ⚠️ Der Erklaerabsatz bleibt beim ERSTEN Mal stehen (`showHelp` startet offen) – die
+             Regel „wer nicht weiss, was er sieht, sucht auch keine Erklaerung" gilt weiter. Sie
+             gilt aber nur beim ersten Mal: danach schiebt derselbe Absatz bei jedem Besuch Feld,
+             Quellen und Antwort nach unten. Also zuklappbar, und die Wahl bleibt gemerkt. -->
+        <button
+          v-tip="showHelp ? 'Hide the explanation' : 'What is this?'"
+          type="button"
+          class="mt-1 shrink-0 rounded-md p-1 text-muted transition hover:bg-surface-offset hover:text-ink"
+          :aria-expanded="showHelp"
+          aria-label="Toggle the explanation"
+          @click="toggleHelp"
+        >
+          <Icon :icon="showHelp ? 'lucide:chevron-up' : 'lucide:info'" class="h-4 w-4" />
+        </button>
+      </div>
+      <p v-if="showHelp" class="mt-1 text-sm text-muted">
         Ask in plain words. The meaning index picks the classes and wiki articles that fit, and the
         answer is built from those alone — every claim carries the source it came from. The code
         says what happens, an article says why.
@@ -353,6 +402,38 @@ const seconds = computed(() => (elapsed.value / 1000).toFixed(1))
         Ask
       </Button>
     </form>
+
+    <!-- ================= Zuletzt gefragt =================
+         ⚠️ Fragen kommen in Reihen: „wie läuft der Import?", dann „und was passiert bei einem
+         Fehler dabei?". Die zweite formuliert man aus der ersten – und die war bis hierher weg,
+         sobald man sie gestellt hatte (jedes `ask()` räumt Antwort, Quellen und Belegzahl ab).
+         Nicht einmal als Wort blieb sie stehen.
+
+         Die Chips sind bewusst die FRAGEN und nicht die Antworten: eine Antwort neu zu holen
+         kostet auf einem Pi eine Minute, das Wiederstellen ist eine ausdrückliche Entscheidung. -->
+    <div v-if="recent.length && hasSources" class="flex flex-wrap items-center gap-1.5">
+      <SectionLabel class="mr-0.5 shrink-0">Recent</SectionLabel>
+      <button
+        v-for="q in recent"
+        :key="q"
+        v-tip="q"
+        type="button"
+        class="max-w-[22rem] truncate rounded-md border border-line px-2 py-1 text-2xs text-muted transition hover:border-accent hover:text-accent disabled:opacity-50"
+        :disabled="asking"
+        @click="askAgain(q)"
+      >
+        {{ q }}
+      </button>
+      <button
+        v-tip="'Forget these questions'"
+        type="button"
+        class="shrink-0 rounded-md p-1 text-muted transition hover:text-danger"
+        aria-label="Forget the recent questions"
+        @click="forgetRecent"
+      >
+        <Icon icon="lucide:x" class="h-3.5 w-3.5" />
+      </button>
+    </div>
 
     <p v-if="!hasSources" class="rounded-lg bg-surface-offset px-3 py-2 text-sm text-muted">
       Nothing to ask about yet — add some code or write a wiki article first.

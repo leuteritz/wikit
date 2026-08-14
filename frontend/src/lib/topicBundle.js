@@ -91,6 +91,69 @@ export const topicSource = (kind) => SOURCE_BY_KIND[kind] || SOURCE_BY_KIND.neig
 export const estimateTokens = (bytes) => Math.round((Number(bytes) || 0) / CHARS_PER_TOKEN)
 
 /**
+ * Die Kontextfenster, gegen die ein Buendel gemessen wird.
+ *
+ * ⚠️ Diese Ansicht existiert, um Quelltext IN EIN CHATFENSTER zu kopieren – und sagte bis hierher
+ * nicht, ob er hineinpasst. Die Groesse stand als `text-2xs`-Zeile am rechten Rand des Kopfes,
+ * also in der kleinsten Schrift des Systems, und gewarnt wurde erst, wenn die ZWISCHENABLAGE eng
+ * wurde. Das ist eine andere Grenze: 2 MB Text passen bequem in die Zwischenablage und in kein
+ * einziges Modell.
+ *
+ * Die Werte sind die gaengigen Fenstergroessen, nicht die eines bestimmten Anbieters – ein
+ * Modellname hier waere in einem halben Jahr falsch, „128k" bleibt richtig.
+ *
+ * ⚠️ `usable` ist kleiner als das Fenster: die Frage lautet nicht „passt der Text hinein?",
+ * sondern „passt er hinein UND bleibt Platz fuer eine Antwort?". Zwei Drittel ist die Faustregel,
+ * mit der man beides bekommt.
+ */
+export const CONTEXT_WINDOWS = [
+  { id: '8k', label: '8k', tokens: 8_000 },
+  { id: '32k', label: '32k', tokens: 32_000 },
+  { id: '128k', label: '128k', tokens: 128_000 },
+  { id: '200k', label: '200k', tokens: 200_000 },
+]
+export const USABLE_SHARE = 0.66
+
+/** Wie voll ein Fenster mit diesem Buendel waere – als Anteil, ungedeckelt. */
+export function budgetFill(bytes, windowTokens) {
+  const usable = Math.max(1, windowTokens * USABLE_SHARE)
+  return estimateTokens(bytes) / usable
+}
+
+/**
+ * Welche Klassen fielen raus, um unter das Budget zu kommen?
+ *
+ * ⚠️ Die Reihenfolge ist die GRUND-Reihenfolge, von hinten: Nachbarn zuerst (sie sind Beifang,
+ * niemand hat nach ihnen gefragt), exakte Namenstreffer zuletzt. Nach Groesse zu werfen waere die
+ * bequemere Rechnung und die falsche Antwort – die groesste Klasse ist oft genau die, um die es
+ * geht. Innerhalb einer Gruppe faellt die groesste zuerst: dort ist der Grund gleich stark, und
+ * dann entscheidet, was am meisten Platz zurueckgibt.
+ *
+ * Gibt die fileIds zurueck, die man ABWAEHLEN muss – nicht die, die bleiben. Der Aufrufer haelt
+ * eine Auswahl, kein Ergebnis.
+ */
+export function trimToBudget(hits, selected, sizeById, budgetTokens) {
+  const inBundle = hits.filter((h) => selected.has(h.fileId))
+  const bytesOf = (h) => sizeById.get(h.fileId)?.bytes || 0
+  let tokens = estimateTokens(inBundle.reduce((sum, h) => sum + bytesOf(h), 0))
+  if (tokens <= budgetTokens) return []
+
+  const order = [...inBundle].sort(
+    (a, b) => topicSource(b.primary.kind).rank - topicSource(a.primary.kind).rank || bytesOf(b) - bytesOf(a),
+  )
+  const drop = []
+  for (const h of order) {
+    if (tokens <= budgetTokens) break
+    // ⚠️ Der letzte Treffer bleibt immer stehen: ein leeres Buendel ist keine Antwort auf „mach
+    // es kleiner", sondern das Gegenteil von dem, wofuer die Ansicht da ist.
+    if (inBundle.length - drop.length <= 1) break
+    drop.push(h.fileId)
+    tokens -= estimateTokens(bytesOf(h))
+  }
+  return drop
+}
+
+/**
  * Erster Treffer eines Musters in einem Text – oder `null`.
  *
  * Die Regex aus `buildSearchRegex` traegt `g`, behaelt also ihren `lastIndex` ueber Aufrufe hinweg.
