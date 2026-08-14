@@ -107,9 +107,10 @@ The five `OLLAMA_*` values and `WIKI_HISTORY_KEEP` are only the **default**; any
 
 ## Java code analysis
 
-1. **Add code.** Paste or drop `.java` files anywhere on the view. Sources are parsed **locally**
-   with `java-parser` (pure JS — no JDK); classes, members, parameters, imports and Javadoc are
-   stored.
+1. **Add code.** Paste or drop `.java` files anywhere on the view — or start with
+   `backend/seed/java.example/_export.java`, a 17-class demo shop that ships with the repo.
+   Sources are parsed **locally** with `java-parser` (pure JS — no JDK); classes, members,
+   parameters, imports and Javadoc are stored.
 2. **Explore the graph.** Each card says what a class **is** (class / interface / enum / record /
    utility / …) and how it **connects** (source / consumer / hub / isolated); classes are grouped
    into package zones. Edges are method calls, field accesses, type usages and plain imports — point
