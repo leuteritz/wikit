@@ -9,6 +9,7 @@ import WikiRelationGraph from '../components/WikiRelationGraph.vue'
 import WikiHealth from '../components/WikiHealth.vue'
 import WikiData from '../components/WikiData.vue'
 import SectionLabel from '../components/ui/SectionLabel.vue'
+import Button from '../components/ui/Button.vue'
 import { categoryColors, colorFor } from '../lib/wikiGraph.js'
 import { api } from '../lib/api.js'
 import { Icon } from '../lib/icons.js'
@@ -140,13 +141,7 @@ const groups = computed(() => {
             {{ m.label }}
           </button>
         </div>
-        <RouterLink
-          to="/new"
-          class="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2.5 text-[0.78125rem] font-semibold text-accent-contrast transition hover:bg-accent-hover"
-        >
-          <Icon icon="lucide:plus" class="h-4 w-4" />
-          New article
-        </RouterLink>
+        <Button to="/new" variant="primary" icon="lucide:plus">New article</Button>
       </div>
     </div>
 

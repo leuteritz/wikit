@@ -54,6 +54,7 @@ import {
 } from '../lib/topicBundle.js'
 import BusyState from '../components/BusyState.vue'
 import { Icon } from '../lib/icons.js'
+import Button from '../components/ui/Button.vue'
 import { vTip } from '../lib/tooltip.js'
 
 const route = useRoute()
@@ -1281,12 +1282,9 @@ onUnmounted(() => {
             <p class="mt-1 text-2xs text-muted">
               Import some Java in the code view first — a topic is collected from what is stored.
             </p>
-            <RouterLink
-              to="/code"
-              class="mt-3 inline-flex h-8 items-center gap-1.5 rounded-lg bg-accent px-3 text-2xs font-semibold text-accent-contrast"
-            >
-              <Icon icon="lucide:arrow-right" class="h-3.5 w-3.5" /> Go to code
-            </RouterLink>
+            <Button to="/code" variant="primary" size="xs" icon="lucide:arrow-right" class="mt-3">
+              Go to code
+            </Button>
           </div>
 
           <!-- Ruhezustand: WAS eine Quelle beitraegt, steht hier einmal – danach sagt es der Chip

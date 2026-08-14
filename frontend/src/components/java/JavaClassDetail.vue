@@ -4,13 +4,14 @@
 // (summary_html, einzeln nachgenerierbar) und Quellcode-Tab (read-only CodeMirror).
 // HTTP nur via lib/api.js (Composable).
 import { ref, watch, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { useJavaAnalyzer } from '../../composables/useJavaAnalyzer.js'
 import { useJavaQueue } from '../../composables/useJavaQueue.js'
 import { useJavaGraph } from '../../composables/useJavaGraph.js'
 import { useArticles } from '../../composables/useArticles.js'
 import { useInsights } from '../../composables/useInsights.js'
 import BusyState from '../BusyState.vue'
+import Button from '../ui/Button.vue'
 import JavaCodeEditor from './JavaCodeEditor.vue'
 import JavaDiffViewer from './JavaDiffViewer.vue'
 import { processMethodBody } from '../../lib/javaCode.js'
@@ -1009,30 +1010,29 @@ async function removeFile() {
 
     <!-- Footer -->
     <footer v-if="file" class="flex items-center gap-2 border-t border-line px-4 py-3">
-      <RouterLink
+      <!-- ⚠️ Beide Faelle sind PRIMAER, also beide in der Akzentfarbe. „Open article" stand hier
+           in `bg-success` – Erfolgs-Gruen fuer einen blossen Ortswechsel, und damit die einzige
+           Stelle im Bild, an der die warme Palette bricht. Gruen ist eine Aussage ueber einen
+           Ausgang, nicht ueber einen Weg. -->
+      <Button
         v-if="file.article_slug"
         :to="`/article/${file.article_slug}`"
-        class="flex-1 rounded-lg bg-success px-3 py-2 text-center text-sm font-semibold text-accent-contrast transition hover:opacity-90"
+        variant="primary"
+        class="flex-1"
       >
         Open article
-      </RouterLink>
-      <button
+      </Button>
+      <Button
         v-else
-        type="button"
-        class="flex-1 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-contrast transition hover:bg-accent-hover disabled:opacity-60"
-        :disabled="creating"
+        variant="primary"
+        class="flex-1"
+        :busy="creating"
+        busy-label="Creating…"
         @click="createArticle"
       >
-        {{ creating ? 'Creating…' : 'Save to wiki' }}
-      </button>
-      <button
-        type="button"
-        class="rounded-lg border border-line px-3 py-2 text-sm text-danger transition hover:bg-surface-offset"
-        title="Delete file"
-        @click="removeFile"
-      >
-        Delete
-      </button>
+        Save to wiki
+      </Button>
+      <Button variant="danger-soft" title="Delete file" @click="removeFile">Delete</Button>
     </footer>
   </aside>
 </template>
@@ -1083,9 +1083,5 @@ async function removeFile() {
 .badge-muted {
   background-color: var(--color-surface-offset);
   color: var(--color-text-muted);
-}
-.notice-warning {
-  background-color: color-mix(in srgb, var(--color-warning) 14%, transparent);
-  color: var(--color-warning);
 }
 </style>

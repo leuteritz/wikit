@@ -26,6 +26,7 @@ import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { useEmbeddings } from '../composables/useEmbeddings.js'
 import { isTypingTarget } from '../lib/shortcuts.js'
 import BusyState from '../components/BusyState.vue'
+import Button from '../components/ui/Button.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -48,6 +49,10 @@ const inputEl = ref(null)
 const answerEl = ref(null)
 let es = null
 let jobId = ''
+// Die zuletzt GESTELLTE Frage – nicht der Feldinhalt. Sie ist der Vergleichswert des
+// Query-Watchers weiter unten und verhindert, dass die eigene Adressaenderung als neue Frage
+// zurueckkommt.
+let lastAsked = ''
 let clock = null
 
 // Ohne Bestand gibt es nichts zu fragen – und der Leerzustand sagt das, statt eine Bedeutungssuche
@@ -126,6 +131,7 @@ function follow() {
 async function ask() {
   const q = question.value.trim()
   if (!q || asking.value) return
+  lastAsked = q
   answer.value = ''
   sources.value = []
   emptyReason.value = ''
@@ -268,9 +274,31 @@ onMounted(() => {
   }
 })
 
+// Eine Frage kann auch von AUSSEN kommen, waehrend die Ansicht schon steht (ein Link aus einem
+// Artikel, ein zweiter Sprung aus der Suchpalette). Seit die Ansicht an `route.path` haengt und
+// eine Query sie nicht mehr neu aufbaut (s. App.vue), ist dieser Watcher der einzige Weg dorthin.
+//
+// ⚠️ Er darf NICHT auf das reagieren, was `ask()` selbst gerade geschrieben hat – sonst stellt
+// sich jede Frage ein zweites Mal, also genau der Fehler, der hier behoben wurde. Verglichen wird
+// deshalb gegen die gestellte Frage, nicht gegen das Feld: das Feld darf der Nutzer bereits
+// weitergetippt haben, waehrend die Antwort noch laeuft.
+watch(
+  () => route.query.q,
+  (raw) => {
+    const q = (raw || '').toString().trim()
+    if (!q || q === lastAsked) return
+    question.value = q
+    ask()
+  },
+)
+
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
   stopClock()
+  // ⚠️ Den Strom zu schliessen beendet nur das ZUHOEREN. Der Lauf gehoert dem Server, und auf
+  // einem Pi rechnet Ollama danach minutenlang an einer Antwort weiter, die niemand mehr liest –
+  // waehrend die naechste Frage sich dieselbe Maschine mit ihr teilen muss.
+  if (asking.value && jobId) api.cancelAsk(jobId, { silent: true }).catch(() => {})
   closeStream()
 })
 
@@ -313,22 +341,17 @@ const seconds = computed(() => (elapsed.value / 1000).toFixed(1))
         :disabled="!hasSources"
         class="min-w-0 flex-1 bg-transparent py-1 text-sm text-ink outline-none placeholder:text-muted disabled:opacity-50"
       />
-      <button
-        v-if="asking"
-        type="button"
-        class="shrink-0 rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-muted transition hover:bg-surface-offset hover:text-ink"
-        @click="cancel"
-      >
-        Stop
-      </button>
-      <button
+      <Button v-if="asking" size="xs" class="shrink-0" @click="cancel">Stop</Button>
+      <Button
         v-else
         type="submit"
-        class="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-contrast transition hover:bg-accent-hover disabled:opacity-50"
+        variant="primary"
+        size="xs"
+        class="shrink-0"
         :disabled="!question.trim() || !hasSources"
       >
         Ask
-      </button>
+      </Button>
     </form>
 
     <p v-if="!hasSources" class="rounded-lg bg-surface-offset px-3 py-2 text-sm text-muted">
@@ -478,10 +501,5 @@ const seconds = computed(() => (elapsed.value / 1000).toFixed(1))
 .ask-answer :deep(.ask-cite-kind) {
   @apply rounded-sm px-1 font-mono text-3xs uppercase tracking-wide opacity-70;
   background-color: color-mix(in srgb, var(--color-accent) 18%, transparent);
-}
-
-.notice-warning {
-  background-color: color-mix(in srgb, var(--color-warning) 14%, transparent);
-  color: var(--color-warning);
 }
 </style>

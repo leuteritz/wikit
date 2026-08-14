@@ -310,7 +310,10 @@ export const api = {
   // die Quellen gehen VOR dem ersten Token raus, und ein spaeter geoeffneter Strom haette genau
   // die Auskunft verpasst, an der die Antwort haengt.
   startAsk: (data) => http('POST', '/ask', data),
-  cancelAsk: (jobId) => http('POST', `/ask/${encodeURIComponent(jobId)}/cancel`),
+  // `opts` durchgereicht, weil der Abbruch auch beim Verlassen der Ansicht faellt – dort ist der
+  // Nutzer bereits woanders und ein Toast ueber einen misslungenen Abbruch waere eine Meldung
+  // ueber etwas, das er nicht mehr sehen wollte.
+  cancelAsk: (jobId, opts) => http('POST', `/ask/${encodeURIComponent(jobId)}/cancel`, undefined, opts),
   askStreamUrl: (jobId) => `${BASE}/ask/stream/${encodeURIComponent(jobId)}`,
 
   // --- Insights (/insights) -------------------------------------------------

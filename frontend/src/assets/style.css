@@ -779,6 +779,27 @@ mark {
   color: var(--color-text-muted);
 }
 
+/* --- Hinweiszeilen (global) ------------------------------------------------------------- *
+ * Der Satz zu den Badges: ein Badge etikettiert ein Ding, eine Notiz sagt einen Satz ueber die
+ * Lage („das ist viel fuer die Zwischenablage", „der Bericht kam nicht durch").
+ *
+ * ⚠️ Diese Regeln standen zweimal woertlich in `<style scoped>` (AskView, JavaClassDetail) und
+ * wurden von drei weiteren Dateien benutzt – dort ohne jede Wirkung, weil ein scoped Block nur
+ * fuer die eigene Komponente gilt. Fuenf Warnungen sahen aus wie gewoehnlicher Text. Eine
+ * Warnung, die nicht wie eine aussieht, ist keine. Deshalb hier, wo alle sie erreichen. */
+.notice-warning {
+  background-color: color-mix(in srgb, var(--color-warning) 14%, transparent);
+  color: var(--color-warning);
+}
+.notice-danger {
+  background-color: color-mix(in srgb, var(--color-danger) 12%, transparent);
+  color: var(--color-danger);
+}
+.notice-info {
+  background-color: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
 /* Dezente Scrollbars */
 * {
   scrollbar-width: thin;

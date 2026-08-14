@@ -142,11 +142,7 @@ async function restore(v) {
       :rows="4"
     />
 
-    <p
-      v-else-if="error"
-      class="rounded-xl p-4 text-danger"
-      style="background-color: color-mix(in srgb, var(--color-danger) 12%, transparent)"
-    >{{ error }}</p>
+    <p v-else-if="error" class="notice-danger rounded-xl p-4">{{ error }}</p>
 
     <!-- Kein Verlauf. Das ist eine Aussage über den Zeitpunkt, nicht über den Artikel: eine
          erfundene „Fassung 1" trüge ein Datum, das nichts bedeutet (s. article-versions.service). -->

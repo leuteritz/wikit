@@ -168,7 +168,11 @@ const EXPLAIN = {
     ],
   },
 }
-const openFixes = ref(false)
+// ⚠️ Der NAME des Reiters, fuer den die Anleitung offen steht – kein `true`/`false`. Als ein
+// Schalter fuer alle zehn galt eine einmal aufgeklappte Erklaerung ueberall: wer sie bei „Cycles"
+// oeffnete, fand bei „Hotspots" vier fremde Absaetze ueber der Tabelle. Die Frage „was tue ich
+// damit?" wird je Reiter gestellt, also wird sie auch je Reiter beantwortet.
+const openFixes = ref('')
 
 // --- Der Sandkasten ------------------------------------------------------------------------------
 // ⚠️ Die Zahl am Reiter ist ein ARBEITSSTAND, kein Befund – dieselbe Art Zahl wie beim Themen-Bündel
@@ -815,12 +819,12 @@ const plotted = computed(() => {
                 <button
                   type="button"
                   class="mt-2.5 inline-flex items-center gap-1 text-xs font-medium text-accent transition hover:underline"
-                  @click="openFixes = !openFixes"
+                  @click="openFixes = openFixes === tab ? '' : tab"
                 >
-                  <Icon :icon="openFixes ? 'lucide:chevron-down' : 'lucide:chevron-right'" class="h-3.5 w-3.5" />
+                  <Icon :icon="openFixes === tab ? 'lucide:chevron-down' : 'lucide:chevron-right'" class="h-3.5 w-3.5" />
                   What do I do with this?
                 </button>
-                <ul v-if="openFixes" class="mt-2.5 space-y-2 border-l-2 border-line pl-3.5">
+                <ul v-if="openFixes === tab" class="mt-2.5 space-y-2 border-l-2 border-line pl-3.5">
                   <li v-for="([title, body]) in EXPLAIN[tab].fixes" :key="title" class="max-w-3xl text-xs leading-relaxed">
                     <span class="font-semibold text-ink">{{ title }}</span>
                     <span class="text-muted"> — {{ body }}</span>

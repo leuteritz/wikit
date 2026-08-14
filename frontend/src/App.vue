@@ -444,7 +444,15 @@ function isActive(to) {
     <!-- ============================ MAIN ============================ -->
     <main class="relative flex min-w-0 flex-1 flex-col overflow-y-auto">
       <RouterView v-slot="{ Component }">
-        <component :is="Component" :key="route.fullPath" />
+        <!-- ⚠️ `route.path`, NICHT `route.fullPath`: die Query gehoert der Ansicht, nicht ihrer
+             Identitaet. Vier Ansichten schreiben ihren Zustand selbst in die Adresse
+             (`/ask?q=`, `/topic?q=`, `/article/:slug/history?from=&to=`) – mit `fullPath` war
+             jedes dieser `router.replace` ein Schluesselwechsel und damit ein vollstaendiger
+             Neuaufbau der Ansicht. Bei `/ask` hiess das: die Frage wurde ZWEIMAL gestellt (die
+             zerstoerte Instanz schliesst nur ihren Strom, der Lauf auf dem Server laeuft weiter),
+             bei der Fassungsliste wurde sie bei jedem Blaettern neu geladen.
+             Parameter stecken im `path` – `/article/a` und `/article/b` bleiben verschieden. -->
+        <component :is="Component" :key="route.path" />
       </RouterView>
     </main>
 

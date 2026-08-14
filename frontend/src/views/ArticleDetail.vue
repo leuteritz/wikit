@@ -83,9 +83,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
       :rows="4"
     />
     <div v-else-if="error" class="mx-auto max-w-3xl">
-      <p class="rounded-xl p-4 text-danger" style="background-color: color-mix(in srgb, var(--color-danger) 12%, transparent)">
-        {{ error }}
-      </p>
+      <p class="notice-danger rounded-xl p-4">{{ error }}</p>
     </div>
 
     <div v-else-if="article" class="mx-auto flex max-w-6xl gap-10">

@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.44.0",
-  "whatsNew": "Click a method to isolate its link in the graph",
+  "version": "4.44.1",
+  "whatsNew": "Ask no longer runs every question twice",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

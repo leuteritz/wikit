@@ -23,6 +23,7 @@ import BotPlayground from '../components/bot/BotPlayground.vue'
 import BotPromptEditor from '../components/bot/BotPromptEditor.vue'
 import BotEmbedIndex from '../components/bot/BotEmbedIndex.vue'
 import BusyState from '../components/BusyState.vue'
+import Button from '../components/ui/Button.vue'
 import { Icon } from '../lib/icons.js'
 
 const { state, dirty, dirtyPaths, status, statusLabel, load, save, revert, resetPaths, checkHealth, loadModels, getPath, setPath } =
@@ -172,24 +173,19 @@ watch(
           <span v-if="dirty" class="font-mono text-2xs text-warning">
             {{ dirtyPaths.length }} unsaved
           </span>
-          <button
-            v-if="dirty"
-            type="button"
-            class="rounded-md border border-line px-3 py-1.5 text-xs font-medium text-muted transition hover:border-line-strong hover:text-ink"
-            @click="revert"
-          >
-            Discard
-          </button>
-          <button
-            type="button"
-            class="inline-flex items-center gap-1.5 rounded-md bg-accent px-3.5 py-1.5 text-xs font-semibold text-accent-contrast transition hover:bg-accent-hover disabled:opacity-40"
-            :disabled="!dirty || state.saving"
+          <Button v-if="dirty" size="xs" @click="revert">Discard</Button>
+          <Button
+            variant="primary"
+            size="xs"
+            icon="lucide:save"
+            :busy="state.saving"
+            busy-label="Saving…"
+            :disabled="!dirty"
             title="Save changed settings (Ctrl+S)"
             @click="doSave"
           >
-            <Icon :icon="state.saving ? 'lucide:loader-2' : 'lucide:save'" class="h-3.5 w-3.5" :class="state.saving ? 'animate-spin' : ''" />
             Save
-          </button>
+          </Button>
         </div>
       </div>
 
