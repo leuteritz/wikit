@@ -12,6 +12,8 @@
  */
 import { computed, ref } from 'vue'
 import BusyState from '../BusyState.vue'
+import SectionLabel from '../ui/SectionLabel.vue'
+import Sparkline from '../ui/Sparkline.vue'
 import { Icon } from '../../lib/icons.js'
 import { vTip } from '../../lib/tooltip.js'
 import { formatDateTime } from '../../lib/format.js'
@@ -35,15 +37,34 @@ const totals = computed(() => props.report?.totals || null)
 const kpis = computed(() => {
   const t = totals.value
   if (!t) return []
+  // ⚠️ `dir` ist die RICHTUNG, nicht das Vorzeichen der Zahl. Jede Zahl dieses Reiters ist eine
+  // Veraenderung – und eine Veraenderung ohne Richtung ist nur eine Menge. „12" beantwortet
+  // „wieviel", der Pfeil daneben beantwortet „wohin", und das ist die Frage des ganzen Reiters.
+  // 0 bekommt KEINEN Pfeil: nichts bewegt sich in keine Richtung.
+  const dir = (n) => (n > 0 ? 'up' : n < 0 ? 'down' : '')
   return [
     { label: 'Classes changed', value: num(t.changed), icon: 'lucide:file-text' },
-    { label: 'Classes added', value: num(t.added), icon: 'lucide:file-plus' },
-    { label: 'Code lines', value: (t.lines > 0 ? '+' : '') + num(t.lines), icon: 'lucide:list' },
-    { label: 'New dependencies', value: num(t.addedDeps), icon: 'lucide:share-2' },
-    { label: 'Dependencies gone', value: num(t.removedDeps), icon: 'lucide:unlink' },
-    { label: 'New cycles', value: num(t.newCycles), icon: 'lucide:repeat', warn: t.newCycles > 0 },
+    { label: 'Classes added', value: num(t.added), icon: 'lucide:file-plus', dir: dir(t.added) },
+    { label: 'Code lines', value: (t.lines > 0 ? '+' : '') + num(t.lines), icon: 'lucide:list', dir: dir(t.lines) },
+    { label: 'New dependencies', value: num(t.addedDeps), icon: 'lucide:share-2', dir: dir(t.addedDeps) },
+    { label: 'Dependencies gone', value: num(t.removedDeps), icon: 'lucide:unlink', dir: dir(-t.removedDeps) },
+    { label: 'New cycles', value: num(t.newCycles), icon: 'lucide:repeat', warn: t.newCycles > 0, dir: dir(t.newCycles) },
   ]
 })
+
+// Die Form der Laeufe: wie viele Klassen JEDER Import geschrieben hat.
+//
+// ⚠️ Das ist NICHT der Bestand ueber die Zeit – `points[].classes` zaehlt, was ein Lauf angefasst
+// hat (`COUNT(DISTINCT java_file_id)` je `batch`, s. drift.service.ts). Der Unterschied ist die
+// ganze Aussage: eine steigende Kurve heisst hier „die Importe werden groesser", nicht „das
+// Projekt waechst". Die Beschriftung sagt genau das, sonst liest man eine Wachstumskurve, die
+// keine ist.
+//
+// ⚠️ Umgedreht, weil die Abfrage `ORDER BY point DESC` liefert – eine Zeitreihe, die von rechts
+// nach links laeuft, kehrt jede Steigung in ihr Gegenteil.
+const timeline = computed(() =>
+  (props.report?.points || []).map((p) => p.classes ?? 0).slice().reverse(),
+)
 
 // Nichts passiert ist ein ERGEBNIS und bekommt seinen Satz – mit Haken, nicht mit Warnfarbe.
 const quiet = computed(() => {
@@ -135,10 +156,36 @@ const startedAt = ref(Date.now())
             {{ k.label }}
           </p>
           <p
-            class="mt-0.5 font-mono text-lg font-semibold tabular-nums"
+            class="mt-0.5 flex items-center gap-1 font-mono text-lg font-semibold tabular-nums"
             :style="{ color: k.warn ? 'var(--color-danger)' : 'var(--color-text)' }"
-          >{{ k.value }}</p>
+          >
+            {{ k.value }}
+            <!-- Die Richtung, nicht noch eine Zahl: dieser Reiter zeigt ausschliesslich
+                 Veraenderungen, und eine Veraenderung ohne Richtung ist nur eine Menge. -->
+            <Icon
+              v-if="k.dir"
+              :icon="k.dir === 'up' ? 'lucide:arrow-up-right' : 'lucide:arrow-down-right'"
+              class="h-3.5 w-3.5 shrink-0 opacity-60"
+            />
+          </p>
         </div>
+      </div>
+
+      <!-- Die Laeufe als Form. Zwei Zeitpunkte beantworten „was hat sich geaendert?", die Kurve
+           beantwortet „ist das hier ueblich?" – ein Ausreisser sieht erst neben seinen Nachbarn
+           wie einer aus. Erst ab drei Punkten: zwei ergeben immer eine Gerade. -->
+      <div v-if="timeline.length > 2" class="rounded-lg border border-line bg-surface-2 px-4 py-3">
+        <div class="flex items-baseline justify-between gap-3">
+          <SectionLabel>Import runs</SectionLabel>
+          <span class="font-mono text-3xs text-muted">
+            classes written per run · oldest to newest
+          </span>
+        </div>
+        <Sparkline
+          class="mt-2"
+          :values="timeline"
+          label="Classes written per import run, oldest to newest"
+        />
       </div>
 
       <p

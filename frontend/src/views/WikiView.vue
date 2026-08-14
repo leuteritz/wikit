@@ -27,6 +27,19 @@ const TAG_PREVIEW = 16
 const tags = ref([])
 const allTags = ref(false)
 const shownTags = computed(() => (allTags.value ? tags.value : tags.value.slice(0, TAG_PREVIEW)))
+
+// Drei Gewichte statt einer Groesse fuer alle.
+//
+// ⚠️ Der Massstab ist das HAEUFIGSTE Schlagwort dieses Wikis, keine feste Zahl: in einem Bestand,
+// in dem der Spitzenreiter fuenfmal vorkommt, ist „fuenf" viel – eine Schwelle bei 20 liesse dort
+// jeden Chip gleich aussehen und waere damit genau der Zustand, der behoben werden soll.
+const topTagCount = computed(() => tags.value[0]?.count || 1)
+function tagWeight(count) {
+  const share = count / topTagCount.value
+  if (share >= 0.6) return 'text-sm font-semibold text-ink'
+  if (share >= 0.25) return 'text-xs font-medium'
+  return 'text-2xs'
+}
 // VIER Modi derselben Ansicht (gleiche Bauart wie „Class · Relation" in /code): die Liste
 // beantwortet „was gibt es?", der Graph „was haengt woran?", der Bericht „woran muss ich ran?",
 // und „Data" als einziger keine Frage, sondern „wie komme ich hier raus und wieder rein?".
@@ -199,11 +212,16 @@ const groups = computed(() => {
         </button>
       </div>
       <div class="flex flex-wrap gap-1.5">
+        <!-- ⚠️ Die Haeufigkeit steht am Chip, aber sie stand nur als ZAHL da: `#java 47` sah aus
+             wie `#todo 1`, obwohl der Server bereits nach Haeufigkeit sortiert liefert. Drei
+             Stufen genuegen, um die Schlagwoerter zu finden, die dieses Wiki tragen – mehr waeren
+             eine Praezision, die die Zahl daneben ohnehin genauer sagt. -->
         <RouterLink
           v-for="t in shownTags"
           :key="t.id"
           :to="`/tag/${encodeURIComponent(t.name)}`"
-          class="inline-flex items-center gap-1.5 rounded-md border border-line px-2 py-1 font-mono text-xs text-muted transition hover:border-accent hover:text-accent"
+          class="inline-flex items-center gap-1.5 rounded-md border border-line px-2 py-1 font-mono text-muted transition hover:border-accent hover:text-accent"
+          :class="tagWeight(t.count)"
         >
           #{{ t.name }}
           <span class="tabular-nums opacity-60">{{ t.count }}</span>

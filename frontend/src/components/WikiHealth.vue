@@ -55,6 +55,28 @@ onMounted(load)
 const totals = computed(() => data.value?.totals || null)
 const clean = computed(() => !!totals.value && totals.value.findings === 0)
 
+// Woraus die Befunde bestehen – als EIN Balken, nicht als vier gleiche Zaehler.
+//
+// ⚠️ Der Grund ist die Arbeit dahinter, nicht die Optik: die vier Abschnitte tragen dieselbe
+// Ueberschriftgroesse und dieselbe Zaehlerfarbe, also sieht EIN toter Link (zwei Sekunden) aus wie
+// DREISSIG veraltete Klassenartikel (ein Nachmittag). „12 findings" allein sagt nicht, ob der
+// Nachmittag gemeint ist. Der Balken sagt es, bevor man scrollt.
+//
+// Die Reihenfolge ist die des Berichts darunter, damit der Balken sich lesen laesst wie die Seite.
+const MIX = [
+  { key: 'outdated', label: 'Outdated class articles', color: 'var(--color-review)' },
+  { key: 'broken', label: 'Dead links', color: 'var(--color-danger)' },
+  { key: 'duplicates', label: 'Near-duplicates', color: 'var(--color-lavender)' },
+  { key: 'incomplete', label: 'Unfinished', color: 'var(--color-muted)' },
+]
+const mix = computed(() => {
+  const t = totals.value
+  if (!t || !t.findings) return []
+  return MIX.map((m) => ({ ...m, n: t[m.key] || 0 }))
+    .filter((m) => m.n > 0)
+    .map((m) => ({ ...m, pct: (m.n / t.findings) * 100 }))
+})
+
 // Derselbe Hand-off, den `/insights` und die globale Suche benutzen: Ziel setzen, Route wechseln.
 // Ohne mitgegebene Suche schlaegt `CodeView` das Ego der Klasse auf.
 function openClass(fileId) {
@@ -134,6 +156,27 @@ const usedFields = computed(() => {
             <Icon icon="lucide:refresh-cw" class="h-3.5 w-3.5" :class="loading ? 'animate-spin' : ''" />
             Re-check
           </button>
+        </div>
+
+        <!-- Woraus die Befunde bestehen. Ein Balken statt vier gleicher Zaehler: die vier Sorten
+             kosten sehr verschieden viel Zeit, und das steht sonst nirgends. -->
+        <div v-if="mix.length > 1" class="mt-3.5">
+          <div class="flex h-2 w-full overflow-hidden rounded-full bg-surface-offset">
+            <span
+              v-for="m in mix"
+              :key="m.key"
+              v-tip="`${m.n} × ${m.label}`"
+              class="block h-full first:rounded-l-full last:rounded-r-full"
+              :style="{ width: `${m.pct}%`, background: m.color }"
+            />
+          </div>
+          <p class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-3xs text-muted">
+            <span v-for="m in mix" :key="m.key" class="inline-flex items-center gap-1.5">
+              <span class="h-2 w-2 shrink-0 rounded-full" :style="{ background: m.color }" />
+              <span class="tabular-nums text-ink">{{ m.n }}</span>
+              {{ m.label.toLowerCase() }}
+            </span>
+          </p>
         </div>
 
         <!-- ⚠️ Der bekannteste Wiki-Befund steht bewusst woanders – und das gehoert dazugesagt,

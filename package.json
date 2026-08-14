@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.45.0",
-  "whatsNew": "Arrow keys now move between tabs",
+  "version": "4.46.0",
+  "whatsNew": "Insights numbers now show their ratio",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

@@ -20,6 +20,7 @@ import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { useJavaGraph } from '../composables/useJavaGraph.js'
 import BusyState from '../components/BusyState.vue'
 import Button from '../components/ui/Button.vue'
+import Meter from '../components/ui/Meter.vue'
 import PageHeader from '../components/ui/PageHeader.vue'
 import PageShell from '../components/ui/PageShell.vue'
 import Tabs from '../components/ui/Tabs.vue'
@@ -294,6 +295,30 @@ const cycles = computed(() => data.value?.cycles || { classes: [], packages: [] 
 
 const ranked = computed(() => [...classes.value].sort((a, b) => b.score - a.score || b.complexity - a.complexity))
 const hotspots = computed(() => (showAllHotspots.value ? ranked.value : ranked.value.slice(0, TOP_N)))
+
+// Die sechs Zahlen der Uebersicht, jede mit ihrem Bezug.
+//
+// ⚠️ Der Bezug ist der eigentliche Inhalt: eine Bestandszahl allein („4.096 Codezeilen") laesst
+// sich nur mit einem zweiten Projekt vergleichen, das niemand hier hat. Das Verhaeltnis dagegen
+// beschreibt DIESES Projekt – „4 Zeilen je Klasse" sagt, dass hier viele kleine Typen liegen.
+// Wo kein ehrlicher Bezug existiert, bleibt `per` leer; eine erfundene Bezugsgroesse waere
+// schlimmer als keine.
+const headlineNumbers = computed(() => {
+  const t = totals.value
+  if (!t) return []
+  const per = (a, b, unit) => (b ? `${(a / b).toFixed(a / b < 10 ? 1 : 0)} ${unit}` : '')
+  const cycles = t.classCycles + t.packageCycles
+  return [
+    { label: 'Classes', value: num(t.classes), icon: 'lucide:box', per: '' },
+    { label: 'Packages', value: num(t.packages), icon: 'lucide:package', per: per(t.classes, t.packages, 'classes ea.') },
+    { label: 'Relations', value: num(t.relations), icon: 'lucide:share-2', per: per(t.relations, t.classes, 'per class') },
+    { label: 'Code lines', value: num(t.loc), icon: 'lucide:code-2', per: per(t.loc, t.classes, 'per class') },
+    { label: 'Branches', value: num(t.complexity), icon: 'lucide:git-fork', per: per(t.complexity, t.classes, 'per class') },
+    // Zyklen bekommen keinen Bezug, sondern eine Farbe: „0,3 Zyklen je Klasse" ist keine Aussage,
+    // die jemand braucht – „es gibt welche" dagegen schon.
+    { label: 'Cycles', value: num(cycles), icon: 'lucide:repeat', per: '', warn: cycles > 0 },
+  ]
+})
 
 // Das Package, das am weitesten von der Hauptsequenz weg liegt – die eine Zahl, die auf der
 // Uebersicht fuer „Schichtung" steht. Ohne Beziehungen ist sie nicht definiert (null), und dann
@@ -861,24 +886,28 @@ const plotted = computed(() => {
               </span>
             </button>
 
+            <!-- ⚠️ Hier steht bewusst KEIN Balken. Ein Balken braucht eine Skala, und „4.096
+                 Codezeilen" hat keine – gegen was? Was diesen Zahlen wirklich fehlte, ist der
+                 Bezug, den man sonst im Kopf rechnet: 4.096 Zeilen sagen wenig, „4 je Klasse"
+                 sagt, wie dieses Projekt gebaut ist. Die Verhältniszahl steht deshalb an der
+                 Kachel, klein und in der Farbe der Nebensache. Wo es keinen sinnvollen Bezug
+                 gibt (Klassen, Zyklen), bleibt die Zeile leer statt etwas zu erfinden. -->
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
               <div
-                v-for="k in [
-                  { label: 'Classes', value: num(totals.classes), icon: 'lucide:box' },
-                  { label: 'Packages', value: num(totals.packages), icon: 'lucide:package' },
-                  { label: 'Relations', value: num(totals.relations), icon: 'lucide:share-2' },
-                  { label: 'Code lines', value: num(totals.loc), icon: 'lucide:code-2' },
-                  { label: 'Branches', value: num(totals.complexity), icon: 'lucide:git-fork' },
-                  { label: 'Cycles', value: num(totals.classCycles + totals.packageCycles), icon: 'lucide:repeat' },
-                ]"
+                v-for="k in headlineNumbers"
                 :key="k.label"
-                class="rounded-lg border border-line bg-surface-2 px-3 py-2.5"
+                class="rounded-lg border bg-surface-2 px-3 py-2.5"
+                :class="k.warn ? 'border-danger/40' : 'border-line'"
               >
                 <p class="flex items-center gap-1.5 text-3xs uppercase tracking-wide text-muted">
                   <Icon :icon="k.icon" class="h-3 w-3" />
                   {{ k.label }}
                 </p>
-                <p class="mt-1 font-mono text-lg font-semibold text-ink">{{ k.value }}</p>
+                <p
+                  class="mt-1 font-mono text-lg font-semibold tabular-nums"
+                  :class="k.warn ? 'text-danger' : 'text-ink'"
+                >{{ k.value }}</p>
+                <p class="font-mono text-3xs text-muted">{{ k.per || '&nbsp;' }}</p>
               </div>
             </div>
 
@@ -969,9 +998,7 @@ const plotted = computed(() => {
                     <span class="w-6 shrink-0 text-right font-mono text-2xs" :style="{ color: scoreColor(c.score) }">
                       {{ c.score }}
                     </span>
-                    <span class="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-surface-offset">
-                      <span class="block h-full rounded-full" :style="{ width: `${c.score}%`, background: scoreColor(c.score) }" />
-                    </span>
+                    <Meter :value="c.score" :color="scoreColor(c.score)" :label="`weight  of 100`" />
                     <span class="min-w-0 flex-1 truncate">
                       <span class="font-mono text-xs text-ink">{{ c.className }}</span>
                       <span class="ml-1.5 text-2xs text-muted">{{ c.package }}</span>
@@ -1182,9 +1209,7 @@ const plotted = computed(() => {
                         <span class="w-6 shrink-0 text-right font-mono text-2xs" :style="{ color: scoreColor(c.score) }">
                           {{ c.score }}
                         </span>
-                        <span class="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-surface-offset">
-                          <span class="block h-full rounded-full" :style="{ width: `${c.score}%`, background: scoreColor(c.score) }" />
-                        </span>
+                        <Meter :value="c.score" :color="scoreColor(c.score)" :label="`weight  of 100`" />
                       </div>
                     </td>
                     <td class="px-3 py-1.5">
@@ -1318,9 +1343,7 @@ const plotted = computed(() => {
                           <span class="w-6 shrink-0 text-right font-mono text-2xs" :style="{ color: scoreColor(c.score) }">
                             {{ c.score }}
                           </span>
-                          <span class="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-surface-offset">
-                            <span class="block h-full rounded-full" :style="{ width: `${c.score}%`, background: scoreColor(c.score) }" />
-                          </span>
+                          <Meter :value="c.score" :color="scoreColor(c.score)" :label="`weight  of 100`" />
                         </div>
                       </td>
                       <td class="px-3 py-1.5">
@@ -1778,9 +1801,12 @@ const plotted = computed(() => {
                         </span>
                         <!-- Der Balken beantwortet „wie tief steckt das drin?" auf einen Blick –
                              die Zahl daneben sagt es genau. -->
-                        <span class="hidden h-1 w-24 shrink-0 overflow-hidden rounded-full bg-surface-offset sm:block">
-                          <span class="block h-full rounded-full" :style="{ width: `${outsideBar(g.id, p.usedBy)}%`, background: g.color }" />
-                        </span>
+                        <Meter
+                          class="hidden sm:block"
+                          :value="outsideBar(g.id, p.usedBy)"
+                          :color="g.color"
+                          :label="`used by ${p.usedBy} of your classes`"
+                        />
                         <span
                           v-tip="`${p.usedBy} of your classes import something from here`"
                           class="w-24 shrink-0 text-right font-mono text-3xs text-muted"
