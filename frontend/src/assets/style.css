@@ -638,6 +638,21 @@ body {
 }
 
 /* --- Prose-Feinschliff fuer gerenderte Artikel ---------------------------- */
+
+/* ⚠️ ZEILENLAENGE. Der Rumpf laeuft mit `max-w-none`, hebt also Typographys 65ch auf – gedacht
+   war das fuer die Code-Bloecke, die darin Platz brauchen. Getroffen hat es aber den FLIESSTEXT:
+   in der 72-rem-Spalte standen 110 bis 120 Zeichen je Zeile, und unterhalb von `xl` (wo die
+   Inhaltsverzeichnis-Spalte wegfaellt) sogar die volle Breite. Ab etwa 90 Zeichen findet das Auge
+   den Anfang der naechsten Zeile nicht mehr zuverlaessig – man liest dieselbe zweimal.
+   Also: das MASS gilt fuer Text, und ausgerechnet das, was Breite braucht, darf ausbrechen.
+   Kein `max-width` am Container, weil der die Code-Bloecke mitnehmen wuerde. */
+.article-body > * {
+  max-width: 74ch;
+}
+.article-body > :where(pre, table, figure, img, hr, blockquote, .shiki) {
+  max-width: none;
+}
+
 .article-body :where(h2, h3) {
   scroll-margin-top: 5rem;
 }
@@ -888,4 +903,98 @@ mark {
 .cm-diff-meta {
   color: var(--color-code-muted);
   background-color: color-mix(in srgb, var(--color-code-muted) 10%, transparent);
+}
+
+/* --- Drucken ---------------------------------------------------------------------------------
+ * Ein Wiki-Artikel ist das einzige, was hier jemand ausdruckt oder als PDF ablegt – und bis
+ * hierher kam dabei die ganze Anwendung mit aufs Papier: Sidebar, Suchfeld, Knopfleiste, und der
+ * Artikeltext in einer Spalte, die zwei Drittel der Seitenbreite freiliess.
+ *
+ * ⚠️ Gedruckt wird IMMER hell, unabhaengig vom Theme. Ein dunkler Hintergrund im Dark-Mode
+ * bedeutet auf Papier eine volle Tonerseite – die meisten Browser unterdruecken Hintergruende
+ * zwar per Default, aber „per Default" ist keine Zusage. Deshalb explizit.
+ *
+ * ⚠️ Code-Bloecke sind die Ausnahme von der Ausnahme: sie behalten ihre dunkle Flaeche NICHT
+ * (Toner), bekommen aber einen Rahmen – ohne Flaeche und ohne Rahmen waere ein Codeblock auf
+ * Papier von Fliesstext nicht mehr zu unterscheiden.
+ *
+ * Was WEG muss, ist alles, was auf Papier nicht bedienbar ist: Navigation, Suche, Aktionsknoepfe,
+ * Overlays. Was BLEIBT, ist der Artikel – und die Adresse hinter jedem Link, denn ein Link auf
+ * Papier ist sonst eine Behauptung ohne Ziel. */
+@media print {
+  :root,
+  html.dark {
+    --color-surface: #fff;
+    --color-surface-2: #fff;
+    --color-surface-offset: #f4f4f4;
+    --color-ink: #111;
+    --color-muted: #444;
+    --color-line: #ccc;
+    --color-line-strong: #999;
+    --color-accent: #333;
+    --elev-1: none;
+    --elev-2: none;
+    --elev-3: none;
+    --elev-4: none;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Die Shell: Sidebar und alles, was ueber der Ansicht liegt, hat auf Papier nichts zu suchen. */
+  aside,
+  nav[role="tablist"],
+  [role="dialog"],
+  .tip,
+  .vue-flow {
+    display: none !important;
+  }
+
+  /* Der Scroll-Kaefig der Shell muss aufgehen, sonst druckt der Browser nur die erste Seite. */
+  main,
+  .article-body,
+  #app > div {
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* Der Text darf die ganze Seite nutzen – das 74ch-Mass gilt fuer den Bildschirm. */
+  .article-body > * {
+    max-width: none;
+  }
+
+  /* Code auf Papier: Rahmen statt Flaeche, und umbrechen statt abgeschnitten zu werden. */
+  .shiki,
+  pre {
+    background: #fff !important;
+    border: 1px solid #bbb !important;
+    color: #111 !important;
+    white-space: pre-wrap !important;
+  }
+  .shiki span {
+    color: #111 !important;
+  }
+
+  /* Ein Link ohne Ziel ist auf Papier eine Behauptung. Interne Pfade bleiben weg – sie helfen
+     niemandem, der das Blatt in der Hand haelt. */
+  .article-body a[href^="http"]::after {
+    content: " (" attr(href) ")";
+    font-size: 0.85em;
+    color: #555;
+    word-break: break-all;
+  }
+
+  /* Eine Ueberschrift gehoert nicht allein ans Seitenende. */
+  .article-body :where(h1, h2, h3) {
+    break-after: avoid;
+  }
+  .article-body :where(pre, table, figure) {
+    break-inside: avoid;
+  }
 }

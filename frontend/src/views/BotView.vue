@@ -25,6 +25,7 @@ import BotEmbedIndex from '../components/bot/BotEmbedIndex.vue'
 import BusyState from '../components/BusyState.vue'
 import Button from '../components/ui/Button.vue'
 import Card from '../components/ui/Card.vue'
+import ConfirmDialog from '../components/ui/ConfirmDialog.vue'
 import PageHeader from '../components/ui/PageHeader.vue'
 import PageShell from '../components/ui/PageShell.vue'
 import SectionLabel from '../components/ui/SectionLabel.vue'
@@ -112,16 +113,20 @@ async function doSave() {
   }
 }
 
+const confirmReset = ref(false)
+const resetting = ref(false)
+
 async function resetAll() {
-  if (!window.confirm('Reset every bot setting to its default? Stored values are removed, and the environment variables apply again.')) {
-    return
-  }
+  resetting.value = true
   try {
     await resetPaths(null)
     push({ kind: 'success', message: 'All bot settings are back to their defaults.' })
     checkHealth()
   } catch {
     /* Toast kam bereits aus lib/api.js */
+  } finally {
+    resetting.value = false
+    confirmReset.value = false
   }
 }
 
@@ -362,13 +367,9 @@ watch(
                selten und folgenreich, und rot in der Kopfzeile ist eine Warnung, die nach zwei
                Minuten niemanden mehr erreicht. -->
           <div class="mt-6 flex flex-wrap items-center gap-3 border-t border-line pt-4">
-            <button
-              type="button"
-              class="rounded-md border border-line px-3 py-1.5 text-2xs font-medium text-muted transition hover:border-danger/50 hover:text-danger"
-              @click="resetAll"
-            >
+            <Button variant="danger-soft" size="xs" @click="confirmReset = true">
               Reset everything to defaults
-            </button>
+            </Button>
             <p class="text-3xs text-muted">
               <!-- „Everything" heißt seit dem Wiki-Reiter mehr als die Ollama-Werte. Die Zeile
                    nennt sie, also muss sie vollständig sein – sonst verspricht der Knopf weniger,
@@ -381,5 +382,23 @@ watch(
           </div>
         </template>
     </PageShell>
+
+    <ConfirmDialog
+      :open="confirmReset"
+      tone="danger"
+      icon="lucide:rotate-ccw"
+      title="Reset every setting?"
+      confirm-label="Reset everything"
+      busy-label="Resetting…"
+      :busy="resetting"
+      @cancel="confirmReset = false"
+      @confirm="resetAll"
+    >
+      <!-- ⚠️ „Zurücksetzen" heißt hier LÖSCHEN der Überschreibungen, nicht Setzen von Werten
+           (s. settings-Tabelle: eine fehlende Zeile heißt „nicht gesetzt"). Was danach gilt,
+           gehört deshalb in den Satz – sonst klingt es nach „irgendein Standard". -->
+      The stored values are removed — including the wiki ones and the prompt templates. Afterwards
+      the environment variables apply again.
+    </ConfirmDialog>
   </div>
 </template>

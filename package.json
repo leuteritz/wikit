@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.48.0",
-  "whatsNew": "Home shows where you were and what is open",
+  "version": "4.49.0",
+  "whatsNew": "Articles read better and print cleanly",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

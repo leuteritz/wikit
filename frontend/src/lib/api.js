@@ -151,7 +151,13 @@ export const api = {
   analyzeJavaBatch: (data) => http('POST', '/java/analyze-batch', data),
   listJavaFiles: () => http('GET', '/java/files'),
   getJavaFile: (id) => http('GET', `/java/files/${id}`),
-  getJavaFileByArticle: (articleId) => http('GET', `/java/files/by-article/${articleId}`),
+  // ⚠️ `silent`: der 404 ist hier die REGEL, kein Fehler. Die meisten Artikel sind von Hand
+  // geschrieben und haben gar keine Java-Klasse – der Aufrufer fragt nur nach, ob es eine gibt,
+  // und faengt den Fehler ab. Ein `catch` im Aufrufer unterdrueckt den Toast aber NICHT: der
+  // steigt in `http()` auf, bevor geworfen wird. Ohne dieses Flag begruesste jeder gewoehnliche
+  // Artikel den Leser mit „Not found · HTTP 404" (gemessen).
+  getJavaFileByArticle: (articleId) =>
+    http('GET', `/java/files/by-article/${articleId}`, undefined, { silent: true }),
   // Shiki-gehighlightetes Quellcode-Snippet einer Methode (Graph-Edge-Panel).
   // `silent`: Das Edge-/Bundle-Panel holt je Methode ein Snippet und zeigt fehlende an Ort und
   // Stelle als leeren Abschnitt. Ein Toast je Methode waere daneben eine Kaskade ohne Mehrwert.

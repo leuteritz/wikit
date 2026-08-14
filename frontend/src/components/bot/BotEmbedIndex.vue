@@ -19,6 +19,7 @@ import { useActivity } from '../../composables/useActivity.js'
 import { useNotifications } from '../../composables/useNotifications.js'
 import { useEmbeddings } from '../../composables/useEmbeddings.js'
 import { copyToClipboard } from '../../lib/clipboard.js'
+import ConfirmDialog from '../ui/ConfirmDialog.vue'
 import { Icon } from '../../lib/icons.js'
 import { vTip } from '../../lib/tooltip.js'
 
@@ -141,12 +142,26 @@ async function build(force = false) {
   }
 }
 
-async function clear() {
-  if (!confirm('Delete every stored vector, for classes and articles alike? Meaning-based search and Ask stop working until the index is rebuilt.')) return
-  // Beide – ein halb gelöschter Index wäre ein Zustand, den kein Knopf wieder herstellt.
-  await api.clearJavaEmbeddings()
-  await api.clearArticleEmbeddings()
-  await refresh()
+const confirmClear = ref(false)
+const clearing = ref(false)
+
+function clear() {
+  confirmClear.value = true
+}
+
+async function doClear() {
+  clearing.value = true
+  try {
+    // Beide – ein halb gelöschter Index wäre ein Zustand, den kein Knopf wieder herstellt.
+    await api.clearJavaEmbeddings()
+    await api.clearArticleEmbeddings()
+    await refresh()
+  } catch {
+    /* Der Grund steht bereits als Toast (lib/api.js) */
+  } finally {
+    clearing.value = false
+    confirmClear.value = false
+  }
 }
 </script>
 
@@ -263,5 +278,24 @@ async function clear() {
 
     <p v-else-if="loading" class="mt-2 text-2xs text-muted">Checking the index…</p>
     <p v-else class="mt-2 text-2xs text-muted">Index status unavailable.</p>
+
+    <ConfirmDialog
+      :open="confirmClear"
+      tone="danger"
+      icon="lucide:trash-2"
+      title="Delete the meaning index?"
+      subtitle="Both indexes — classes and articles"
+      confirm-label="Delete index"
+      busy-label="Deleting…"
+      :busy="clearing"
+      @cancel="confirmClear = false"
+      @confirm="doClear"
+    >
+      <!-- Was danach NICHT mehr geht, ist die eigentliche Auskunft – nicht, dass Zeilen
+           verschwinden. Und dass es zurückzuholen ist, gehört dazu: es kostet einen Lauf, keine
+           Arbeit. -->
+      Meaning-based search and Ask stop finding anything until the index is built again. The
+      sources themselves stay — rebuilding costs a run, nothing else.
+    </ConfirmDialog>
   </div>
 </template>

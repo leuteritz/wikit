@@ -54,7 +54,7 @@ const sidebarKeys = computed(() => sidebarShortcuts(route.path))
 const GOTO_WINDOW_MS = 1200
 // Die Ziele stehen als Tabelle da, damit ein weiterer Bereich eine Zeile ist und keine zweite
 // Bedingung im Handler (die dritte Verzweigung war der Punkt, an dem es eine wurde).
-const GOTO_TARGETS = { c: '/code', i: '/insights', w: '/wiki', b: '/bot' }
+const GOTO_TARGETS = { c: '/code', i: '/insights', w: '/wiki', b: '/bot', t: '/topic', a: '/ask', h: '/' }
 let gotoArmedAt = 0
 
 function onKey(e) {

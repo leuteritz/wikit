@@ -12,6 +12,7 @@ import { formatDateTime, formatRelative } from '../lib/format.js'
 import { Icon } from '../lib/icons.js'
 import ArticleDiff from '../components/ArticleDiff.vue'
 import BusyState from '../components/BusyState.vue'
+import ConfirmDialog from '../components/ui/ConfirmDialog.vue'
 
 const props = defineProps({ slug: { type: String, required: true } })
 const route = useRoute()
@@ -99,14 +100,33 @@ function pick(v) {
   from.value = Math.max(0, v.version_number - 1)
 }
 
-async function restore(v) {
-  if (!confirm(`Restore version ${v} of “${data.value.article.title}”? The current text is kept as a version.`)) return
-  await api.restoreArticleVersion(articleId.value, v)
-  await store.reload()
-  await reload()
-  restored.value = v
-  to.value = newest.value
-  from.value = Math.max(0, newest.value - 1)
+// Zurückholen ist NICHT zerstörend – der aktuelle Stand wird selbst zur Fassung (s.
+// article-versions.service). Deshalb `accent` statt `danger`: ein roter Dialog vor einer
+// umkehrbaren Handlung erzieht dazu, rote Dialoge wegzuklicken.
+const pendingRestore = ref(null)
+const restoring = ref(false)
+
+function restore(v) {
+  pendingRestore.value = v
+}
+
+async function confirmRestore() {
+  const v = pendingRestore.value
+  if (v == null) return
+  restoring.value = true
+  try {
+    await api.restoreArticleVersion(articleId.value, v)
+    await store.reload()
+    await reload()
+    restored.value = v
+    to.value = newest.value
+    from.value = Math.max(0, newest.value - 1)
+  } catch {
+    /* Der Grund steht bereits als Toast (lib/api.js) */
+  } finally {
+    restoring.value = false
+    pendingRestore.value = null
+  }
 }
 </script>
 
@@ -275,6 +295,25 @@ async function restore(v) {
         </div>
       </div>
     </div>
+
+    <ConfirmDialog
+      :open="pendingRestore !== null"
+      tone="accent"
+      icon="lucide:rotate-ccw"
+      :title="`Restore version ${pendingRestore}?`"
+      confirm-label="Restore"
+      busy-label="Restoring…"
+      :busy="restoring"
+      @cancel="pendingRestore = null"
+      @confirm="confirmRestore"
+    >
+      <template #subtitle>
+        <span class="font-mono">{{ data?.article?.title }}</span>
+      </template>
+      <!-- Der Satz nimmt die Sorge weg, die den Klick sonst aufhält: nichts geht verloren. -->
+      It becomes the current text, and today's state is kept as a version of its own — so this
+      step is itself undoable.
+    </ConfirmDialog>
   </div>
 </template>
 

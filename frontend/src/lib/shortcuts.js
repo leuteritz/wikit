@@ -41,6 +41,13 @@ export const SHORTCUTS = [
   { id: 'goto-insights', keys: ['g', 'i'], seq: true, scope: 'global', label: 'Go to Insights', hint: 'press g, then i' },
   { id: 'goto-wiki', keys: ['g', 'w'], seq: true, scope: 'global', label: 'Go to Wiki', hint: 'press g, then w' },
   { id: 'goto-bot', keys: ['g', 'b'], seq: true, scope: 'global', label: 'Go to Bot', hint: 'press g, then b' },
+  // ⚠️ Die Sidebar hat SIEBEN Eintraege, die Folge deckte vier davon ab – ausgerechnet Ask und
+  // Topic, die beiden Ansichten, in denen man ohnehin tippt, waren nur mit der Maus erreichbar.
+  // `t` und `a` sind die Anfangsbuchstaben, `h` ist „home" (nicht `s` fuer start: `g,s` laese sich
+  // wie „search", und das liegt auf Strg+K).
+  { id: 'goto-topic', keys: ['g', 't'], seq: true, scope: 'global', label: 'Go to Topic', hint: 'press g, then t' },
+  { id: 'goto-ask', keys: ['g', 'a'], seq: true, scope: 'global', label: 'Go to Ask', hint: 'press g, then a' },
+  { id: 'goto-home', keys: ['g', 'h'], seq: true, scope: 'global', label: 'Go to the start page', hint: 'press g, then h' },
   { id: 'close', keys: ['esc'], scope: 'global', label: 'Close / clear', hint: 'modal, panel or search field' },
 
   // --- Code-Ansicht ---

@@ -1,8 +1,11 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import SectionLabel from './ui/SectionLabel.vue'
 
 const props = defineProps({
   toc: { type: Array, default: () => [] }, // [{ level, text, id }]
+  /** Aus, wo die Überschrift bereits daneben steht (z. B. im `<summary>` der schmalen Fassung). */
+  heading: { type: Boolean, default: true },
 })
 
 const activeId = ref('')
@@ -35,8 +38,12 @@ function jump(id) {
 </script>
 
 <template>
-  <nav v-if="toc.length" class="text-sm">
-    <p class="mb-3 font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-muted">On this page</p>
+  <!-- ⚠️ Die Liste scrollt SELBST. Sie sitzt in einem `sticky`-Kasten, und ohne eigene Höhe lief
+       ein Artikel mit vierzig Überschriften unten aus dem Bild – unerreichbar, weil die Seite
+       darunter längst weitergescrollt ist. `5rem` ist der Abstand, den `sticky top-6` plus die
+       Kopfhöhe belegen. -->
+  <nav v-if="toc.length" class="max-h-[calc(100vh-5rem)] overflow-y-auto text-sm">
+    <SectionLabel v-if="heading" class="mb-3">On this page</SectionLabel>
     <ul class="space-y-1 border-l border-line">
       <li v-for="item in toc" :key="item.id">
         <a

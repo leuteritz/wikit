@@ -8,6 +8,7 @@ import { useArticles } from '../composables/useArticles.js'
 import ArticleView from '../components/ArticleView.vue'
 import BusyState from '../components/BusyState.vue'
 import TableOfContents from '../components/TableOfContents.vue'
+import ConfirmDialog from '../components/ui/ConfirmDialog.vue'
 import JavaAnalysisPanel from '../components/java/JavaAnalysisPanel.vue'
 
 const props = defineProps({ slug: { type: String, required: true } })
@@ -56,12 +57,32 @@ async function refresh() {
   }
 }
 
-async function onDelete(a) {
-  if (!confirm(`Really delete article “${a.title}”?`)) return
-  await remove(a.id)
-  // Ein geloeschter Artikel gehoert nicht mehr in „zuletzt gelesen": der Chip fuehrte ins Leere.
-  forgetArticle(a.slug)
-  router.push('/')
+// ⚠️ Der gestaltete Dialog statt `window.confirm`: der native kennt weder den Ton der Anwendung
+// noch ihren Fokus-Kaefig, blockiert den Hauptthread und schneidet lange Titel nach Browser-Laune
+// ab. `ConfirmDialog` gab es bereits – er wurde hier nur nie benutzt.
+const pendingDelete = ref(null)
+const deleting = ref(false)
+
+function onDelete(a) {
+  pendingDelete.value = a
+}
+
+async function confirmDelete() {
+  const a = pendingDelete.value
+  if (!a) return
+  deleting.value = true
+  try {
+    await remove(a.id)
+    // Ein geloeschter Artikel gehoert nicht mehr in „zuletzt gelesen": der Chip fuehrte ins Leere.
+    forgetArticle(a.slug)
+    router.push('/')
+  } catch {
+    // Der Grund steht bereits als Toast (lib/api.js) – der Dialog schliesst trotzdem, sonst
+    // bleibt er als Rest stehen und behauptet, es sei noch etwas zu entscheiden.
+  } finally {
+    deleting.value = false
+    pendingDelete.value = null
+  }
 }
 
 // `e` fuehrt in den Editor. Wie jedes Kuerzel der Anwendung prueft es `isTypingTarget` – sonst
@@ -96,6 +117,23 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     <div v-else-if="article" class="mx-auto flex max-w-6xl gap-10">
       <div class="min-w-0 flex-1 pb-16">
         <JavaAnalysisPanel v-if="javaFile" :file="javaFile" :article-id="article.id" />
+
+        <!-- ⚠️ Unterhalb von `xl` fällt die Spalte rechts weg – und damit fiel bis hierher jede
+             Navigation im Artikel weg. Auf einem 1366er-Laptop mit Sidebar ist genau das der
+             Normalfall, nicht die Ausnahme. Also dieselbe Liste, nur zusammengeklappt: `<details>`
+             statt eines eigenen Zustands, weil der Browser das Auf und Zu bereits kann. -->
+        <details
+          v-if="article.toc?.length"
+          class="mb-6 rounded-xl border border-line bg-surface-2 px-4 py-3 xl:hidden"
+        >
+          <summary class="cursor-pointer list-none font-mono text-3xs font-semibold uppercase tracking-[0.12em] text-muted transition hover:text-ink">
+            On this page ({{ article.toc.length }})
+          </summary>
+          <div class="mt-3">
+            <TableOfContents :toc="article.toc" :heading="false" />
+          </div>
+        </details>
+
         <ArticleView :article="article" @delete="onDelete" @linked="refresh" />
       </div>
       <aside class="hidden w-56 shrink-0 xl:block">
@@ -104,5 +142,25 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         </div>
       </aside>
     </div>
+
+    <ConfirmDialog
+      :open="!!pendingDelete"
+      tone="danger"
+      icon="lucide:trash-2"
+      title="Delete this article?"
+      confirm-label="Delete"
+      busy-label="Deleting…"
+      :busy="deleting"
+      @cancel="pendingDelete = null"
+      @confirm="confirmDelete"
+    >
+      <template #subtitle>
+        <span class="font-mono">{{ pendingDelete?.title }}</span>
+      </template>
+      <!-- Was verloren geht, gehört VOR den Klick. Die Fassungen hängen per CASCADE am Artikel
+           (s. schema.ts) – sie sind danach nicht mehr zurückzuholen, und das ist der eigentliche
+           Verlust, nicht der Text, den man noch im Kopf hat. -->
+      Its text and every stored version go with it. This cannot be undone.
+    </ConfirmDialog>
   </div>
 </template>

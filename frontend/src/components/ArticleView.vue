@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, nextTick, onMounted } from 'vue'
+import { computed, ref, watch, nextTick, onMounted } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import CategoryBadge from './CategoryBadge.vue'
 import RelatedArticles from './RelatedArticles.vue'
@@ -16,6 +16,30 @@ const props = defineProps({
 defineEmits(['delete', 'linked'])
 
 const bodyEl = ref(null)
+
+// Umfang und Lesezeit – zwei Angaben, die den Artikel EINORDNEN, bevor man ihn liest. Bis hierher
+// standen im Kopf nur Kategorie und Änderungsdatum; „lohnt sich das jetzt oder später?" ließ sich
+// nur durch Scrollen beantworten.
+//
+// ⚠️ Aus dem MARKDOWN gerechnet, nicht aus dem gerenderten HTML: dort zählten Tags mit, und ein
+// Artikel mit vielen Links wäre plötzlich doppelt so lang. Code-Blöcke fliegen raus – sie werden
+// nicht gelesen, sondern nachgeschlagen, und würden die Zeit sonst verdreifachen.
+//
+// 200 Wörter je Minute ist der übliche Mittelwert für Sachtexte. Unter einer Minute steht keine
+// Zeit: „<1 min" ist eine Auskunft, „0 min" wäre eine falsche.
+const WORDS_PER_MINUTE = 200
+const readingStats = computed(() => {
+  const md = props.article?.content || ''
+  if (!md.trim()) return null
+  const prose = md
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`[^`]*`/g, ' ')
+    .replace(/^\s{4,}.*$/gm, ' ')
+  const words = prose.split(/\s+/).filter(Boolean).length
+  if (!words) return null
+  const minutes = Math.round(words / WORDS_PER_MINUTE)
+  return { words, label: minutes < 1 ? '<1 min read' : `${minutes} min read` }
+})
 
 // Sprache eines Blocks aus der Shiki-Klasse am <code> (`language-java`). `text` ist der
 // Fallback-Sprachname des Renderers und benennt nichts – ein Label dafuer waere Zierrat.
@@ -122,10 +146,25 @@ watch(() => props.article?.id, () => nextTick(enhanceCodeBlocks))
 <template>
   <article>
     <header class="mb-6 border-b border-line pb-6">
-      <div class="mb-3 flex flex-wrap items-center gap-2">
+      <!-- ⚠️ Der Weg zurück fehlte ganz: kein Brotkrumen, und die Kategorie war ein Abzeichen,
+           kein Link. Wer über die Suche hier landete, hatte keinen Ort, zu dem er gehört – nur
+           den Zurück-Knopf des Browsers, und der weiß nichts über den Bestand. -->
+      <nav class="mb-3 flex flex-wrap items-center gap-1.5 text-xs text-muted">
+        <RouterLink to="/wiki" class="transition hover:text-accent">Wiki</RouterLink>
+        <span class="opacity-40">/</span>
         <CategoryBadge :category="article.category" />
-        <span class="text-xs text-muted">Updated {{ fmtDate(article.updated_at) }}</span>
-      </div>
+      </nav>
+      <!-- Umfang und Lesezeit ordnen den Artikel ein, bevor man ihn liest. Fehlen sie (leerer
+           Artikel), fällt der Punkt mit weg statt eine Null zu behaupten. -->
+      <p class="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+        <span>Updated {{ fmtDate(article.updated_at) }}</span>
+        <template v-if="readingStats">
+          <span class="opacity-40">·</span>
+          <span class="tabular-nums">{{ readingStats.words.toLocaleString('en-US') }} words</span>
+          <span class="opacity-40">·</span>
+          <span>{{ readingStats.label }}</span>
+        </template>
+      </p>
       <h1 class="text-3xl font-bold tracking-tight text-ink">{{ article.title }}</h1>
       <p v-if="article.summary" class="mt-2 text-lg text-muted">{{ article.summary }}</p>
 
