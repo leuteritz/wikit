@@ -1,8 +1,8 @@
 <script setup>
 // Wiki-Index: Artikel nach Kategorie gruppiert, mit Inline-Filter. Gruppierungslogik
 // wie zuvor (useArticles als Store) – nur die Darstellung folgt dem neuen Design.
-import { ref, computed, onMounted } from 'vue'
-import { RouterLink } from 'vue-router'
+import { ref, computed, onMounted, watch } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useArticles } from '../composables/useArticles.js'
 import BusyState from '../components/BusyState.vue'
 import WikiRelationGraph from '../components/WikiRelationGraph.vue'
@@ -56,8 +56,6 @@ function tagWeight(count) {
 // Link-Vorschlaegen im Graphen). Einmal geholt, ueberlebt er das Hin- und Herschalten.
 // „Data" steht hier und nicht unter /bot: dort geht es um die lokale KI, ein Wiki-Backup hat
 // damit nichts zu tun.
-const view = ref('list') // 'list' | 'graph' | 'health' | 'data'
-
 // Umschalter: derselbe Bestand, vier Blickwinkel – „was gibt es?", „was haengt woran?",
 // „woran muss ich ran?" und „wie sichere ich das?".
 const MODES = [
@@ -67,16 +65,46 @@ const MODES = [
   { id: 'data', icon: 'lucide:download', label: 'Data' },
 ]
 
-const graphMounted = ref(false)
-const healthMounted = ref(false)
-const dataMounted = ref(false)
+// ⚠️ Der Modus steht in der ADRESSE, nicht nur im Speicher – dieselbe Ueberlegung wie bei `/topic`
+// und `/ask`: was man ansieht, ist etwas, das man verlinkt und wiederfindet. Ohne ihn war `/wiki`
+// immer die Liste; Graph, Bericht und Data ueberlebten keinen Reload, und der Bericht (ein
+// Request ueber den GESAMTEN Bestand) musste danach neu geholt werden.
+//
+// Das geht erst, seit der `RouterView` an `route.path` haengt (s. App.vue) – mit `fullPath` waere
+// jeder Moduswechsel ein vollstaendiger Neuaufbau der Ansicht gewesen, inklusive Graph-Layout.
+const route = useRoute()
+const router = useRouter()
+const MODE_IDS = MODES.map((m) => m.id)
+const initialView = MODE_IDS.includes(String(route.query.view)) ? String(route.query.view) : 'list'
+const view = ref(initialView) // 'list' | 'graph' | 'health' | 'data'
+
+const graphMounted = ref(initialView === 'graph')
+const healthMounted = ref(initialView === 'health')
+const dataMounted = ref(initialView === 'data')
 
 function setView(next) {
   if (next === 'graph') graphMounted.value = true
   if (next === 'health') healthMounted.value = true
   if (next === 'data') dataMounted.value = true
   view.value = next
+  // `replace`, nicht `push`: durch vier Modi zu schalten soll nicht heissen, dass der
+  // Zurueck-Knopf danach viermal gedrueckt werden muss (gleiche Regel wie im Fassungsvergleich).
+  // Die Liste ist der Normalfall und braucht keinen Parameter.
+  const q = { ...route.query }
+  if (next === 'list') delete q.view
+  else q.view = next
+  router.replace({ query: q })
 }
+
+// Ein Modus kann auch von aussen kommen (ein Link, der Zurueck-Knopf) – ohne diesen Watcher
+// bliebe die Ansicht stehen, waehrend die Adresse etwas anderes behauptet.
+watch(
+  () => route.query.view,
+  (v) => {
+    const next = MODE_IDS.includes(String(v)) ? String(v) : 'list'
+    if (next !== view.value) setView(next)
+  },
+)
 
 onMounted(async () => {
   await load()

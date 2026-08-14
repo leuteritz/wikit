@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../lib/api.js'
 import { isTypingTarget } from '../lib/shortcuts.js'
+import { forgetArticle, rememberArticle } from '../lib/recentArticles.js'
 import { useArticles } from '../composables/useArticles.js'
 import ArticleView from '../components/ArticleView.vue'
 import BusyState from '../components/BusyState.vue'
@@ -22,6 +23,10 @@ const startedAt = ref(Date.now())
 onMounted(async () => {
   try {
     article.value = await api.getArticle(props.slug)
+    // ⚠️ Erst NACH dem erfolgreichen Laden gemerkt: ein Slug, der 404 liefert, ist kein Ort, an
+    // dem jemand war – er stuende sonst als Chip in der Liste und fuehrte beim Klick wieder ins
+    // Leere. Aus demselben Grund der Titel vom Server und nicht aus der Adresse.
+    rememberArticle(article.value.slug, article.value.title)
     // Verknuepfte Java-Klasse laden (404 = keine -> still ignorieren).
     try {
       javaFile.value = await api.getJavaFileByArticle(article.value.id)
@@ -54,6 +59,8 @@ async function refresh() {
 async function onDelete(a) {
   if (!confirm(`Really delete article “${a.title}”?`)) return
   await remove(a.id)
+  // Ein geloeschter Artikel gehoert nicht mehr in „zuletzt gelesen": der Chip fuehrte ins Leere.
+  forgetArticle(a.slug)
   router.push('/')
 }
 

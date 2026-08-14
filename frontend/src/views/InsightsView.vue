@@ -14,7 +14,7 @@
 // Jede Zeile ist ein Absprung: der Bericht endet nicht bei der Erkenntnis, sondern an der Stelle,
 // an der man etwas tun kann (`/code` mit der Klasse bzw. dem Package im Bild).
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useInsights } from '../composables/useInsights.js'
 import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { useJavaGraph } from '../composables/useJavaGraph.js'
@@ -38,6 +38,7 @@ import { copyToClipboard, downloadText, BIG_CLIPBOARD_BYTES } from '../lib/clipb
 import { formatBytes } from '../lib/format.js'
 
 const router = useRouter()
+const route = useRoute()
 const { data, loading, ensure, reload, byFileId } = useInsights()
 const { lastFileId, lastPackage, files, fetchFiles } = useJavaAnalyzer()
 const { edges, fetchEdges } = useJavaGraph()
@@ -269,7 +270,30 @@ const DRIVER = {
   coupling: { label: 'coupling', hint: 'Many classes hang on it — narrow what it exposes, or split it in two.' },
   churn: { label: 'churn', hint: 'Heavy AND touched often — the most expensive combination, and the one that pays back first.' },
 }
-const tab = ref('overview')
+// ⚠️ Der Reiter steht in der ADRESSE. Zehn Reiter, und keiner war verlinkbar: „sieh dir die
+// Zyklen an" liess sich nicht schicken, ein Reload landete wieder auf der Übersicht, und wer aus
+// `/code` zurückkam, fing von vorn an. `/topic` und `/ask` lösen es längst – hier fehlte es.
+//
+// Möglich erst, seit der `RouterView` an `route.path` hängt (s. App.vue): mit `fullPath` hätte
+// jeder Reiterwechsel die Ansicht neu aufgebaut und den Bericht neu geholt.
+const TAB_IDS = TABS.map((t) => t.id)
+const tab = ref(TAB_IDS.includes(String(route.query.tab)) ? String(route.query.tab) : 'overview')
+watch(tab, (next) => {
+  const q = { ...route.query }
+  // Die Übersicht ist der Normalfall und braucht keinen Parameter – `/insights` bleibt `/insights`.
+  if (next === 'overview') delete q.tab
+  else q.tab = next
+  // `replace`: durch zehn Reiter zu blättern soll den Zurück-Knopf nicht zehnmal belegen.
+  router.replace({ query: q })
+})
+watch(
+  () => route.query.tab,
+  (v) => {
+    const next = TAB_IDS.includes(String(v)) ? String(v) : 'overview'
+    if (next !== tab.value) tab.value = next
+  },
+)
+
 // Der Erklärblock trägt das Icon des offenen Reiters – EINE Quelle (`TABS`), damit Leiste und Block
 // nicht auseinanderlaufen, wenn dort einmal ein anderes Symbol steht.
 const tabMeta = computed(() => TABS.find((t) => t.id === tab.value) || TABS[0])

@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.47.0",
-  "whatsNew": "See if a bundle fits your context window",
+  "version": "4.48.0",
+  "whatsNew": "Home shows where you were and what is open",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",
