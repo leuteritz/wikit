@@ -203,7 +203,7 @@ defineExpose({ run })
     <!-- Eingabe --------------------------------------------------------------->
     <div class="flex min-w-0 flex-col">
       <div class="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <p class="font-mono text-2xs uppercase tracking-[0.14em] text-muted">Prompt</p>
+        <p class="font-mono text-2xs uppercase tracking-[0.12em] text-muted">Prompt</p>
         <span class="ml-auto flex flex-wrap items-center gap-1">
           <span class="font-mono text-3xs text-muted">fill with:</span>
           <button
@@ -260,7 +260,7 @@ defineExpose({ run })
     <!-- Ausgabe --------------------------------------------------------------->
     <div class="flex min-w-0 flex-col">
       <div class="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <p class="font-mono text-2xs uppercase tracking-[0.14em] text-muted">Answer</p>
+        <p class="font-mono text-2xs uppercase tracking-[0.12em] text-muted">Answer</p>
         <span v-if="running || elapsed" class="ml-auto font-mono text-3xs tabular-nums text-muted">
           {{ ms(elapsed) }}<span v-if="tokenCount"> · {{ tokenCount }} chunks</span>
         </span>

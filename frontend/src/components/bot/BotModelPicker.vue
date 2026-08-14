@@ -34,7 +34,7 @@ function isActive(name, active) {
 <template>
   <div>
     <div class="mb-2.5 flex flex-wrap items-center justify-between gap-2">
-      <p class="font-mono text-2xs uppercase tracking-[0.14em] text-muted">
+      <p class="font-mono text-2xs uppercase tracking-[0.12em] text-muted">
         Installed on {{ host || 'the server' }}
       </p>
       <button

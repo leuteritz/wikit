@@ -10,6 +10,8 @@ import WikiHealth from '../components/WikiHealth.vue'
 import WikiData from '../components/WikiData.vue'
 import SectionLabel from '../components/ui/SectionLabel.vue'
 import Button from '../components/ui/Button.vue'
+import EmptyState from '../components/ui/EmptyState.vue'
+import Tabs from '../components/ui/Tabs.vue'
 import { categoryColors, colorFor } from '../lib/wikiGraph.js'
 import { api } from '../lib/api.js'
 import { Icon } from '../lib/icons.js'
@@ -42,6 +44,16 @@ const shownTags = computed(() => (allTags.value ? tags.value : tags.value.slice(
 // „Data" steht hier und nicht unter /bot: dort geht es um die lokale KI, ein Wiki-Backup hat
 // damit nichts zu tun.
 const view = ref('list') // 'list' | 'graph' | 'health' | 'data'
+
+// Umschalter: derselbe Bestand, vier Blickwinkel – „was gibt es?", „was haengt woran?",
+// „woran muss ich ran?" und „wie sichere ich das?".
+const MODES = [
+  { id: 'list', icon: 'lucide:list', label: 'List' },
+  { id: 'graph', icon: 'lucide:network', label: 'Graph' },
+  { id: 'health', icon: 'lucide:activity', label: 'Health' },
+  { id: 'data', icon: 'lucide:download', label: 'Data' },
+]
+
 const graphMounted = ref(false)
 const healthMounted = ref(false)
 const dataMounted = ref(false)
@@ -110,7 +122,7 @@ const groups = computed(() => {
     <!-- Kopf -->
     <div class="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <p class="mb-2 font-mono text-3xs font-semibold tracking-[0.16em] text-muted">KNOWLEDGE BASE</p>
+        <SectionLabel class="mb-2">Knowledge base</SectionLabel>
         <h1 class="font-mono text-3xl font-semibold tracking-tight text-ink">Wiki</h1>
         <p class="mt-2 text-[0.8125rem] text-muted">
           <span class="font-mono font-semibold text-ink">{{ articles.length }}</span> articles ·
@@ -120,27 +132,13 @@ const groups = computed(() => {
       <div class="flex items-center gap-2">
         <!-- Umschalter: derselbe Bestand, vier Blickwinkel – „was gibt es?", „was haengt woran?",
              „woran muss ich ran?" und „wie sichere ich das?". -->
-        <div class="flex items-center rounded-lg border border-line p-0.5">
-          <button
-            v-for="m in [
-              { key: 'list', icon: 'lucide:list', label: 'List' },
-              { key: 'graph', icon: 'lucide:network', label: 'Graph' },
-              { key: 'health', icon: 'lucide:activity', label: 'Health' },
-              { key: 'data', icon: 'lucide:download', label: 'Data' },
-            ]"
-            :key="m.key"
-            type="button"
-            class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 font-mono text-3xs font-semibold transition"
-            :class="view === m.key
-              ? 'bg-accent-soft text-accent'
-              : 'text-muted hover:text-ink'"
-            :aria-pressed="view === m.key"
-            @click="setView(m.key)"
-          >
-            <Icon :icon="m.icon" class="h-3.5 w-3.5" />
-            {{ m.label }}
-          </button>
-        </div>
+        <Tabs
+          :model-value="view"
+          :tabs="MODES"
+          variant="segmented"
+          aria-label="Wiki modes"
+          @update:model-value="setView"
+        />
         <Button to="/new" variant="primary" icon="lucide:plus">New article</Button>
       </div>
     </div>
@@ -242,12 +240,25 @@ const groups = computed(() => {
         </div>
       </section>
 
-      <p
-        v-if="!groups.length"
-        class="rounded-lg border border-dashed border-line px-4 py-11 text-center font-mono text-[0.8125rem] text-muted"
+      <!-- ⚠️ ZWEI Fälle, und sie brauchen verschiedene Antworten: ein leerer Bestand fehlt an
+           einem Anfang, eine leere Trefferliste an einer engeren Frage. Vorher stand hier für
+           beide derselbe Satz – bei frischer Installation also wörtlich „no articles match “””. -->
+      <EmptyState
+        v-if="!groups.length && !articles.length"
+        icon="lucide:file-plus"
+        title="No articles yet"
+        hint="A wiki article holds what the code cannot say — why something works the way it does."
       >
-        no articles match “{{ filter }}”.
-      </p>
+        <Button to="/new" variant="primary" size="xs" icon="lucide:plus">Write the first one</Button>
+      </EmptyState>
+      <EmptyState
+        v-else-if="!groups.length"
+        icon="lucide:search-x"
+        :title="`Nothing matches “${filter}”`"
+        hint="The filter looks at titles, summaries and tags."
+      >
+        <Button size="xs" icon="lucide:x" @click="filter = ''">Clear the filter</Button>
+      </EmptyState>
     </div>
   </div>
 </template>

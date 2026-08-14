@@ -19,6 +19,10 @@ import { useInsights } from '../composables/useInsights.js'
 import { useJavaAnalyzer } from '../composables/useJavaAnalyzer.js'
 import { useJavaGraph } from '../composables/useJavaGraph.js'
 import BusyState from '../components/BusyState.vue'
+import Button from '../components/ui/Button.vue'
+import PageHeader from '../components/ui/PageHeader.vue'
+import PageShell from '../components/ui/PageShell.vue'
+import Tabs from '../components/ui/Tabs.vue'
 import ArchRules from '../components/insights/ArchRules.vue'
 import CyclePlan from '../components/insights/CyclePlan.vue'
 import DriftReport from '../components/insights/DriftReport.vue'
@@ -60,6 +64,24 @@ const TABS = [
   // bis hierher keiner.
   { id: 'whatif', label: 'What if', icon: 'lucide:git-fork', hint: 'Try a refactoring on paper — and see what it would do to everything else' },
 ]
+
+// Die Reiter mit ihren Zahlen. ⚠️ ZWEI Arten Zahl, und sie meinen Verschiedenes:
+//   * Cycles = BEFUND – etwas stimmt nicht, also die Warnfarbe.
+//   * What if = ARBEITSSTAND – „drei Eingriffe vorgemerkt" steht nichts schief, also neutral.
+// Und beide FEHLEN bei 0, statt eine Null zu zeigen (gleiche Regel wie die Topic-Zahl in der
+// Sidebar): eine Null wäre die Behauptung, hier fehle etwas.
+const tabsWithCounts = computed(() =>
+  TABS.map((t) => {
+    if (t.id === 'cycles') {
+      const n = totals.value ? totals.value.classCycles + totals.value.packageCycles : 0
+      return n ? { ...t, badge: n, badgeTone: 'danger' } : t
+    }
+    if (t.id === 'whatif' && stagedCount.value) {
+      return { ...t, badge: stagedCount.value, badgeTone: 'accent' }
+    }
+    return t
+  }),
+)
 
 // --- Was jeder Reiter beantwortet ---------------------------------------------------------------
 // ⚠️ Ohne diese Sätze ist die Ansicht ein Zahlenfeld für Leute, die Martins Metriken schon kennen.
@@ -700,75 +722,37 @@ const plotted = computed(() => {
 <template>
   <div class="flex h-full min-h-0 flex-col">
     <!-- ======================= Kopfzeile ======================= -->
-    <header
-      class="sticky top-0 z-20 border-b border-line bg-surface/95 px-5 py-3 backdrop-blur"
-    >
-      <div class="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-4 gap-y-2">
-        <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
-          <Icon icon="lucide:activity" class="h-5 w-5" />
-        </span>
-        <div class="min-w-0">
-          <h1 class="font-mono text-base font-semibold tracking-tight text-ink">Insights</h1>
-          <p class="truncate text-2xs text-muted">
-            <template v-if="totals">
-              {{ num(totals.classes) }} classes · {{ num(totals.packages) }} packages ·
-              {{ num(totals.relations) }} relations
-            </template>
-            <template v-else>What the codebase does not tell you by reading it</template>
-          </p>
-        </div>
+    <PageHeader icon="lucide:activity" title="Insights">
+      <template #meta>
+        <template v-if="totals">
+          <span>
+            {{ num(totals.classes) }} classes · {{ num(totals.packages) }} packages ·
+            {{ num(totals.relations) }} relations
+          </span>
+        </template>
+        <template v-else><span>What the codebase does not tell you by reading it</span></template>
+      </template>
 
-        <div class="ml-auto flex items-center gap-2">
-          <button
-            v-tip="'Recompute every metric from the current data'"
-            type="button"
-            class="inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1.5 text-xs font-medium text-muted transition hover:border-line-strong hover:text-ink disabled:opacity-40"
-            :disabled="loading"
-            @click="refresh"
-          >
-            <Icon :icon="loading ? 'lucide:loader-2' : 'lucide:refresh-cw'" class="h-3.5 w-3.5" :class="loading ? 'animate-spin' : ''" />
-            Refresh
-          </button>
-        </div>
-      </div>
-
-      <nav class="mx-auto mt-3 flex w-full max-w-6xl flex-wrap gap-1">
-        <button
-          v-for="t in TABS"
-          :key="t.id"
-          v-tip="t.hint"
-          type="button"
-          class="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition"
-          :class="tab === t.id
-            ? 'border-accent bg-accent-soft text-accent'
-            : 'border-transparent text-muted hover:bg-surface-offset'"
-          @click="tab = t.id"
+      <template #actions>
+        <Button
+          v-tip="'Recompute every metric from the current data'"
+          size="xs"
+          icon="lucide:refresh-cw"
+          :busy="loading"
+          busy-label="Refreshing…"
+          @click="refresh"
         >
-          <Icon :icon="t.icon" class="h-3.5 w-3.5" />
-          {{ t.label }}
-          <span
-            v-if="t.id === 'cycles' && totals && (totals.classCycles || totals.packageCycles)"
-            class="rounded bg-danger/15 px-1 font-mono text-3xs text-danger"
-          >
-            {{ totals.classCycles + totals.packageCycles }}
-          </span>
-          <!-- ⚠️ Ein ARBEITSSTAND, kein Befund – deshalb die neutrale Akzentfarbe und keine
-               Warnfarbe: „drei Eingriffe vorgemerkt" ist nichts, was schiefsteht. Und deshalb
-               fehlt die Zahl bei leerer Liste ganz (gleiche Regel wie die Topic-Zahl in der
-               Sidebar): eine „0" wäre die Behauptung, hier fehle etwas. -->
-          <span
-            v-else-if="t.id === 'whatif' && stagedCount"
-            class="rounded bg-accent-soft px-1 font-mono text-3xs text-accent"
-          >
-            {{ stagedCount }}
-          </span>
-        </button>
-      </nav>
-    </header>
+          Refresh
+        </Button>
+      </template>
+
+      <template #tabs>
+        <Tabs v-model="tab" :tabs="tabsWithCounts" aria-label="Insights sections" />
+      </template>
+    </PageHeader>
 
     <!-- ======================= Inhalt ======================= -->
-    <div class="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-      <div class="mx-auto w-full max-w-6xl">
+    <PageShell>
         <BusyState
           v-if="!data"
           variant="panel"
@@ -1880,8 +1864,7 @@ const plotted = computed(() => {
                hier, weil sie längst geladen sind; die Beziehungen holt er sich selbst. -->
           <WhatIf v-else :classes="classes" :packages="packages" @open-class="openClass" />
         </template>
-      </div>
-    </div>
+    </PageShell>
   </div>
 </template>
 

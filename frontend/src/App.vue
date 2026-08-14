@@ -7,6 +7,7 @@ import { sidebarShortcuts, keyChips, isTypingTarget } from './lib/shortcuts.js'
 import NotificationHost from './components/NotificationHost.vue'
 import ActivityCard from './components/ActivityCard.vue'
 import ActivityModal from './components/ActivityModal.vue'
+import SectionLabel from './components/ui/SectionLabel.vue'
 import { useArticles } from './composables/useArticles.js'
 import { useJavaAnalyzer } from './composables/useJavaAnalyzer.js'
 import { useJavaQueue } from './composables/useJavaQueue.js'
@@ -301,11 +302,11 @@ function isActive(to) {
       >
         <Icon icon="lucide:search" class="h-4 w-4 shrink-0" />
         <span class="hidden flex-1 truncate text-left text-[0.78125rem] lg:inline">Search…</span>
-        <kbd class="ml-auto hidden shrink-0 rounded border border-line px-1.5 py-0.5 font-mono text-[0.59375rem] tracking-wide text-muted lg:inline">Ctrl K</kbd>
+        <kbd class="ml-auto hidden shrink-0 rounded border border-line px-1.5 py-0.5 font-mono text-4xs tracking-wide text-muted lg:inline">Ctrl K</kbd>
       </button>
 
       <!-- Navigation -->
-      <p class="hidden px-2 pb-2 font-mono text-[0.59375rem] font-semibold tracking-[0.16em] text-muted lg:block">NAVIGATE</p>
+      <SectionLabel class="hidden px-2 pb-2 lg:block">Navigate</SectionLabel>
       <nav class="flex flex-col gap-1">
         <RouterLink
           v-for="link in navLinks"
@@ -382,14 +383,14 @@ function isActive(to) {
       <div class="mb-3 hidden lg:block">
         <button
           type="button"
-          class="mb-1.5 flex w-full items-center gap-1.5 px-2 font-mono text-[0.59375rem] font-semibold tracking-[0.16em] text-muted transition hover:text-ink"
+          class="mb-1.5 flex w-full items-center gap-1.5 px-2 font-mono text-4xs font-semibold uppercase tracking-[0.12em] text-muted transition hover:text-ink"
           title="Show all keyboard shortcuts (?)"
           @click="shortcutsOpen = true"
         >
           SHORTCUTS
           <!-- Die Taste steht am Einstieg, seit `help` nicht mehr in der gekuerzten Liste steht –
                sonst waere die Uebersicht nur noch mit der Maus erreichbar. -->
-          <kbd class="rounded border border-line bg-surface px-1 py-px font-mono text-[0.59375rem] font-medium text-ink">?</kbd>
+          <kbd class="rounded border border-line bg-surface px-1 py-px font-mono text-4xs font-medium text-ink">?</kbd>
           <Icon icon="lucide:arrow-up-right" class="ml-auto h-3 w-3 opacity-60" />
         </button>
         <ul class="space-y-1">
@@ -400,11 +401,11 @@ function isActive(to) {
           >
             <span class="flex shrink-0 items-center gap-1">
               <template v-for="(combo, ci) in s.keys" :key="combo">
-                <span v-if="ci > 0" class="text-[0.59375rem] opacity-70">{{ s.seq ? 'then' : '/' }}</span>
+                <span v-if="ci > 0" class="text-4xs opacity-70">{{ s.seq ? 'then' : '/' }}</span>
                 <kbd
                   v-for="chip in keyChips(combo)"
                   :key="chip"
-                  class="rounded border border-line bg-surface px-1 py-px font-mono text-[0.59375rem] font-medium text-ink"
+                  class="rounded border border-line bg-surface px-1 py-px font-mono text-4xs font-medium text-ink"
                 >{{ chip }}</kbd>
               </template>
             </span>

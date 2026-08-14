@@ -173,7 +173,7 @@ const skeletonRows = computed(() => (props.variant === 'panel' ? Math.min(Math.m
 }
 
 .busy-fade-enter-active {
-  transition: opacity 0.2s ease;
+  transition: opacity var(--dur-base) var(--ease-out);
 }
 .busy-fade-enter-from {
   opacity: 0;

@@ -135,7 +135,7 @@ function addCode() {
 
 /* --- Mount-Reveal (dezent), respektiert reduzierte Bewegung ----------------------------- */
 .reveal {
-  animation: reveal-in 0.5s ease both;
+  animation: reveal-in var(--dur-slow) var(--ease-out) both;
 }
 .reveal-delay {
   animation-delay: 0.08s;

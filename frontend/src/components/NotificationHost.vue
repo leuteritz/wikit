@@ -210,7 +210,7 @@ async function copyDetails(n) {
   border-radius: 0.375rem;
   color: var(--color-text-muted);
   opacity: 0.7;
-  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+  transition: opacity var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 .nh-btn:hover {
   opacity: 1;

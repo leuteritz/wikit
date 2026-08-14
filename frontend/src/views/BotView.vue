@@ -24,7 +24,11 @@ import BotPromptEditor from '../components/bot/BotPromptEditor.vue'
 import BotEmbedIndex from '../components/bot/BotEmbedIndex.vue'
 import BusyState from '../components/BusyState.vue'
 import Button from '../components/ui/Button.vue'
-import { Icon } from '../lib/icons.js'
+import Card from '../components/ui/Card.vue'
+import PageHeader from '../components/ui/PageHeader.vue'
+import PageShell from '../components/ui/PageShell.vue'
+import SectionLabel from '../components/ui/SectionLabel.vue'
+import Tabs from '../components/ui/Tabs.vue'
 
 const { state, dirty, dirtyPaths, status, statusLabel, load, save, revert, resetPaths, checkHealth, loadModels, getPath, setPath } =
   useBot()
@@ -153,64 +157,42 @@ watch(
 <template>
   <div class="flex h-full min-h-0 flex-col">
     <!-- ======================= Kopfzeile ======================= -->
-    <header
-      class="sticky top-0 z-20 border-b border-line bg-surface/95 px-5 py-3 backdrop-blur"
-    >
-      <div class="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-4 gap-y-2">
-        <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
-          <Icon icon="lucide:bot" class="h-5 w-5" />
+    <PageHeader icon="lucide:bot" title="Bot">
+      <template #meta>
+        <span class="flex items-center gap-1.5">
+          <span class="h-1.5 w-1.5 shrink-0 rounded-full" :style="{ background: DOT[status] }" />
+          <span class="truncate">{{ statusLabel }}</span>
         </span>
-        <div class="min-w-0">
-          <h1 class="font-mono text-base font-semibold tracking-tight text-ink">Bot</h1>
-          <p class="flex items-center gap-1.5 text-2xs text-muted">
-            <span class="h-1.5 w-1.5 shrink-0 rounded-full" :style="{ background: DOT[status] }" />
-            <span class="truncate">{{ statusLabel }}</span>
-          </p>
-        </div>
+      </template>
 
-        <div class="ml-auto flex flex-wrap items-center gap-2">
-          <!-- Der Zaehler ist die Auskunft: „3 unsaved" sagt, dass etwas aussteht UND wieviel. -->
-          <span v-if="dirty" class="font-mono text-2xs text-warning">
-            {{ dirtyPaths.length }} unsaved
-          </span>
-          <Button v-if="dirty" size="xs" @click="revert">Discard</Button>
-          <Button
-            variant="primary"
-            size="xs"
-            icon="lucide:save"
-            :busy="state.saving"
-            busy-label="Saving…"
-            :disabled="!dirty"
-            title="Save changed settings (Ctrl+S)"
-            @click="doSave"
-          >
-            Save
-          </Button>
-        </div>
-      </div>
+      <template #actions>
+        <!-- Der Zaehler ist die Auskunft: „3 unsaved" sagt, dass etwas aussteht UND wieviel. -->
+        <span v-if="dirty" class="font-mono text-2xs text-warning">
+          {{ dirtyPaths.length }} unsaved
+        </span>
+        <Button v-if="dirty" size="xs" @click="revert">Discard</Button>
+        <Button
+          variant="primary"
+          size="xs"
+          icon="lucide:save"
+          :busy="state.saving"
+          busy-label="Saving…"
+          :disabled="!dirty"
+          title="Save changed settings (Ctrl+S)"
+          @click="doSave"
+        >
+          Save
+        </Button>
+      </template>
 
       <!-- Abschnitte: beschriftet ist, was es gibt, markiert, wo man steht. -->
-      <nav class="mx-auto mt-3 flex w-full max-w-6xl flex-wrap gap-1">
-        <button
-          v-for="t in TABS"
-          :key="t.id"
-          type="button"
-          class="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition"
-          :class="tab === t.id
-            ? 'border-accent bg-accent-soft text-accent'
-            : 'border-transparent text-muted hover:bg-surface-offset'"
-          :title="t.hint"
-          @click="tab = t.id"
-        >
-          <Icon :icon="t.icon" class="h-3.5 w-3.5" />
-          {{ t.label }}
-        </button>
-      </nav>
-    </header>
+      <template #tabs>
+        <Tabs v-model="tab" :tabs="TABS" aria-label="Bot settings" />
+      </template>
+    </PageHeader>
 
     <!-- ======================= Inhalt ======================= -->
-    <div class="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-      <div class="mx-auto w-full max-w-6xl">
+    <PageShell>
         <BusyState
           v-if="!state.loaded"
           variant="panel"
@@ -232,8 +214,8 @@ watch(
               @check="checkHealth({ useDraft: true })"
             />
 
-            <section class="rounded-xl border border-line bg-surface-2 p-4">
-              <h2 class="mb-3 font-mono text-2xs uppercase tracking-[0.14em] text-muted">Server</h2>
+            <Card as="section">
+              <SectionLabel as="h2" size="2xs" class="mb-3">Server</SectionLabel>
               <div class="space-y-4">
                 <BotField
                   v-for="f in fieldsOf('connection')"
@@ -246,10 +228,10 @@ watch(
                   @update:model-value="updateField(f.path, $event)"
                 />
               </div>
-            </section>
+            </Card>
 
-            <section class="rounded-xl border border-line bg-surface-2 p-4">
-              <h2 class="mb-3 font-mono text-2xs uppercase tracking-[0.14em] text-muted">Model catalog</h2>
+            <Card as="section">
+              <SectionLabel as="h2" size="2xs" class="mb-3">Model catalog</SectionLabel>
               <BotModelPicker
                 :models="state.models"
                 :active="draft.model"
@@ -259,7 +241,7 @@ watch(
                 @select="pickModel"
                 @refresh="loadModels(draft.host)"
               />
-            </section>
+            </Card>
 
             <!-- Der Bedeutungsindex gehoert unter das Modell, das ihn erzeugt: ein Modellwechsel
                  macht jeden gespeicherten Vektor ungueltig, und diese Folge muss dort stehen, wo
@@ -269,8 +251,8 @@ watch(
 
           <!-- ---------------- Generation ---------------- -->
           <div v-show="tab === 'generation'" class="space-y-5">
-            <section class="rounded-xl border border-line bg-surface-2 p-4">
-              <h2 class="mb-1 font-mono text-2xs uppercase tracking-[0.14em] text-muted">Sampling</h2>
+            <Card as="section">
+              <SectionLabel as="h2" size="2xs" class="mb-1">Sampling</SectionLabel>
               <p class="mb-3.5 text-2xs text-muted">
                 Everything on <span class="font-mono">auto</span> is left to the model — that option is not sent at all.
               </p>
@@ -285,10 +267,10 @@ watch(
                   @update:model-value="updateField(f.path, $event)"
                 />
               </div>
-            </section>
+            </Card>
 
-            <section class="rounded-xl border border-line bg-surface-2 p-4">
-              <h2 class="mb-1 font-mono text-2xs uppercase tracking-[0.14em] text-muted">Queue</h2>
+            <Card as="section">
+              <SectionLabel as="h2" size="2xs" class="mb-1">Queue</SectionLabel>
               <p class="mb-3.5 text-2xs text-muted">
                 How the background analysis works through classes. Applies to a running queue as well.
               </p>
@@ -303,13 +285,13 @@ watch(
                   @update:model-value="updateField(f.path, $event)"
                 />
               </div>
-            </section>
+            </Card>
           </div>
 
           <!-- ---------------- Prompts ---------------- -->
           <div v-show="tab === 'prompts'" class="space-y-5">
-            <section class="rounded-xl border border-line bg-surface-2 p-4">
-              <h2 class="mb-3 font-mono text-2xs uppercase tracking-[0.14em] text-muted">Project context</h2>
+            <Card as="section">
+              <SectionLabel as="h2" size="2xs" class="mb-3">Project context</SectionLabel>
               <BotField
                 v-for="f in fieldsOf('context')"
                 :key="f.path"
@@ -319,10 +301,10 @@ watch(
                 :overridden="state.overrides.includes(f.path)"
                 @update:model-value="updateField(f.path, $event)"
               />
-            </section>
+            </Card>
 
-            <section class="rounded-xl border border-line bg-surface-2 p-4">
-              <h2 class="mb-1 font-mono text-2xs uppercase tracking-[0.14em] text-muted">Templates</h2>
+            <Card as="section">
+              <SectionLabel as="h2" size="2xs" class="mb-1">Templates</SectionLabel>
               <p class="mb-3.5 text-2xs text-muted">
                 What Wikit actually sends. Placeholders in braces are replaced before the request — the
                 <span class="font-mono">Playground</span> tab renders them with a sample class.
@@ -337,13 +319,13 @@ watch(
                 @update="updatePrompt"
                 @reset="resetPrompt"
               />
-            </section>
+            </Card>
           </div>
 
           <!-- ---------------- Wiki ---------------- -->
           <div v-show="tab === 'wiki'" class="space-y-5">
-            <section class="rounded-xl border border-line bg-surface-2 p-4">
-              <h2 class="mb-1 font-mono text-2xs uppercase tracking-[0.14em] text-muted">Version history</h2>
+            <Card as="section">
+              <SectionLabel as="h2" size="2xs" class="mb-1">Version history</SectionLabel>
               <p class="mb-3.5 text-2xs text-muted">
                 Every article keeps its earlier text. Nothing here reaches Ollama — the status dot above
                 does not apply.
@@ -366,14 +348,14 @@ watch(
                 Lowering this drops the surplus versions the next time an article is saved — oldest
                 first, and it cannot be undone.
               </p>
-            </section>
+            </Card>
           </div>
 
           <!-- ---------------- Playground ---------------- -->
           <div v-show="tab === 'playground'">
-            <section class="rounded-xl border border-line bg-surface-2 p-4">
+            <Card as="section">
               <BotPlayground ref="playground" :draft="draft" :prompts="draft.prompts" :dirty="dirty" />
-            </section>
+            </Card>
           </div>
 
           <!-- Der Weg zurueck auf Werkseinstellung steht unten, nicht in der Kopfzeile: er ist
@@ -398,7 +380,6 @@ watch(
             </p>
           </div>
         </template>
-      </div>
-    </div>
+    </PageShell>
   </div>
 </template>

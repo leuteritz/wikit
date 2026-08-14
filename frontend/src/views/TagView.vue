@@ -15,6 +15,8 @@ import { useArticles } from '../composables/useArticles.js'
 import BusyState from '../components/BusyState.vue'
 import CategoryBadge from '../components/CategoryBadge.vue'
 import SectionLabel from '../components/ui/SectionLabel.vue'
+import Button from '../components/ui/Button.vue'
+import EmptyState from '../components/ui/EmptyState.vue'
 import { Icon } from '../lib/icons.js'
 
 const props = defineProps({ name: { type: String, required: true } })
@@ -46,7 +48,7 @@ const neighbours = computed(() => {
 <template>
   <div class="mx-auto w-full max-w-5xl px-6 py-9 sm:px-8">
     <div class="mb-7">
-      <SectionLabel class="mb-2">TAG</SectionLabel>
+      <SectionLabel class="mb-2">Tag</SectionLabel>
       <h1 class="font-mono text-3xl font-semibold tracking-tight text-ink">#{{ name }}</h1>
       <p class="mt-2 text-[0.8125rem] text-muted">
         <span class="font-mono font-semibold text-ink">{{ matches.length }}</span>
@@ -59,13 +61,14 @@ const neighbours = computed(() => {
     <!-- Ein Schlagwort ohne Artikel heißt fast immer: es steht so nicht im Bestand (Tippfehler im
          Link, oder der letzte Artikel damit ist weg). Das gehört gesagt, statt eine leere Liste
          zu zeigen. -->
-    <div
+    <EmptyState
       v-else-if="!matches.length"
-      class="rounded-lg border border-dashed border-line px-4 py-11 text-center font-mono text-[0.8125rem] text-muted"
+      icon="lucide:tag"
+      :title="`No article carries “${name}”`"
+      hint="Most likely a typo in a link, or the last article with this tag is gone."
     >
-      No article carries the tag “{{ name }}”.
-      <RouterLink to="/wiki" class="ml-1 text-accent underline-offset-2 hover:underline">Back to the wiki</RouterLink>
-    </div>
+      <Button to="/wiki" size="xs" icon="lucide:arrow-left">Back to the wiki</Button>
+    </EmptyState>
 
     <template v-else>
       <div class="grid gap-3" style="grid-template-columns: repeat(auto-fill, minmax(258px, 1fr))">

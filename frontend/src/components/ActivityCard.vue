@@ -237,7 +237,7 @@ const hint = computed(() => {
   @apply text-muted;
 }
 .act-title {
-  @apply min-w-0 flex-1 truncate font-mono text-[0.59375rem] font-semibold uppercase tracking-[0.14em];
+  @apply min-w-0 flex-1 truncate font-mono text-4xs font-semibold uppercase tracking-[0.12em];
 }
 .act-pct {
   @apply shrink-0 font-mono text-2xs font-semibold tabular-nums;
@@ -309,7 +309,7 @@ const hint = computed(() => {
    Beim Ueberfahren tritt es hervor; dauerhaft kraeftig waere es ein zweites Bedienelement in einer
    Karte, die selbst schon eines ist. */
 .act-more {
-  @apply mt-2 flex items-center justify-end gap-1 border-t border-line px-0.5 pt-1.5 font-mono text-[0.59375rem] font-semibold uppercase tracking-[0.12em] text-muted opacity-60 transition;
+  @apply mt-2 flex items-center justify-end gap-1 border-t border-line px-0.5 pt-1.5 font-mono text-4xs font-semibold uppercase tracking-[0.12em] text-muted opacity-60 transition;
 }
 .act-card:hover .act-more {
   @apply text-accent opacity-100;

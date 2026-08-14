@@ -102,7 +102,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onEscape))
    ohne Uebergang liest sich wie ein Sprung, nicht wie „hier ist jetzt etwas". */
 .wk-modal-enter-active,
 .wk-modal-leave-active {
-  transition: opacity 0.18s ease;
+  transition: opacity var(--dur-base) var(--ease-out);
 }
 .wk-modal-enter-from,
 .wk-modal-leave-to {
@@ -110,7 +110,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onEscape))
 }
 .wk-modal-enter-active .wk-modal-card,
 .wk-modal-leave-active .wk-modal-card {
-  transition: transform 0.18s ease, opacity 0.18s ease;
+  transition: transform var(--dur-base) var(--ease-out), opacity var(--dur-base) var(--ease-out);
 }
 .wk-modal-enter-from .wk-modal-card,
 .wk-modal-leave-to .wk-modal-card {

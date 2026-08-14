@@ -31,6 +31,7 @@
   /* Micro-Stufen unterhalb von text-xs (0.75rem). Die App braucht sie fuer Badges, Meta-Zeilen
      und Chips – vorher standen dort ueberall feste Pixelwerte (`text-[10px]` &c.), die
      bei der Root-Skalierung unten NICHT mitgewachsen waeren. Als rem-Tokens skalieren sie mit. */
+  --text-4xs: 0.59375rem; /* 9.5px bei 16px-Root – Overlines, Nav-Label */
   --text-3xs: 0.625rem;  /* 10px bei 16px-Root */
   --text-2xs: 0.6875rem; /* 11px bei 16px-Root */
 
@@ -253,6 +254,40 @@ html.dark {
 @utility elev-3 { box-shadow: var(--elev-3); }
 @utility elev-4 { box-shadow: var(--elev-4); }
 
+/* --- Bewegung: drei Dauern, eine Kurve ------------------------------------------------------- *
+ * Es gab sechs Werte fuer „schnell": 0.12s (Tooltip), 0.15s (Kante), 0.18s (Modal), 0.2s
+ * (Busy-Einblendung), 0.5s (Landing-Reveal) und Tailwinds unausgesprochene 150ms an jedem nackten
+ * `transition`. Keiner davon war falsch – aber sechs Zahlen fuer dieselbe Empfindung heissen, dass
+ * die Anwendung an sechs Stellen verschieden schnell ist, ohne dass irgendwo steht, warum.
+ *
+ * Die Stufen bedeuten:
+ *   --dur-fast  ... eine Antwort auf den Zeiger (Hover, Fokus, Chip, Tooltip)
+ *   --dur-base  ... etwas erscheint oder verschwindet (Modal, Panel, Einblendung)
+ *   --dur-slow  ... etwas kommt von weiter her (Landing-Reveal, Slide-over)
+ *
+ * ⚠️ In `:root`, nicht in `@theme`: dieselbe Falle wie oben bei den Schatten – Tailwind setzte
+ * `--duration-*` zur Bauzeit ein, und `var()` in scoped CSS erreichte den Wert dann nicht mehr.
+ * Hier bleibt der Verweis stehen und gilt auch in `<style scoped>`.
+ *
+ * `--ease-out` ist das Standard-Ausklingen: schnell los, weich an. Wo etwas WEGgeht, ist
+ * `ease-in` richtig – dafuer gibt es keinen Token, das ist die Ausnahme und steht am Ort. */
+:root {
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 320ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* Wer keine Bewegung will, bekommt keine – und zwar an EINER Stelle fuer alles, was diese Tokens
+   benutzt. Die einzelnen `prefers-reduced-motion`-Bloecke in den Komponenten bleiben trotzdem:
+   sie decken Keyframes ab, die nicht ueber eine Dauer laufen (Blinken, Wandern, Pulsieren). */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-base: 0ms;
+    --dur-slow: 0ms;
+  }
+}
+
 /* --- Typografischer Massstab: EINE Stellschraube fuer die ganze App ---------------------------
  * Alle Groessen (Schrift, Abstaende, Radien der Tailwind-Utilities) haengen an rem, also an der
  * Root-Schriftgroesse. Statt eines festen Wertes waechst sie mit der Viewport-Breite: auf einem
@@ -367,7 +402,7 @@ body {
   pointer-events: none; /* der Hinweis darf den Klick auf den Knopf nie abfangen */
   opacity: 0;
   transform: translateY(-2px);
-  transition: opacity 0.12s ease, transform 0.12s ease;
+  transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
 }
 .tip[data-side='above'] {
   transform: translateY(2px);
@@ -729,7 +764,7 @@ mark {
 .shiki .vh-token {
   cursor: pointer;
   border-radius: 3px;
-  transition: background-color 0.12s ease;
+  transition: background-color var(--dur-fast) var(--ease-out);
 }
 .shiki .vh-token:hover {
   text-decoration: underline;
@@ -828,7 +863,7 @@ mark {
 
 /* Weiche Ueberblendung von Farbe/Staerke beim (De-)Aktivieren des Call-Highlights. */
 .vue-flow__edge .vue-flow__edge-path {
-  transition: stroke 0.15s ease, stroke-width 0.15s ease;
+  transition: stroke var(--dur-fast) var(--ease-out), stroke-width var(--dur-fast) var(--ease-out);
 }
 
 /* „Aufleuchtende" Call-Edge: gesetzt, wenn im Code-Tab ein passender Methodenname angeklickt wird

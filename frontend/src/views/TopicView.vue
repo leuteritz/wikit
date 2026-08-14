@@ -55,6 +55,8 @@ import {
 import BusyState from '../components/BusyState.vue'
 import { Icon } from '../lib/icons.js'
 import Button from '../components/ui/Button.vue'
+import EmptyState from '../components/ui/EmptyState.vue'
+import PageHeader from '../components/ui/PageHeader.vue'
 import { vTip } from '../lib/tooltip.js'
 
 const route = useRoute()
@@ -1174,21 +1176,15 @@ onUnmounted(() => {
 <template>
   <div class="flex h-full min-h-0 flex-col">
     <!-- ======================= Kopfzeile ======================= -->
-    <header class="sticky top-0 z-20 border-b border-line bg-surface/95 px-5 py-3 backdrop-blur">
-      <div class="mx-auto flex w-full max-w-7xl flex-wrap items-center gap-x-4 gap-y-2">
-        <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
-          <Icon icon="lucide:boxes" class="h-5 w-5" />
-        </span>
-        <div class="min-w-0">
-          <h1 class="text-base font-bold text-ink">Topic bundle</h1>
-          <!-- „Was sehe ich hier?" steht immer sichtbar, nicht in einem Tooltip – gleiche Regel
-               wie in den Insights: wer nicht weiss, was er sieht, sucht auch keine Erklaerung. -->
-          <p class="text-xs text-muted">
-            Every class around one topic — collected, picked, and copied as one text.
-          </p>
-        </div>
+    <PageHeader icon="lucide:boxes" title="Topic bundle" width="7xl">
+      <!-- „Was sehe ich hier?" steht immer sichtbar, nicht in einem Tooltip – gleiche Regel
+           wie in den Insights: wer nicht weiss, was er sieht, sucht auch keine Erklaerung. -->
+      <template #meta>
+        <span>Every class around one topic — collected, picked, and copied as one text.</span>
+      </template>
 
-        <div class="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none sm:basis-[34rem]">
+      <template #actions>
+        <div class="flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none sm:basis-[34rem]">
           <!-- Die drei Schalter stehen IM Feld, nicht daneben: sie ändern nicht das Ergebnis,
                sondern wie der Begriff gelesen wird – dieselbe Bauart und dieselben Icons wie in
                der Suchpalette, im Source-Tab und in der Bündelleiste weiter unten. -->
@@ -1264,28 +1260,29 @@ onUnmounted(() => {
             Neighbours
           </button>
         </div>
-      </div>
-    </header>
+      </template>
+    </PageHeader>
 
-    <!-- ======================= Inhalt ======================= -->
+    <!-- ======================= Inhalt =======================
+         ⚠️ Kein `PageShell`: die Ansicht scrollt nicht als Ganzes, sondern in ihren beiden Spalten
+         getrennt (Fundliste links, Vorschau rechts). Ein gemeinsamer Scroller darüber würde die
+         Ablage aus dem Bild schieben, sobald die Trefferliste lang wird. -->
+
     <div class="min-h-0 flex-1 overflow-hidden">
       <div class="mx-auto flex h-full w-full max-w-7xl flex-col gap-4 px-5 py-4 lg:flex-row">
         <!-- ---------- Links: was gefunden wurde ---------- -->
         <section class="flex min-h-0 flex-col lg:w-[26rem] lg:shrink-0">
           <!-- Kein Bestand: dann ist das leere Ergebnis keine Aussage ueber das Thema. -->
-          <div
+          <EmptyState
             v-if="!files.length"
-            class="rounded-xl border border-dashed border-line px-4 py-10 text-center"
+            icon="lucide:braces"
+            title="No classes yet"
+            hint="Import some Java in the code view first — a topic is collected from what is stored."
           >
-            <Icon icon="lucide:braces" class="mx-auto h-6 w-6 text-muted" />
-            <p class="mt-2 text-sm text-ink">No classes yet.</p>
-            <p class="mt-1 text-2xs text-muted">
-              Import some Java in the code view first — a topic is collected from what is stored.
-            </p>
-            <Button to="/code" variant="primary" size="xs" icon="lucide:arrow-right" class="mt-3">
+            <Button to="/code" variant="primary" size="xs" icon="lucide:arrow-right">
               Go to code
             </Button>
-          </div>
+          </EmptyState>
 
           <!-- Ruhezustand: WAS eine Quelle beitraegt, steht hier einmal – danach sagt es der Chip
                an jedem Treffer. Ohne diese vier Zeilen ist „Named after it" nur eine Ueberschrift. -->
