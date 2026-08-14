@@ -78,6 +78,25 @@ const hoverPalette = ref(null)
 // SELBST liest – gleiche Begruendung wie bei `hoveredNode`.
 const graphPreview = ref(null)
 
+// --- Fokus aus dem CODE (Klick auf einen Methoden-Token im Source-Tab) ---------------------------
+// `{ edges: Set<vueFlowEdgeId>, nodes: Set<nodeId>, key: string }` | null.
+//
+// `highlightedCall`/`highlightedDef` sagen, WELCHE Methode gemeint ist – aber „gemeint" heisst im
+// Bild: diese eine Verbindung und sonst nichts. Eine goldene Linie zwischen dreihundert gleich
+// hellen Karten ist keine Aussage, sie ist ein Suchbild. Deshalb tritt bei gesetztem Highlight
+// alles zurueck, was nicht dazugehoert.
+//
+// Dieselbe FORM wie `graphPreview` mit Absicht: die Kante prueft nur ihre Mitgliedschaft in einer
+// fertigen Menge und muss die Frage nicht kennen (s. dort). Trotzdem ein EIGENER Zustand, denn er
+// beantwortet eine andere Frage und steht an einer anderen Stelle der Vorrangordnung: die Vorschau
+// gilt, solange die Maus auf einem Eintrag der Ansichts-Karte steht, dieser Fokus dagegen bleibt –
+// er ist ein Klick, und der Blick wandert danach zwischen Code und Bild hin und her.
+//
+// `key` identifiziert den Fokus als GESTE (`call:<fileId>:<method>`), nicht als Menge: die Kamera
+// soll einmal je neuem Fokus reagieren und nicht bei jedem Layout-Lauf, der dieselbe Menge neu
+// berechnet.
+const codeFocus = ref(null)
+
 // --- Dieselbe Zuordnung, ohne dass man zeigen muss ----------------------------------------------
 // `selectionAnchor` ist die rechts GEOEFFNETE Klasse (`c:<fileId>` | null), `selectionPalette` die
 // Identitaetsfarbe je direktem Nachbarn – gleiche Bauart wie `hoverPalette`, nur bleibend.
@@ -488,6 +507,14 @@ export function useJavaGraph() {
     graphPreview,
     setGraphPreview(p) {
       graphPreview.value = p || null
+    },
+    // --- Fokus aus dem Code (Begruendung oben) ------------------------------------------------
+    codeFocus,
+    // Referenzgleichheit pruefen, gleiche Begruendung wie bei `setPinnedEdge`: der Graph schreibt
+    // diesen Zustand aus einem watch ueber dem Layout, und ein unveraenderter Wert liesse sonst
+    // bei jedem Layout-Lauf jede Karte und jede Kante ihre Daempfung neu bewerten.
+    setCodeFocus(payload) {
+      if (codeFocus.value !== payload) codeFocus.value = payload || null
     },
     // --- Bleibende Zuordnungsfarben der offenen Klasse (Begruendung oben) ----------------------
     selectionAnchor,

@@ -115,7 +115,8 @@ The five `OLLAMA_*` values and `WIKI_HISTORY_KEEP` are only the **default**; any
    at one and the detail column already shows the definition and every call site, down to the line.
    Pick a class — in the tree or on a card — and the graph draws just it and everything it links to;
    the **View** card decides what else is on screen. Hovering a neighbour keeps **that one
-   connection** in the picture; clicking steps over to it. Where you left off comes back on the next visit.
+   connection** in the picture, clicking steps over to it — and so does a method name in the source
+   on the right, which isolates its own edge. Where you left off comes back on the next visit.
 3. **Search.** `Ctrl/Cmd + K` searches names *and* raw source with match case, whole word and regex.
    Inside the view, one field next to the class list does everything: it filters the tree, drives
    the graph to the best match and opens that class on the right — `↵` walks to the next one.

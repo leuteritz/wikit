@@ -90,7 +90,10 @@ const emit = defineEmits(['select', 'clear-search', 'navigate', 'pane-click', 'r
 const { theme } = useTheme()
 // `viewport` wird fuer den Zonen-Layer gebraucht: er liegt HINTER dem Canvas und muss dessen
 // Pan/Zoom selbst nachfahren (Vue Flow transformiert nur seine eigenen Ebenen).
-const { fitView, zoomIn, zoomOut, setViewport, setCenter, viewport } = useVueFlow()
+// `dimensions` = Groesse der Zeichenflaeche in Bildschirmpixeln. Gebraucht fuer die eine Frage, die
+// sich nicht schaetzen laesst: liegt das, was gerade gemeint ist, ueberhaupt im sichtbaren
+// Ausschnitt? (s. `focusOnPair`).
+const { fitView, zoomIn, zoomOut, setViewport, setCenter, viewport, dimensions } = useVueFlow()
 
 // Persistierte Call-/Uses-Edges (auto + manuell) – Quelle der Wahrheit ist das Backend.
 // Kanten lassen sich im Graph manuell anlegen (Drag-to-Connect) und löschen (× am Label):
@@ -122,6 +125,8 @@ const {
   setSelectionColors,
   graphPreview,
   setGraphPreview,
+  codeFocus,
+  setCodeFocus,
 } = useJavaGraph()
 // Detailabruf einer einzelnen Klasse (Methodenruempfe fuers Edge-Panel) – die Liste traegt sie nicht.
 const { getFile } = useJavaAnalyzer()
@@ -1500,6 +1505,19 @@ watch(
 const zones = computed(() => layout.value.zones || [])
 // Anzahl referenzierter, aber nicht geladener Klassen (fuer den Legenden-Hinweis).
 const externalRefsHidden = computed(() => layout.value.externalRefsHidden)
+// Gehoert diese Kante zum Code-Highlight? EINE Regel, zwei Leser: die Projektion unten (die Kante
+// leuchtet) und `codeFocusSet` (alles andere tritt zurueck). Zwei Kopien waeren zwangslaeufig zwei
+// Antworten auf dieselbe Frage – und ein leuchtender Rest oder eine gedaempfte gemeinte Linie.
+//   * Consumer-Seite (ausgehend): geklickte Aufruf-Kante des Aufrufers.
+//   * Source-Seite (eingehend): Kanten, die genau die geklickte Definition dieser Klasse nutzen.
+function litBy(d, hc, hd) {
+  if (!d || d.kind !== 'call') return false
+  const methods = d.methods || []
+  if (hc && d.fromFileId === hc.callerFileId && methods.some((m) => m.method === hc.method)) return true
+  if (hd && d.toFileId === hd.definerFileId && methods.some((m) => m.method === hd.method)) return true
+  return false
+}
+
 // Reine Projektion: das pure `layout` bleibt unberuehrt; nur hier wird die aktuell „aufleuchtende"
 // Call-Edge (highlightedCall aus dem Code-Tab) markiert -> Glow-Klasse + Edge-Highlight-Farbe.
 const edges = computed(() => {
@@ -1507,17 +1525,11 @@ const edges = computed(() => {
   const hd = highlightedDef.value
   return layout.value.edges.map((e) => {
     const d = e.data || {}
-    // Consumer-Seite (ausgehend): geklickte Aufruf-Kante des Aufrufers.
-    const match =
-      hc && d.kind === 'call' && d.fromFileId === hc.callerFileId && (d.methods || []).some((m) => m.method === hc.method)
-    // Source-Seite (eingehend): Kanten, die genau die geklickte Definition dieser Klasse nutzen.
-    const matchIn =
-      hd && d.kind === 'call' && d.toFileId === hd.definerFileId && (d.methods || []).some((m) => m.method === hd.method)
     // `class` MUSS auf JEDER Kante gesetzt sein: Vue Flow merged eingehende Kanten per
     // Object.assign auf die bestehende GraphEdge (parseEdge). Fehlt der `class`-Key, bleibt ein
     // zuvor gesetztes 'edge-lit' haengen -> die Kante leuchtet weiter, auch nach dem Deselektieren.
     // Darum explizit '' statt den Key wegzulassen (erzwingt das Ueberschreiben).
-    if (!match && !matchIn) return { ...e, class: '' }
+    if (!litBy(d, hc, hd)) return { ...e, class: '' }
     return {
       ...e,
       class: 'edge-lit',
@@ -1529,6 +1541,41 @@ const edges = computed(() => {
     }
   })
 })
+
+// --- Der Code isoliert im Bild ------------------------------------------------------------------
+// Wer rechts im Quelltext auf einen Methodennamen klickt, stellt eine Frage ueber GENAU EINE
+// Verbindung. Die leuchtende Linie allein beantwortet sie nicht: zwischen dreihundert gleich hellen
+// Karten ist sie ein Suchbild. Also tritt alles zurueck, was nicht dazugehoert – dieselbe Sprache,
+// die der Graph beim Hover und bei der angeklickten Kante schon spricht.
+//
+// Drei Festlegungen (die ersten beiden wie bei `viewPreviewFor`):
+//  (1) Gerechnet wird auf dem GEZEICHNETEN Layout, nicht auf dem Bestand: die Frage lautet „welche
+//      Linie davon sehe ich hier?".
+//  (2) Ohne Treffer gibt es KEINEN Fokus (`null`) – auf Package-Ebene, im gefilterten Ausschnitt
+//      oder in der Ego-Ansicht liegt die gemeinte Kante oft gar nicht im Bild. Ein leergeraeumter
+//      Graph waere dort die Antwort auf eine Frage, die niemand gestellt hat; der Code-Token bleibt
+//      trotzdem markiert.
+//  (3) `key` ist die GESTE, nicht die Menge: die Kamera reagiert einmal je neuem Fokus (s.
+//      `focusOnPair`), nicht bei jedem Layout-Lauf, der dieselben Kanten neu findet.
+const codeFocusSet = computed(() => {
+  const hc = highlightedCall.value
+  const hd = highlightedDef.value
+  if (!hc && !hd) return null
+  const edgeIds = new Set()
+  const nodeIds = new Set()
+  for (const e of layout.value.edges) {
+    if (!litBy(e.data, hc, hd)) continue
+    edgeIds.add(e.id)
+    nodeIds.add(e.source)
+    nodeIds.add(e.target)
+  }
+  if (!edgeIds.size) return null
+  const key = hc ? `call:${hc.callerFileId}:${hc.method}` : `def:${hd.definerFileId}:${hd.method}`
+  return { edges: edgeIds, nodes: nodeIds, key }
+})
+// Zustand nach unten reichen – dieselbe Bauart wie bei der Suche (`setGraphHitNodes`): die Kanten
+// lesen ihn selbst, statt dass hier der komplette Kanten-Store neu geschrieben wird.
+watch(codeFocusSet, (v) => setCodeFocus(v), { immediate: true })
 
 // --- Die Suche IM Bild --------------------------------------------------------------------------
 // Die Eingabe steht links im Kopf der Klassenliste (CodeView) – hier ankommen tut sie als
@@ -1639,6 +1686,74 @@ function centerOnNode(nodeId) {
   return node.data?.fileId ?? null
 }
 
+// --- Kamera auf die isolierte Verbindung --------------------------------------------------------
+// Der Code-Fokus daempft alles ausser einer Handvoll Karten. Liegen die ausserhalb des Ausschnitts,
+// bleibt links ein leeres Bild zurueck – die Daempfung waere dann ein Rueckschritt gegenueber gar
+// keiner. Also faehrt die Kamera hin, aber NUR DANN:
+//   * Ist die Menge schon vollstaendig zu sehen, bewegt sich nichts. Ein Sprung bei jedem Klick
+//     macht das Bild unruhig und zerstoert die Orientierung, die man sich gerade erarbeitet hat.
+//   * Herausgezoomt wird nur so weit, wie die Menge es braucht; HINEIN nie. Die Zoomstufe ist eine
+//     Entscheidung des Nutzers, kein Nebenprodukt eines Klicks im Quelltext.
+// ⚠️ `fitView({ nodes: [...] })` waere hier ein stiller No-Op (s. `centerOnNode`) – deshalb Rechnung
+// von Hand und `setCenter`.
+const FOCUS_MARGIN_PX = 56
+
+function nodeBox(node) {
+  const s = rootScale.value
+  const w = (node.type === 'pkg' ? PKG_W : NODE_W) * s
+  const h = (node.type === 'pkg' ? PKG_H : NODE_H) * s
+  return { x: node.position.x, y: node.position.y, w, h }
+}
+
+function focusOnPair(nodeIds) {
+  const wanted = nodeIds instanceof Set ? nodeIds : new Set(nodeIds || [])
+  const boxes = nodes.value.filter((n) => wanted.has(n.id)).map(nodeBox)
+  if (!boxes.length) return
+  const minX = Math.min(...boxes.map((b) => b.x))
+  const minY = Math.min(...boxes.map((b) => b.y))
+  const maxX = Math.max(...boxes.map((b) => b.x + b.w))
+  const maxY = Math.max(...boxes.map((b) => b.y + b.h))
+
+  const vw = dimensions.value?.width || 0
+  const vh = dimensions.value?.height || 0
+  // Ohne Maße der Zeichenflaeche laesst sich „schon zu sehen?" nicht beantworten – dann lieber
+  // nichts tun als raten.
+  if (!vw || !vh) return
+  const vp = viewport.value || { x: 0, y: 0, zoom: 1 }
+  const zoom = vp.zoom || 1
+
+  // Passt die Menge samt Rand ueberhaupt in den Ausschnitt, und liegt sie darin? Beides in
+  // Bildschirmpixeln, denn genau das sieht der Nutzer.
+  const fitsNow =
+    (maxX - minX) * zoom + FOCUS_MARGIN_PX * 2 <= vw && (maxY - minY) * zoom + FOCUS_MARGIN_PX * 2 <= vh
+  const left = minX * zoom + vp.x
+  const top = minY * zoom + vp.y
+  const right = maxX * zoom + vp.x
+  const bottom = maxY * zoom + vp.y
+  const visible =
+    left >= FOCUS_MARGIN_PX && top >= FOCUS_MARGIN_PX && right <= vw - FOCUS_MARGIN_PX && bottom <= vh - FOCUS_MARGIN_PX
+  if (fitsNow && visible) return
+
+  // Nur herauszoomen: der Faktor, bei dem die Menge samt Rand hineinpasst – und nie ueber die
+  // aktuelle Stufe hinaus.
+  const needX = (vw - FOCUS_MARGIN_PX * 2) / Math.max(maxX - minX, 1)
+  const needY = (vh - FOCUS_MARGIN_PX * 2) / Math.max(maxY - minY, 1)
+  const nextZoom = Math.max(Math.min(zoom, needX, needY), 0.2)
+  setCenter((minX + maxX) / 2, (minY + maxY) / 2, { zoom: nextZoom, duration: 320 })
+}
+
+// Einmal je neuem Fokus, nicht bei jedem Layout-Lauf: deshalb haengt der Watch am `key` (der GESTE)
+// und nicht an der Menge. `nextTick`, weil derselbe Tick die Karten erst zeichnet – vorher haetten
+// neu hinzugekommene Knoten noch keine Position.
+watch(
+  () => codeFocusSet.value?.key || null,
+  async (key) => {
+    if (!key) return
+    await nextTick()
+    focusOnPair(codeFocusSet.value?.nodes)
+  },
+)
+
 // Gibt die Datei-Id des angefahrenen Treffers zurueck: die Kamera allein waere der halbe Schritt –
 // man saehe die Karte und muesste sie trotzdem anklicken, um zu lesen, was drin steht.
 function stepFind(delta) {
@@ -1707,7 +1822,7 @@ function dimLevel(nodeId) {
   // Reihenfolge mit Absicht: der Hover ist die feinere Geste und darf INNERHALB eines Suchergebnisses
   // weiter isolieren. Liegt die Maus nirgends, bestimmt die angeklickte Kante das Bild, und erst
   // danach die Suche.
-  if (!h && !hoveredEdge.value && !pinnedEdge.value && findQuery.value)
+  if (!h && !hoveredEdge.value && !pinnedEdge.value && !codeFocus.value && findQuery.value)
     return !isFindHit(nodeId) && !findNeighbourSet.value.has(nodeId) ? 'soft' : null
   // Anker gesetzt: es geht um EINE Verbindung, also bleiben genau ihre zwei Enden stehen.
   if (h && hoverAnchor.value) return nodeId !== h && nodeId !== hoverAnchor.value ? 'hard' : null
@@ -1719,6 +1834,12 @@ function dimLevel(nodeId) {
   // zwischen genau zwei Klassen, und das soll man auch so sehen.
   const he = hoveredEdge.value || pinnedEdge.value
   if (he) return he.sourceId !== nodeId && he.targetId !== nodeId ? 'hard' : null
+  // Fokus aus dem Code (Methoden-Token im Source-Tab angeklickt): `hard`, denn gemeint ist EINE
+  // Verbindung – dieselbe Schaerfe wie beim Kanten-Hover, nicht die weiche einer Nachbarschaft.
+  // Er steht HINTER Hover und Pin (die feineren bzw. bild-eigenen Gesten duerfen innerhalb des
+  // isolierten Ausschnitts weiter zeigen) und VOR der Suche (ein Klick meint mehr als ein Filter).
+  const cf = codeFocus.value
+  if (cf) return cf.nodes.has(nodeId) ? null : 'hard'
   return null
 }
 // Liegt der Blick gerade auf EINER Sache? Dann treten auch die Dinge zurueck, die gar keine Knoten
@@ -1726,7 +1847,11 @@ function dimLevel(nodeId) {
 // nicht mit – eine vollflaechige, voll deckende Zonenordnung hinter zwei isolierten Karten macht
 // genau den Fokus wieder zunichte, um den es geht.
 const focusActive = computed(
-  () => (!!hoveredNode.value && !!hoverAnchor.value) || !!hoveredEdge.value || !!pinnedEdge.value,
+  () =>
+    (!!hoveredNode.value && !!hoverAnchor.value) ||
+    !!hoveredEdge.value ||
+    !!pinnedEdge.value ||
+    !!codeFocus.value,
 )
 
 // --- Vorschau: die Ansichts-Karte zeigt im BILD, was ein Eintrag meint --------------------------
@@ -1919,8 +2044,14 @@ function focusColor(nodeId) {
   // Angeklickte Kante: dieselbe Regel wie beim Kanten-Hover, nur bleibend – die Karte traegt die
   // Farbe der Linie, die zu ihr fuehrt.
   const he = hoveredEdge.value || pinnedEdge.value
-  if (!he || (he.sourceId !== nodeId && he.targetId !== nodeId)) return null
-  return he.color || 'var(--color-accent)'
+  if (he) return he.sourceId === nodeId || he.targetId === nodeId ? he.color || 'var(--color-accent)' : null
+  // Fokus aus dem Code: beide Enden tragen den Ton der leuchtenden Linie – und das ist derselbe
+  // Goldton, den rechts der angeklickte Token traegt (`.cm-call-active`) und den das Kantenlabel
+  // traegt (`.me-label--lit`). EINE Farbe fuer EINE Aussage, quer ueber die drei Orte, an denen sie
+  // auftaucht; deshalb hier ein fester Wert und keine Palette.
+  const cf = codeFocus.value
+  if (cf?.nodes.has(nodeId)) return 'var(--color-edge-highlight)'
+  return null
 }
 // Hover-ABSICHT, dieselbe Regel wie an der Kante (s. ManagedEdge): eine Karte gilt erst als
 // gemeint, wenn die Maus kurz auf ihr bleibt. Beim Queren eines dichten Feldes streift man sonst
@@ -1957,6 +2088,7 @@ onUnmounted(() => {
   clearTimeout(previewTimer)
   setHoveredNode(null)
   setHoveredEdge(null)
+  setCodeFocus(null)
 })
 
 function onNodeClick({ node }) {

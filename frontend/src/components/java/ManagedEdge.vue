@@ -213,6 +213,7 @@ const {
   selectionAnchor,
   selectionPalette,
   graphPreview,
+  codeFocus,
 } = useJavaGraph()
 
 // --- Vorschau aus der Ansichts-Karte ------------------------------------------------------------
@@ -336,12 +337,23 @@ const dimmed = computed(() => {
   // Hover steht davor, weil er die feinere Geste ist – wer bei offenem Detail woanders hinzeigt,
   // fragt gerade nach etwas anderem.
   if (pinnedEdge.value) return !isPinned.value
+  // Fokus aus dem Code (Methoden-Token im Source-Tab angeklickt): es bleiben genau die Linien, die
+  // diese Methode tragen. Dieselbe Stelle der Vorrangordnung wie bei den Karten (`dimLevel` in
+  // JavaDependencyGraph) – die beiden sind zwei Formulierungen EINER Regel, und eine Karte, die
+  // zurueckritt, waehrend ihre Linie stehenbleibt, waere ein Widerspruch im Bild.
+  const cf = codeFocus.value
+  if (cf) return !cf.edges.has(props.id)
   // Sonst bestimmt die Suche (gleiche Vorrangregel wie bei den Karten).
   return findDimmed.value
 })
 const focused = computed(
   () =>
-    (!!hoveredNode.value || !!hoveredEdge.value || !!pinnedEdge.value || !!previewSet.value) && !dimmed.value,
+    (!!hoveredNode.value ||
+      !!hoveredEdge.value ||
+      !!pinnedEdge.value ||
+      !!previewSet.value ||
+      !!codeFocus.value) &&
+    !dimmed.value,
 )
 
 // Die Kanten-Grundfarbe steht in data.edgeStyle; hier kommt nur der Fokus-Zustand darueber.
