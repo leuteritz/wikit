@@ -55,9 +55,10 @@ export function usePanelResize() {
 
   // --- Breit lesen -------------------------------------------------------------------------
   // Anders als die geliehene Breite ist das eine ENTSCHEIDUNG: sie bleibt, bis man sie zuruecknimmt,
-  // und ueberlebt deshalb auch den Reload. Der Platz kommt aus der MITTE – den Graphen liest
-  // niemand, waehrend er eine Klasse liest. Links bleibt stehen, was es ist: die Navigation, mit der
-  // man zur naechsten Klasse kommt. `stash` haelt die Aufteilung von vorher.
+  // und ueberlebt deshalb auch den Reload. Die MITTE weicht dafuer ganz – den Graphen liest niemand,
+  // waehrend er eine Klasse liest, und eine Restspalte davon liest erst recht niemand. Links bleibt
+  // stehen, was es ist: die Navigation, mit der man zur naechsten Klasse kommt. `stash` haelt die
+  // Aufteilung von vorher.
   const wide = ref(false)
   let stash = null
 
@@ -90,11 +91,19 @@ export function usePanelResize() {
       Math.abs(widths.right - DEFAULTS.right) > 0.5,
   )
 
-  const gridTemplate = computed(
-    () =>
-      `minmax(0,${widths.left}fr) ${RESIZER_PX}px ` +
-      `minmax(0,${widths.center}fr) ${RESIZER_PX}px ` +
-      `minmax(0,${widths.right}fr)`,
+  // Im Breit-Modus hat das Raster nur ZWEI Spalten und keinen Divider: die Mitte wird ausgeblendet,
+  // nicht verkleinert (CodeView haengt dieselbe Bedingung an ihr `v-show`). Als 10-%-Streifen war
+  // sie keine Ansicht mehr – ueberlappende Overlay-Karten, halb abgeschnittene Knoten – und der Sinn
+  // des Modus ist ja gerade, dass der Graph in diesem Moment nicht gebraucht wird. Ziehen gibt es
+  // hier nicht: es gaebe nur noch eine Kante, und sie wuerde eine andere Frage beantworten.
+  // `widths.center` bleibt dabei auf seinem Wert stehen (nicht 0) – die Drei-Zahlen-Invariante von
+  // `isValidTriple` traegt die Persistenz, und gerendert wird die Zahl im Breit-Modus ohnehin nicht.
+  const gridTemplate = computed(() =>
+    wide.value
+      ? `minmax(0,${widths.left}fr) minmax(0,${widths.right}fr)`
+      : `minmax(0,${widths.left}fr) ${RESIZER_PX}px ` +
+        `minmax(0,${widths.center}fr) ${RESIZER_PX}px ` +
+        `minmax(0,${widths.right}fr)`,
   )
 
   // --- Responsiv: Resize nur im lg-Layout (>= 1024px) aktiv ---
@@ -103,6 +112,12 @@ export function usePanelResize() {
   const onMq = (e) => {
     isWide.value = e.matches
   }
+
+  // Ist die Mittelspalte gerade ausgeblendet? Nur im lg-Layout: darunter gibt es keine Spalten,
+  // sondern einen Stapel – dort waere der Graph verschwunden, waehrend der Knopf, der ihn
+  // zurueckholt, deaktiviert ist (`toggleWide` steigt ohne `isWide` aus). Ein aus einem breiten
+  // Fenster gemerktes `wide` darf im schmalen also nichts ausblenden.
+  const centerHidden = computed(() => isWide.value && wide.value)
 
   function persist() {
     try {
@@ -206,6 +221,9 @@ export function usePanelResize() {
     } else {
       stash = { ...widths }
       borrowed.value = null // eine geliehene Breite waere hier nur noch ein Ruecksprung ins Nichts
+      // Die Mitte auf MIN (nicht 0): sie wird im Breit-Modus nicht gerendert, muss die gespeicherte
+      // Aufteilung aber weiter gueltig halten (`isValidTriple`: jede Zahl >= MIN, Summe 100). Ihr
+      // Anteil geht an die Detailspalte, die damit vier Fuenftel der gezeichneten Flaeche bekommt.
       widths.center = MIN
       widths.right = 100 - widths.left - MIN
       wide.value = true
@@ -236,6 +254,7 @@ export function usePanelResize() {
     isDirty,
     isFocused,
     wide,
+    centerHidden,
     startDrag,
     focusRight,
     releaseFocus,

@@ -8,6 +8,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirro
 import { java } from '@codemirror/lang-java'
 import { indentUnit } from '@codemirror/language'
 import { useCodeMirrorTheme } from '../../composables/useCodeMirrorTheme.js'
+import { hangingIndent, hangingIndentTheme } from '../../lib/cmHangingIndent.js'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -366,16 +367,16 @@ onMounted(() => {
     java(),
     EditorView.lineWrapping,
     themeComp.of(themeExtension()),
+    // Haengender Einzug fuer umbrochene Zeilen (`lineWrapping` oben): die Fortsetzung sitzt
+    // eingerueckt unter dem Zeilenanfang DIESER Zeile und liest sich damit nicht wie eine neue
+    // Anweisung. Gleiche Aussage wie `.code-soft-wrap .shiki .line` (style.css) fuer die
+    // Shiki-Bloecke daneben; die Rechnung teilt sie sich mit dem Diff-Viewer.
+    hangingIndent(),
+    hangingIndentTheme,
     EditorView.theme({
       '&': { height: '100%' },
       '.cm-scroller': { fontFamily: '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '0.8125rem', lineHeight: '1.6' },
       '.cm-content': { padding: '12px 0' },
-      // Haengender Einzug fuer umbrochene Zeilen (`lineWrapping` oben): die Fortsetzung sitzt
-      // eingerueckt unter dem Zeilenanfang und liest sich damit nicht wie eine neue Anweisung.
-      // 6px ist CodeMirrors eigenes `.cm-line`-Padding links – ohne den Zuschlag verschoebe sich
-      // die erste Zeile gegen den Gutter. Gleiche Aussage wie `.code-soft-wrap .shiki .line`
-      // (style.css) fuer die Shiki-Bloecke daneben.
-      '.cm-line': { paddingLeft: 'calc(6px + 3ch)', textIndent: '-3ch' },
     }),
   ]
   if (props.readonly) {

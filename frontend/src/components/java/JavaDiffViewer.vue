@@ -8,6 +8,7 @@ import { EditorState, StateField } from '@codemirror/state'
 import { java } from '@codemirror/lang-java'
 import { indentUnit } from '@codemirror/language'
 import { useCodeMirrorTheme } from '../../composables/useCodeMirrorTheme.js'
+import { hangingIndent, hangingIndentTheme } from '../../lib/cmHangingIndent.js'
 
 const props = defineProps({
   diff: { type: String, default: '' },
@@ -68,13 +69,16 @@ onMounted(() => {
     EditorState.readOnly.of(true),
     EditorView.editable.of(false),
     themeComp.of(themeExtension()),
+    // Haengender Einzug wie im Quellcode-Tab (JavaCodeEditor) – Diff und Quelltext liegen im
+    // selben Panel uebereinander und duerfen nicht unterschiedlich umbrechen. Das Diff-Praefix
+    // (`+`/`-`/Leerzeichen) ist kein Code: es zaehlt als Spalte mit, wird beim Messen der
+    // Einrueckung aber uebersprungen – sonst gaelte jede Diff-Zeile als gar nicht eingerueckt.
+    hangingIndent({ skipPrefix: /^[+\- ]/ }),
+    hangingIndentTheme,
     EditorView.theme({
       '&': { height: '100%' },
       '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '0.8125rem', lineHeight: '1.6' },
       '.cm-content': { padding: '8px 0' },
-      // Haengender Einzug wie im Quellcode-Tab (JavaCodeEditor) – Diff und Quelltext liegen im
-      // selben Panel uebereinander und duerfen nicht unterschiedlich umbrechen.
-      '.cm-line': { paddingLeft: 'calc(6px + 3ch)', textIndent: '-3ch' },
     }),
   ]
   const state = EditorState.create({ doc: props.diff || '', extensions })

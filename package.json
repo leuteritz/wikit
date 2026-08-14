@@ -1,7 +1,7 @@
 {
   "name": "wikit",
-  "version": "4.42.0",
-  "whatsNew": "Code panel wraps long lines and can go wide",
+  "version": "4.43.0",
+  "whatsNew": "Wide mode hides the graph, code wraps cleaner",
   "private": true,
   "type": "module",
   "description": "Wikit - a tiny self-hosted personal wiki / knowledge base (Vue + NestJS + TypeORM + SQLite), light enough for a Raspberry Pi",

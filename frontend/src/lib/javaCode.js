@@ -23,6 +23,23 @@ function isBlank(el) {
   return el.textContent.trim() === ''
 }
 
+// Ein Tab ist keine feste Breite. Der Server rueckt mit Leerzeichen ein (code-formatter.service.ts,
+// INDENT), und der Ruler greift auf jeden java-Block, den `renderMarkdown` sieht – hier kommt also
+// praktisch kein Tab an. Steht trotzdem da, damit ein durchgereichter Rohblock nicht als
+// „gar nicht eingerueckt" gilt.
+const TAB_COLS = 4
+
+// Der haengende Einzug einer umbrochenen Zeile muss die Einrueckung DIESER Zeile kennen: ein fester
+// Wert ab Blockrand liegt bei geschachteltem Code LINKS vom Anweisungsanfang und liest sich dann wie
+// eine flachere neue Anweisung – das Gegenteil dessen, wofuer er da ist. Die Zahl kann nur setzen,
+// wer das HTML aufbereitet; CSS kennt kein „erstes Nicht-Leerzeichen". Gerechnet wird in `ch`, also
+// in Zeichenspalten der Monospace, und verrechnet in `.code-soft-wrap .shiki .line` (style.css).
+function setIndent(el) {
+  const lead = el.textContent.match(/^[ \t]*/)?.[0] ?? ''
+  const cols = lead.replace(/\t/g, ' '.repeat(TAB_COLS)).length
+  if (cols) el.style.setProperty('--ind', `${cols}ch`)
+}
+
 // Anzahl Kontext-Nicht-Leerzeilen je Seite der Aufrufzeile (buildCallWindow).
 const CONTEXT_LINES = 3
 
@@ -58,6 +75,7 @@ export function addLineNumbers(html, startLine, { keepBlank = false, highlight =
     const code = doc.createElement('code')
     kept.forEach(({ el, line }) => {
       el.setAttribute('data-line', String(line))
+      setIndent(el)
       if (highlight != null) el.classList.toggle('line-highlight', line === highlight)
       code.appendChild(el)
     })
@@ -106,6 +124,7 @@ export function buildCallWindow(html, bodyStartLine, siteLine) {
     for (let i = from; i <= to; i++) {
       const { el, line } = kept[i]
       el.setAttribute('data-line', String(line))
+      setIndent(el)
       if (i === hit) el.classList.add('line-highlight')
       else el.classList.remove('line-highlight')
       code.appendChild(el)
@@ -252,6 +271,7 @@ export function processMethodBody(html, { collapseBlank = false, signatureHtml =
     // Kein `{` anhaengen: der Rumpf kann bereits Klammern enthalten (s. DECL_RE-Strip oben).
     const code = doc.createElement('code')
     ;[...sigLines, ...kept].forEach((el) => {
+      setIndent(el)
       code.appendChild(el)
     })
     const oldCode = pre.querySelector('code')

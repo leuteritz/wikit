@@ -536,6 +536,12 @@ body {
  * und liest sich wie eine neue Anweisung. Mit ihm sagt der Einzug „das gehoert noch zur Zeile
  * darueber" – dieselbe Aussage, die CodeMirror-Zeilen im Source-Tab tragen (JavaCodeEditor.vue).
  *
+ * Er misst NICHT ab Blockrand, sondern ab der Einrueckung DIESER Zeile: `--ind` (Zeichenspalten,
+ * gesetzt in lib/javaCode.js bzw. lib/cmHangingIndent.js) plus 3ch. Fest ab Blockrand saesse die
+ * Fortsetzung bei geschachteltem Code LINKS vom Anweisungsanfang und laese sich wie eine flachere
+ * neue Anweisung – gemessen, s. Fassung davor. Der negative `text-indent` zieht die erste sichtbare
+ * Zeile auf 0 zurueck; ihre fuehrenden Leerzeichen stehen im Text und ruecken sie selbst ein.
+ *
  * Gilt bewusst nur unter dieser Klasse: Artikel-Codebloecke und die Bloecke in /insights sind
  * ganze Dateien in voller Breite, dort ist der waagerechte Scroll richtig. */
 .code-soft-wrap .shiki {
@@ -549,15 +555,15 @@ body {
    mit (`.edge-code`/`.edge-usage-code` hier, `.method-code` in JavaClassDetail), weil es davon
    abhaengt, wie sein HTML gebaut wurde (mit oder ohne `\n` zwischen den Zeilen, s. lib/javaCode.js). */
 .code-soft-wrap .shiki .line {
-  padding-left: 3ch;
-  text-indent: -3ch;
+  padding-left: calc(var(--ind, 0ch) + 3ch);
+  text-indent: calc(-1 * (var(--ind, 0ch) + 3ch));
 }
 /* Bloecke mit Gutter (Kanten- und Buendel-Panel): der negative Einzug muss die Zeilennummer MIT
    aufnehmen (`::before` ist 3rem breit, dazu 0.85rem Abstand), sonst rutschte sie in den Text. */
 .code-soft-wrap .edge-code .line,
 .code-soft-wrap .edge-usage-code .line {
-  padding-left: calc(3.85rem + 3ch);
-  text-indent: calc(-3.85rem - 3ch);
+  padding-left: calc(3.85rem + var(--ind, 0ch) + 3ch);
+  text-indent: calc(-3.85rem - var(--ind, 0ch) - 3ch);
 }
 
 /* --- Code in `prose`-Containern ---------------------------------------------------------------

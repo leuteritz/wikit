@@ -60,6 +60,7 @@ const {
   isDirty: panelsDirty,
   isFocused: panelsFocused,
   wide: panelsWide,
+  centerHidden,
   startDrag,
   focusRight,
   releaseFocus,
@@ -447,7 +448,7 @@ function onKeydown(e) {
     // `e.code` statt `e.key`, weil Alt auf dem Mac Sonderzeichen erzeugt.
     if (!typing && e.altKey && !mod && e.code === 'KeyW') {
       e.preventDefault()
-      toggleWide()
+      onToggleWide()
     }
     return
   }
@@ -823,6 +824,15 @@ let refitTimer = null
 function refitGraphSoon(duration = 420) {
   clearTimeout(refitTimer)
   refitTimer = setTimeout(() => graphRef.value?.fitToView?.({ duration }), GRAPH_REFIT_DELAY_MS)
+}
+
+// Breit-Modus umschalten. Beim ZURUECK kommt der Graph aus `display:none` – dort hat Vue Flow keine
+// Flaeche gesehen, und der Ausschnitt von vorhin passt nicht mehr zu der, die er jetzt bekommt.
+// Beim Ausblenden gibt es dagegen nichts einzupassen.
+function onToggleWide() {
+  const was = panelsWide.value
+  toggleWide()
+  if (was && !panelsWide.value) refitGraphSoon()
 }
 
 // „Zeig mir wieder alles": oberste Ebene + eingepasste Kamera. Der leere Pfad landet im Graphen
@@ -1444,10 +1454,10 @@ function onResetPanels() {
               :disabled="!isWide"
               :aria-pressed="panelsWide"
               v-tip="panelsWide
-                ? { title: 'Back to the normal layout', hint: 'Gives the graph its width back (Alt+W).' }
-                : { title: 'Wide code panel', hint: 'Puts the space into the detail column — the graph steps aside (Alt+W).' }"
+                ? { title: 'Back to the normal layout', hint: 'Brings the graph back (Alt+W).' }
+                : { title: 'Wide code panel', hint: 'Hides the graph and gives its width to the detail column (Alt+W).' }"
               aria-label="Wide code panel"
-              @click="toggleWide"
+              @click="onToggleWide"
             >
               <Icon :icon="panelsWide ? 'lucide:minimize-2' : 'lucide:maximize-2'" class="h-4 w-4 shrink-0" />
             </button>
@@ -1923,9 +1933,11 @@ function onResetPanels() {
         </ul>
       </section>
 
-      <!-- Divider 1↔2 (Drag) -->
+      <!-- Divider 1↔2 (Drag). Im Breit-Modus gibt es nichts zu teilen: die Mitte ist weg, und die
+           eine verbleibende Kante wuerde eine andere Frage beantworten als die, fuer die dieser
+           Griff da ist. -->
       <div
-        v-if="isWide"
+        v-if="isWide && !centerHidden"
         class="panel-resizer"
         :class="{ 'is-active': activeKey === 'left' }"
         role="separator"
@@ -1936,8 +1948,10 @@ function onResetPanels() {
         <span class="panel-resizer__grip" />
       </div>
 
-      <!-- Spalte 2: Graph -->
-      <div class="min-h-[55vh] lg:min-h-0">
+      <!-- Spalte 2: Graph. Im Breit-Modus ausgeblendet – `v-show`, nicht `v-if`: Zoom, Ausschnitt
+           und Auswahl von Vue Flow duerfen dabei nicht verworfen werden. Beim Zurueckschalten holt
+           `refitGraphSoon()` die Kamera nach, denn aus `display:none` kommt eine Flaeche ohne Masse. -->
+      <div v-show="!centerHidden" class="min-h-[55vh] lg:min-h-0">
         <JavaDependencyGraph
           ref="graphRef"
           :files="files"
@@ -1959,7 +1973,7 @@ function onResetPanels() {
 
       <!-- Divider 2↔3 (Drag) -->
       <div
-        v-if="isWide"
+        v-if="isWide && !centerHidden"
         class="panel-resizer"
         :class="{ 'is-active': activeKey === 'right' }"
         role="separator"
